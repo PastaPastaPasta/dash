@@ -3,7 +3,6 @@
 export LC_ALL=C
 
 KNOWN_VIOLATIONS=(
-    "src/base58.cpp:.*isspace"
     "src/bench/string_cast.cpp.*atoi"
     "src/dash-tx.cpp.*stoul"
     "src/dash-tx.cpp.*trim_right"
@@ -31,15 +30,12 @@ KNOWN_VIOLATIONS=(
     "src/test/getarg_tests.cpp.*split"
     "src/torcontrol.cpp:.*atoi"
     "src/torcontrol.cpp:.*strtol"
-    "src/uint256.cpp:.*isspace"
     "src/uint256.cpp:.*tolower"
     "src/util.cpp:.*atoi"
     "src/util.cpp:.*fprintf"
     "src/util.cpp:.*tolower"
     "src/utilmoneystr.cpp:.*isdigit"
-    "src/utilmoneystr.cpp:.*isspace"
     "src/utilstrencodings.cpp:.*atoi"
-    "src/utilstrencodings.cpp:.*isspace"
     "src/utilstrencodings.cpp:.*strtol"
     "src/utilstrencodings.cpp:.*strtoll"
     "src/utilstrencodings.cpp:.*strtoul"
