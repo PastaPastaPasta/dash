@@ -15,6 +15,7 @@ KNOWN_VIOLATIONS=(
     "src/governance/governance-validators.cpp.*tolower"
     "src/httprpc.cpp.*trim"
     "src/init.cpp:.*atoi"
+    "src/init.cpp:.*fprintf"
     "src/netbase.cpp.*to_lower"
     "src/qt/rpcconsole.cpp:.*atoi"
     "src/qt/rpcconsole.cpp:.*isdigit"
@@ -44,6 +45,7 @@ KNOWN_VIOLATIONS=(
     "src/utilstrencodings.cpp:.*strtoul"
     "src/utilstrencodings.cpp:.*strtoull"
     "src/utilstrencodings.h:.*atoi"
+    "src/util/system.cpp:.*fprintf"
     "src/wallet/wallet.cpp:.*atoi"
 )
 
