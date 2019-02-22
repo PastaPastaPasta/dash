@@ -6,6 +6,7 @@
 #define BITCOIN_RPC_UTIL_H
 
 #include <pubkey.h>
+#include <rpc/protocol.h>
 #include <script/standard.h>
 #include <univalue.h>
 #include <utilstrencodings.h>
