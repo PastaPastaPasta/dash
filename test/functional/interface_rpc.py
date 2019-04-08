@@ -17,6 +17,15 @@ def expect_http_status(expected_http_status, expected_rpc_code,
         assert_equal(exc.error["code"], expected_rpc_code)
         assert_equal(exc.http_status, expected_http_status)
 
+def expect_http_status(expected_http_status, expected_rpc_code,
+                       fcn, *args):
+    try:
+        fcn(*args)
+        raise AssertionError("Expected RPC error %d, got none" % expected_rpc_code)
+    except JSONRPCException as exc:
+        assert_equal(exc.error["code"], expected_rpc_code)
+        assert_equal(exc.http_status, expected_http_status)
+
 class RPCInterfaceTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
