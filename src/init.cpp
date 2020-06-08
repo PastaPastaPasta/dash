@@ -46,6 +46,7 @@
 #include <script/sigcache.h>
 #include <scheduler.h>
 #include <shutdown.h>
+#include <sync.h>
 #include <timedata.h>
 #include <txdb.h>
 #include <txmempool.h>
@@ -58,7 +59,9 @@
 #include <util/threadnames.h>
 #include <util/validation.h>
 #include <validation.h>
+
 #include <validationinterface.h>
+#include <walletinitinterface.h>
 
 #include <masternode/node.h>
 #include <coinjoin/server.h>
@@ -71,7 +74,6 @@
 #include <messagesigner.h>
 #include <netfulfilledman.h>
 #include <spork.h>
-#include <walletinitinterface.h>
 
 #include <evo/deterministicmns.h>
 #include <llmq/quorums.h>
@@ -205,11 +207,10 @@ void Interrupt()
 /** Preparing steps before shutting down or restarting the wallet */
 void PrepareShutdown(InitInterfaces& interfaces)
 {
+    static Mutex g_shutdown_mutex;
+    TRY_LOCK(g_shutdown_mutex, lock_shutdown);
+    if (!lock_shutdown) return;
     LogPrintf("%s: In progress...\n", __func__);
-    static RecursiveMutex cs_Shutdown;
-    TRY_LOCK(cs_Shutdown, lockShutdown);
-    if (!lockShutdown)
-        return;
 
     /// Note: Shutdown() must be able to handle cases in which initialization failed part of the way,
     /// for example if the data directory was found to be locked.
