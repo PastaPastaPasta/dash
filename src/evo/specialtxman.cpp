@@ -2,7 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <evo/specialtx.h>
+#include <evo/specialtxman.h>
 
 #include <chainparams.h>
 #include <consensus/validation.h>
@@ -10,6 +10,7 @@
 #include <evo/deterministicmns.h>
 #include <evo/mnhftx.h>
 #include <evo/providertx.h>
+#include <evo/assetlocktx.h>
 #include <hash.h>
 #include <llmq/blockprocessor.h>
 #include <llmq/commitment.h>
@@ -43,6 +44,15 @@ bool CheckSpecialTx(const CTransaction& tx, const CBlockIndex* pindexPrev, CVali
             return llmq::CheckLLMQCommitment(tx, pindexPrev, state);
         case TRANSACTION_MNHF_SIGNAL:
             return VersionBitsTipState(Params().GetConsensus(), Consensus::DEPLOYMENT_DIP0024) == ThresholdState::ACTIVE && CheckMNHFTx(tx, pindexPrev, state);
+        case TRANSACTION_ASSET_LOCK:
+            if (VersionBitsTipState(Params().GetConsensus(), Consensus::DEPLOYMENT_DIPCREDITLOCKS) != ThresholdState::ACTIVE) {
+                return false;
+            }
+            // TODO check asset lock
+            if (auto maybeError = CheckAssetLockTx(tx, pindexPrev); maybeError.did_err) {
+                return state.DoS(maybeError.ban_amount, false, REJECT_INVALID, std::string(maybeError.error_str));
+            }
+            return true;
         }
     } catch (const std::exception& e) {
         LogPrintf("%s -- failed: %s\n", __func__, e.what());
@@ -62,6 +72,7 @@ bool ProcessSpecialTx(const CTransaction& tx, const CBlockIndex* pindex, CValida
     case TRANSACTION_PROVIDER_REGISTER:
     case TRANSACTION_PROVIDER_UPDATE_SERVICE:
     case TRANSACTION_PROVIDER_UPDATE_REGISTRAR:
+    case TRANSACTION_ASSET_LOCK: // TODO
     case TRANSACTION_PROVIDER_UPDATE_REVOKE:
         return true; // handled in batches per block
     case TRANSACTION_COINBASE:
@@ -85,6 +96,7 @@ bool UndoSpecialTx(const CTransaction& tx, const CBlockIndex* pindex)
     case TRANSACTION_PROVIDER_REGISTER:
     case TRANSACTION_PROVIDER_UPDATE_SERVICE:
     case TRANSACTION_PROVIDER_UPDATE_REGISTRAR:
+    case TRANSACTION_ASSET_LOCK: // TODO asset lock
     case TRANSACTION_PROVIDER_UPDATE_REVOKE:
         return true; // handled in batches per block
     case TRANSACTION_COINBASE:

@@ -18,15 +18,6 @@ class CBlockIndex;
 class CCoinsViewCache;
 class CValidationState;
 
-struct maybe_error{
-    bool did_err{false};
-    int ban_amount{0};
-    std::string_view error_str;
-
-    constexpr maybe_error() = default;
-    constexpr maybe_error(int amount, std::string_view err): did_err(true), ban_amount(amount), error_str(err) {};
-};
-
 class CProRegTx
 {
 public:

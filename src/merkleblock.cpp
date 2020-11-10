@@ -44,6 +44,7 @@ CMerkleBlock::CMerkleBlock(const CBlock& block, CBloomFilter* filter, const std:
             TRANSACTION_PROVIDER_UPDATE_REGISTRAR,
             TRANSACTION_PROVIDER_UPDATE_REVOKE,
             TRANSACTION_COINBASE,
+            TRANSACTION_ASSET_LOCK,
     };
 
     for (unsigned int i = 0; i < block.vtx.size(); i++)

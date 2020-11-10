@@ -249,6 +249,14 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].nThresholdMin = 2420;   // 60% of 4032
         consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].nFalloffCoeff = 5;      // this corresponds to 10 periods
 
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].bit = 8;
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].nStartTime = 999999999999ULL; // TODO ENABLE BEFORE FINAL RELEASE
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].nTimeout = 999999999999ULL;   // TODO ENABLE BEFORE FINAL RELEASE
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].nWindowSize = 4032;
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].nThresholdStart = 3226; // 80% of 4032
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].nThresholdMin = 2420;   // 60% of 4032
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].nFalloffCoeff = 5;      // this corresponds to 10 periods
+
         // The best chain should have at least this much work.
         consensus.nMinimumChainWork = uint256S("0x00000000000000000000000000000000000000000000549cd3ccb81a55892330"); // 1450000
 
@@ -473,6 +481,14 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].nThresholdMin = 60;   // 60% of 100
         consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].nFalloffCoeff = 5;      // this corresponds to 10 periods
 
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].bit = 8;
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].nStartTime = 999999999999ULL; // TODO ENABLE BEFORE INITIAL RC
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].nTimeout = 999999999999ULL;
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].nWindowSize = 100;
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].nThresholdStart = 80; // 80% of 4032
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].nThresholdMin = 60;   // 60% of 4032
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].nFalloffCoeff = 5;      // this corresponds to 10 periods
+
         // The best chain should have at least this much work.
         consensus.nMinimumChainWork = uint256S("0x000000000000000000000000000000000000000000000000022f14ac5d56b5ef"); // 470000
 
@@ -667,6 +683,14 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].nThresholdStart = 80; // 80% of 100
         consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].nThresholdMin = 60;   // 60% of 100
         consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].nFalloffCoeff = 5;    // this corresponds to 10 periods
+
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].bit = 8;
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].nStartTime = 999999999999ULL; // TODO ENABLE
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].nTimeout = 999999999999ULL;
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].nWindowSize = 100;
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].nThresholdStart = 80; // 80% of 4032
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].nThresholdMin = 60;   // 60% of 4032
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].nFalloffCoeff = 5;      // this corresponds to 10 periods
 
         // The best chain should have at least this much work.
         consensus.nMinimumChainWork = uint256S("0x000000000000000000000000000000000000000000000000000000000000000");
@@ -906,6 +930,14 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].nThresholdStart = 240; // 80% of 300
         consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].nThresholdMin = 180;   // 60% of 300
         consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].nFalloffCoeff = 5;     // this corresponds to 10 periods
+
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].bit = 8;
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].nStartTime = 0; // TODO ENABLE BEFORE FINAL RELEASE
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].nTimeout = 999999999999ULL;   // TODO ENABLE BEFORE FINAL RELEASE
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].nWindowSize = 100;
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].nThresholdStart = 80; // 80% of 4032
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].nThresholdMin = 60;   // 60% of 4032
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIPCREDITLOCKS].nFalloffCoeff = 5;      // this corresponds to 10 periods
 
         // The best chain should have at least this much work.
         consensus.nMinimumChainWork = uint256S("0x00");

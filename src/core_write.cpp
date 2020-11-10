@@ -310,6 +310,8 @@ void TxToUniv(const CTransaction& tx, const uint256& hashBlock, UniValue& entry,
             mnhfTx.ToJson(obj);
             entry.pushKV("mnhfTx", obj);
         }
+    } else if (tx.nType == TRANSACTION_ASSET_LOCK) {
+        // TODO TRANSACTION_ASSET_LOCK stuff
     }
 
     if (!hashBlock.IsNull())
