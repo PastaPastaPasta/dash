@@ -3,4 +3,6 @@ on:
     branches:
     - master
 
-run: exit 1
+jobs:
+  fail:
+    run: exit 1
