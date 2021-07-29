@@ -1,0 +1,6 @@
+on:
+  pull_request:
+    branches:
+    - master
+
+run: exit 1
