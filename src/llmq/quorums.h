@@ -246,8 +246,8 @@ private:
     /// should receive the same number of request if all active llmqType members requests data from one llmqType quorum.
     static size_t GetQuorumRecoveryStartOffset(const CQuorumCPtr& pQuorum, const CBlockIndex* pIndex);
 
-    void StartCachePopulatorThread(const CQuorumCPtr pQuorum) const;
-    void StartQuorumDataRecoveryThread(const CQuorumCPtr pQuorum, const CBlockIndex* pIndex, uint16_t nDataMask) const;
+    void StartCachePopulatorThread(const CQuorumCPtr& pQuorum) const;
+    void StartQuorumDataRecoveryThread(const CQuorumCPtr& pQuorum, const CBlockIndex* pIndex, uint16_t nDataMask) const;
 };
 
 extern CQuorumManager* quorumManager;

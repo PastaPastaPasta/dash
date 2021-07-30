@@ -733,7 +733,7 @@ void CQuorumManager::ProcessMessage(CNode* pFrom, const std::string& strCommand,
     }
 }
 
-void CQuorumManager::StartCachePopulatorThread(const CQuorumCPtr pQuorum) const
+void CQuorumManager::StartCachePopulatorThread(const CQuorumCPtr& pQuorum) const
 {
     if (!pQuorum->HasVerificationVector()) {
         return;
@@ -753,7 +753,7 @@ void CQuorumManager::StartCachePopulatorThread(const CQuorumCPtr pQuorum) const
     });
 }
 
-void CQuorumManager::StartQuorumDataRecoveryThread(const CQuorumCPtr pQuorum, const CBlockIndex* pIndex, uint16_t nDataMaskIn) const
+void CQuorumManager::StartQuorumDataRecoveryThread(const CQuorumCPtr& pQuorum, const CBlockIndex* pIndex, uint16_t nDataMaskIn) const
 {
     if (pQuorum->fQuorumDataRecoveryThreadRunning) {
         LogPrint(BCLog::LLMQ, "CQuorumManager::%s -- Already running\n", __func__);
