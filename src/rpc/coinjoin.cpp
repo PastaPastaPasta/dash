@@ -89,7 +89,7 @@ static UniValue getpoolinfo(const JSONRPCRequest& request)
 
 static UniValue getcoinjoininfo(const JSONRPCRequest& request)
 {
-    if (request.fHelp || request.params.size() != 0) {
+    if (request.fHelp || !request.params.empty()) {
         throw std::runtime_error(
                 "getcoinjoininfo\n"
                 "Returns an object containing an information about CoinJoin settings and state.\n"
@@ -147,7 +147,7 @@ static UniValue getcoinjoininfo(const JSONRPCRequest& request)
     obj.pushKV("queue_size", coinJoinClientQueueManager.GetQueueSize());
 
     std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    CWallet* const pwallet = wallet.get();
+    const CWallet* const pwallet = wallet.get();
     if (!pwallet) {
         return obj;
     }

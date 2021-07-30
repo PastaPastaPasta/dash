@@ -37,7 +37,7 @@ extern UniValue sendrawtransaction(const JSONRPCRequest& request);
 class CWallet;
 #endif//ENABLE_WALLET
 
-static std::string GetHelpString(int nParamNum, std::string strParamName)
+static std::string GetHelpString(int nParamNum, const std::string& strParamName)
 {
     static const std::map<std::string, std::string> mapParamHelp = {
         {"collateralAddress",
@@ -441,12 +441,11 @@ static UniValue protx_register(const JSONRPCRequest& request)
     if (isFundRegister) {
         CTxDestination collateralDest = DecodeDestination(request.params[paramIdx].get_str());
         if (!IsValidDestination(collateralDest)) {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, strprintf("invalid collaterall address: %s", request.params[paramIdx].get_str()));
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, strprintf("invalid collateral address: %s", request.params[paramIdx].get_str()));
         }
         CScript collateralScript = GetScriptForDestination(collateralDest);
 
-        CTxOut collateralTxOut(collateralAmount, collateralScript);
-        tx.vout.emplace_back(collateralTxOut);
+        tx.vout.emplace_back(collateralAmount, collateralScript);
 
         paramIdx++;
     } else {
@@ -892,29 +891,26 @@ static void protx_list_help()
 }
 
 #ifdef ENABLE_WALLET
-static bool CheckWalletOwnsKey(CWallet* pwallet, const CKeyID& keyID) {
+static bool CheckWalletOwnsKey(const CWallet* pwallet, const CKeyID& keyID) {
     if (!pwallet) {
         return false;
     }
     return pwallet->HaveKey(keyID);
 }
 
-static bool CheckWalletOwnsScript(CWallet* pwallet, const CScript& script) {
+static bool CheckWalletOwnsScript(const CWallet* pwallet, const CScript& script) {
     if (!pwallet) {
         return false;
     }
 
     CTxDestination dest;
-    if (ExtractDestination(script, dest)) {
-        if ((boost::get<CKeyID>(&dest) && pwallet->HaveKey(*boost::get<CKeyID>(&dest))) || (boost::get<CScriptID>(&dest) && pwallet->HaveCScript(*boost::get<CScriptID>(&dest)))) {
-            return true;
-        }
-    }
-    return false;
+    return ExtractDestination(script, dest) &&
+           ((boost::get<CKeyID>(&dest) && pwallet->HaveKey(*boost::get<CKeyID>(&dest))) ||
+            (boost::get<CScriptID>(&dest) && pwallet->HaveCScript(*boost::get<CScriptID>(&dest))));
 }
 #endif
 
-static UniValue BuildDMNListEntry(CWallet* pwallet, const CDeterministicMNCPtr& dmn, bool detailed)
+static UniValue BuildDMNListEntry(const CWallet* pwallet, const CDeterministicMNCPtr& dmn, bool detailed)
 {
     if (!detailed) {
         return dmn->proTxHash.ToString();
@@ -992,7 +988,7 @@ static UniValue protx_list(const JSONRPCRequest& request)
             protx_list_help();
         }
 
-        bool detailed = !request.params[2].isNull() ? ParseBoolV(request.params[2], "detailed") : false;
+        bool detailed = !request.params[2].isNull() && ParseBoolV(request.params[2], "detailed");
 
         int height = !request.params[3].isNull() ? ParseInt32V(request.params[3], "height") : chainActive.Height();
         if (height < 1 || height > chainActive.Height()) {
@@ -1024,7 +1020,7 @@ static UniValue protx_list(const JSONRPCRequest& request)
 
         LOCK(cs_main);
 
-        bool detailed = !request.params[2].isNull() ? ParseBoolV(request.params[2], "detailed") : false;
+        bool detailed = !request.params[2].isNull() && ParseBoolV(request.params[2], "detailed");
 
         int height = !request.params[3].isNull() ? ParseInt32V(request.params[3], "height") : chainActive.Height();
         if (height < 1 || height > chainActive.Height()) {
@@ -1095,7 +1091,7 @@ static void protx_diff_help()
     );
 }
 
-static uint256 ParseBlock(const UniValue& v, std::string strName)
+static uint256 ParseBlock(const UniValue& v, const std::string& strName)
 {
     AssertLockHeld(cs_main);
 

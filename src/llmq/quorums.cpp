@@ -300,7 +300,7 @@ void CQuorumManager::EnsureQuorumConnections(Consensus::LLMQType llmqType, const
     }
 }
 
-CQuorumPtr CQuorumManager::BuildQuorumFromCommitment(const Consensus::LLMQType llmqType, const CBlockIndex* pindexQuorum) const
+CQuorumPtr CQuorumManager::BuildQuorumFromCommitment(Consensus::LLMQType llmqType, const CBlockIndex* pindexQuorum) const
 {
     AssertLockHeld(quorumsCacheCs);
     assert(pindexQuorum);
@@ -314,7 +314,7 @@ CQuorumPtr CQuorumManager::BuildQuorumFromCommitment(const Consensus::LLMQType l
     assert(qc->quorumHash == pindexQuorum->GetBlockHash());
 
     auto quorum = std::make_shared<CQuorum>(llmq::GetLLMQParams(llmqType), blsWorker);
-    auto members = CLLMQUtils::GetAllQuorumMembers((Consensus::LLMQType)qc->llmqType, pindexQuorum);
+    auto members = CLLMQUtils::GetAllQuorumMembers(qc->llmqType, pindexQuorum);
 
     quorum->Init(qc, pindexQuorum, minedBlockHash, members);
 
@@ -347,7 +347,7 @@ bool CQuorumManager::BuildQuorumContributions(const CFinalCommitmentPtr& fqc, co
     std::vector<uint16_t> memberIndexes;
     std::vector<BLSVerificationVectorPtr> vvecs;
     BLSSecretKeyVector skContributions;
-    if (!dkgManager.GetVerifiedContributions((Consensus::LLMQType)fqc->llmqType, quorum->pindexQuorum, fqc->validMembers, memberIndexes, vvecs, skContributions)) {
+    if (!dkgManager.GetVerifiedContributions(fqc->llmqType, quorum->pindexQuorum, fqc->validMembers, memberIndexes, vvecs, skContributions)) {
         return false;
     }
 
@@ -452,7 +452,7 @@ std::vector<CQuorumCPtr> CQuorumManager::ScanQuorums(Consensus::LLMQType llmqTyp
             }
             // If we have cached quorums but not enough, subtract what we have from the count and the set correct index where to start
             // scanning for the rests
-            if(vecResultQuorums.size() > 0) {
+            if (vecResultQuorums.size() > 0) {
                 nScanCommitments -= vecResultQuorums.size();
                 pIndexScanCommitments = (void*)vecResultQuorums.back()->pindexQuorum->pprev;
             }
@@ -521,7 +521,7 @@ CQuorumCPtr CQuorumManager::GetQuorum(Consensus::LLMQType llmqType, const CBlock
     return BuildQuorumFromCommitment(llmqType, pindexQuorum);
 }
 
-size_t CQuorumManager::GetQuorumRecoveryStartOffset(const CQuorumCPtr pQuorum, const CBlockIndex* pIndex) const
+size_t CQuorumManager::GetQuorumRecoveryStartOffset(const CQuorumCPtr& pQuorum, const CBlockIndex* pIndex)
 {
     auto mns = deterministicMNManager->GetListForBlock(pIndex);
     std::vector<uint256> vecProTxHashes;

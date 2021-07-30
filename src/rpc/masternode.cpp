@@ -308,7 +308,7 @@ static UniValue masternode_winners(const JSONRPCRequest& request)
     if (request.fHelp || request.params.size() > 3)
         masternode_winners_help();
 
-    const CBlockIndex* pindexTip{nullptr};
+    const CBlockIndex* pindexTip;
     {
         LOCK(cs_main);
         pindexTip = chainActive.Tip();
@@ -316,7 +316,7 @@ static UniValue masternode_winners(const JSONRPCRequest& request)
     }
 
     int nCount = 10;
-    std::string strFilter = "";
+    std::string strFilter;
 
     if (!request.params[1].isNull()) {
         nCount = atoi(request.params[1].get_str());
@@ -388,12 +388,11 @@ static UniValue masternode_payments(const JSONRPCRequest& request)
         masternode_payments_help();
     }
 
-    CBlockIndex* pindex{nullptr};
-
     if (g_txindex) {
         g_txindex->BlockUntilSyncedToCurrentChain();
     }
 
+    CBlockIndex* pindex;
     if (request.params[1].isNull()) {
         LOCK(cs_main);
         pindex = chainActive.Tip();
@@ -419,14 +418,14 @@ static UniValue masternode_payments(const JSONRPCRequest& request)
         }
 
         // Note: we have to actually calculate block reward from scratch instead of simply querying coinbase vout
-        // because miners might collect less coins than they potentially could and this would break our calculations.
+        // because miners might collect fewer coins than they potentially could and this would break our calculations.
         CAmount nBlockFees{0};
         for (const auto& tx : block.vtx) {
             if (tx->IsCoinBase()) {
                 continue;
             }
             CAmount nValueIn{0};
-            for (const auto txin : tx->vin) {
+            for (const auto& txin : tx->vin) {
                 CTransactionRef txPrev;
                 uint256 blockHashTmp;
                 GetTransaction(txin.prevout.hash, txPrev, Params().GetConsensus(), blockHashTmp);
@@ -552,7 +551,7 @@ static UniValue masternode(const JSONRPCRequest& request)
 static UniValue masternodelist(const JSONRPCRequest& request)
 {
     std::string strMode = "json";
-    std::string strFilter = "";
+    std::string strFilter;
 
     if (!request.params[0].isNull()) strMode = request.params[0].get_str();
     if (!request.params[1].isNull()) strFilter = request.params[1].get_str();
@@ -573,10 +572,10 @@ static UniValue masternodelist(const JSONRPCRequest& request)
 
     auto mnList = deterministicMNManager->GetListAtChainTip();
     auto dmnToStatus = [&](const CDeterministicMNCPtr& dmn) {
-        if (mnList.IsMNValid(dmn)) {
+        if (CDeterministicMNList::IsMNValid(dmn)) {
             return "ENABLED";
         }
-        if (mnList.IsMNPoSeBanned(dmn)) {
+        if (CDeterministicMNList::IsMNPoSeBanned(dmn)) {
             return "POSE_BANNED";
         }
         return "UNKNOWN";
@@ -611,7 +610,7 @@ static UniValue masternodelist(const JSONRPCRequest& request)
 
         if (strMode == "addr") {
             std::string strAddress = dmn->pdmnState->addr.ToString(false);
-            if (strFilter !="" && strAddress.find(strFilter) == std::string::npos &&
+            if (strFilter != "" && strAddress.find(strFilter) == std::string::npos &&
                 strOutpoint.find(strFilter) == std::string::npos) return;
             obj.pushKV(strOutpoint, strAddress);
         } else if (strMode == "full") {
@@ -623,7 +622,7 @@ static UniValue masternodelist(const JSONRPCRequest& request)
                            dmn->pdmnState->nLastPaidHeight << " " <<
                            dmn->pdmnState->addr.ToString();
             std::string strFull = streamFull.str();
-            if (strFilter !="" && strFull.find(strFilter) == std::string::npos &&
+            if (strFilter != "" && strFull.find(strFilter) == std::string::npos &&
                 strOutpoint.find(strFilter) == std::string::npos) return;
             obj.pushKV(strOutpoint, strFull);
         } else if (strMode == "info") {
@@ -633,7 +632,7 @@ static UniValue masternodelist(const JSONRPCRequest& request)
                            payeeStr << " " <<
                            dmn->pdmnState->addr.ToString();
             std::string strInfo = streamInfo.str();
-            if (strFilter !="" && strInfo.find(strFilter) == std::string::npos &&
+            if (strFilter != "" && strInfo.find(strFilter) == std::string::npos &&
                 strOutpoint.find(strFilter) == std::string::npos) return;
             obj.pushKV(strOutpoint, strInfo);
         } else if (strMode == "json") {
@@ -649,7 +648,7 @@ static UniValue masternodelist(const JSONRPCRequest& request)
                            collateralAddressStr << " " <<
                            dmn->pdmnState->pubKeyOperator.Get().ToString();
             std::string strInfo = streamInfo.str();
-            if (strFilter !="" && strInfo.find(strFilter) == std::string::npos &&
+            if (strFilter != "" && strInfo.find(strFilter) == std::string::npos &&
                 strOutpoint.find(strFilter) == std::string::npos) return;
             UniValue objMN(UniValue::VOBJ);
             objMN.pushKV("proTxHash", dmn->proTxHash.ToString());
@@ -664,28 +663,28 @@ static UniValue masternodelist(const JSONRPCRequest& request)
             objMN.pushKV("pubkeyoperator", dmn->pdmnState->pubKeyOperator.Get().ToString());
             obj.pushKV(strOutpoint, objMN);
         } else if (strMode == "lastpaidblock") {
-            if (strFilter !="" && strOutpoint.find(strFilter) == std::string::npos) return;
+            if (strFilter != "" && strOutpoint.find(strFilter) == std::string::npos) return;
             obj.pushKV(strOutpoint, dmn->pdmnState->nLastPaidHeight);
         } else if (strMode == "lastpaidtime") {
-            if (strFilter !="" && strOutpoint.find(strFilter) == std::string::npos) return;
+            if (strFilter != "" && strOutpoint.find(strFilter) == std::string::npos) return;
             obj.pushKV(strOutpoint, dmnToLastPaidTime(dmn));
         } else if (strMode == "payee") {
-            if (strFilter !="" && payeeStr.find(strFilter) == std::string::npos &&
+            if (strFilter != "" && payeeStr.find(strFilter) == std::string::npos &&
                 strOutpoint.find(strFilter) == std::string::npos) return;
             obj.pushKV(strOutpoint, payeeStr);
         } else if (strMode == "owneraddress") {
-            if (strFilter !="" && strOutpoint.find(strFilter) == std::string::npos) return;
+            if (strFilter != "" && strOutpoint.find(strFilter) == std::string::npos) return;
             obj.pushKV(strOutpoint, EncodeDestination(dmn->pdmnState->keyIDOwner));
         } else if (strMode == "pubkeyoperator") {
-            if (strFilter !="" && strOutpoint.find(strFilter) == std::string::npos) return;
+            if (strFilter != "" && strOutpoint.find(strFilter) == std::string::npos) return;
             obj.pushKV(strOutpoint, dmn->pdmnState->pubKeyOperator.Get().ToString());
         } else if (strMode == "status") {
             std::string strStatus = dmnToStatus(dmn);
-            if (strFilter !="" && strStatus.find(strFilter) == std::string::npos &&
+            if (strFilter != "" && strStatus.find(strFilter) == std::string::npos &&
                 strOutpoint.find(strFilter) == std::string::npos) return;
             obj.pushKV(strOutpoint, strStatus);
         } else if (strMode == "votingaddress") {
-            if (strFilter !="" && strOutpoint.find(strFilter) == std::string::npos) return;
+            if (strFilter != "" && strOutpoint.find(strFilter) == std::string::npos) return;
             obj.pushKV(strOutpoint, EncodeDestination(dmn->pdmnState->keyIDVoting));
         }
     });

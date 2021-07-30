@@ -194,7 +194,7 @@ static UniValue gobject_prepare(const JSONRPCRequest& request)
     LOCK2(cs_main, mempool.cs);
     LOCK(pwallet->cs_wallet);
 
-    std::string strError = "";
+    std::string strError;
     if (!govobj.IsValidLocally(strError, false))
         throw JSONRPCError(RPC_INTERNAL_ERROR, "Governance object is not valid - " + govobj.GetHash().ToString() + " - " + strError);
 
@@ -365,7 +365,7 @@ static UniValue gobject_submit(const JSONRPCRequest& request)
 
     std::string strHash = govobj.GetHash().ToString();
 
-    std::string strError = "";
+    std::string strError;
     bool fMissingConfirmations;
     {
         if (g_txindex) {
@@ -436,7 +436,7 @@ static UniValue gobject_vote_conf(const JSONRPCRequest& request)
     int govObjType;
     {
         LOCK(governance.cs);
-        CGovernanceObject *pGovObj = governance.FindGovernanceObject(hash);
+        const CGovernanceObject* pGovObj = governance.FindGovernanceObject(hash);
         if (!pGovObj) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Governance object not found");
         }
@@ -509,14 +509,12 @@ static UniValue VoteWithMasternodes(const std::map<uint256, CKey>& keys,
                              const uint256& hash, vote_signal_enum_t eVoteSignal,
                              vote_outcome_enum_t eVoteOutcome)
 {
-    int govObjType;
     {
         LOCK(governance.cs);
-        CGovernanceObject *pGovObj = governance.FindGovernanceObject(hash);
+        const CGovernanceObject *pGovObj = governance.FindGovernanceObject(hash);
         if (!pGovObj) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Governance object not found");
         }
-        govObjType = pGovObj->GetObjectType();
     }
 
     int nSuccessful = 0;
@@ -730,7 +728,7 @@ static UniValue ListObjects(const std::string& strCachedSignal, const std::strin
         bObj.pushKV("AbstainCount",  pGovObj->GetAbstainCount(VOTE_SIGNAL_FUNDING));
 
         // REPORT VALIDITY AND CACHING FLAGS FOR VARIOUS SETTINGS
-        std::string strError = "";
+        std::string strError;
         bObj.pushKV("fBlockchainValidity",  pGovObj->IsValidLocally(strError, false));
         bObj.pushKV("IsValidReason",  strError.c_str());
         bObj.pushKV("fCachedValid",  pGovObj->IsSetCachedValid());
@@ -835,7 +833,7 @@ static UniValue gobject_get(const JSONRPCRequest& request)
     LOCK2(cs_main, governance.cs);
 
     // FIND THE GOVERNANCE OBJECT THE USER IS LOOKING FOR
-    CGovernanceObject* pGovObj = governance.FindGovernanceObject(hash);
+    const CGovernanceObject* pGovObj = governance.FindGovernanceObject(hash);
 
     if (pGovObj == nullptr) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Unknown governance object");
@@ -932,7 +930,7 @@ static UniValue gobject_getcurrentvotes(const JSONRPCRequest& request)
 
     LOCK(governance.cs);
 
-    CGovernanceObject* pGovObj = governance.FindGovernanceObject(hash);
+    const CGovernanceObject* pGovObj = governance.FindGovernanceObject(hash);
 
     if (pGovObj == nullptr) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Unknown governance-hash");
@@ -1068,7 +1066,7 @@ static UniValue voteraw(const JSONRPCRequest& request)
     int govObjType;
     {
         LOCK(governance.cs);
-        CGovernanceObject *pGovObj = governance.FindGovernanceObject(hashGovObj);
+        const CGovernanceObject *pGovObj = governance.FindGovernanceObject(hashGovObj);
         if (!pGovObj) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Governance object not found");
         }

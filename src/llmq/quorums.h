@@ -244,7 +244,7 @@ private:
     /// Returns the start offset for the masternode with the given proTxHash. This offset is applied when picking data recovery members of a quorum's
     /// memberlist and is calculated based on a list of all member of all active quorums for the given llmqType in a way that each member
     /// should receive the same number of request if all active llmqType members requests data from one llmqType quorum.
-    size_t GetQuorumRecoveryStartOffset(const CQuorumCPtr pQuorum, const CBlockIndex* pIndex) const;
+    static size_t GetQuorumRecoveryStartOffset(const CQuorumCPtr& pQuorum, const CBlockIndex* pIndex);
 
     void StartCachePopulatorThread(const CQuorumCPtr pQuorum) const;
     void StartQuorumDataRecoveryThread(const CQuorumCPtr pQuorum, const CBlockIndex* pIndex, uint16_t nDataMask) const;

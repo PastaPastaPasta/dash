@@ -104,13 +104,13 @@ EXPECTED_CIRCULAR_DEPENDENCIES=(
     "evo/deterministicmns -> evo/simplifiedmns -> llmq/quorums_blockprocessor -> net_processing -> masternode/masternode-payments -> evo/deterministicmns"
     "core_io -> evo/cbtx -> llmq/quorums_blockprocessor -> net_processing -> masternode/masternode-payments -> governance/governance-classes -> core_io"
     "evo/deterministicmns -> evo/simplifiedmns -> llmq/quorums_blockprocessor -> net_processing -> masternode/masternode-payments -> masternode/activemasternode -> evo/deterministicmns"
-    "evo/deterministicmns -> evo/simplifiedmns -> llmq/quorums_blockprocessor -> net -> masternode/masternode-sync -> evo/deterministicmns"
     "governance/governance -> net_processing -> masternode/masternode-payments -> governance/governance"
     "core_io -> evo/cbtx -> llmq/quorums_blockprocessor -> net_processing -> masternode/masternode-payments -> governance/governance-classes -> governance/governance-object -> core_io"
     "evo/deterministicmns -> evo/simplifiedmns -> llmq/quorums_blockprocessor -> net_processing -> masternode/masternode-payments -> governance/governance-classes -> governance/governance-object -> evo/deterministicmns"
-    "evo/deterministicmns -> evo/simplifiedmns -> llmq/quorums_blockprocessor -> net -> evo/deterministicmns"
     "evo/deterministicmns -> evo/simplifiedmns -> llmq/quorums_blockprocessor -> net_processing -> masternode/masternode-payments -> governance/governance-classes -> governance/governance-object -> governance/governance-vote -> evo/deterministicmns"
-    "coinjoin/coinjoin -> llmq/quorums_chainlocks -> net -> coinjoin/coinjoin"
+    "coinjoin/coinjoin -> net -> coinjoin/coinjoin"
+    "evo/deterministicmns -> llmq/quorums_utils -> net -> evo/deterministicmns"
+    "evo/deterministicmns -> llmq/quorums_utils -> net -> masternode/masternode-sync -> evo/deterministicmns"
 )
 
 EXIT_CODE=0
