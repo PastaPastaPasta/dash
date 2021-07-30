@@ -10,6 +10,7 @@
 #include <core_io.h>
 #include <masternode/masternode-meta.h>
 #include <masternode/masternode-sync.h>
+#include <net.h>
 #include <net_processing.h>
 #include <netmessagemaker.h>
 #include <script/interpreter.h>

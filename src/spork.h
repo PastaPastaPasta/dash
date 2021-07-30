@@ -6,11 +6,15 @@
 #define BITCOIN_SPORK_H
 
 #include <hash.h>
-#include <net.h>
 #include <util/strencodings.h>
 #include <key.h>
+#include <sync.h>
 
 #include <unordered_map>
+
+class CConnman;
+class CDataStream;
+class CNode;
 
 class CSporkMessage;
 class CSporkManager;

@@ -6,6 +6,7 @@
 #include <index/txindex.h>
 #include <rpc/server.h>
 #include <validation.h>
+#include <net.h>
 
 #include <masternode/activemasternode.h>
 #include <evo/deterministicmns.h>

@@ -6,7 +6,6 @@
 #define BITCOIN_LLMQ_QUORUMS_SIGNING_SHARES_H
 
 #include <chainparams.h>
-#include <net.h>
 #include <random.h>
 #include <saltedhasher.h>
 #include <serialize.h>
@@ -18,6 +17,7 @@
 
 class CEvoDB;
 class CScheduler;
+class CConnman;
 
 namespace llmq
 {

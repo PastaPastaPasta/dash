@@ -8,6 +8,7 @@
 #include <consensus/validation.h>
 #include <chain.h>
 #include <messagesigner.h>
+#include <net.h>
 #include <netmessagemaker.h>
 #include <txmempool.h>
 #include <util/system.h>

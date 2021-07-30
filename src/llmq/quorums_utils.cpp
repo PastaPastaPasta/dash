@@ -14,6 +14,7 @@
 #include <spork.h>
 #include <validation.h>
 #include <versionbits.h>
+#include <net.h>
 
 #include <masternode/masternode-meta.h>
 

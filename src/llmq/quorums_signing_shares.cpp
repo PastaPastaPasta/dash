@@ -12,10 +12,10 @@
 #include <evo/deterministicmns.h>
 #include <masternode/activemasternode.h>
 #include <bls/bls_batchverifier.h>
+#include <net.h>
 #include <net_processing.h>
 #include <netmessagemaker.h>
 #include <spork.h>
-#include <validation.h>
 
 #include <cxxtimer.hpp>
 

@@ -8,7 +8,6 @@
 #include <bls/bls.h>
 #include <chainparams.h>
 #include <llmq/quorums_signing.h>
-#include <net.h>
 #include <saltedhasher.h>
 #include <streams.h>
 #include <sync.h>

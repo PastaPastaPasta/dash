@@ -6,9 +6,10 @@
 #define BITCOIN_COINJOIN_COINJOIN_SERVER_H
 
 #include <coinjoin/coinjoin.h>
-#include <net.h>
 
 class CCoinJoinServer;
+class CDataStream;
+class CNode;
 class UniValue;
 
 // The main object for accessing mixing

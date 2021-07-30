@@ -8,6 +8,7 @@
 #include <key_io.h>
 #include <validation.h>
 #include <messagesigner.h>
+#include <net.h>
 #include <net_processing.h>
 #include <netmessagemaker.h>
 
