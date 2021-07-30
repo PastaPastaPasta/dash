@@ -370,7 +370,7 @@ bool CSporkMessage::Sign(const CKey& key)
     }
 
     CKeyID pubKeyId = key.GetPubKey().GetID();
-    std::string strError = "";
+    std::string strError;
 
     // Harden Spork6 so that it is active on testnet and no other networks
     if (Params().NetworkIDString() == CBaseChainParams::TESTNET) {
@@ -404,7 +404,7 @@ bool CSporkMessage::Sign(const CKey& key)
 
 bool CSporkMessage::CheckSignature(const CKeyID& pubKeyId) const
 {
-    std::string strError = "";
+    std::string strError;
 
     // Harden Spork6 so that it is active on testnet and no other networks
     if (Params().NetworkIDString() == CBaseChainParams::TESTNET) {

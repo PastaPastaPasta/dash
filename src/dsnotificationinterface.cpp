@@ -61,7 +61,7 @@ void CDSNotificationInterface::UpdatedBlockTip(const CBlockIndex *pindexNew, con
 
     CCoinJoin::UpdatedBlockTip(pindexNew);
 #ifdef ENABLE_WALLET
-    for (auto& pair : coinJoinClientManagers) {
+    for (const auto& pair : coinJoinClientManagers) {
         pair.second->UpdatedBlockTip(pindexNew);
     }
 #endif // ENABLE_WALLET
