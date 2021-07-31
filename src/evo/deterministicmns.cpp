@@ -1147,12 +1147,12 @@ void CDeterministicMNManager::UpgradeDiff(CDBBatch& batch, const CBlockIndex* pi
 
     // manually apply updated MNs and calc new state diffs
     for (const auto& p : oldDiff.updatedMNs) {
-        auto oldMN = newMNList.GetMN(p.first);
+        const auto oldMN = newMNList.GetMN(p.first);
         if (!oldMN) {
             throw(std::runtime_error(strprintf("%s: Can't find an old masternode with proTxHash=%s", __func__, p.first.ToString())));
         }
         newMNList.UpdateMN(p.first, p.second);
-        auto newMN = newMNList.GetMN(p.first);
+        const auto newMN = newMNList.GetMN(p.first);
         if (!newMN) {
             throw(std::runtime_error(strprintf("%s: Can't find a new masternode with proTxHash=%s", __func__, p.first.ToString())));
         }
