@@ -368,8 +368,7 @@ void CMasternodeSync::UpdatedBlockTip(const CBlockIndex *pindexNew, bool fInitia
 
     CBlockIndex* pindexTip = WITH_LOCK(cs_main, return pindexBestHeader);
 
-    if (IsSynced() || !pindexTip)
-        return;
+    if (IsSynced() || !pindexTip) return;
 
     if (!IsBlockchainSynced()) {
         // Postpone timeout each time new block arrives while we are still syncing blockchain
