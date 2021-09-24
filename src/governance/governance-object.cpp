@@ -519,7 +519,7 @@ CAmount CGovernanceObject::GetMinCollateralFee() const
     }
 }
 
-bool CGovernanceObject::IsCollateralValid(std::string& strError, bool& fMissingConfirmations) const
+bool CGovernanceObject::IsCollateralValid(std::string& strError, bool& fMissingConfirmations) const EXCLUSIVE_LOCKS_REQUIRED(cs_main)
 {
     strError = "";
     fMissingConfirmations = false;
