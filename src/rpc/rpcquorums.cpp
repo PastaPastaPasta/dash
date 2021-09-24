@@ -61,12 +61,12 @@ static UniValue quorum_list(const JSONRPCRequest& request)
 
     CBlockIndex* pindexTip = WITH_LOCK(cs_main, return chainActive.Tip());
 
-    for (auto& type : llmq::CLLMQUtils::GetEnabledQuorumTypes(pindexTip)) {
+    for (const auto& type : llmq::CLLMQUtils::GetEnabledQuorumTypes(pindexTip)) {
         const auto& llmq_params = llmq::GetLLMQParams(type);
         UniValue v(UniValue::VARR);
 
         auto quorums = llmq::quorumManager->ScanQuorums(type, pindexTip, count > -1 ? count : llmq_params.signingActiveQuorumCount);
-        for (auto& q : quorums) {
+        for (const auto& q : quorums) {
             v.push_back(q->qc->quorumHash.ToString());
         }
 

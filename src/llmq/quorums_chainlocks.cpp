@@ -440,7 +440,7 @@ CChainLocksHandler::BlockTxs::mapped_type CChainLocksHandler::GetBlockTxs(const 
             }
 
             ret = std::make_shared<std::unordered_set<uint256, StaticSaltedHasher>>();
-            for (auto& tx : block.vtx) {
+            for (const auto& tx : block.vtx) {
                 if (tx->IsCoinBase() || tx->vin.empty()) {
                     continue;
                 }
