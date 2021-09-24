@@ -865,7 +865,6 @@ void CGovernanceManager::CheckPostponedObjects(CConnman& connman)
             } else {
                 LogPrint(BCLog::GOBJECT, "CGovernanceManager::CheckPostponedObjects -- %s invalid\n", nHash.ToString());
             }
-
         } else if (fMissingConfirmations) {
             // wait for more confirmations
             ++it;
@@ -875,7 +874,6 @@ void CGovernanceManager::CheckPostponedObjects(CConnman& connman)
         // remove processed or invalid object from the queue
         mapPostponedObjects.erase(it++);
     }
-
 
     // Perform additional relays for triggers
     int64_t nNow = GetAdjustedTime();
@@ -900,7 +898,6 @@ void CGovernanceManager::CheckPostponedObjects(CConnman& connman)
                     continue;
                 }
             }
-
         } else {
             LogPrint(BCLog::GOBJECT, "CGovernanceManager::CheckPostponedObjects -- additional relay of unknown object: %s\n", it->ToString());
         }
