@@ -53,7 +53,10 @@ public:
     CBLSLazyPublicKey pubKeyOperator;
     CKeyID keyIDVoting;
     CService addr;
+
+    uint16_t nVersion;
     CScript scriptPayout;
+    std::vector<ScriptPercentage> scriptPayouts;
     CScript scriptOperatorPayout;
 
 public:
@@ -65,6 +68,8 @@ public:
         keyIDVoting = proTx.keyIDVoting;
         addr = proTx.addr;
         scriptPayout = proTx.scriptPayout;
+        scriptPayouts = proTx.scriptPayouts;
+        nVersion = proTx.nVersion;
     }
     template <typename Stream>
     CDeterministicMNState(deserialize_type, Stream& s)

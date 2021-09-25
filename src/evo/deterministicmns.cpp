@@ -839,7 +839,9 @@ bool CDeterministicMNManager::BuildNewListFromBlock(const CBlock& block, const C
             }
             newState->pubKeyOperator.Set(proTx.pubKeyOperator);
             newState->keyIDVoting = proTx.keyIDVoting;
-            newState->scriptPayout = proTx.scriptPayout;
+            if (newState->nVersion == 1) {
+                newState->scriptPayout = proTx.scriptPayout;
+            }
 
             newList.UpdateMN(proTx.proTxHash, newState);
 

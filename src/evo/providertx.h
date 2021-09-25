@@ -17,10 +17,12 @@ class CBlockIndex;
 class CCoinsViewCache;
 class CValidationState;
 
+typedef std::pair<CScript, uint16_t> ScriptPercentage;
+
 class CProRegTx
 {
 public:
-    static constexpr uint16_t CURRENT_VERSION = 1;
+    static constexpr uint16_t CURRENT_VERSION = 2;
 
     uint16_t nVersion{CURRENT_VERSION};                    // message version
     uint16_t nType{0};                                     // only 0 supported for now
@@ -32,6 +34,7 @@ public:
     CKeyID keyIDVoting;
     uint16_t nOperatorReward{0};
     CScript scriptPayout;
+    std::vector<ScriptPercentage> scriptPayouts;
     uint256 inputsHash; // replay protection
     std::vector<unsigned char> vchSig;
 
@@ -48,6 +51,7 @@ public:
                 obj.keyIDVoting,
                 obj.nOperatorReward,
                 obj.scriptPayout,
+                obj.scriptPayouts,
                 obj.inputsHash
                 );
         if (!(s.GetType() & SER_GETHASH)) {
@@ -72,9 +76,20 @@ public:
         obj.pushKV("ownerAddress", EncodeDestination(keyIDOwner));
         obj.pushKV("votingAddress", EncodeDestination(keyIDVoting));
 
-        CTxDestination dest;
-        if (ExtractDestination(scriptPayout, dest)) {
-            obj.pushKV("payoutAddress", EncodeDestination(dest));
+        if (nVersion == 1) {
+            CTxDestination dest;
+            if (ExtractDestination(scriptPayout, dest)) {
+                obj.pushKV("payoutAddress", EncodeDestination(dest));
+            }
+        } else if (nVersion > 1) {
+            UniValue obj2;
+            for (const auto& sp : scriptPayouts) {
+                CTxDestination dest;
+                if (ExtractDestination(sp.first, dest)) {
+                    obj2.pushKV(EncodeDestination(dest), (double)sp.second / 100);
+                }
+            }
+            obj.push_back(obj2);
         }
         obj.pushKV("pubKeyOperator", pubKeyOperator.ToString());
         obj.pushKV("operatorReward", (double)nOperatorReward / 100);
@@ -86,7 +101,7 @@ public:
 class CProUpServTx
 {
 public:
-    static constexpr uint16_t CURRENT_VERSION = 1;
+    static constexpr uint16_t CURRENT_VERSION = 2;
 
     uint16_t nVersion{CURRENT_VERSION}; // message version
     uint256 proTxHash;

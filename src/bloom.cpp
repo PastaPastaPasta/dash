@@ -163,9 +163,9 @@ bool CBloomFilter::CheckSpecialTransactionMatchesAndUpdate(const CTransaction &t
     case(TRANSACTION_PROVIDER_REGISTER): {
         CProRegTx proTx;
         if (GetTxPayload(tx, proTx)) {
-            if(contains(proTx.collateralOutpoint) ||
-                    contains(proTx.keyIDOwner) ||
-                    contains(proTx.keyIDVoting) ||
+            if (contains(proTx.collateralOutpoint) || contains(proTx.keyIDOwner) || contains(proTx.keyIDVoting) ||
+                proTx.nVersion > 1 ?
+                    std::any_of(proTx.scriptPayouts.begin(), proTx.scriptPayouts.end(), [&](const ScriptPercentage& sp){ return CheckScript(sp.first); }) :
                     CheckScript(proTx.scriptPayout)) {
                 if ((nFlags & BLOOM_UPDATE_MASK) == BLOOM_UPDATE_ALL)
                     insert(tx.GetHash());

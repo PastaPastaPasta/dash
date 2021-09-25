@@ -101,11 +101,11 @@ static RPCArg GetHelpString(const std::string& strParamName)
                 "The address must be unused and must differ from the collateralAddress."}
         },
         {"payoutAddress_register",
-            {"payoutAddress_register", RPCArg::Type::STR, /* opt */ false, /* default_val */ "",
+            {"payoutAddress_register", RPCArg::Type::OBJ, /* opt */ false, /* default_val */ "{}",
                 "The dash address to use for masternode reward payments."}
         },
         {"payoutAddress_update",
-            {"payoutAddress_update", RPCArg::Type::STR, /* opt */ false, /* default_val */ "",
+            {"payoutAddress_update", RPCArg::Type::OBJ, /* opt */ false, /* default_val */ "{}",
                 "The dash address to use for masternode reward payments.\n"
                 "If set to an empty string, the currently active payout address is reused."}
         },
@@ -343,7 +343,7 @@ static void protx_register_fund_help(CWallet* const pwallet)
             "\nResult (if \"submit\" is set to false):\n"
             "\"hex\"                         (string) The serialized signed ProTx in hex format.\n"
             "\nExamples:\n"
-            + HelpExampleCli("protx", "register_fund \"XrVhS9LogauRJGJu2sHuryjhpuex4RNPSb\" \"1.2.3.4:1234\" \"Xt9AMWaYSz7tR7Uo7gzXA3m4QmeWgrR3rr\" \"93746e8731c57f87f79b3620a7982924e2931717d49540a85864bd543de11c43fb868fd63e501a1db37e19ed59ae6db4\" \"Xt9AMWaYSz7tR7Uo7gzXA3m4QmeWgrR3rr\" 0 \"XrVhS9LogauRJGJu2sHuryjhpuex4RNPSb\"")
+            + HelpExampleCli("protx", R"(register_fund "XrVhS9LogauRJGJu2sHuryjhpuex4RNPSb" "1.2.3.4:1234" "Xt9AMWaYSz7tR7Uo7gzXA3m4QmeWgrR3rr" "93746e8731c57f87f79b3620a7982924e2931717d49540a85864bd543de11c43fb868fd63e501a1db37e19ed59ae6db4" "Xt9AMWaYSz7tR7Uo7gzXA3m4QmeWgrR3rr" 0 "XrVhS9LogauRJGJu2sHuryjhpuex4RNPSb")")
     );
 }
 
@@ -373,7 +373,7 @@ static void protx_register_help(CWallet* const pwallet)
         "\nResult (if \"submit\" is set to false):\n"
         "\"hex\"                         (string) The serialized signed ProTx in hex format.\n"
         "\nExamples:\n"
-        + HelpExampleCli("protx", "register \"0123456701234567012345670123456701234567012345670123456701234567\" 0 \"1.2.3.4:1234\" \"Xt9AMWaYSz7tR7Uo7gzXA3m4QmeWgrR3rr\" \"93746e8731c57f87f79b3620a7982924e2931717d49540a85864bd543de11c43fb868fd63e501a1db37e19ed59ae6db4\" \"Xt9AMWaYSz7tR7Uo7gzXA3m4QmeWgrR3rr\" 0 \"XrVhS9LogauRJGJu2sHuryjhpuex4RNPSb\"")
+        + HelpExampleCli("protx", R"(register "0123456701234567012345670123456701234567012345670123456701234567" 0 "1.2.3.4:1234" "Xt9AMWaYSz7tR7Uo7gzXA3m4QmeWgrR3rr" "93746e8731c57f87f79b3620a7982924e2931717d49540a85864bd543de11c43fb868fd63e501a1db37e19ed59ae6db4" "Xt9AMWaYSz7tR7Uo7gzXA3m4QmeWgrR3rr" 0 "XrVhS9LogauRJGJu2sHuryjhpuex4RNPSb")")
     );
 }
 
@@ -404,7 +404,7 @@ static void protx_register_prepare_help()
         "                              the collateral key.\n"
         "}\n"
         "\nExamples:\n"
-        + HelpExampleCli("protx", "register_prepare \"0123456701234567012345670123456701234567012345670123456701234567\" 0 \"1.2.3.4:1234\" \"Xt9AMWaYSz7tR7Uo7gzXA3m4QmeWgrR3rr\" \"93746e8731c57f87f79b3620a7982924e2931717d49540a85864bd543de11c43fb868fd63e501a1db37e19ed59ae6db4\" \"Xt9AMWaYSz7tR7Uo7gzXA3m4QmeWgrR3rr\" 0 \"XrVhS9LogauRJGJu2sHuryjhpuex4RNPSb\"")
+        + HelpExampleCli("protx", R"(register_prepare "0123456701234567012345670123456701234567012345670123456701234567" 0 "1.2.3.4:1234" "Xt9AMWaYSz7tR7Uo7gzXA3m4QmeWgrR3rr" "93746e8731c57f87f79b3620a7982924e2931717d49540a85864bd543de11c43fb868fd63e501a1db37e19ed59ae6db4" "Xt9AMWaYSz7tR7Uo7gzXA3m4QmeWgrR3rr" 0 "XrVhS9LogauRJGJu2sHuryjhpuex4RNPSb")")
     );
 }
 
@@ -424,7 +424,7 @@ static void protx_register_submit_help(CWallet* const pwallet)
         "\nResult:\n"
         "\"txid\"                  (string) The transaction id.\n"
         "\nExamples:\n"
-        + HelpExampleCli("protx", "register_submit \"tx\" \"sig\"")
+        + HelpExampleCli("protx", R"(register_submit "tx" "sig")")
     );
 }
 
@@ -512,14 +512,47 @@ static UniValue protx_register(const JSONRPCRequest& request)
     }
     ptx.nOperatorReward = operatorReward;
 
-    CTxDestination payoutDest = DecodeDestination(request.params[paramIdx + 5].get_str());
-    if (!IsValidDestination(payoutDest)) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, strprintf("invalid payout address: %s", request.params[paramIdx + 5].get_str()));
+//    CTxDestination payoutDest = DecodeDestination(request.params[paramIdx + 5].get_str());
+//    if (!IsValidDestination(payoutDest)) {
+//        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, strprintf("invalid payout address: %s", request.params[paramIdx + 5].get_str()));
+//    }
+    const UniValue& options = request.params[paramIdx + 5].get_obj();
+    CTxDestination payoutDest;
+
+//    std::map<std::string,UniValue> kv;
+    std::vector<ScriptPercentage> list;
+//    options.getObjMap(kv);
+//    throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, strprintf("%d", options.getType()));
+//    throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, options.get_str());
+//    UniValue keys(UniValue::VOBJ, options.get_str());
+//    const UniValue& options2 = keys.get_obj();
+//    throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, options2.get_str());
+    for (const auto& key : options.getKeys()) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, std::string("pre-decodedestination"));
+        payoutDest = DecodeDestination(key);
+        if (!IsValidDestination(payoutDest))
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, std::string("Invalid Dash address: ") + key);
+        if (options[key].isNum()) {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, std::string("Invalid amount: ") + options[key].get_str());
+        }
+        if (options[key].get_int() == 0) {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, std::string("Invalid amount: ") + options[key].get_str());
+        }
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, std::string("Invalid amount: ") + options[key].get_str());
+        list.push_back(std::make_pair<CScript, uint16_t>(GetScriptForDestination(payoutDest), (uint16_t) options[key].get_int()));
     }
+    ptx.nVersion = 2;
+    if (list.empty()) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "List is empty");
+    }
+    ptx.scriptPayouts = list;
+
+
+
 
     ptx.pubKeyOperator = pubKeyOperator;
     ptx.keyIDVoting = keyIDVoting;
-    ptx.scriptPayout = GetScriptForDestination(payoutDest);
+//    ptx.scriptPayout = GetScriptForDestination(payoutDest);
 
     if (!isFundRegister) {
         // make sure fee calculation works
@@ -644,7 +677,7 @@ static void protx_update_service_help(CWallet* const pwallet)
         "\nResult:\n"
         "\"txid\"                        (string) The transaction id.\n"
         "\nExamples:\n"
-        + HelpExampleCli("protx", "update_service \"0123456701234567012345670123456701234567012345670123456701234567\" \"1.2.3.4:1234\" 5a2e15982e62f1e0b7cf9783c64cf7e3af3f90a52d6c40f6f95d624c0b1621cd")
+        + HelpExampleCli("protx", R"(update_service "0123456701234567012345670123456701234567012345670123456701234567" "1.2.3.4:1234" 5a2e15982e62f1e0b7cf9783c64cf7e3af3f90a52d6c40f6f95d624c0b1621cd)")
     );
 }
 
@@ -742,7 +775,7 @@ static void protx_update_registrar_help(CWallet* const pwallet)
         "\nResult:\n"
         "\"txid\"                        (string) The transaction id.\n"
         "\nExamples:\n"
-        + HelpExampleCli("protx", "update_registrar \"0123456701234567012345670123456701234567012345670123456701234567\" \"982eb34b7c7f614f29e5c665bc3605f1beeef85e3395ca12d3be49d2868ecfea5566f11cedfad30c51b2403f2ad95b67\" \"XwnLY9Tf7Zsef8gMGL2fhWA9ZmMjt4KPwG\"")
+        + HelpExampleCli("protx", R"(update_registrar "0123456701234567012345670123456701234567012345670123456701234567" "982eb34b7c7f614f29e5c665bc3605f1beeef85e3395ca12d3be49d2868ecfea5566f11cedfad30c51b2403f2ad95b67" "XwnLY9Tf7Zsef8gMGL2fhWA9ZmMjt4KPwG")")
     );
 }
 
@@ -833,7 +866,7 @@ static void protx_revoke_help(CWallet* const pwallet)
             "\nResult:\n"
             "\"txid\"                        (string) The transaction id.\n"
             "\nExamples:\n"
-            + HelpExampleCli("protx", "revoke \"0123456701234567012345670123456701234567012345670123456701234567\" \"072f36a77261cdd5d64c32d97bac417540eddca1d5612f416feb07ff75a8e240\"")
+            + HelpExampleCli("protx", R"(revoke "0123456701234567012345670123456701234567012345670123456701234567" "072f36a77261cdd5d64c32d97bac417540eddca1d5612f416feb07ff75a8e240")")
     );
 }
 
@@ -929,14 +962,14 @@ static void protx_list_help()
 }
 
 #ifdef ENABLE_WALLET
-static bool CheckWalletOwnsKey(CWallet* pwallet, const CKeyID& keyID) {
+static bool CheckWalletOwnsKey(const CWallet* pwallet, const CKeyID& keyID) {
     if (!pwallet) {
         return false;
     }
     return pwallet->HaveKey(keyID);
 }
 
-static bool CheckWalletOwnsScript(CWallet* pwallet, const CScript& script) {
+static bool CheckWalletOwnsScript(const CWallet* pwallet, const CScript& script) {
     if (!pwallet) {
         return false;
     }
@@ -951,7 +984,7 @@ static bool CheckWalletOwnsScript(CWallet* pwallet, const CScript& script) {
 }
 #endif
 
-static UniValue BuildDMNListEntry(CWallet* pwallet, const CDeterministicMNCPtr& dmn, bool detailed)
+static UniValue BuildDMNListEntry(const CWallet* pwallet, const CDeterministicMNCPtr& dmn, bool detailed)
 {
     if (!detailed) {
         return dmn->proTxHash.ToString();
@@ -1159,8 +1192,7 @@ static UniValue protx_diff(const JSONRPCRequest& request)
     uint256 blockHash = ParseBlock(request.params[2], "block");
 
     CSimplifiedMNListDiff mnListDiff;
-    std::string strError;
-    if (!BuildSimplifiedMNListDiff(baseBlockHash, blockHash, mnListDiff, strError)) {
+    if (std::string strError; !BuildSimplifiedMNListDiff(baseBlockHash, blockHash, mnListDiff, strError)) {
         throw std::runtime_error(strError);
     }
 

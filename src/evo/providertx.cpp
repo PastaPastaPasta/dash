@@ -104,19 +104,41 @@ bool CheckProRegTx(const CTransaction& tx, const CBlockIndex* pindexPrev, CValid
     if (ptx.keyIDOwner.IsNull() || !ptx.pubKeyOperator.IsValid() || ptx.keyIDVoting.IsNull()) {
         return state.DoS(10, false, REJECT_INVALID, "bad-protx-key-null");
     }
-    if (!ptx.scriptPayout.IsPayToPublicKeyHash() && !ptx.scriptPayout.IsPayToScriptHash()) {
-        return state.DoS(10, false, REJECT_INVALID, "bad-protx-payee");
+
+    auto checkScript = [&](const CScript& script) {
+        CTxDestination payoutDest;
+        if (!ExtractDestination(ptx.scriptPayout, payoutDest)) {
+            // should not happen as we checked script types before
+            return state.DoS(10, false, REJECT_INVALID, "bad-protx-payee-dest");
+        }
+        // don't allow reuse of payout key for other keys (don't allow people to put the payee key onto an online server)
+        if (payoutDest == CTxDestination(ptx.keyIDOwner) || payoutDest == CTxDestination(ptx.keyIDVoting)) {
+            return state.DoS(10, false, REJECT_INVALID, "bad-protx-payee-reuse");
+        }
+        return true;
+    };
+    if (ptx.nVersion == 1) {
+        if (!ptx.scriptPayout.IsPayToPublicKeyHash() && !ptx.scriptPayout.IsPayToScriptHash()) {
+            return state.DoS(10, false, REJECT_INVALID, "bad-protx-payee");
+        }
+        if (!checkScript(ptx.scriptPayout)) return false;
+    } else if (ptx.nVersion > 1) {
+        // TODO check that we are only doing this on proper activation signals
+        uint16_t total_amount = 0;
+        for (const auto& [script, amount] : ptx.scriptPayouts) {
+            if (!script.IsPayToPublicKeyHash()) {
+                return state.DoS(10, false, REJECT_INVALID, "bad-protx-payees");
+            }
+            total_amount += amount;
+        }
+        if (total_amount != 10000) {
+            return state.DoS(10, false, total_amount, "bad-protx-payees-amount");
+        }
+        for (const auto& sp : ptx.scriptPayouts) {
+            if (!checkScript(sp.first)) return false;
+        }
     }
 
-    CTxDestination payoutDest;
-    if (!ExtractDestination(ptx.scriptPayout, payoutDest)) {
-        // should not happen as we checked script types before
-        return state.DoS(10, false, REJECT_INVALID, "bad-protx-payee-dest");
-    }
-    // don't allow reuse of payout key for other keys (don't allow people to put the payee key onto an online server)
-    if (payoutDest == CTxDestination(ptx.keyIDOwner) || payoutDest == CTxDestination(ptx.keyIDVoting)) {
-        return state.DoS(10, false, REJECT_INVALID, "bad-protx-payee-reuse");
-    }
 
     // It's allowed to set addr to 0, which will put the MN into PoSe-banned state and require a ProUpServTx to be issues later
     // If any of both is set, it must be valid however
@@ -400,10 +422,22 @@ std::string CProRegTx::MakeSignString() const
 
     CTxDestination destPayout;
     std::string strPayout;
-    if (ExtractDestination(scriptPayout, destPayout)) {
-        strPayout = EncodeDestination(destPayout);
-    } else {
-        strPayout = HexStr(scriptPayout);
+    if (nVersion == 1) {
+        if (ExtractDestination(scriptPayout, destPayout)) {
+            strPayout = EncodeDestination(destPayout);
+        } else {
+            strPayout = HexStr(scriptPayout);
+        }
+    } else if (nVersion > 1) {
+        for (auto sp : scriptPayouts) {
+            if (ExtractDestination(sp.first, destPayout)) {
+                strPayout += EncodeDestination(destPayout);
+            } else {
+                strPayout += HexStr(sp.first);
+            }
+            strPayout += "|";
+            strPayout += std::to_string(sp.second);
+        }
     }
 
     s += strPayout + "|";
@@ -420,13 +454,29 @@ std::string CProRegTx::MakeSignString() const
 std::string CProRegTx::ToString() const
 {
     CTxDestination dest;
-    std::string payee = "unknown";
-    if (ExtractDestination(scriptPayout, dest)) {
-        payee = EncodeDestination(dest);
+    std::string payee;
+    if (nVersion == 1) {
+        if (ExtractDestination(scriptPayout, dest)) {
+            payee = EncodeDestination(dest);
+        }
+    } else if (nVersion > 1) {
+        for (const auto& sp : scriptPayouts) {
+            if (ExtractDestination(sp.first, dest)) {
+                if (payee.empty()) payee = "[";
+                else payee += ",";
+                payee += strprintf("(%s:%f)", EncodeDestination(dest), (double)sp.second / 100);
+            }
+            if (!payee.empty()) payee += "]";
+        }
+    }
+    if (payee.empty()) {
+        payee = "unknown";
     }
 
-    return strprintf("CProRegTx(nVersion=%d, collateralOutpoint=%s, addr=%s, nOperatorReward=%f, ownerAddress=%s, pubKeyOperator=%s, votingAddress=%s, scriptPayout=%s)",
-        nVersion, collateralOutpoint.ToStringShort(), addr.ToString(), (double)nOperatorReward / 100, EncodeDestination(keyIDOwner), pubKeyOperator.ToString(), EncodeDestination(keyIDVoting), payee);
+    return strprintf(
+            "CProRegTx(nVersion=%d, collateralOutpoint=%s, addr=%s, nOperatorReward=%f, ownerAddress=%s, pubKeyOperator=%s, votingAddress=%s, scriptPayout(s)=%s)",
+            nVersion, collateralOutpoint.ToStringShort(), addr.ToString(), (double) nOperatorReward / 100,
+            EncodeDestination(keyIDOwner), pubKeyOperator.ToString(), EncodeDestination(keyIDVoting), payee);
 }
 
 std::string CProUpServTx::ToString() const
