@@ -99,7 +99,7 @@ bool CDKGSession::Init(const CBlockIndex* _pQuorumBaseBlockIndex, const std::vec
     receivedVvecs.resize(members.size());
     receivedSkContributions.resize(members.size());
     vecEncryptedContributions.resize(members.size());
-
+    
     for (size_t i = 0; i < mns.size(); i++) {
         members[i] = std::make_unique<CDKGMember>(mns[i], i);
         membersMap.emplace(members[i]->dmn->proTxHash, i);
