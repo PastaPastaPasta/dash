@@ -57,6 +57,7 @@
 #include <llmq/chainlocks.h>
 #include <llmq/dkgsessionmgr.h>
 #include <llmq/instantsend.h>
+#include <llmq/quorums_snapshot.h>
 #include <llmq/signing.h>
 #include <llmq/signing_shares.h>
 
@@ -3890,6 +3891,22 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         return true;
     }
 
+    if (strCommand == NetMsgType::GETSNAPSHOTINFO) {
+        CGetQuorumSnapshot cmd;
+        vRecv >> cmd;
+
+        LOCK(cs_main);
+
+        CQuorumSnapshot quorumSnapshot;
+        std::string strError;
+        if (BuildQuorumSnapshot(cmd.heightsNb, cmd.knownHeights, quorumSnapshot, strError)) {
+            connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SNAPSHOTINFO, quorumSnapshot));
+        } else {
+            strError = strprintf("getsnapshotinfo failed for heightsNb=%d, size(knownHeights)=%d. error=%s", cmd.heightsNb, cmd.knownHeights.size(), strError);
+            Misbehaving(pfrom->GetId(), 1, strError);
+        }
+        return true;
+    }
 
     if (strCommand == NetMsgType::NOTFOUND) {
         // Remove the NOTFOUND transactions from the peer
