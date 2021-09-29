@@ -82,6 +82,8 @@ const char *CLSIG="clsig";
 const char *ISLOCK="islock";
 const char *ISDLOCK="isdlock";
 const char *MNAUTH="mnauth";
+const char *GETSNAPSHOTINFO="getsnapshotinfo";
+const char *SNAPSHOTINFO="snapshotinfo";
 }; // namespace NetMsgType
 
 /** All known message types. Keep this in the same order as the list of
