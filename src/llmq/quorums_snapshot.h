@@ -5,6 +5,8 @@
 #ifndef BITCOIN_QUORUMS_SNAPSHOT_H
 #define BITCOIN_QUORUMS_SNAPSHOT_H
 
+#include <evo/simplifiedmns.h>
+
 class CGetQuorumSnapshot
 {
 public:
@@ -17,6 +19,10 @@ public:
     }
 };
 
+//TODO Maybe we should split the following class:
+// CQuorumSnaphot should include {creationHeight, activeQuorumMembers H_C H_2C H_3C, and skipLists H_C H_2C H3_C}
+// Maybe we need to include also blockHash for heights H_C H_2C H_3C
+// CSnapshotInfo should include CQuorumSnaphot + mnListDiff Tip H H_C H_2C H3_C
 class CQuorumSnapshot
 {
 public:
