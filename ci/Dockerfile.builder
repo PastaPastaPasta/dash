@@ -35,7 +35,7 @@ RUN useradd -u ${USER_ID} -g dash -s /bin/bash -m -d /dash dash
 
 # Packages needed for all target builds
 RUN dpkg --add-architecture i386
-RUN apt-get update && apt-get install $APT_ARGS g++-7-multilib && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install $APT_ARGS g++-8-multilib && rm -rf /var/lib/apt/lists/*
 RUN apt-get update && apt-get install $APT_ARGS g++-arm-linux-gnueabihf && rm -rf /var/lib/apt/lists/*
 RUN apt-get update && apt-get install $APT_ARGS g++-mingw-w64-x86-64 && rm -rf /var/lib/apt/lists/*
 RUN apt-get update && apt-get install $APT_ARGS wine-stable wine32 wine64 bc nsis && rm -rf /var/lib/apt/lists/*
