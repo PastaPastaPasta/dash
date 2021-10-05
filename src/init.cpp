@@ -78,6 +78,7 @@
 #include <llmq/init.h>
 #include <llmq/blockprocessor.h>
 #include <llmq/signing.h>
+#include <llmq/quorums_snapshot.h>
 #include <llmq/utils.h>
 
 #include <statsd_client.h>
@@ -322,6 +323,7 @@ void PrepareShutdown(InitInterfaces& interfaces)
         pblocktree.reset();
         llmq::DestroyLLMQSystem();
         deterministicMNManager.reset();
+        quorumSnapshotManager.reset();
         evoDb.reset();
     }
     for (const auto& client : interfaces.chain_clients) {
@@ -2000,6 +2002,8 @@ bool AppInitMain(InitInterfaces& interfaces)
                 evoDb.reset(new CEvoDB(nEvoDbCache, false, fReset || fReindexChainState));
                 deterministicMNManager.reset();
                 deterministicMNManager.reset(new CDeterministicMNManager(*evoDb));
+                quorumSnapshotManager.reset();
+                quorumSnapshotManager.reset(new CQuorumSnapshotManager(*evoDb));
 
                 llmq::InitLLMQSystem(*evoDb, false, fReset || fReindexChainState);
 
