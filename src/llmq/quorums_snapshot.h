@@ -7,81 +7,130 @@
 
 #include <evo/simplifiedmns.h>
 
-class CGetQuorumSnapshot
+class CQuorumSnapshot
 {
 public:
-    uint16_t heightsNb;
-    std::vector<uint16_t> knownHeights;
+    //TODO investigate replacement of std::vector<bool> with CFixedBitSet
+    std::vector<bool> activeQuorumMembers;
+    int mnSkipListMode;
+    std::vector<int> mnSkipList;
 
-    SERIALIZE_METHODS(CGetQuorumSnapshot, obj)
+    CQuorumSnapshot() = default;
+    explicit CQuorumSnapshot(const std::vector<bool>& _activeQuorumMembers, int _mnSkipListMode, const std::vector<int>& _mnSkipList) :
+            activeQuorumMembers(_activeQuorumMembers),
+            mnSkipListMode(_mnSkipListMode),
+            mnSkipList(_mnSkipList)
+    {
+    }
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOpBase(Stream& s, Operation ser_action)
+    {
+        READWRITE(mnSkipListMode);
+    }
+
+    template<typename Stream>
+    void Serialize(Stream& s) const
+    {
+        const_cast<CQuorumSnapshot*>(this)->SerializationOpBase(s, CSerActionSerialize());
+
+        WriteCompactSize(s, activeQuorumMembers.size());
+        for (const auto& obj : activeQuorumMembers) {
+            s << static_cast<int>(obj);
+        }
+        WriteCompactSize(s, mnSkipList.size());
+        for (const auto& obj : mnSkipList) {
+            s << obj;
+        }
+    }
+
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+        SerializationOpBase(s, CSerActionUnserialize());
+
+        size_t cnt = {};
+        cnt = ReadCompactSize(s);
+        activeQuorumMembers.resize(cnt);
+        for (size_t i = 0; i < cnt; i++) {
+            int obj;
+            s >> obj;
+            activeQuorumMembers.push_back(static_cast<bool>(obj));
+        }
+
+        cnt = ReadCompactSize(s);
+        mnSkipList.resize(cnt);
+        for (size_t i = 0; i < cnt; i++) {
+            int obj;
+            s >> obj;
+            mnSkipList.push_back(obj);
+        }
+    }
+
+    void ToJson(UniValue& obj) const;
+};
+
+class CGetQuorumRotationInfo
+{
+public:
+    int heightsNb;
+    std::vector<int> knownHeights;
+
+    SERIALIZE_METHODS(CGetQuorumRotationInfo, obj)
     {
         READWRITE(obj.heightsNb, obj.knownHeights);
     }
 };
 
-//TODO Maybe we should split the following class:
-// CQuorumSnaphot should include {creationHeight, activeQuorumMembers H_C H_2C H_3C, and skipLists H_C H_2C H3_C}
-// Maybe we need to include also blockHash for heights H_C H_2C H_3C
-// CSnapshotInfo should include CQuorumSnaphot + mnListDiff Tip H H_C H_2C H3_C
-class CQuorumSnapshot
+class CQuorumRotationInfo
 {
 public:
     int creationHeight;
+    CQuorumSnapshot quorumSnaphotAtHMinusC;
+    CQuorumSnapshot quorumSnaphotAtHMinus2C;
+    CQuorumSnapshot quorumSnaphotAtHMinus3C;
     CSimplifiedMNListDiff mnListDiffTip;
-    CSimplifiedMNListDiff mnListDiffH;
-    CSimplifiedMNListDiff mnListDiffH_C;
-    CSimplifiedMNListDiff mnListDiffH_2C;
-    CSimplifiedMNListDiff mnListDiffH_3C;
-    //TODO investigate replacement of std::vector<bool> with CFixedBitSet
-    std::vector<bool> activeQuorumMembersH_C;
-    std::vector<bool> activeQuorumMembersH_2C;
-    std::vector<bool> activeQuorumMembersH_3C;
-    //TODO need to fill skiplist. Selected mode is configured ?
-    uint mnSkipListModeH_C;
-    std::vector<uint16_t> mnSkipListH_C;
-    uint mnSkipListModeH_2C;
-    std::vector<uint16_t> mnSkipListH_2C;
-    uint mnSkipListModeH_3C;
-    std::vector<uint16_t> mnSkipListH_3C;
+    CSimplifiedMNListDiff mnListDiffAtH;
+    CSimplifiedMNListDiff mnListDiffAtHMinusC;
+    CSimplifiedMNListDiff mnListDiffAtHMinus2C;
+    CSimplifiedMNListDiff mnListDiffAtHMinus3C;
 
-    SERIALIZE_METHODS(CQuorumSnapshot, obj)
+    SERIALIZE_METHODS(CQuorumRotationInfo, obj)
     {
         READWRITE(obj.creationHeight,
+                  obj.quorumSnaphotAtHMinusC,
+                  obj.quorumSnaphotAtHMinus2C,
+                  obj.quorumSnaphotAtHMinus3C,
                   obj.mnListDiffTip,
-                  obj.mnListDiffH,
-                  obj.mnListDiffH_C,
-                  obj.mnListDiffH_2C,
-                  obj.mnListDiffH_3C,
-                  obj.activeQuorumMembersH_C,
-                  obj.activeQuorumMembersH_2C,
-                  obj.activeQuorumMembersH_3C,
-                  obj.mnSkipListModeH_C,
-                  obj.mnSkipListH_C,
-                  obj.mnSkipListModeH_2C,
-                  obj.mnSkipListH_2C,
-                  obj.mnSkipListModeH_3C,
-                  obj.mnSkipListH_3C);
+                  obj.mnListDiffAtH,
+                  obj.mnListDiffAtHMinusC,
+                  obj.mnListDiffAtHMinus2C,
+                  obj.mnListDiffAtHMinus3C);
     }
 
-    CQuorumSnapshot() = default;
-    explicit CQuorumSnapshot(const CQuorumSnapshot& dmn) {}
-
-    static bool BuildQuorumMembersBitSet(const CDeterministicMNList& mnList, const llmq::CQuorumCPtr qu, std::vector<bool>& activeQuorumMembers);
+    CQuorumRotationInfo() = default;
+    explicit CQuorumRotationInfo(const CQuorumRotationInfo& dmn) {}
 
     void ToJson(UniValue& obj) const;
-
-    /*bool operator==(const CQuorumSnapshot& rhs) const
-    {
-        return creationHeight == rhs.creationHeight;
-    }
-
-    bool operator!=(const CQuorumSnapshot& rhs) const
-    {
-        return !(rhs == *this);
-    }*/
-
 };
 
-bool BuildQuorumSnapshot(const uint16_t heightsNb, const std::vector<uint16_t>& knownHeights, CQuorumSnapshot& quorumSnapshotRet, std::string& errorRet);
+bool BuildQuorumRotationInfo(const CGetQuorumRotationInfo& request, CQuorumRotationInfo& quorumRotationInfoRet, std::string& errorRet);
+
+class CQuorumSnapshotManager
+{
+private:
+    CCriticalSection cs;
+
+    CEvoDB& evoDb;
+
+    std::unordered_map<uint256, CQuorumSnapshot, StaticSaltedHasher> quorumSnapshotCache;
+
+public:
+    explicit CQuorumSnapshotManager(CEvoDB& _evoDb);
+
+    CQuorumSnapshot GetSnapshotForBlock(const Consensus::LLMQType llmqType, const CBlockIndex* pindex);
+    void StoreSnapshotForBlock(const Consensus::LLMQType llmqType, const CBlockIndex* pindex, CQuorumSnapshot& snapshot);
+};
+
+extern std::unique_ptr<CQuorumSnapshotManager> quorumSnapshotManager;
 
 #endif //BITCOIN_QUORUMS_SNAPSHOT_H
