@@ -86,8 +86,8 @@ MAKE_MSG(CLSIG, "clsig");
 MAKE_MSG(ISLOCK, "islock");
 MAKE_MSG(ISDLOCK, "isdlock");
 MAKE_MSG(MNAUTH, "mnauth");
-MAKE_MSG(GETSNAPSHOTINFO, "getqrinfo");
-MAKE_MSG(SNAPSHOTINFO, "qrinfo");
+MAKE_MSG(GETQUORUMROTATIONINFO, "getqrinfo");
+MAKE_MSG(QUORUMROTATIONINFO, "qrinfo");
 }; // namespace NetMsgType
 
 /** All known message types. Keep this in the same order as the list of
