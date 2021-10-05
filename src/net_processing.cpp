@@ -3888,18 +3888,18 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         return true;
     }
 
-    if (strCommand == NetMsgType::GETSNAPSHOTINFO) {
-        CGetQuorumSnapshot cmd;
+    if (strCommand == NetMsgType::GETQUORUMROTATIONINFO) {
+        CGetQuorumRotationInfo cmd;
         vRecv >> cmd;
 
         LOCK(cs_main);
 
-        CQuorumSnapshot quorumSnapshot;
+        CQuorumRotationInfo quorumRotationInfoRet;
         std::string strError;
-        if (BuildQuorumSnapshot(cmd.heightsNb, cmd.knownHeights, quorumSnapshot, strError)) {
-            connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SNAPSHOTINFO, quorumSnapshot));
+        if (BuildQuorumRotationInfo(cmd, quorumRotationInfoRet, strError)) {
+            connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::QUORUMROTATIONINFO, quorumRotationInfoRet));
         } else {
-            strError = strprintf("getsnapshotinfo failed for heightsNb=%d, size(knownHeights)=%d. error=%s", cmd.heightsNb, cmd.knownHeights.size(), strError);
+            strError = strprintf("getquorumrotationinfo failed for heightsNb=%d, size(knownHeights)=%d. error=%s", cmd.heightsNb, cmd.knownHeights.size(), strError);
             Misbehaving(pfrom->GetId(), 1, strError);
         }
         return true;
