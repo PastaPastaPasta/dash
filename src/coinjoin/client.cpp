@@ -75,8 +75,8 @@ void CCoinJoinClientQueueManager::ProcessMessage(CNode* pfrom, const std::string
 
         if (dsq.IsTimeOutOfBounds()) return;
 
-        auto mnList = deterministicMNManager->GetListAtChainTip();
-        auto dmn = mnList.GetValidMNByCollateral(dsq.masternodeOutpoint);
+        const auto mnList = deterministicMNManager->GetListAtChainTip();
+        const auto dmn = mnList.GetValidMNByCollateral(dsq.masternodeOutpoint);
         if (!dmn) return;
 
         if (!dsq.CheckSignature(dmn->pdmnState->pubKeyOperator.Get())) {
@@ -94,8 +94,8 @@ void CCoinJoinClientQueueManager::ProcessMessage(CNode* pfrom, const std::string
                 }
             }
         } else {
-            int64_t nLastDsq = mmetaman.GetMetaInfo(dmn->proTxHash)->GetLastDsq();
-            int64_t nDsqThreshold = mmetaman.GetDsqThreshold(dmn->proTxHash, mnList.GetValidMNsCount());
+            const int64_t nLastDsq = mmetaman.GetMetaInfo(dmn->proTxHash)->GetLastDsq();
+            const int64_t nDsqThreshold = mmetaman.GetDsqThreshold(dmn->proTxHash, mnList.GetValidMNsCount());
             LogPrint(BCLog::COINJOIN, "DSQUEUE -- nLastDsq: %d  nDsqThreshold: %d  nDsqCount: %d\n", nLastDsq, nDsqThreshold, mmetaman.GetDsqCount());
             // don't allow a few nodes to dominate the queuing process
             if (nLastDsq != 0 && nDsqThreshold > mmetaman.GetDsqCount()) {
@@ -347,7 +347,7 @@ std::string CCoinJoinClientSession::GetStatus(bool fWaitForBlock) const
 std::string CCoinJoinClientManager::GetStatuses()
 {
     std::string strStatus;
-    bool fWaitForBlock = WaitForAnotherBlock();
+    const bool fWaitForBlock = WaitForAnotherBlock();
 
     LOCK(cs_deqsessions);
     for (const auto& session : deqSessions) {
@@ -403,9 +403,9 @@ bool CCoinJoinClientSession::CheckTimeout()
         return false;
     }
 
-    int nLagTime = 10; // give the server a few extra seconds before resetting.
-    int nTimeout = (nState == POOL_STATE_SIGNING) ? COINJOIN_SIGNING_TIMEOUT : COINJOIN_QUEUE_TIMEOUT;
-    bool fTimeout = GetTime() - nTimeLastSuccessfulStep >= nTimeout + nLagTime;
+    constexpr int nLagTime = 10; // give the server a few extra seconds before resetting.
+    const int nTimeout = (nState == POOL_STATE_SIGNING) ? COINJOIN_SIGNING_TIMEOUT : COINJOIN_QUEUE_TIMEOUT;
+    const bool fTimeout = GetTime() - nTimeLastSuccessfulStep >= nTimeout + nLagTime;
 
     if (!fTimeout) return false;
 
@@ -965,11 +965,11 @@ bool CCoinJoinClientManager::DoAutomaticDenominating(CConnman& connman, bool fDr
         return false;
     }
 
-    int nMnCountEnabled = deterministicMNManager->GetListAtChainTip().GetValidMNsCount();
+    const int nMnCountEnabled = deterministicMNManager->GetListAtChainTip().GetValidMNsCount();
 
     // If we've used 90% of the Masternode list then drop the oldest first ~30%
-    int nThreshold_high = nMnCountEnabled * 0.9;
-    int nThreshold_low = nThreshold_high * 0.7;
+    const int nThreshold_high = nMnCountEnabled * 0.9;
+    const int nThreshold_low = nThreshold_high * 0.7;
     LogPrint(BCLog::COINJOIN, "Checking vecMasternodesUsed: size: %d, threshold: %d\n", (int)vecMasternodesUsed.size(), nThreshold_high);
 
     if ((int)vecMasternodesUsed.size() > nThreshold_high) {
@@ -1004,10 +1004,10 @@ void CCoinJoinClientManager::AddUsedMasternode(const COutPoint& outpointMn)
 
 CDeterministicMNCPtr CCoinJoinClientManager::GetRandomNotUsedMasternode()
 {
-    auto mnList = deterministicMNManager->GetListAtChainTip();
+    const auto mnList = deterministicMNManager->GetListAtChainTip();
 
-    size_t nCountEnabled = mnList.GetValidMNsCount();
-    size_t nCountNotExcluded = nCountEnabled - vecMasternodesUsed.size();
+    const size_t nCountEnabled = mnList.GetValidMNsCount();
+    const size_t nCountNotExcluded = nCountEnabled - vecMasternodesUsed.size();
 
     LogPrint(BCLog::COINJOIN, "CCoinJoinClientManager::%s -- %d enabled masternodes, %d masternodes to choose from\n", __func__, nCountEnabled, nCountNotExcluded);
     if (nCountNotExcluded < 1) {
@@ -1044,7 +1044,7 @@ bool CCoinJoinClientSession::JoinExistingQueue(CAmount nBalanceNeedsAnonymized, 
 {
     if (!CCoinJoinClientOptions::IsEnabled()) return false;
 
-    auto mnList = deterministicMNManager->GetListAtChainTip();
+    const auto mnList = deterministicMNManager->GetListAtChainTip();
 
     int winners_to_skip{8};
 
@@ -1111,8 +1111,8 @@ bool CCoinJoinClientSession::StartNewQueue(CAmount nBalanceNeedsAnonymized, CCon
     if (nBalanceNeedsAnonymized <= 0) return false;
 
     int nTries = 0;
-    auto mnList = deterministicMNManager->GetListAtChainTip();
-    int nMnCount = mnList.GetValidMNsCount();
+    const auto mnList = deterministicMNManager->GetListAtChainTip();
+    const int nMnCount = mnList.GetValidMNsCount();
 
     // find available denominated amounts
     std::set<CAmount> setAmounts;
@@ -1125,7 +1125,7 @@ bool CCoinJoinClientSession::StartNewQueue(CAmount nBalanceNeedsAnonymized, CCon
 
     // otherwise, try one randomly
     while (nTries < 10) {
-        auto dmn = coinJoinClientManagers.at(mixingWallet.GetName())->GetRandomNotUsedMasternode();
+        const auto dmn = coinJoinClientManagers.at(mixingWallet.GetName())->GetRandomNotUsedMasternode();
 
         if (!dmn) {
             LogPrint(BCLog::COINJOIN, "CCoinJoinClientSession::StartNewQueue -- Can't find random masternode!\n");
@@ -1142,8 +1142,8 @@ bool CCoinJoinClientSession::StartNewQueue(CAmount nBalanceNeedsAnonymized, CCon
             continue;
         }
 
-        int64_t nLastDsq = mmetaman.GetMetaInfo(dmn->proTxHash)->GetLastDsq();
-        int64_t nDsqThreshold = mmetaman.GetDsqThreshold(dmn->proTxHash, nMnCount);
+        const int64_t nLastDsq = mmetaman.GetMetaInfo(dmn->proTxHash)->GetLastDsq();
+        const int64_t nDsqThreshold = mmetaman.GetDsqThreshold(dmn->proTxHash, nMnCount);
         if (nLastDsq != 0 && nDsqThreshold > mmetaman.GetDsqCount()) {
             LogPrint(BCLog::COINJOIN, "CCoinJoinClientSession::StartNewQueue -- Too early to mix on this masternode!" /* Continued */
                       " masternode=%s  addr=%s  nLastDsq=%d  nDsqThreshold=%d  nDsqCount=%d\n",
@@ -1189,7 +1189,7 @@ bool CCoinJoinClientSession::ProcessPendingDsaRequest(CConnman& connman)
 {
     if (!pendingDsaRequest) return false;
 
-    bool fDone = connman.ForNode(pendingDsaRequest.GetAddr(), [this, &connman](CNode* pnode) {
+    const bool fDone = connman.ForNode(pendingDsaRequest.GetAddr(), [this, &connman](CNode* pnode) {
         LogPrint(BCLog::COINJOIN, "-- processing dsa queue for addr=%s\n", pnode->addr.ToString());
         nTimeLastSuccessfulStep = GetTime();
         // TODO: this vvvv should be here after new state POOL_STATE_CONNECTING is added and MIN_COINJOIN_PEER_PROTO_VERSION is bumped
@@ -1280,7 +1280,7 @@ bool CCoinJoinClientSession::SubmitDenominate(CConnman& connman)
         LogPrint(BCLog::COINJOIN, "vecInputsByRounds: rounds: %d, inputs: %d\n", pair.first, pair.second);
     }
 
-    int nRounds = vecInputsByRounds.begin()->first;
+    const int nRounds = vecInputsByRounds.begin()->first;
     if (PrepareDenominate(nRounds, nRounds, strError, vecTxDSIn, vecPSInOutPairsTmp)) {
         LogPrint(BCLog::COINJOIN, "CCoinJoinClientSession::SubmitDenominate -- Running CoinJoin denominate for %d rounds, success\n", nRounds);
         return SendDenominate(vecPSInOutPairsTmp, connman);
@@ -1314,7 +1314,7 @@ bool CCoinJoinClientSession::SelectDenominate(std::string& strErrorRet, std::vec
 
     vecTxDSInRet.clear();
 
-    bool fSelected = mixingWallet.SelectTxDSInsByDenomination(nSessionDenom, CCoinJoin::GetMaxPoolAmount(), vecTxDSInRet);
+    const bool fSelected = mixingWallet.SelectTxDSInsByDenomination(nSessionDenom, CCoinJoin::GetMaxPoolAmount(), vecTxDSInRet);
     if (!fSelected) {
         strErrorRet = "Can't select current denominated inputs";
         return false;
@@ -1332,7 +1332,7 @@ bool CCoinJoinClientSession::PrepareDenominate(int nMinRounds, int nMaxRounds, s
         strErrorRet = "Incorrect session denom";
         return false;
     }
-    CAmount nDenomAmount = CCoinJoin::DenominationToAmount(nSessionDenom);
+    const CAmount nDenomAmount = CCoinJoin::DenominationToAmount(nSessionDenom);
 
     // NOTE: No need to randomize order of inputs because they were
     // initially shuffled in CWallet::SelectTxDSInsByDenomination already.
@@ -1548,12 +1548,11 @@ bool CCoinJoinClientSession::CreateCollateralTransaction(CMutableTransaction& tx
     // CCoinJoin::IsCollateralAmount in GetCollateralTxDSIn should already take care of this
     if (txout.nValue >= CCoinJoin::GetCollateralAmount() * 2) {
         // make our change address
-        CScript scriptChange;
         CPubKey vchPubKey;
         CReserveKey reservekey(&mixingWallet);
         bool success = reservekey.GetReservedKey(vchPubKey, true);
         assert(success); // should never fail, as we just unlocked
-        scriptChange = GetScriptForDestination(vchPubKey.GetID());
+        const CScript scriptChange = GetScriptForDestination(vchPubKey.GetID());
         reservekey.KeepKey();
         // return change
         txCollateral.vout.emplace_back(txout.nValue - CCoinJoin::GetCollateralAmount(), scriptChange);
@@ -1593,7 +1592,7 @@ bool CCoinJoinClientSession::CreateDenominated(CAmount nBalanceToDenominate)
         return a.nAmount > b.nAmount;
     });
 
-    bool fCreateMixingCollaterals = !mixingWallet.HasCollateralInputs();
+    const bool fCreateMixingCollaterals = !mixingWallet.HasCollateralInputs();
 
     for (const auto& item : vecTally) {
         if (!CreateDenominated(nBalanceToDenominate, item, fCreateMixingCollaterals)) continue;
@@ -1639,7 +1638,7 @@ bool CCoinJoinClientSession::CreateDenominated(CAmount nBalanceToDenominate, con
     // ****** Add outputs for denoms ************ /
 
     bool fAddFinal = true;
-    std::vector<CAmount> vecStandardDenoms = CCoinJoin::GetStandardDenominations();
+    auto vecStandardDenoms = CCoinJoin::GetStandardDenominations();
 
     std::map<CAmount, int> mapDenomCount;
     for (auto nDenomValue : vecStandardDenoms) {

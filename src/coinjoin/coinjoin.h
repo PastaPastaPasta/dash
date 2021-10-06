@@ -400,7 +400,16 @@ private:
     CCoinJoin& operator=(CCoinJoin const&) = delete;
 
     // static members
-    static std::vector<CAmount> vecStandardDenominations;
+    static constexpr std::array<CAmount, 5> vecStandardDenominations = {
+            /* Disabled
+            ((100 * COIN)+100000 );
+            */
+            ((10 * COIN) + 10000),
+            ((1 * COIN) + 1000),
+            ((COIN / 10) + 100),
+            ((COIN / 100) + 10),
+            ((COIN / 1000) + 1),
+    };
     static std::map<uint256, CCoinJoinBroadcastTx> mapDSTX;
 
     static CCriticalSection cs_mapdstx;
@@ -408,16 +417,86 @@ private:
     static void CheckDSTXes(const CBlockIndex* pindex);
 
 public:
-    static void InitStandardDenominations();
-    static std::vector<CAmount> GetStandardDenominations() { return vecStandardDenominations; }
-    static CAmount GetSmallestDenomination() { return vecStandardDenominations.back(); }
+    static constexpr auto& GetStandardDenominations() { return vecStandardDenominations; }
+    static constexpr CAmount GetSmallestDenomination() { return vecStandardDenominations.back(); }
 
-    static bool IsDenominatedAmount(CAmount nInputAmount);
-    static bool IsValidDenomination(int nDenom);
+    static constexpr bool IsDenominatedAmount(CAmount nInputAmount)
+    {
+        return AmountToDenomination(nInputAmount) > 0;
+    };
+    static constexpr bool IsValidDenomination(int nDenom)
+    {
+        return DenominationToAmount(nDenom) > 0;
+    }
 
-    static int AmountToDenomination(CAmount nInputAmount);
-    static CAmount DenominationToAmount(int nDenom);
-    static std::string DenominationToString(int nDenom);
+    /**
+     *   Return a bitshifted integer representing a denomination in vecStandardDenominations
+     *   or 0 if none was found
+     */
+    static constexpr int AmountToDenomination(CAmount nInputAmount)
+    {
+        for (size_t i = 0; i < vecStandardDenominations.size(); ++i) {
+            if (nInputAmount == vecStandardDenominations[i]) {
+                return 1 << i;
+            }
+        }
+        return 0;
+    }
+
+    /*
+    Returns:
+    - one of standard denominations from vecStandardDenominations based on the provided bitshifted integer
+    - 0 for non-initialized sessions (nDenom = 0)
+    - a value below 0 if an error occurred while converting from one to another
+    */
+    static constexpr CAmount DenominationToAmount(int nDenom)
+    {
+        if (nDenom == 0) {
+            // not initialized
+            return 0;
+        }
+
+        size_t nMaxDenoms = vecStandardDenominations.size();
+
+        if (nDenom >= (1 << nMaxDenoms) || nDenom < 0) {
+            // out of bounds
+            return -1;
+        }
+
+        if ((nDenom & (nDenom - 1)) != 0) {
+            // non-denom
+            return -2;
+        }
+
+        CAmount nDenomAmount{-3};
+
+        for (size_t i = 0; i < nMaxDenoms; ++i) {
+            if (nDenom & (1 << i)) {
+                nDenomAmount = vecStandardDenominations[i];
+                break;
+            }
+        }
+
+        return nDenomAmount;
+    }
+    /*
+        Same as DenominationToAmount but returns a string representation
+    */
+    static constexpr std::string_view DenominationToString(int nDenom)
+    {
+        CAmount nDenomAmount = DenominationToAmount(nDenom);
+
+        switch (nDenomAmount) {
+            case  0: return "N/A";
+            case -1: return "out-of-bounds";
+            case -2: return "non-denom";
+            case -3: return "to-amount-error";
+            default: return ValueFromAmount(nDenomAmount).getValStr();
+        }
+
+        // shouldn't happen
+        return "to-string-error";
+    }
 
     static std::string GetMessageByID(PoolMessage nMessageID);
 
@@ -425,7 +504,7 @@ public:
     static int GetMinPoolParticipants() { return Params().PoolMinParticipants(); }
     static int GetMaxPoolParticipants() { return Params().PoolMaxParticipants(); }
 
-    static CAmount GetMaxPoolAmount() { return vecStandardDenominations.empty() ? 0 : COINJOIN_ENTRY_MAX_SIZE * vecStandardDenominations.front(); }
+    static constexpr CAmount GetMaxPoolAmount() { return COINJOIN_ENTRY_MAX_SIZE * vecStandardDenominations.front(); }
 
     /// If the collateral is valid given by a client
     static bool IsCollateralValid(const CTransaction& txCollateral);
