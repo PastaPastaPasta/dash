@@ -38,7 +38,7 @@ static constexpr bool DEFAULT_COINJOIN_MULTISESSION = false;
 // More than 500 outputs starts to make qt quite laggy.
 // Additionally to need all 500 outputs (assuming a max per denom of 50) you'd need to be trying to
 // create denominations for over 3000 dash!
-static const int COINJOIN_DENOM_OUTPUTS_THRESHOLD = 500;
+static constexpr int COINJOIN_DENOM_OUTPUTS_THRESHOLD = 500;
 
 // Warn user if mixing in gui or try to create backup if mixing in daemon mode
 // when we have only this many keys left

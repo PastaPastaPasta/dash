@@ -10,6 +10,8 @@
 #include <sync.h>
 #include <timedata.h>
 #include <tinyformat.h>
+#include <core_io.h>
+#include <univalue.h>
 
 #include <utility>
 
@@ -326,7 +328,7 @@ public:
     bool Sign();
     bool CheckSignature(const CBLSPublicKey& blsPubKey) const;
 
-    void SetConfirmedHeight(int nConfirmedHeightIn) { nConfirmedHeight = nConfirmedHeightIn; }
+    void SetConfirmedHeight(const int nConfirmedHeightIn) { nConfirmedHeight = nConfirmedHeightIn; }
     bool IsExpired(const CBlockIndex* pindex) const;
     bool IsValidStructure() const;
 };
@@ -417,14 +419,14 @@ private:
     static void CheckDSTXes(const CBlockIndex* pindex);
 
 public:
-    static constexpr auto& GetStandardDenominations() { return vecStandardDenominations; }
+    static constexpr const auto& GetStandardDenominations() { return vecStandardDenominations; }
     static constexpr CAmount GetSmallestDenomination() { return vecStandardDenominations.back(); }
 
-    static constexpr bool IsDenominatedAmount(CAmount nInputAmount)
+    static constexpr bool IsDenominatedAmount(const CAmount nInputAmount)
     {
         return AmountToDenomination(nInputAmount) > 0;
     };
-    static constexpr bool IsValidDenomination(int nDenom)
+    static constexpr bool IsValidDenomination(const int nDenom)
     {
         return DenominationToAmount(nDenom) > 0;
     }
@@ -433,7 +435,7 @@ public:
      *   Return a bitshifted integer representing a denomination in vecStandardDenominations
      *   or 0 if none was found
      */
-    static constexpr int AmountToDenomination(CAmount nInputAmount)
+    static constexpr int AmountToDenomination(const CAmount nInputAmount)
     {
         for (size_t i = 0; i < vecStandardDenominations.size(); ++i) {
             if (nInputAmount == vecStandardDenominations[i]) {
@@ -449,14 +451,14 @@ public:
     - 0 for non-initialized sessions (nDenom = 0)
     - a value below 0 if an error occurred while converting from one to another
     */
-    static constexpr CAmount DenominationToAmount(int nDenom)
+    static constexpr CAmount DenominationToAmount(const int nDenom)
     {
         if (nDenom == 0) {
             // not initialized
             return 0;
         }
 
-        size_t nMaxDenoms = vecStandardDenominations.size();
+        constexpr size_t nMaxDenoms = vecStandardDenominations.size();
 
         if (nDenom >= (1 << nMaxDenoms) || nDenom < 0) {
             // out of bounds
@@ -482,7 +484,7 @@ public:
     /*
         Same as DenominationToAmount but returns a string representation
     */
-    static constexpr std::string_view DenominationToString(int nDenom)
+    static std::string DenominationToString(const int nDenom)
     {
         CAmount nDenomAmount = DenominationToAmount(nDenom);
 
@@ -508,10 +510,14 @@ public:
 
     /// If the collateral is valid given by a client
     static bool IsCollateralValid(const CTransaction& txCollateral);
-    static CAmount GetCollateralAmount() { return GetSmallestDenomination() / 10; }
-    static CAmount GetMaxCollateralAmount() { return GetCollateralAmount() * 4; }
+    static constexpr CAmount GetCollateralAmount() { return GetSmallestDenomination() / 10; }
+    static constexpr CAmount GetMaxCollateralAmount() { return GetCollateralAmount() * 4; }
 
-    static bool IsCollateralAmount(CAmount nInputAmount);
+    static bool constexpr IsCollateralAmount(const CAmount nInputAmount)
+    {
+        // collateral input can be anything between 1x and "max" (including both)
+        return (nInputAmount >= GetCollateralAmount() && nInputAmount <= GetMaxCollateralAmount());
+    }
     static int CalculateAmountPriority(CAmount nInputAmount);
 
     static void AddDSTX(const CCoinJoinBroadcastTx& dstx);

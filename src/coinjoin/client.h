@@ -222,8 +222,8 @@ public:
     bool IsMixing() const;
     void ResetPool();
 
-    std::string GetStatuses();
-    std::string GetSessionDenoms();
+    std::string GetStatuses() const;
+    std::string GetSessionDenoms() const;
 
     bool GetMixingMasternodesInfo(std::vector<CDeterministicMNCPtr>& vecDmnsRet) const;
 
@@ -238,7 +238,7 @@ public:
     void ProcessPendingDsaRequest(CConnman& connman);
 
     void AddUsedMasternode(const COutPoint& outpointMn);
-    CDeterministicMNCPtr GetRandomNotUsedMasternode();
+    CDeterministicMNCPtr GetRandomNotUsedMasternode() const;
 
     void UpdatedSuccessBlock();
 

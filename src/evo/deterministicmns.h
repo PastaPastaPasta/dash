@@ -499,7 +499,7 @@ public:
     template <typename T>
     CDeterministicMNCPtr GetUniquePropertyMN(const T& v) const
     {
-        auto p = mnUniquePropertyMap.find(::SerializeHash(v));
+        const auto p = mnUniquePropertyMap.find(::SerializeHash(v));
         if (!p) {
             return nullptr;
         }

@@ -47,8 +47,7 @@ bool CCoinJoinQueue::Sign()
 {
     if (!fMasternodeMode) return false;
 
-
-    uint256 hash = GetSignatureHash();
+    const uint256 hash = GetSignatureHash();
     CBLSSignature sig = WITH_LOCK(activeMasternodeInfoCs, return activeMasternodeInfo.blsKeyOperator->Sign(hash));
     if (!sig.IsValid()) {
         return false;
@@ -93,7 +92,7 @@ bool CCoinJoinBroadcastTx::Sign()
 {
     if (!fMasternodeMode) return false;
 
-    uint256 hash = GetSignatureHash();
+    const uint256 hash = GetSignatureHash();
 
     CBLSSignature sig = WITH_LOCK(activeMasternodeInfoCs, return activeMasternodeInfo.blsKeyOperator->Sign(hash));
     if (!sig.IsValid()) {
@@ -257,7 +256,7 @@ bool CCoinJoinBaseSession::IsValidInOuts(const std::vector<CTxIn>& vin, const st
         nFees -= txout.nValue;
     }
 
-    CCoinsViewMemPool viewMemPool(pcoinsTip.get(), mempool);
+    const CCoinsViewMemPool viewMemPool(pcoinsTip.get(), mempool);
 
     for (const auto& txin : vin) {
         LogPrint(BCLog::COINJOIN, "CCoinJoinBaseSession::%s -- txin=%s\n", __func__, txin.ToString());
@@ -354,13 +353,7 @@ bool CCoinJoin::IsCollateralValid(const CTransaction& txCollateral)
     return true;
 }
 
-bool CCoinJoin::IsCollateralAmount(CAmount nInputAmount)
-{
-    // collateral input can be anything between 1x and "max" (including both)
-    return (nInputAmount >= GetCollateralAmount() && nInputAmount <= GetMaxCollateralAmount());
-}
-
-int CCoinJoin::CalculateAmountPriority(CAmount nInputAmount)
+int CCoinJoin::CalculateAmountPriority(const CAmount nInputAmount)
 {
     for (const auto& d : GetStandardDenominations()) {
         // large denoms have lower value
@@ -376,7 +369,7 @@ int CCoinJoin::CalculateAmountPriority(CAmount nInputAmount)
     return -1 * (nInputAmount / COIN);
 }
 
-std::string CCoinJoin::GetMessageByID(PoolMessage nMessageID)
+std::string CCoinJoin::GetMessageByID(const PoolMessage nMessageID)
 {
     switch (nMessageID) {
     case ERR_ALREADY_HAVE:
@@ -437,7 +430,7 @@ void CCoinJoin::AddDSTX(const CCoinJoinBroadcastTx& dstx)
 CCoinJoinBroadcastTx CCoinJoin::GetDSTX(const uint256& hash)
 {
     LOCK(cs_mapdstx);
-    auto it = mapDSTX.find(hash);
+    const auto it = mapDSTX.find(hash);
     return (it == mapDSTX.end()) ? CCoinJoinBroadcastTx() : it->second;
 }
 
@@ -469,11 +462,11 @@ void CCoinJoin::NotifyChainLock(const CBlockIndex* pindex)
     }
 }
 
-void CCoinJoin::UpdateDSTXConfirmedHeight(const CTransactionRef& tx, int nHeight)
+void CCoinJoin::UpdateDSTXConfirmedHeight(const CTransactionRef& tx, const int nHeight)
 {
     AssertLockHeld(cs_mapdstx);
 
-    auto it = mapDSTX.find(tx->GetHash());
+    const auto it = mapDSTX.find(tx->GetHash());
     if (it == mapDSTX.end()) {
         return;
     }

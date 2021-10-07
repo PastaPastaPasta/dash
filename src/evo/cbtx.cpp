@@ -56,14 +56,15 @@ bool CheckCbTxMerkleRoots(const CBlock& block, const CBlockIndex* pindex, CValid
 
     static int64_t nTimePayload = 0;
 
-    int64_t nTime1 = GetTimeMicros();
+    const int64_t nTime1 = GetTimeMicros();
 
     CCbTx cbTx;
     if (!GetTxPayload(*block.vtx[0], cbTx)) {
         return state.DoS(100, false, REJECT_INVALID, "bad-cbtx-payload");
     }
 
-    int64_t nTime2 = GetTimeMicros(); nTimePayload += nTime2 - nTime1;
+    const int64_t nTime2 = GetTimeMicros();
+    nTimePayload += nTime2 - nTime1;
     LogPrint(BCLog::BENCHMARK, "          - GetTxPayload: %.2fms [%.2fs]\n", 0.001 * (nTime2 - nTime1), nTimePayload * 0.000001);
 
     if (pindex) {
@@ -79,7 +80,8 @@ bool CheckCbTxMerkleRoots(const CBlock& block, const CBlockIndex* pindex, CValid
             return state.DoS(100, false, REJECT_INVALID, "bad-cbtx-mnmerkleroot");
         }
 
-        int64_t nTime3 = GetTimeMicros(); nTimeMerkleMNL += nTime3 - nTime2;
+        const int64_t nTime3 = GetTimeMicros();
+        nTimeMerkleMNL += nTime3 - nTime2;
         LogPrint(BCLog::BENCHMARK, "          - CalcCbTxMerkleRootMNList: %.2fms [%.2fs]\n", 0.001 * (nTime3 - nTime2), nTimeMerkleMNL * 0.000001);
 
         if (cbTx.nVersion >= 2) {
@@ -92,7 +94,8 @@ bool CheckCbTxMerkleRoots(const CBlock& block, const CBlockIndex* pindex, CValid
             }
         }
 
-        int64_t nTime4 = GetTimeMicros(); nTimeMerkleQuorum += nTime4 - nTime3;
+        const int64_t nTime4 = GetTimeMicros();
+        nTimeMerkleQuorum += nTime4 - nTime3;
         LogPrint(BCLog::BENCHMARK, "          - CalcCbTxMerkleRootQuorums: %.2fms [%.2fs]\n", 0.001 * (nTime4 - nTime3), nTimeMerkleQuorum * 0.000001);
 
     }
@@ -109,7 +112,7 @@ bool CalcCbTxMerkleRootMNList(const CBlock& block, const CBlockIndex* pindexPrev
         static int64_t nTimeSMNL = 0;
         static int64_t nTimeMerkle = 0;
 
-        int64_t nTime1 = GetTimeMicros();
+        const int64_t nTime1 = GetTimeMicros();
 
         CDeterministicMNList tmpMNList;
         if (!deterministicMNManager->BuildNewListFromBlock(block, pindexPrev, state, view, tmpMNList, false)) {
@@ -117,12 +120,14 @@ bool CalcCbTxMerkleRootMNList(const CBlock& block, const CBlockIndex* pindexPrev
             return false;
         }
 
-        int64_t nTime2 = GetTimeMicros(); nTimeDMN += nTime2 - nTime1;
+        const int64_t nTime2 = GetTimeMicros();
+        nTimeDMN += nTime2 - nTime1;
         LogPrint(BCLog::BENCHMARK, "            - BuildNewListFromBlock: %.2fms [%.2fs]\n", 0.001 * (nTime2 - nTime1), nTimeDMN * 0.000001);
 
         CSimplifiedMNList sml(tmpMNList);
 
-        int64_t nTime3 = GetTimeMicros(); nTimeSMNL += nTime3 - nTime2;
+        const int64_t nTime3 = GetTimeMicros();
+        nTimeSMNL += nTime3 - nTime2;
         LogPrint(BCLog::BENCHMARK, "            - CSimplifiedMNList: %.2fms [%.2fs]\n", 0.001 * (nTime3 - nTime2), nTimeSMNL * 0.000001);
 
         static CSimplifiedMNList smlCached;
@@ -140,7 +145,8 @@ bool CalcCbTxMerkleRootMNList(const CBlock& block, const CBlockIndex* pindexPrev
         bool mutated = false;
         merkleRootRet = sml.CalcMerkleRoot(&mutated);
 
-        int64_t nTime4 = GetTimeMicros(); nTimeMerkle += nTime4 - nTime3;
+        const int64_t nTime4 = GetTimeMicros();
+        nTimeMerkle += nTime4 - nTime3;
         LogPrint(BCLog::BENCHMARK, "            - CalcMerkleRoot: %.2fms [%.2fs]\n", 0.001 * (nTime4 - nTime3), nTimeMerkle * 0.000001);
 
         smlCached = std::move(sml);
@@ -165,17 +171,18 @@ bool CalcCbTxMerkleRootQuorums(const CBlock& block, const CBlockIndex* pindexPre
     static int64_t nTimeLoop = 0;
     static int64_t nTimeMerkle = 0;
 
-    int64_t nTime1 = GetTimeMicros();
+    const int64_t nTime1 = GetTimeMicros();
 
     static std::map<Consensus::LLMQType, std::vector<const CBlockIndex*>> quorumsCached;
     static std::map<Consensus::LLMQType, std::vector<uint256>> qcHashesCached;
 
     // The returned quorums are in reversed order, so the most recent one is at index 0
-    auto quorums = llmq::quorumBlockProcessor->GetMinedAndActiveCommitmentsUntilBlock(pindexPrev);
+    const auto quorums = llmq::quorumBlockProcessor->GetMinedAndActiveCommitmentsUntilBlock(pindexPrev);
     std::map<Consensus::LLMQType, std::vector<uint256>> qcHashes;
     size_t hashCount = 0;
 
-    int64_t nTime2 = GetTimeMicros(); nTimeMinedAndActive += nTime2 - nTime1;
+    const int64_t nTime2 = GetTimeMicros();
+    nTimeMinedAndActive += nTime2 - nTime1;
     LogPrint(BCLog::BENCHMARK, "            - GetMinedAndActiveCommitmentsUntilBlock: %.2fms [%.2fs]\n", 0.001 * (nTime2 - nTime1), nTimeMinedAndActive * 0.000001);
 
     if (quorums == quorumsCached) {
@@ -196,14 +203,13 @@ bool CalcCbTxMerkleRootQuorums(const CBlock& block, const CBlockIndex* pindexPre
         qcHashesCached = qcHashes;
     }
 
-    int64_t nTime3 = GetTimeMicros(); nTimeMined += nTime3 - nTime2;
+    const int64_t nTime3 = GetTimeMicros();
+    nTimeMined += nTime3 - nTime2;
     LogPrint(BCLog::BENCHMARK, "            - GetMinedCommitment: %.2fms [%.2fs]\n", 0.001 * (nTime3 - nTime2), nTimeMined * 0.000001);
 
     // now add the commitments from the current block, which are not returned by GetMinedAndActiveCommitmentsUntilBlock
     // due to the use of pindexPrev (we don't have the tip index here)
-    for (size_t i = 1; i < block.vtx.size(); i++) {
-        auto& tx = block.vtx[i];
-
+    for (const auto& tx : block.vtx) {
         if (tx->nVersion == 3 && tx->nType == TRANSACTION_QUORUM_COMMITMENT) {
             llmq::CFinalCommitmentTxPayload qc;
             if (!GetTxPayload(*tx, qc)) {
@@ -212,7 +218,7 @@ bool CalcCbTxMerkleRootQuorums(const CBlock& block, const CBlockIndex* pindexPre
             if (qc.commitment.IsNull()) {
                 continue;
             }
-            auto qcHash = ::SerializeHash(qc.commitment);
+            const auto qcHash = ::SerializeHash(qc.commitment);
             const auto& llmq_params = llmq::GetLLMQParams(qc.commitment.llmqType);
             auto& v = qcHashes[llmq_params.type];
             if (v.size() == llmq_params.signingActiveQuorumCount) {

@@ -24,7 +24,7 @@
 
 CCoinJoinServer coinJoinServer;
 
-void CCoinJoinServer::ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, CConnman& connman, bool enable_bip61)
+void CCoinJoinServer::ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, CConnman& connman, const bool enable_bip61)
 {
     if (!fMasternodeMode) return;
     if (!masternodeSync.IsBlockchainSynced()) return;
@@ -43,7 +43,7 @@ void CCoinJoinServer::ProcessMessage(CNode* pfrom, const std::string& strCommand
     }
 }
 
-void CCoinJoinServer::ProcessDSACCEPT(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, CConnman& connman, bool enable_bip61)
+void CCoinJoinServer::ProcessDSACCEPT(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, CConnman& connman, const bool enable_bip61)
 {
     if (pfrom->nVersion < MIN_COINJOIN_PEER_PROTO_VERSION) {
         LogPrint(BCLog::COINJOIN, "DSACCEPT -- peer=%d using obsolete version %i\n", pfrom->GetId(), pfrom->nVersion);
@@ -68,8 +68,8 @@ void CCoinJoinServer::ProcessDSACCEPT(CNode* pfrom, const std::string& strComman
 
     LogPrint(BCLog::COINJOIN, "DSACCEPT -- nDenom %d (%s)  txCollateral %s", dsa.nDenom, CCoinJoin::DenominationToString(dsa.nDenom), dsa.txCollateral.ToString()); /* Continued */
 
-    auto mnList = deterministicMNManager->GetListAtChainTip();
-    auto dmn = WITH_LOCK(activeMasternodeInfoCs, return mnList.GetValidMNByCollateral(activeMasternodeInfo.outpoint));
+    const auto mnList = deterministicMNManager->GetListAtChainTip();
+    const auto dmn = WITH_LOCK(activeMasternodeInfoCs, return mnList.GetValidMNByCollateral(activeMasternodeInfo.outpoint));
     if (!dmn) {
         PushStatus(pfrom, STATUS_REJECTED, ERR_MN_LIST, connman);
         return;
@@ -90,8 +90,8 @@ void CCoinJoinServer::ProcessDSACCEPT(CNode* pfrom, const std::string& strComman
             }
         }
 
-        int64_t nLastDsq = mmetaman.GetMetaInfo(dmn->proTxHash)->GetLastDsq();
-        int64_t nDsqThreshold = mmetaman.GetDsqThreshold(dmn->proTxHash, mnList.GetValidMNsCount());
+        const int64_t nLastDsq = mmetaman.GetMetaInfo(dmn->proTxHash)->GetLastDsq();
+        const int64_t nDsqThreshold = mmetaman.GetDsqThreshold(dmn->proTxHash, mnList.GetValidMNsCount());
         if (nLastDsq != 0 && nDsqThreshold > mmetaman.GetDsqCount()) {
             if (fLogIPs) {
                 LogPrint(BCLog::COINJOIN, "DSACCEPT -- last dsq too recent, must wait: peer=%d, addr=%s\n", pfrom->GetId(), pfrom->addr.ToString());
@@ -105,7 +105,7 @@ void CCoinJoinServer::ProcessDSACCEPT(CNode* pfrom, const std::string& strComman
 
     PoolMessage nMessageID = MSG_NOERR;
 
-    bool fResult = nSessionID == 0 ? CreateNewSession(dsa, nMessageID, connman)
+    const bool fResult = nSessionID == 0 ? CreateNewSession(dsa, nMessageID, connman)
             : AddUserToExistingSession(dsa, nMessageID);
     if (fResult) {
         LogPrint(BCLog::COINJOIN, "DSACCEPT -- is compatible, please submit!\n");
@@ -118,7 +118,7 @@ void CCoinJoinServer::ProcessDSACCEPT(CNode* pfrom, const std::string& strComman
     }
 }
 
-void CCoinJoinServer::ProcessDSQUEUE(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, CConnman& connman, bool enable_bip61)
+void CCoinJoinServer::ProcessDSQUEUE(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, CConnman& connman, const bool enable_bip61)
 {
     if (pfrom->nVersion < MIN_COINJOIN_PEER_PROTO_VERSION) {
         LogPrint(BCLog::COINJOIN, "DSQUEUE -- peer=%d using obsolete version %i\n", pfrom->GetId(), pfrom->nVersion);
@@ -154,8 +154,8 @@ void CCoinJoinServer::ProcessDSQUEUE(CNode* pfrom, const std::string& strCommand
 
     if (dsq.IsTimeOutOfBounds()) return;
 
-    auto mnList = deterministicMNManager->GetListAtChainTip();
-    auto dmn = mnList.GetValidMNByCollateral(dsq.masternodeOutpoint);
+    const auto mnList = deterministicMNManager->GetListAtChainTip();
+    const auto dmn = mnList.GetValidMNByCollateral(dsq.masternodeOutpoint);
     if (!dmn) return;
 
     if (!dsq.CheckSignature(dmn->pdmnState->pubKeyOperator.Get())) {
@@ -165,8 +165,8 @@ void CCoinJoinServer::ProcessDSQUEUE(CNode* pfrom, const std::string& strCommand
     }
 
     if (!dsq.fReady) {
-        int64_t nLastDsq = mmetaman.GetMetaInfo(dmn->proTxHash)->GetLastDsq();
-        int64_t nDsqThreshold = mmetaman.GetDsqThreshold(dmn->proTxHash, mnList.GetValidMNsCount());
+        const int64_t nLastDsq = mmetaman.GetMetaInfo(dmn->proTxHash)->GetLastDsq();
+        const int64_t nDsqThreshold = mmetaman.GetDsqThreshold(dmn->proTxHash, mnList.GetValidMNsCount());
         LogPrint(BCLog::COINJOIN, "DSQUEUE -- nLastDsq: %d  nDsqThreshold: %d  nDsqCount: %d\n", nLastDsq, nDsqThreshold, mmetaman.GetDsqCount());
         //don't allow a few nodes to dominate the queuing process
         if (nLastDsq != 0 && nDsqThreshold > mmetaman.GetDsqCount()) {
@@ -184,7 +184,7 @@ void CCoinJoinServer::ProcessDSQUEUE(CNode* pfrom, const std::string& strCommand
     }
 }
 
-void CCoinJoinServer::ProcessDSVIN(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, CConnman& connman, bool enable_bip61)
+void CCoinJoinServer::ProcessDSVIN(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, CConnman& connman, const bool enable_bip61)
 {
     if (pfrom->nVersion < MIN_COINJOIN_PEER_PROTO_VERSION) {
         LogPrint(BCLog::COINJOIN, "DSVIN -- peer=%d using obsolete version %i\n", pfrom->GetId(), pfrom->nVersion);
@@ -221,7 +221,7 @@ void CCoinJoinServer::ProcessDSVIN(CNode* pfrom, const std::string& strCommand, 
     }
 }
 
-void CCoinJoinServer::ProcessDSSIGNFINALTX(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, CConnman& connman, bool enable_bip61)
+void CCoinJoinServer::ProcessDSSIGNFINALTX(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, CConnman& connman, const bool enable_bip61)
 {
     if (pfrom->nVersion < MIN_COINJOIN_PEER_PROTO_VERSION) {
         LogPrint(BCLog::COINJOIN, "DSSIGNFINALTX -- peer=%d using obsolete version %i\n", pfrom->GetId(), pfrom->nVersion);
@@ -239,7 +239,7 @@ void CCoinJoinServer::ProcessDSSIGNFINALTX(CNode* pfrom, const std::string& strC
     LogPrint(BCLog::COINJOIN, "DSSIGNFINALTX -- vecTxIn.size() %s\n", vecTxIn.size());
 
     int nTxInIndex = 0;
-    int nTxInsCount = (int)vecTxIn.size();
+    const int nTxInsCount = (int)vecTxIn.size();
 
     for (const auto& txin : vecTxIn) {
         nTxInIndex++;
@@ -307,11 +307,11 @@ void CCoinJoinServer::CreateFinalTransaction(CConnman& connman)
     CMutableTransaction txNew;
 
     // make our new transaction
-    for (int i = 0; i < GetEntriesCount(); i++) {
-        for (const auto& txout : vecEntries[i].vecTxOut) {
+    for (const auto& entry : vecEntries) {
+        for (const auto& txout : entry.vecTxOut) {
             txNew.vout.push_back(txout);
         }
-        for (const auto& txdsin : vecEntries[i].vecTxDSIn) {
+        for (const auto& txdsin : entry.vecTxDSIn) {
             txNew.vin.push_back(txdsin);
         }
     }
@@ -331,8 +331,8 @@ void CCoinJoinServer::CommitFinalTransaction(CConnman& connman)
 {
     if (!fMasternodeMode) return; // check and relay final tx only on masternode
 
-    CTransactionRef finalTransaction = WITH_LOCK(cs_coinjoin, return MakeTransactionRef(finalMutableTransaction));
-    uint256 hashTx = finalTransaction->GetHash();
+    const CTransactionRef finalTransaction = WITH_LOCK(cs_coinjoin, return MakeTransactionRef(finalMutableTransaction));
+    const uint256 hashTx = finalTransaction->GetHash();
 
     LogPrint(BCLog::COINJOIN, "CCoinJoinServer::CommitFinalTransaction -- finalTransaction=%s", finalTransaction->ToString()); /* Continued */
 
@@ -488,7 +488,7 @@ bool CCoinJoinServer::HasTimedOut() const
 
     if (nState == POOL_STATE_IDLE) return false;
 
-    int nTimeout = (nState == POOL_STATE_SIGNING) ? COINJOIN_SIGNING_TIMEOUT : COINJOIN_QUEUE_TIMEOUT;
+    const int nTimeout = (nState == POOL_STATE_SIGNING) ? COINJOIN_SIGNING_TIMEOUT : COINJOIN_QUEUE_TIMEOUT;
 
     return GetTime() - nTimeLastSuccessfulStep >= nTimeout;
 }
@@ -665,8 +665,8 @@ bool CCoinJoinServer::AddScriptSig(const CTxIn& txinNew)
             LogPrint(BCLog::COINJOIN, "CCoinJoinServer::AddScriptSig -- adding to finalMutableTransaction, scriptSig=%s\n", ScriptToAsmStr(txinNew.scriptSig).substr(0, 24));
         }
     }
-    for (int i = 0; i < GetEntriesCount(); i++) {
-        if (vecEntries[i].AddScriptSig(txinNew)) {
+    for (auto& entry : vecEntries) {
+        if (entry.AddScriptSig(txinNew)) {
             LogPrint(BCLog::COINJOIN, "CCoinJoinServer::AddScriptSig -- adding to entries, scriptSig=%s\n", ScriptToAsmStr(txinNew.scriptSig).substr(0, 24));
             return true;
         }
@@ -820,14 +820,14 @@ void CCoinJoinServer::RelayFinalTransaction(const CTransaction& txFinal, CConnma
     }
 }
 
-void CCoinJoinServer::PushStatus(CNode* pnode, PoolStatusUpdate nStatusUpdate, PoolMessage nMessageID, CConnman& connman) const
+void CCoinJoinServer::PushStatus(CNode* pnode, const PoolStatusUpdate nStatusUpdate, const PoolMessage nMessageID, CConnman& connman) const
 {
     if (!pnode) return;
     CCoinJoinStatusUpdate psssup(nSessionID, nState, 0, nStatusUpdate, nMessageID);
     connman.PushMessage(pnode, CNetMsgMaker(pnode->GetSendVersion()).Make(NetMsgType::DSSTATUSUPDATE, psssup));
 }
 
-void CCoinJoinServer::RelayStatus(PoolStatusUpdate nStatusUpdate, CConnman& connman, PoolMessage nMessageID)
+void CCoinJoinServer::RelayStatus(PoolStatusUpdate nStatusUpdate, CConnman& connman, const PoolMessage nMessageID)
 {
     unsigned int nDisconnected{};
     // status updates should be relayed to mixing participants only
@@ -864,7 +864,7 @@ void CCoinJoinServer::RelayStatus(PoolStatusUpdate nStatusUpdate, CConnman& conn
     }
 }
 
-void CCoinJoinServer::RelayCompletedTransaction(PoolMessage nMessageID, CConnman& connman)
+void CCoinJoinServer::RelayCompletedTransaction(const PoolMessage nMessageID, CConnman& connman)
 {
     LogPrint(BCLog::COINJOIN, "CCoinJoinServer::%s -- nSessionID: %d  nSessionDenom: %d (%s)\n",
         __func__, nSessionID, nSessionDenom, CCoinJoin::DenominationToString(nSessionDenom));
@@ -885,7 +885,7 @@ void CCoinJoinServer::RelayCompletedTransaction(PoolMessage nMessageID, CConnman
     }
 }
 
-void CCoinJoinServer::SetState(PoolState nStateNew)
+void CCoinJoinServer::SetState(const PoolState nStateNew)
 {
     if (!fMasternodeMode) return;
 

@@ -344,7 +344,7 @@ std::string CCoinJoinClientSession::GetStatus(bool fWaitForBlock) const
     }
 }
 
-std::string CCoinJoinClientManager::GetStatuses()
+std::string CCoinJoinClientManager::GetStatuses() const
 {
     std::string strStatus;
     const bool fWaitForBlock = WaitForAnotherBlock();
@@ -356,7 +356,7 @@ std::string CCoinJoinClientManager::GetStatuses()
     return strStatus;
 }
 
-std::string CCoinJoinClientManager::GetSessionDenoms()
+std::string CCoinJoinClientManager::GetSessionDenoms() const
 {
     std::string strSessionDenoms;
 
@@ -669,7 +669,7 @@ bool CCoinJoinClientSession::SignFinalTransaction(const CTransaction& finalTrans
 }
 
 // mixing transaction was completed (failed or successful)
-void CCoinJoinClientSession::CompletedTransaction(PoolMessage nMessageID)
+void CCoinJoinClientSession::CompletedTransaction(const PoolMessage nMessageID)
 {
     if (fMasternodeMode) return;
 
@@ -771,7 +771,7 @@ bool CCoinJoinClientManager::CheckAutomaticBackup()
 //
 // Passively run mixing in the background to mix funds based on the given configuration.
 //
-bool CCoinJoinClientSession::DoAutomaticDenominating(CConnman& connman, bool fDryRun)
+bool CCoinJoinClientSession::DoAutomaticDenominating(CConnman& connman, const bool fDryRun)
 {
     if (fMasternodeMode) return false; // no client-side mixing on masternodes
     if (nState != POOL_STATE_IDLE) return false;
@@ -813,7 +813,7 @@ bool CCoinJoinClientSession::DoAutomaticDenominating(CConnman& connman, bool fDr
         }
 
         // check if there is anything left to do
-        CAmount nBalanceAnonymized = mixingWallet.GetAnonymizedBalance();
+        const CAmount nBalanceAnonymized = mixingWallet.GetAnonymizedBalance();
         nBalanceNeedsAnonymized = CCoinJoinClientOptions::GetAmount() * COIN - nBalanceAnonymized;
 
         if (nBalanceNeedsAnonymized < 0) {
@@ -831,7 +831,7 @@ bool CCoinJoinClientSession::DoAutomaticDenominating(CConnman& connman, bool fDr
         }
 
         // including denoms but applying some restrictions
-        CAmount nBalanceAnonymizable = mixingWallet.GetAnonymizableBalance();
+        const CAmount nBalanceAnonymizable = mixingWallet.GetAnonymizableBalance();
 
         // mixable balance is way too small
         if (nBalanceAnonymizable < nValueMin) {
@@ -841,16 +841,17 @@ bool CCoinJoinClientSession::DoAutomaticDenominating(CConnman& connman, bool fDr
         }
 
         // excluding denoms
-        CAmount nBalanceAnonimizableNonDenom = mixingWallet.GetAnonymizableBalance(true);
+        const CAmount nBalanceAnonimizableNonDenom = mixingWallet.GetAnonymizableBalance(true);
         // denoms
-        CAmount nBalanceDenominatedConf = mixingWallet.GetDenominatedBalance();
-        CAmount nBalanceDenominatedUnconf = mixingWallet.GetDenominatedBalance(true);
-        CAmount nBalanceDenominated = nBalanceDenominatedConf + nBalanceDenominatedUnconf;
-        CAmount nBalanceToDenominate = CCoinJoinClientOptions::GetAmount() * COIN - nBalanceDenominated;
+        const CAmount nBalanceDenominatedConf = mixingWallet.GetDenominatedBalance();
+        const CAmount nBalanceDenominatedUnconf = mixingWallet.GetDenominatedBalance(true);
+        const CAmount nBalanceDenominated = nBalanceDenominatedConf + nBalanceDenominatedUnconf;
+        const CAmount nBalanceToDenominate = CCoinJoinClientOptions::GetAmount() * COIN - nBalanceDenominated;
 
         // adjust nBalanceNeedsAnonymized to consume final denom
         if (nBalanceDenominated - nBalanceAnonymized > nBalanceNeedsAnonymized) {
             auto denoms = CCoinJoin::GetStandardDenominations();
+            denoms[0] = 0;
             CAmount nAdditionalDenom{0};
             for (const auto& denom : denoms) {
                 if (nBalanceNeedsAnonymized < denom) {
@@ -950,7 +951,7 @@ bool CCoinJoinClientSession::DoAutomaticDenominating(CConnman& connman, bool fDr
     return false;
 }
 
-bool CCoinJoinClientManager::DoAutomaticDenominating(CConnman& connman, bool fDryRun)
+bool CCoinJoinClientManager::DoAutomaticDenominating(CConnman& connman, const bool fDryRun)
 {
     if (fMasternodeMode) return false; // no client-side mixing on masternodes
     if (!CCoinJoinClientOptions::IsEnabled() || !IsMixing()) return false;
@@ -1002,7 +1003,7 @@ void CCoinJoinClientManager::AddUsedMasternode(const COutPoint& outpointMn)
     vecMasternodesUsed.push_back(outpointMn);
 }
 
-CDeterministicMNCPtr CCoinJoinClientManager::GetRandomNotUsedMasternode()
+CDeterministicMNCPtr CCoinJoinClientManager::GetRandomNotUsedMasternode() const
 {
     const auto mnList = deterministicMNManager->GetListAtChainTip();
 
@@ -1024,7 +1025,7 @@ CDeterministicMNCPtr CCoinJoinClientManager::GetRandomNotUsedMasternode()
     // shuffle pointers
     Shuffle(vpMasternodesShuffled.begin(), vpMasternodesShuffled.end(), FastRandomContext());
 
-    std::set<COutPoint> excludeSet(vecMasternodesUsed.begin(), vecMasternodesUsed.end());
+    std::set<COutPoint> excludeSet(vecMasternodesUsed.cbegin(), vecMasternodesUsed.cend());
 
     // loop through
     for (const auto& dmn : vpMasternodesShuffled) {
@@ -1323,7 +1324,7 @@ bool CCoinJoinClientSession::SelectDenominate(std::string& strErrorRet, std::vec
     return true;
 }
 
-bool CCoinJoinClientSession::PrepareDenominate(int nMinRounds, int nMaxRounds, std::string& strErrorRet, const std::vector<CTxDSIn>& vecTxDSIn, std::vector<std::pair<CTxDSIn, CTxOut> >& vecPSInOutPairsRet, bool fDryRun)
+bool CCoinJoinClientSession::PrepareDenominate(const int nMinRounds, const int nMaxRounds, std::string& strErrorRet, const std::vector<CTxDSIn>& vecTxDSIn, std::vector<std::pair<CTxDSIn, CTxOut> >& vecPSInOutPairsRet, const bool fDryRun)
 {
     AssertLockHeld(cs_main);
     AssertLockHeld(mixingWallet.cs_wallet);
@@ -1427,7 +1428,7 @@ bool CCoinJoinClientSession::MakeCollateralAmounts()
 }
 
 // Split up large inputs or create fee sized inputs
-bool CCoinJoinClientSession::MakeCollateralAmounts(const CompactTallyItem& tallyItem, bool fTryDenominated)
+bool CCoinJoinClientSession::MakeCollateralAmounts(const CompactTallyItem& tallyItem, const bool fTryDenominated)
 {
     AssertLockHeld(cs_main);
     AssertLockHeld(mempool.cs);
@@ -1471,7 +1472,7 @@ bool CCoinJoinClientSession::MakeCollateralAmounts(const CompactTallyItem& tally
         txBuilder.AddOutput(CCoinJoin::GetMaxCollateralAmount());
         // Note, here we first add a zero amount output to get the remainder after all fees and then assign it
         CTransactionBuilderOutput* out = txBuilder.AddOutput();
-        CAmount nAmountLeft = txBuilder.GetAmountLeft();
+        const CAmount nAmountLeft = txBuilder.GetAmountLeft();
         // If remainder is denominated add one duff to the fee
         out->UpdateAmount(CCoinJoin::IsDenominatedAmount(nAmountLeft) ? nAmountLeft - 1 : nAmountLeft);
 
@@ -1486,7 +1487,7 @@ bool CCoinJoinClientSession::MakeCollateralAmounts(const CompactTallyItem& tally
         CTransactionBuilderOutput* out2 = txBuilder.AddOutput();
 
         // Create two equal outputs from the available value. This adds one duff to the fee if txBuilder.GetAmountLeft() is odd.
-        CAmount nAmountOutputs = txBuilder.GetAmountLeft() / 2;
+        const CAmount nAmountOutputs = txBuilder.GetAmountLeft() / 2;
 
         assert(CCoinJoin::IsCollateralAmount(nAmountOutputs));
 
@@ -1550,7 +1551,7 @@ bool CCoinJoinClientSession::CreateCollateralTransaction(CMutableTransaction& tx
         // make our change address
         CPubKey vchPubKey;
         CReserveKey reservekey(&mixingWallet);
-        bool success = reservekey.GetReservedKey(vchPubKey, true);
+        const bool success = reservekey.GetReservedKey(vchPubKey, true);
         assert(success); // should never fail, as we just unlocked
         const CScript scriptChange = GetScriptForDestination(vchPubKey.GetID());
         reservekey.KeepKey();
@@ -1570,7 +1571,7 @@ bool CCoinJoinClientSession::CreateCollateralTransaction(CMutableTransaction& tx
 }
 
 // Create denominations by looping through inputs grouped by addresses
-bool CCoinJoinClientSession::CreateDenominated(CAmount nBalanceToDenominate)
+bool CCoinJoinClientSession::CreateDenominated(const CAmount nBalanceToDenominate)
 {
     if (!CCoinJoinClientOptions::IsEnabled()) return false;
 
@@ -1638,7 +1639,7 @@ bool CCoinJoinClientSession::CreateDenominated(CAmount nBalanceToDenominate, con
     // ****** Add outputs for denoms ************ /
 
     bool fAddFinal = true;
-    auto vecStandardDenoms = CCoinJoin::GetStandardDenominations();
+    const auto vecStandardDenoms = CCoinJoin::GetStandardDenominations();
 
     std::map<CAmount, int> mapDenomCount;
     for (auto nDenomValue : vecStandardDenoms) {
@@ -1662,7 +1663,7 @@ bool CCoinJoinClientSession::CreateDenominated(CAmount nBalanceToDenominate, con
             int nOutputs = 0;
 
             const auto& strFunc = __func__;
-            auto needMoreOutputs = [&]() {
+            const auto needMoreOutputs = [&]() {
                 if (txBuilder.CouldAddOutput(nDenomValue)) {
                     if (fAddFinal && nBalanceToDenominate > 0 && nBalanceToDenominate < nDenomValue) {
                         fAddFinal = false; // add final denom only once, only the smalest possible one
@@ -1715,11 +1716,11 @@ bool CCoinJoinClientSession::CreateDenominated(CAmount nBalanceToDenominate, con
 
     // Now that nCoinJoinDenomsGoal worth of each denom have been created or the max number of denoms given the value of the input, do something with the remainder.
     if (txBuilder.CouldAddOutput(CCoinJoin::GetSmallestDenomination()) && nBalanceToDenominate >= CCoinJoin::GetSmallestDenomination() && txBuilder.CountOutputs() < COINJOIN_DENOM_OUTPUTS_THRESHOLD) {
-        CAmount nLargestDenomValue = vecStandardDenoms.front();
+        const CAmount nLargestDenomValue = vecStandardDenoms.front();
 
         LogPrint(BCLog::COINJOIN, "CCoinJoinClientSession::%s -- 2 - Process remainder: %s\n", __func__, txBuilder.ToString());
 
-        auto countPossibleOutputs = [&](CAmount nAmount) -> int {
+        const auto countPossibleOutputs = [&](CAmount nAmount) -> int {
             std::vector<CAmount> vecOutputs;
             while (true) {
                 // Create a potential output
@@ -1735,11 +1736,11 @@ bool CCoinJoinClientSession::CreateDenominated(CAmount nBalanceToDenominate, con
         };
 
         // Go big to small
-        for (auto nDenomValue : vecStandardDenoms) {
+        for (const auto nDenomValue : vecStandardDenoms) {
             int nOutputs = 0;
 
             // Number of denoms we can create given our denom and the amount of funds we have left
-            int denomsToCreateValue = countPossibleOutputs(nDenomValue);
+            const int denomsToCreateValue = countPossibleOutputs(nDenomValue);
             // Prefer overshooting the target balance by larger denoms (hence `+1`) instead of a more
             // accurate approximation by many smaller denoms. This is ok because when we get here we
             // should have nCoinJoinDenomsGoal of each smaller denom already. Also, without `+1`
@@ -1747,9 +1748,9 @@ bool CCoinJoinClientSession::CreateDenominated(CAmount nBalanceToDenominate, con
             // denoms, yet we can't mix the remaining nBalanceToDenominate because it's smaller than
             // nDenomValue (and thus denomsToCreateBal == 0), so the target would never get reached
             // even when there is enough funds for that.
-            int denomsToCreateBal = (nBalanceToDenominate / nDenomValue) + 1;
+            const int denomsToCreateBal = (nBalanceToDenominate / nDenomValue) + 1;
             // Use the smaller value
-            int denomsToCreate = denomsToCreateValue > denomsToCreateBal ? denomsToCreateBal : denomsToCreateValue;
+            const int denomsToCreate = denomsToCreateValue > denomsToCreateBal ? denomsToCreateBal : denomsToCreateValue;
             LogPrint(BCLog::COINJOIN, "CCoinJoinClientSession::%s -- 2 - nBalanceToDenominate: %f, nDenomValue: %f, denomsToCreateValue: %d, denomsToCreateBal: %d\n",
                                          __func__, (float) nBalanceToDenominate / COIN, (float) nDenomValue / COIN, denomsToCreateValue, denomsToCreateBal);
             auto it = mapDenomCount.find(nDenomValue);
@@ -1811,7 +1812,7 @@ void CCoinJoinClientSession::RelayIn(const CCoinJoinEntry& entry, CConnman& conn
     });
 }
 
-void CCoinJoinClientSession::SetState(PoolState nStateNew)
+void CCoinJoinClientSession::SetState(const PoolState nStateNew)
 {
     LogPrint(BCLog::COINJOIN, "CCoinJoinClientSession::SetState -- nState: %d, nStateNew: %d\n", nState, nStateNew);
     nState = nStateNew;

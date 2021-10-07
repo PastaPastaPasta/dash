@@ -12,7 +12,7 @@
 #include <wallet/fees.h>
 #include <wallet/wallet.h>
 
-inline unsigned int GetSizeOfCompactSizeDiff(uint64_t nSizePrev, uint64_t nSizeNew)
+inline unsigned int GetSizeOfCompactSizeDiff(const uint64_t nSizePrev, const uint64_t nSizeNew)
 {
     assert(nSizePrev <= nSizeNew);
     return ::GetSizeOfCompactSize(nSizeNew) - ::GetSizeOfCompactSize(nSizePrev);
@@ -42,8 +42,8 @@ CScript CKeyHolder::GetScriptForDestination() const
 
 CScript CKeyHolderStorage::AddKey(CWallet* pwallet)
 {
-    auto keyHolderPtr = std::unique_ptr<CKeyHolder>(new CKeyHolder(pwallet));
-    auto script = keyHolderPtr->GetScriptForDestination();
+    auto keyHolderPtr = std::make_unique<CKeyHolder>(pwallet);
+    const auto script = keyHolderPtr->GetScriptForDestination();
 
     LOCK(cs_storage);
     storage.emplace_back(std::move(keyHolderPtr));
@@ -171,7 +171,7 @@ void CTransactionBuilder::Clear()
     dummyReserveKey.ReturnKey();
 }
 
-bool CTransactionBuilder::CouldAddOutput(CAmount nAmountOutput) const
+bool CTransactionBuilder::CouldAddOutput(const CAmount nAmountOutput) const
 {
     if (nAmountOutput < 0) {
         return false;
@@ -185,7 +185,7 @@ bool CTransactionBuilder::CouldAddOutputs(const std::vector<CAmount>& vecOutputA
 {
     CAmount nAmountAdditional{0};
     assert(vecOutputAmounts.size() < INT_MAX);
-    int nBytesAdditional = nBytesOutput * (int)vecOutputAmounts.size();
+    const int nBytesAdditional = nBytesOutput * (int)vecOutputAmounts.size();
     for (const auto nAmountOutput : vecOutputAmounts) {
         if (nAmountOutput < 0) {
             return false;
@@ -193,11 +193,11 @@ bool CTransactionBuilder::CouldAddOutputs(const std::vector<CAmount>& vecOutputA
         nAmountAdditional += nAmountOutput;
     }
     // Adding other outputs can change the serialized size of the vout size hence + GetSizeOfCompactSizeDiff()
-    unsigned int nBytes = GetBytesTotal() + nBytesAdditional + GetSizeOfCompactSizeDiff(vecOutputAmounts.size());
+    const unsigned int nBytes = GetBytesTotal() + nBytesAdditional + GetSizeOfCompactSizeDiff(vecOutputAmounts.size());
     return GetAmountLeft(GetAmountInitial(), GetAmountUsed() + nAmountAdditional, GetFee(nBytes)) >= 0;
 }
 
-CTransactionBuilderOutput* CTransactionBuilder::AddOutput(CAmount nAmountOutput)
+CTransactionBuilderOutput* CTransactionBuilder::AddOutput(const CAmount nAmountOutput)
 {
     if (CouldAddOutput(nAmountOutput)) {
         LOCK(cs_outputs);
@@ -229,10 +229,10 @@ CAmount CTransactionBuilder::GetAmountUsed() const
     return nAmountUsed;
 }
 
-CAmount CTransactionBuilder::GetFee(unsigned int nBytes) const
+CAmount CTransactionBuilder::GetFee(const unsigned int nBytes) const
 {
     CAmount nFeeCalc = coinControl.m_feerate->GetFee(nBytes);
-    CAmount nRequiredFee = GetRequiredFee(*pwallet.get(), nBytes);
+    const CAmount nRequiredFee = GetRequiredFee(*pwallet.get(), nBytes);
     if (nRequiredFee > nFeeCalc) {
         nFeeCalc = nRequiredFee;
     }
@@ -242,15 +242,15 @@ CAmount CTransactionBuilder::GetFee(unsigned int nBytes) const
     return nFeeCalc;
 }
 
-int CTransactionBuilder::GetSizeOfCompactSizeDiff(size_t nAdd) const
+int CTransactionBuilder::GetSizeOfCompactSizeDiff(const size_t nAdd) const
 {
-    size_t nSize = WITH_LOCK(cs_outputs, return vecOutputs.size());
-    unsigned int ret = ::GetSizeOfCompactSizeDiff(nSize, nSize + nAdd);
+    const size_t nSize = WITH_LOCK(cs_outputs, return vecOutputs.size());
+    const unsigned int ret = ::GetSizeOfCompactSizeDiff(nSize, nSize + nAdd);
     assert(ret <= INT_MAX);
     return (int)ret;
 }
 
-bool CTransactionBuilder::IsDust(CAmount nAmount) const
+bool CTransactionBuilder::IsDust(const CAmount nAmount) const
 {
     return ::IsDust(CTxOut(nAmount, ::GetScriptForDestination(tallyItem.txdest)), coinControl.m_discard_feerate.get());
 }
@@ -275,8 +275,8 @@ bool CTransactionBuilder::Commit(std::string& strResult)
         return false;
     }
 
-    CAmount nAmountLeft = GetAmountLeft();
-    bool fDust = IsDust(nAmountLeft);
+    const CAmount nAmountLeft = GetAmountLeft();
+    const bool fDust = IsDust(nAmountLeft);
     // If there is a either remainder which is considered to be dust (will be added to fee in this case) or no amount left there should be no change output, return if there is a change output.
     if (nChangePosRet != -1 && fDust) {
         strResult = strprintf("Unexpected change output %s at position %d", tx->vout[nChangePosRet].ToString(), nChangePosRet);
