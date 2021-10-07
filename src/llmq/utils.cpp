@@ -58,10 +58,22 @@ std::vector<CDeterministicMNCPtr> CLLMQUtils::GetAllQuorumMembers(const Consensu
 
 std::vector<CDeterministicMNCPtr> CLLMQUtils::GetAllQuorumMembersByQuarterRotation(Consensus::LLMQParams llmqParams, const CBlockIndex* pindexQuorum)
 {
+    static CCriticalSection cs_members;
+    static std::map<Consensus::LLMQType, unordered_lru_cache<uint256, std::vector<CDeterministicMNCPtr>, StaticSaltedHasher>> mapQuorumMembers;
+
     if (!IsQuorumTypeEnabled(llmqParams.type, pindexQuorum->pprev)) {
         return {};
     }
     std::vector<CDeterministicMNCPtr> quorumMembers;
+    {
+        LOCK(cs_members);
+        if (mapQuorumMembers.empty()) {
+            InitQuorumsCache(mapQuorumMembers);
+        }
+        if (mapQuorumMembers[llmqParams.type].get(pindexQuorum->GetBlockHash(), quorumMembers)) {
+            return quorumMembers;
+        }
+    }
 
     auto quorums = llmq::quorumBlockProcessor->GetMinedAndActiveCommitmentsUntilBlock(pindexQuorum);
     auto quorumIt = quorums.find(llmqParams.type);
@@ -104,6 +116,9 @@ std::vector<CDeterministicMNCPtr> CLLMQUtils::GetAllQuorumMembersByQuarterRotati
     std::copy(newQuarterMembers.begin(),
               newQuarterMembers.end(),
               std::back_inserter(quorumMembers));
+
+    LOCK(cs_members);
+    mapQuorumMembers[llmqParams.type].insert(pindexQuorum->GetBlockHash(), quorumMembers);
 
     return quorumMembers;
 }
