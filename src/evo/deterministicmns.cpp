@@ -720,24 +720,26 @@ bool CDeterministicMNManager::BuildNewListFromBlock(const CBlock& block, const C
 
     DecreasePoSePenalties(newList);
 
-    for (const auto& tx : block.vtx) {
-        if (tx->nVersion != 3) {
+    // we skip the coinbase
+    for (int i = 1; i < (int)block.vtx.size(); i++) {
+        const CTransaction& tx = *block.vtx[i];
+        if (tx.nVersion != 3) {
             // only interested in special TXs
             continue;
         }
 
-        if (tx->nType == TRANSACTION_PROVIDER_REGISTER) {
+        if (tx.nType == TRANSACTION_PROVIDER_REGISTER) {
             CProRegTx proTx;
-            if (!GetTxPayload(*tx, proTx)) {
+            if (!GetTxPayload(tx, proTx)) {
                 return _state.DoS(100, false, REJECT_INVALID, "bad-protx-payload");
             }
 
             auto dmn = std::make_shared<CDeterministicMN>(newList.GetTotalRegisteredCount());
-            dmn->proTxHash = tx->GetHash();
+            dmn->proTxHash = tx.GetHash();
 
             // collateralOutpoint is either pointing to an external collateral or to the ProRegTx itself
             if (proTx.collateralOutpoint.hash.IsNull()) {
-                dmn->collateralOutpoint = COutPoint(tx->GetHash(), proTx.collateralOutpoint.n);
+                dmn->collateralOutpoint = COutPoint(tx.GetHash(), proTx.collateralOutpoint.n);
             } else {
                 dmn->collateralOutpoint = proTx.collateralOutpoint;
             }
@@ -782,11 +784,11 @@ bool CDeterministicMNManager::BuildNewListFromBlock(const CBlock& block, const C
 
             if (debugLogs) {
                 LogPrintf("CDeterministicMNManager::%s -- MN %s added at height %d: %s\n",
-                    __func__, tx->GetHash().ToString(), nHeight, proTx.ToString());
+                    __func__, tx.GetHash().ToString(), nHeight, proTx.ToString());
             }
-        } else if (tx->nType == TRANSACTION_PROVIDER_UPDATE_SERVICE) {
+        } else if (tx.nType == TRANSACTION_PROVIDER_UPDATE_SERVICE) {
             CProUpServTx proTx;
-            if (!GetTxPayload(*tx, proTx)) {
+            if (!GetTxPayload(tx, proTx)) {
                 return _state.DoS(100, false, REJECT_INVALID, "bad-protx-payload");
             }
 
@@ -818,9 +820,9 @@ bool CDeterministicMNManager::BuildNewListFromBlock(const CBlock& block, const C
                 LogPrintf("CDeterministicMNManager::%s -- MN %s updated at height %d: %s\n",
                     __func__, proTx.proTxHash.ToString(), nHeight, proTx.ToString());
             }
-        } else if (tx->nType == TRANSACTION_PROVIDER_UPDATE_REGISTRAR) {
+        } else if (tx.nType == TRANSACTION_PROVIDER_UPDATE_REGISTRAR) {
             CProUpRegTx proTx;
-            if (!GetTxPayload(*tx, proTx)) {
+            if (!GetTxPayload(tx, proTx)) {
                 return _state.DoS(100, false, REJECT_INVALID, "bad-protx-payload");
             }
 
@@ -844,9 +846,9 @@ bool CDeterministicMNManager::BuildNewListFromBlock(const CBlock& block, const C
                 LogPrintf("CDeterministicMNManager::%s -- MN %s updated at height %d: %s\n",
                     __func__, proTx.proTxHash.ToString(), nHeight, proTx.ToString());
             }
-        } else if (tx->nType == TRANSACTION_PROVIDER_UPDATE_REVOKE) {
+        } else if (tx.nType == TRANSACTION_PROVIDER_UPDATE_REVOKE) {
             CProUpRevTx proTx;
-            if (!GetTxPayload(*tx, proTx)) {
+            if (!GetTxPayload(tx, proTx)) {
                 return _state.DoS(100, false, REJECT_INVALID, "bad-protx-payload");
             }
 
@@ -865,9 +867,9 @@ bool CDeterministicMNManager::BuildNewListFromBlock(const CBlock& block, const C
                 LogPrintf("CDeterministicMNManager::%s -- MN %s revoked operator key at height %d: %s\n",
                     __func__, proTx.proTxHash.ToString(), nHeight, proTx.ToString());
             }
-        } else if (tx->nType == TRANSACTION_QUORUM_COMMITMENT) {
+        } else if (tx.nType == TRANSACTION_QUORUM_COMMITMENT) {
             llmq::CFinalCommitmentTxPayload qc;
-            if (!GetTxPayload(*tx, qc)) {
+            if (!GetTxPayload(tx, qc)) {
                 return _state.DoS(100, false, REJECT_INVALID, "bad-qc-payload");
             }
             if (!qc.commitment.IsNull()) {
@@ -884,9 +886,11 @@ bool CDeterministicMNManager::BuildNewListFromBlock(const CBlock& block, const C
         }
     }
 
-    for (const auto& tx : block.vtx) {
+    // we skip the coinbase
+    for (int i = 1; i < (int)block.vtx.size(); i++) {
+        const CTransaction& tx = *block.vtx[i];
         // check if any existing MN collateral is spent by this transaction
-        for (const auto& in : tx->vin) {
+        for (const auto& in : tx.vin) {
             const auto dmn = newList.GetMNByCollateral(in.prevout);
             if (dmn && dmn->collateralOutpoint == in.prevout) {
                 newList.RemoveMN(dmn->proTxHash);

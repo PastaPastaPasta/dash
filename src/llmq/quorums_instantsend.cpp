@@ -21,8 +21,6 @@
 
 #include <cxxtimer.hpp>
 
-#include <boost/algorithm/string/replace.hpp>
-
 namespace llmq
 {
 
@@ -37,10 +35,6 @@ static const std::string DB_ARCHIVED_BY_HEIGHT_AND_HASH = "is_a1";
 static const std::string DB_ARCHIVED_BY_HASH = "is_a2";
 
 static const std::string DB_VERSION = "is_v";
-
-const int CInstantSendDb::CURRENT_VERSION;
-const uint8_t CInstantSendLock::islock_version;
-const uint8_t CInstantSendLock::isdlock_version;
 
 CInstantSendManager* quorumInstantSendManager;
 
@@ -93,21 +87,20 @@ void CInstantSendDb::Upgrade()
     }
 }
 
-void CInstantSendDb::WriteNewInstantSendLock(const uint256& hash, const CInstantSendLock& islock)
+void CInstantSendDb::WriteNewInstantSendLock(const uint256& hash, const CInstantSendLockPtr& islock)
 {
     LOCK(cs_db);
     CDBBatch batch(*db);
     batch.Write(std::make_tuple(DB_ISLOCK_BY_HASH, hash), islock);
-    batch.Write(std::make_tuple(DB_HASH_BY_TXID, islock.txid), hash);
-    for (auto& in : islock.inputs) {
+    batch.Write(std::make_tuple(DB_HASH_BY_TXID, islock->txid), hash);
+    for (const auto& in : islock->inputs) {
         batch.Write(std::make_tuple(DB_HASH_BY_OUTPOINT, in), hash);
     }
     db->WriteBatch(batch);
 
-    auto p = std::make_shared<CInstantSendLock>(islock);
-    islockCache.insert(hash, p);
-    txidCache.insert(islock.txid, hash);
-    for (auto& in : islock.inputs) {
+    islockCache.insert(hash, islock);
+    txidCache.insert(islock->txid, hash);
+    for (const auto& in : islock->inputs) {
         outpointCache.insert(in, hash);
     }
 }
@@ -197,8 +190,8 @@ std::unordered_map<uint256, CInstantSendLockPtr> CInstantSendDb::RemoveConfirmed
             break;
         }
 
-        auto& islockHash = std::get<2>(curKey);
-        auto islock = GetInstantSendLockByHash(islockHash, false);
+        const auto& islockHash = std::get<2>(curKey);
+        const auto islock = GetInstantSendLockByHash(islockHash, false);
         if (islock) {
             RemoveInstantSendLock(batch, islockHash, islock);
             ret.emplace(islockHash, islock);
@@ -241,7 +234,7 @@ void CInstantSendDb::RemoveArchivedInstantSendLocks(int nUntilHeight)
             break;
         }
 
-        auto& islockHash = std::get<2>(curKey);
+        const auto& islockHash = std::get<2>(curKey);
         batch.Erase(std::make_tuple(DB_ARCHIVED_BY_HASH, islockHash));
         batch.Erase(curKey);
 
@@ -260,7 +253,7 @@ void CInstantSendDb::WriteBlockInstantSendLocks(const std::shared_ptr<const CBlo
             // coinbase and TXs with no inputs can't be locked
             continue;
         }
-        uint256 islockHash = GetInstantSendLockHashByTxid(tx->GetHash());
+        const uint256 islockHash = GetInstantSendLockHashByTxid(tx->GetHash());
         // update DB about when an IS lock was mined
         if (!islockHash.IsNull()) {
             WriteInstantSendLockMined(batch, islockHash, pindexConnected->nHeight);
@@ -278,7 +271,7 @@ void CInstantSendDb::RemoveBlockInstantSendLocks(const std::shared_ptr<const CBl
             // coinbase and TXs with no inputs can't be locked
             continue;
         }
-        uint256 islockHash = GetInstantSendLockHashByTxid(tx->GetHash());
+        const uint256 islockHash = GetInstantSendLockHashByTxid(tx->GetHash());
         if (!islockHash.IsNull()) {
             RemoveInstantSendLockMined(batch, islockHash, pindexDisconnected->nHeight);
         }
@@ -409,11 +402,11 @@ std::vector<uint256> CInstantSendDb::RemoveChainedInstantSendLocks(const uint256
 
     CDBBatch batch(*db);
     while (!stack.empty()) {
-        auto children = GetInstantSendLocksByParent(stack.back());
+        const auto children = GetInstantSendLocksByParent(stack.back());
         stack.pop_back();
 
-        for (auto& childIslockHash : children) {
-            auto childIsLock = GetInstantSendLockByHash(childIslockHash, false);
+        for (const auto& childIslockHash : children) {
+            const auto childIsLock = GetInstantSendLockByHash(childIslockHash, false);
             if (!childIsLock) {
                 continue;
             }
@@ -482,11 +475,11 @@ void CInstantSendManager::ProcessTx(const CTransaction& tx, bool fRetroactive, c
 {
     AssertLockNotHeld(cs);
 
-    if (!fMasternodeMode || !IsInstantSendEnabled() || !masternodeSync.IsBlockchainSynced()) {
+    if (!fMasternodeMode || !masternodeSync.IsBlockchainSynced()) {
         return;
     }
 
-    auto llmqType = params.llmqTypeInstantSend;
+    const auto llmqType = params.llmqTypeInstantSend;
     if (llmqType == Consensus::LLMQ_NONE) {
         return;
     }
@@ -497,9 +490,9 @@ void CInstantSendManager::ProcessTx(const CTransaction& tx, bool fRetroactive, c
         return;
     }
 
-    auto conflictingLock = GetConflictingLock(tx);
+    const auto conflictingLock = GetConflictingLock(tx);
     if (conflictingLock != nullptr) {
-        auto conflictingLockHash = ::SerializeHash(*conflictingLock);
+        const auto conflictingLockHash = ::SerializeHash(*conflictingLock);
         LogPrintf("CInstantSendManager::%s -- txid=%s: conflicts with islock %s, txid=%s\n", __func__,
                   tx.GetHash().ToString(), conflictingLockHash.ToString(), conflictingLock->txid.ToString());
         return;
@@ -525,7 +518,7 @@ bool CInstantSendManager::TrySignInputLocks(const CTransaction& tx, bool fRetroa
 
     size_t alreadyVotedCount = 0;
     for (const auto& in : tx.vin) {
-        auto id = ::SerializeHash(std::make_pair(INPUTLOCK_REQUESTID_PREFIX, in.prevout));
+        const auto id = ::SerializeHash(std::make_pair(INPUTLOCK_REQUESTID_PREFIX, in.prevout));
         ids.emplace_back(id);
 
         uint256 otherTxHash;
@@ -555,8 +548,8 @@ bool CInstantSendManager::TrySignInputLocks(const CTransaction& tx, bool fRetroa
              tx.GetHash().ToString(), tx.vin.size());
 
     for (size_t i = 0; i < tx.vin.size(); i++) {
-        auto& in = tx.vin[i];
-        auto& id = ids[i];
+        const auto& in = tx.vin[i];
+        const auto& id = ids[i];
         WITH_LOCK(cs, inputRequestIds.emplace(id));
         LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- txid=%s: trying to vote on input %s with id %s. fRetroactive=%d\n", __func__,
                  tx.GetHash().ToString(), in.prevout.ToStringShort(), id.ToString(), fRetroactive);
@@ -589,14 +582,14 @@ bool CInstantSendManager::CheckCanLock(const COutPoint& outpoint, bool printDebu
 {
     AssertLockNotHeld(cs);
 
-    int nInstantSendConfirmationsRequired = params.nInstantSendConfirmationsRequired;
+    const int nInstantSendConfirmationsRequired = params.nInstantSendConfirmationsRequired;
 
-    if (IsLocked(outpoint.hash)) {
+    if (IsLockedInternal(outpoint.hash)) {
         // if prevout was ix locked, allow locking of descendants (no matter if prevout is in mempool or already mined)
         return true;
     }
 
-    auto mempoolTx = mempool.get(outpoint.hash);
+    const auto mempoolTx = mempool.get(outpoint.hash);
     if (mempoolTx) {
         if (printDebug) {
             LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- txid=%s: parent mempool TX %s is not locked\n", __func__,
@@ -641,7 +634,7 @@ void CInstantSendManager::HandleNewRecoveredSig(const CRecoveredSig& recoveredSi
         return;
     }
 
-    auto llmqType = Params().GetConsensus().llmqTypeInstantSend;
+    const auto llmqType = Params().GetConsensus().llmqTypeInstantSend;
     if (llmqType == Consensus::LLMQ_NONE) {
         return;
     }
@@ -677,8 +670,8 @@ void CInstantSendManager::HandleNewInputLockRecoveredSig(const CRecoveredSig& re
     }
 
     if (LogAcceptCategory(BCLog::INSTANTSEND)) {
-        for (auto& in : tx->vin) {
-            auto id = ::SerializeHash(std::make_pair(INPUTLOCK_REQUESTID_PREFIX, in.prevout));
+        for (const auto& in : tx->vin) {
+            const auto id = ::SerializeHash(std::make_pair(INPUTLOCK_REQUESTID_PREFIX, in.prevout));
             if (id == recoveredSig.id) {
                 LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- txid=%s: got recovered sig for input %s\n", __func__,
                          txid.ToString(), in.prevout.ToStringShort());
@@ -694,8 +687,8 @@ void CInstantSendManager::TrySignInstantSendLock(const CTransaction& tx)
 {
     const auto llmqType = Params().GetConsensus().llmqTypeInstantSend;
 
-    for (auto& in : tx.vin) {
-        auto id = ::SerializeHash(std::make_pair(INPUTLOCK_REQUESTID_PREFIX, in.prevout));
+    for (const auto& in : tx.vin) {
+        const auto id = ::SerializeHash(std::make_pair(INPUTLOCK_REQUESTID_PREFIX, in.prevout));
         if (!quorumSigningManager->HasRecoveredSig(llmqType, id, tx.GetHash())) {
             return;
         }
@@ -706,7 +699,7 @@ void CInstantSendManager::TrySignInstantSendLock(const CTransaction& tx)
 
     CInstantSendLock islock(CInstantSendLock::isdlock_version);
     islock.txid = tx.GetHash();
-    for (auto& in : tx.vin) {
+    for (const auto& in : tx.vin) {
         islock.inputs.emplace_back(in.prevout);
     }
 
@@ -718,7 +711,7 @@ void CInstantSendManager::TrySignInstantSendLock(const CTransaction& tx)
         islock.cycleHash = chainActive[quorumHeight]->GetBlockHash();
     }
 
-    auto id = islock.GetRequestId();
+    const auto id = islock.GetRequestId();
 
     if (quorumSigningManager->HasRecoveredSigForId(llmqType, id)) {
         return;
@@ -726,7 +719,7 @@ void CInstantSendManager::TrySignInstantSendLock(const CTransaction& tx)
 
     {
         LOCK(cs);
-        auto e = creatingInstantSendLocks.emplace(id, std::move(islock));
+        const auto e = creatingInstantSendLocks.emplace(id, std::move(islock));
         if (!e.second) {
             return;
         }
@@ -742,7 +735,7 @@ void CInstantSendManager::HandleNewInstantSendLockRecoveredSig(const llmq::CReco
 
     {
         LOCK(cs);
-        auto it = creatingInstantSendLocks.find(recoveredSig.id);
+        const auto it = creatingInstantSendLocks.find(recoveredSig.id);
         if (it == creatingInstantSendLocks.end()) {
             return;
         }
@@ -759,7 +752,7 @@ void CInstantSendManager::HandleNewInstantSendLockRecoveredSig(const llmq::CReco
     }
 
     islock->sig = recoveredSig.sig;
-    auto hash = ::SerializeHash(*islock);
+    const auto hash = ::SerializeHash(*islock);
 
     LOCK(cs);
     if (pendingInstantSendLocks.count(hash) || db.KnownInstantSendLock(hash)) {
@@ -786,7 +779,7 @@ void CInstantSendManager::ProcessMessageInstantSendLock(const CNode* pfrom, cons
 {
     AssertLockNotHeld(cs);
 
-    auto hash = ::SerializeHash(*islock);
+    const auto hash = ::SerializeHash(*islock);
 
     {
         LOCK(cs_main);
@@ -865,7 +858,7 @@ bool CInstantSendManager::ProcessPendingInstantSendLocks()
             pend = std::move(pendingInstantSendLocks);
         } else {
             while (pend.size() < maxCount) {
-                auto it = pendingInstantSendLocks.begin();
+                const auto it = pendingInstantSendLocks.begin();
                 pend.emplace(it->first, std::move(it->second));
                 pendingInstantSendLocks.erase(it);
             }
@@ -877,11 +870,11 @@ bool CInstantSendManager::ProcessPendingInstantSendLocks()
         return false;
     }
 
-    auto llmqType = Params().GetConsensus().llmqTypeInstantSend;
-    auto dkgInterval = GetLLMQParams(llmqType).dkgInterval;
+    const auto llmqType = Params().GetConsensus().llmqTypeInstantSend;
+    const auto dkgInterval = GetLLMQParams(llmqType).dkgInterval;
 
     // First check against the current active set and don't ban
-    auto badISLocks = ProcessPendingInstantSendLocks(0, pend, false);
+    const auto badISLocks = ProcessPendingInstantSendLocks(0, pend, false);
     if (!badISLocks.empty()) {
         LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- doing verification on old active set\n", __func__);
 
@@ -902,7 +895,7 @@ bool CInstantSendManager::ProcessPendingInstantSendLocks()
 
 std::unordered_set<uint256> CInstantSendManager::ProcessPendingInstantSendLocks(int signOffset, const std::unordered_map<uint256, std::pair<NodeId, CInstantSendLockPtr>, StaticSaltedHasher>& pend, bool ban)
 {
-    auto llmqType = Params().GetConsensus().llmqTypeInstantSend;
+    const auto llmqType = Params().GetConsensus().llmqTypeInstantSend;
 
     CBLSBatchVerifier<NodeId, uint256> batchVerifier(false, true, 8);
     std::unordered_map<uint256, CRecoveredSig> recSigs;
@@ -910,9 +903,9 @@ std::unordered_set<uint256> CInstantSendManager::ProcessPendingInstantSendLocks(
     size_t verifyCount = 0;
     size_t alreadyVerified = 0;
     for (const auto& p : pend) {
-        auto& hash = p.first;
-        auto nodeId = p.second.first;
-        auto& islock = p.second.second;
+        const auto& hash = p.first;
+        const auto nodeId = p.second.first;
+        const auto& islock = p.second.second;
 
         if (batchVerifier.badSources.count(nodeId)) {
             continue;
@@ -923,7 +916,7 @@ std::unordered_set<uint256> CInstantSendManager::ProcessPendingInstantSendLocks(
             continue;
         }
 
-        auto id = islock->GetRequestId();
+        const auto id = islock->GetRequestId();
 
         // no need to verify an ISLOCK if we already have verified the recovered sig that belongs to it
         if (quorumSigningManager->HasRecoveredSig(llmqType, id, islock->txid)) {
@@ -947,12 +940,12 @@ std::unordered_set<uint256> CInstantSendManager::ProcessPendingInstantSendLocks(
             }
         }
 
-        auto quorum = llmq::CSigningManager::SelectQuorumForSigning(llmqType, id, nSignHeight, signOffset);
+        const auto quorum = llmq::CSigningManager::SelectQuorumForSigning(llmqType, id, nSignHeight, signOffset);
         if (!quorum) {
             // should not happen, but if one fails to select, all others will also fail to select
             return {};
         }
-        uint256 signHash = CLLMQUtils::BuildSignHash(llmqType, quorum->qc->quorumHash, id, islock->txid);
+        const uint256 signHash = CLLMQUtils::BuildSignHash(llmqType, quorum->qc->quorumHash, id, islock->txid);
         batchVerifier.PushMessage(nodeId, hash, signHash, islock->sig.Get(), quorum->qc->quorumPublicKey);
         verifyCount++;
 
@@ -981,16 +974,16 @@ std::unordered_set<uint256> CInstantSendManager::ProcessPendingInstantSendLocks(
 
     if (ban && !batchVerifier.badSources.empty()) {
         LOCK(cs_main);
-        for (auto& nodeId : batchVerifier.badSources) {
+        for (const auto& nodeId : batchVerifier.badSources) {
             // Let's not be too harsh, as the peer might simply be unlucky and might have sent us an old lock which
             // does not validate anymore due to changed quorums
             Misbehaving(nodeId, 20);
         }
     }
     for (const auto& p : pend) {
-        auto& hash = p.first;
-        auto nodeId = p.second.first;
-        auto& islock = p.second.second;
+        const auto& hash = p.first;
+        const auto nodeId = p.second.first;
+        const auto& islock = p.second.second;
 
         if (batchVerifier.badMessages.count(hash)) {
             LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- txid=%s, islock=%s: invalid sig in islock, peer=%d\n", __func__,
@@ -1003,7 +996,7 @@ std::unordered_set<uint256> CInstantSendManager::ProcessPendingInstantSendLocks(
 
         // See comment further on top. We pass a reconstructed recovered sig to the signing manager to avoid
         // double-verification of the sig.
-        auto it = recSigs.find(hash);
+        const auto it = recSigs.find(hash);
         if (it != recSigs.end()) {
             auto recSig = std::make_shared<CRecoveredSig>(std::move(it->second));
             if (!quorumSigningManager->HasRecoveredSigForId(llmqType, recSig->id)) {
@@ -1060,7 +1053,7 @@ void CInstantSendManager::ProcessInstantSendLock(NodeId from, const uint256& has
         }
     }
 
-    db.WriteNewInstantSendLock(hash, *islock);
+    db.WriteNewInstantSendLock(hash, islock);
     if (pindexMined) {
         db.WriteInstantSendLockMined(hash, pindexMined->nHeight);
     }
@@ -1101,7 +1094,7 @@ void CInstantSendManager::TransactionAddedToMempool(const CTransactionRef& tx)
         return;
     }
 
-    CInstantSendLockPtr islock = db.GetInstantSendLockByTxid(tx->GetHash());
+    const CInstantSendLockPtr islock = db.GetInstantSendLockByTxid(tx->GetHash());
 
     if (islock == nullptr) {
         ProcessTx(*tx, false, Params().GetConsensus());
@@ -1130,7 +1123,7 @@ void CInstantSendManager::TransactionRemovedFromMempool(const CTransactionRef& t
         return;
     }
 
-    CInstantSendLockPtr islock = db.GetInstantSendLockByTxid(tx->GetHash());
+    const CInstantSendLockPtr islock = db.GetInstantSendLockByTxid(tx->GetHash());
 
     if (islock == nullptr) {
         return;
@@ -1160,7 +1153,7 @@ void CInstantSendManager::BlockConnected(const std::shared_ptr<const CBlock>& pb
                 continue;
             }
 
-            if (!IsLocked(tx->GetHash()) && !chainLocksHandler->HasChainLock(pindex->nHeight, pindex->GetBlockHash())) {
+            if (!IsLockedInternal(tx->GetHash()) && !chainLocksHandler->HasChainLock(pindex->nHeight, pindex->GetBlockHash())) {
                 ProcessTx(*tx, true, Params().GetConsensus());
                 // TX is not locked, so make sure it is tracked
                 AddNonLockedTx(tx, pindex);
@@ -1183,7 +1176,7 @@ void CInstantSendManager::BlockDisconnected(const std::shared_ptr<const CBlock>&
 void CInstantSendManager::AddNonLockedTx(const CTransactionRef& tx, const CBlockIndex* pindexMined)
 {
     LOCK(cs);
-    auto res = nonLockedTxs.emplace(tx->GetHash(), NonLockedTxInfo());
+    const auto res = nonLockedTxs.emplace(tx->GetHash(), NonLockedTxInfo());
     auto& info = res.first->second;
     info.pindexMined = pindexMined;
 
@@ -1203,7 +1196,7 @@ void CInstantSendManager::RemoveNonLockedTx(const uint256& txid, bool retryChild
 {
     AssertLockHeld(cs);
 
-    auto it = nonLockedTxs.find(txid);
+    const auto it = nonLockedTxs.find(txid);
     if (it == nonLockedTxs.end()) {
         return;
     }
@@ -1220,7 +1213,7 @@ void CInstantSendManager::RemoveNonLockedTx(const uint256& txid, bool retryChild
 
     if (info.tx) {
         for (const auto& in : info.tx->vin) {
-            auto jt = nonLockedTxs.find(in.prevout.hash);
+            const auto jt = nonLockedTxs.find(in.prevout.hash);
             if (jt != nonLockedTxs.end()) {
                 jt->second.children.erase(txid);
                 if (!jt->second.tx && jt->second.children.empty()) {
@@ -1243,7 +1236,7 @@ void CInstantSendManager::RemoveConflictedTx(const CTransaction& tx)
     RemoveNonLockedTx(tx.GetHash(), false);
 
     for (const auto& in : tx.vin) {
-        auto inputRequestId = ::SerializeHash(std::make_pair(INPUTLOCK_REQUESTID_PREFIX, in));
+        const auto inputRequestId = ::SerializeHash(std::make_pair(INPUTLOCK_REQUESTID_PREFIX, in));
         inputRequestIds.erase(inputRequestId);
     }
 }
@@ -1251,10 +1244,10 @@ void CInstantSendManager::RemoveConflictedTx(const CTransaction& tx)
 void CInstantSendManager::TruncateRecoveredSigsForInputs(const llmq::CInstantSendLock& islock)
 {
     AssertLockHeld(cs);
-    auto& consensusParams = Params().GetConsensus();
+    const auto& consensusParams = Params().GetConsensus();
 
-    for (auto& in : islock.inputs) {
-        auto inputRequestId = ::SerializeHash(std::make_pair(INPUTLOCK_REQUESTID_PREFIX, in));
+    for (const auto& in : islock.inputs) {
+        const auto inputRequestId = ::SerializeHash(std::make_pair(INPUTLOCK_REQUESTID_PREFIX, in));
         inputRequestIds.erase(inputRequestId);
         quorumSigningManager->TruncateRecoveredSig(consensusParams.llmqTypeInstantSend, inputRequestId);
     }
@@ -1275,14 +1268,14 @@ void CInstantSendManager::UpdatedBlockTip(const CBlockIndex* pindexNew)
         }
     }
 
-    bool fDIP0008Active = pindexNew->pprev && pindexNew->pprev->nHeight >= Params().GetConsensus().DIP0008Height;
+    const bool fDIP0008Active = pindexNew->pprev && pindexNew->pprev->nHeight >= Params().GetConsensus().DIP0008Height;
 
     if (AreChainLocksEnabled() && fDIP0008Active) {
         // Nothing to do here. We should keep all islocks and let chainlocks handle them.
         return;
     }
 
-    int nConfirmedHeight = pindexNew->nHeight - Params().GetConsensus().nInstantSendKeepLock;
+    const int nConfirmedHeight = pindexNew->nHeight - Params().GetConsensus().nInstantSendKeepLock;
     const CBlockIndex* pindex = pindexNew->GetAncestor(nConfirmedHeight);
 
     if (pindex) {
@@ -1296,13 +1289,13 @@ void CInstantSendManager::HandleFullyConfirmedBlock(const CBlockIndex* pindex)
         return;
     }
 
-    auto& consensusParams = Params().GetConsensus();
-    auto removeISLocks = db.RemoveConfirmedInstantSendLocks(pindex->nHeight);
+    const auto& consensusParams = Params().GetConsensus();
+    const auto removeISLocks = db.RemoveConfirmedInstantSendLocks(pindex->nHeight);
 
     LOCK(cs);
     for (const auto& p : removeISLocks) {
-        auto& islockHash = p.first;
-        auto& islock = p.second;
+        const auto& islockHash = p.first;
+        const auto& islock = p.second;
         LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- txid=%s, islock=%s: removed islock as it got fully confirmed\n", __func__,
                  islock->txid.ToString(), islockHash.ToString());
 
@@ -1321,7 +1314,7 @@ void CInstantSendManager::HandleFullyConfirmedBlock(const CBlockIndex* pindex)
     // from the nonLockedTxs map. Also collect all children of these TXs and mark them for retrying of IS locking.
     std::vector<uint256> toRemove;
     for (const auto& p : nonLockedTxs) {
-        auto pindexMined = p.second.pindexMined;
+        const auto pindexMined = p.second.pindexMined;
 
         if (pindexMined && pindex->GetAncestor(pindexMined->nHeight) == pindexMined) {
             toRemove.emplace_back(p.first);
@@ -1340,8 +1333,8 @@ void CInstantSendManager::RemoveMempoolConflictsForLock(const uint256& hash, con
     {
         LOCK(mempool.cs);
 
-        for (auto& in : islock.inputs) {
-            auto it = mempool.mapNextTx.find(in);
+        for (const auto& in : islock.inputs) {
+            const auto it = mempool.mapNextTx.find(in);
             if (it == mempool.mapNextTx.end()) {
                 continue;
             }
@@ -1375,18 +1368,18 @@ void CInstantSendManager::ResolveBlockConflicts(const uint256& islockHash, const
     std::unordered_map<const CBlockIndex*, std::unordered_map<uint256, CTransactionRef, StaticSaltedHasher>> conflicts;
     {
         LOCK(cs);
-        for (auto& in : islock.inputs) {
-            auto it = nonLockedTxsByOutpoints.find(in);
+        for (const auto& in : islock.inputs) {
+            const auto it = nonLockedTxsByOutpoints.find(in);
             if (it != nonLockedTxsByOutpoints.end()) {
-                auto& conflictTxid = it->second;
+                const auto& conflictTxid = it->second;
                 if (conflictTxid == islock.txid) {
                     continue;
                 }
-                auto jt = nonLockedTxs.find(conflictTxid);
+                const auto jt = nonLockedTxs.find(conflictTxid);
                 if (jt == nonLockedTxs.end()) {
                     continue;
                 }
-                auto& info = jt->second;
+                const auto& info = jt->second;
                 if (!info.pindexMined || !info.tx) {
                     continue;
                 }
@@ -1400,7 +1393,7 @@ void CInstantSendManager::ResolveBlockConflicts(const uint256& islockHash, const
     // Lets see if any of the conflicts was already mined into a ChainLocked block
     bool hasChainLockedConflict = false;
     for (const auto& p : conflicts) {
-        auto pindex = p.first;
+        const auto pindex = p.first;
         if (chainLocksHandler->HasChainLock(pindex->nHeight, pindex->GetBlockHash())) {
             hasChainLockedConflict = true;
             break;
@@ -1420,10 +1413,10 @@ void CInstantSendManager::ResolveBlockConflicts(const uint256& islockHash, const
 
     bool activateBestChain = false;
     for (const auto& p : conflicts) {
-        auto pindex = p.first;
+        const auto pindex = p.first;
         {
             LOCK(cs);
-            for (auto& p2 : p.second) {
+            for (const auto& p2 : p.second) {
                 const auto& tx = *p2.second;
                 RemoveConflictedTx(tx);
             }
@@ -1434,7 +1427,7 @@ void CInstantSendManager::ResolveBlockConflicts(const uint256& islockHash, const
         LOCK(cs_main);
         CValidationState state;
         // need non-const pointer
-        auto pindex2 = LookupBlockIndex(pindex->GetBlockHash());
+        const auto pindex2 = LookupBlockIndex(pindex->GetBlockHash());
         if (!InvalidateBlock(state, Params(), pindex2)) {
             LogPrintf("CInstantSendManager::%s -- InvalidateBlock failed: %s\n", __func__, FormatStateMessage(state));
             // This should not have happened and we are in a state were it's not safe to continue anymore
@@ -1459,9 +1452,9 @@ void CInstantSendManager::RemoveConflictingLock(const uint256& islockHash, const
 
     LogPrintf("CInstantSendManager::%s -- txid=%s, islock=%s: Removing ISLOCK and its chained children\n", __func__,
               islock.txid.ToString(), islockHash.ToString());
-    int tipHeight = WITH_LOCK(cs_main, return chainActive.Height());
+    const int tipHeight = WITH_LOCK(cs_main, return chainActive.Height());
 
-    auto removedIslocks = db.RemoveChainedInstantSendLocks(islockHash, islock.txid, tipHeight);
+    const auto removedIslocks = db.RemoveChainedInstantSendLocks(islockHash, islock.txid, tipHeight);
     for (const auto& h : removedIslocks) {
         LogPrintf("CInstantSendManager::%s -- txid=%s, islock=%s: removed (child) ISLOCK %s\n", __func__,
                   islock.txid.ToString(), islockHash.ToString(), h.ToString());
@@ -1495,7 +1488,7 @@ void CInstantSendManager::AskNodesForLockedTx(const uint256& txid)
 
 void CInstantSendManager::ProcessPendingRetryLockTxs()
 {
-    decltype(pendingRetryTxs) retryTxs = WITH_LOCK(cs, return std::move(pendingRetryTxs));
+    const auto retryTxs = WITH_LOCK(cs, return std::move(pendingRetryTxs));
 
     if (retryTxs.empty()) {
         return;
@@ -1510,7 +1503,7 @@ void CInstantSendManager::ProcessPendingRetryLockTxs()
         CTransactionRef tx;
         {
             LOCK(cs);
-            auto it = nonLockedTxs.find(txid);
+            const auto it = nonLockedTxs.find(txid);
             if (it == nonLockedTxs.end()) {
                 continue;
             }
@@ -1524,10 +1517,10 @@ void CInstantSendManager::ProcessPendingRetryLockTxs()
                 // we're already in the middle of locking this one
                 continue;
             }
-            if (IsLocked(tx->GetHash())) {
+            if (IsLockedInternal(tx->GetHash())) {
                 continue;
             }
-            if (IsConflicted(*tx)) {
+            if (GetConflictingLockInternal(*tx) != nullptr) {
                 // should not really happen as we have already filtered these out
                 continue;
             }
@@ -1570,7 +1563,7 @@ bool CInstantSendManager::GetInstantSendLockByHash(const uint256& hash, llmq::CI
         return false;
     }
 
-    auto islock = db.GetInstantSendLockByHash(hash);
+    const auto islock = db.GetInstantSendLockByHash(hash);
     if (!islock) {
         return false;
     }
@@ -1597,18 +1590,19 @@ bool CInstantSendManager::GetInstantSendLockHashByTxid(const uint256& txid, uint
     return !ret.IsNull();
 }
 
+// This should only be called when IsInstantSendEnabled has recently been called, and we are confident IX is still enabled
+bool CInstantSendManager::IsLockedInternal(const uint256& txHash) const
+{
+    return db.KnownInstantSendLock(db.GetInstantSendLockHashByTxid(txHash));
+}
+
 bool CInstantSendManager::IsLocked(const uint256& txHash) const
 {
     if (!IsInstantSendEnabled()) {
         return false;
     }
 
-    return db.KnownInstantSendLock(db.GetInstantSendLockHashByTxid(txHash));
-}
-
-bool CInstantSendManager::IsConflicted(const CTransaction& tx) const
-{
-    return GetConflictingLock(tx) != nullptr;
+    return IsLockedInternal(txHash);
 }
 
 CInstantSendLockPtr CInstantSendManager::GetConflictingLock(const CTransaction& tx) const
@@ -1617,8 +1611,13 @@ CInstantSendLockPtr CInstantSendManager::GetConflictingLock(const CTransaction& 
         return nullptr;
     }
 
+    return GetConflictingLockInternal(tx);
+}
+
+CInstantSendLockPtr CInstantSendManager::GetConflictingLockInternal(const CTransaction& tx) const
+{
     for (const auto& in : tx.vin) {
-        auto otherIsLock = db.GetInstantSendLockByInput(in.prevout);
+        const auto otherIsLock = db.GetInstantSendLockByInput(in.prevout);
         if (!otherIsLock) {
             continue;
         }
@@ -1638,7 +1637,7 @@ size_t CInstantSendManager::GetInstantSendLockCount() const
 void CInstantSendManager::WorkThreadMain()
 {
     while (!workInterrupt) {
-        bool fMoreWork = ProcessPendingInstantSendLocks();
+        const bool fMoreWork = ProcessPendingInstantSendLocks();
         ProcessPendingRetryLockTxs();
 
         if (!fMoreWork && !workInterrupt.sleep_for(std::chrono::milliseconds(100))) {

@@ -105,7 +105,7 @@ public:
      * @param hash The hash of the InstantSend Lock
      * @param islock The InstantSend Lock object itself
      */
-    void WriteNewInstantSendLock(const uint256& hash, const CInstantSendLock& islock);
+    void WriteNewInstantSendLock(const uint256& hash, const CInstantSendLockPtr& islock);
     /**
      * This method updates a DB entry for an InstantSend Lock from being not included in a block to being included in a block
      * @param hash The hash of the InstantSend Lock
@@ -219,7 +219,8 @@ private:
     void ProcessTx(const CTransaction& tx, bool fRetroactive, const Consensus::Params& params) LOCKS_EXCLUDED(cs);
     bool CheckCanLock(const CTransaction& tx, bool printDebug, const Consensus::Params& params) const;
     bool CheckCanLock(const COutPoint& outpoint, bool printDebug, const uint256& txHash, const Consensus::Params& params) const LOCKS_EXCLUDED(cs);
-    bool IsConflicted(const CTransaction& tx) const;
+    CInstantSendLockPtr GetConflictingLockInternal(const CTransaction& tx) const;
+    bool IsLockedInternal(const uint256& txHash) const;
 
     void HandleNewInputLockRecoveredSig(const CRecoveredSig& recoveredSig, const uint256& txid);
     void HandleNewInstantSendLockRecoveredSig(const CRecoveredSig& recoveredSig);
