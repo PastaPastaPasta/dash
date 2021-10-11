@@ -3905,6 +3905,16 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         return true;
     }
 
+    if (strCommand == NetMsgType::QUORUMROTATIONINFO) {
+        CQuorumRotationInfo data;
+        vRecv >> data;
+
+        LOCK(cs_main);
+        std::string strError;
+        ProcessIncomingQuorumRotationInfo(data, strError);
+        return true;
+    }
+
     if (strCommand == NetMsgType::NOTFOUND) {
         // Remove the NOTFOUND transactions from the peer
         LOCK(cs_main);
