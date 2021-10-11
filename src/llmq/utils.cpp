@@ -130,7 +130,6 @@ std::vector<CDeterministicMNCPtr> CLLMQUtils::BuildNewQuorumQuarterMembers(Conse
     //TODO Add handling cases where previous quarters are empty
     auto modifier = ::SerializeHash(std::make_pair(llmqType, pindexQuorum->GetBlockHash()));
     auto Mns = deterministicMNManager->GetListForBlock(pindexQuorum);
-    auto quarterSize = GetLLMQParams(llmqType).size / 4;
 
     auto MnsUsedAtH = CDeterministicMNList();
     auto MnsNotUsedAtH = CDeterministicMNList();
