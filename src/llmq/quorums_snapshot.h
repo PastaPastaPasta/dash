@@ -114,6 +114,7 @@ public:
 
 bool BuildQuorumRotationInfo(const CGetQuorumRotationInfo& request, CQuorumRotationInfo& quorumRotationInfoRet, std::string& errorRet);
 uint256 GetLastBaseBlockHash(const std::vector<const CBlockIndex*>& baseBlockIndexes, const CBlockIndex* blockIndex);
+bool ProcessIncomingQuorumRotationInfo(const CQuorumRotationInfo& quorumRotationInfo, std::string& errorRet);
 
 class CQuorumSnapshotManager
 {
@@ -127,8 +128,8 @@ private:
 public:
     explicit CQuorumSnapshotManager(CEvoDB& _evoDb);
 
-    CQuorumSnapshot GetSnapshotForBlock(const Consensus::LLMQType llmqType, const CBlockIndex* pindex);
-    void StoreSnapshotForBlock(const Consensus::LLMQType llmqType, const CBlockIndex* pindex, CQuorumSnapshot& snapshot);
+    bool GetSnapshotForBlock(const Consensus::LLMQType llmqType, const CBlockIndex* pindex, CQuorumSnapshot& snapshot);
+    void StoreSnapshotForBlock(const Consensus::LLMQType llmqType, const CBlockIndex* pindex, const CQuorumSnapshot& snapshot);
 };
 
 extern std::unique_ptr<CQuorumSnapshotManager> quorumSnapshotManager;
