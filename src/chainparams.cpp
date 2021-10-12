@@ -175,6 +175,8 @@ public:
         consensus.DIP0003EnforcementHash = uint256S("000000000000002d1734087b4c5afc3133e4e1c3e1a89218f62bcd9bb3d17f81");
         consensus.DIP0008Height = 1088640; // 00000000000000112e41e4b3afda8b233b8cc07c532d2eac5de097b68358c43e
         consensus.MinBIP9WarningHeight = 1090656; // dip8 activation height + miner confirmation window
+        consensus.DIPQuorumRotationHeight = 100000; // To be determined
+        consensus.DIPQuorumRotationEnforcementHeight = 200000; // To be determined
         consensus.powLimit = uint256S("00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"); // ~uint256(0) >> 20
         consensus.nPowTargetTimespan = 24 * 60 * 60; // Dash: 1 day
         consensus.nPowTargetSpacing = 2.5 * 60; // Dash: 2.5 minutes
