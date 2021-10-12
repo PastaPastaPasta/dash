@@ -206,24 +206,6 @@ uint256 GetLastBaseBlockHash(const std::vector<const CBlockIndex*>& baseBlockInd
     return hash;
 }
 
-bool ProcessIncomingQuorumRotationInfo(const CQuorumRotationInfo& quorumRotationInfo, std::string& errorRet)
-{
-    Consensus::LLMQType llmqType = Params().GetConsensus().llmqTypeInstantSend;
-    CQuorumSnapshot s;
-
-    if(!quorumSnapshotManager->GetSnapshotForBlock(llmqType, LookupBlockIndex(quorumRotationInfo.mnListDiffAtHMinusC.blockHash), s)){
-        quorumSnapshotManager->StoreSnapshotForBlock(llmqType, LookupBlockIndex(quorumRotationInfo.mnListDiffAtHMinusC.blockHash), quorumRotationInfo.quorumSnaphotAtHMinusC);
-    }
-    if(!quorumSnapshotManager->GetSnapshotForBlock(llmqType, LookupBlockIndex(quorumRotationInfo.mnListDiffAtHMinus2C.blockHash), s)){
-        quorumSnapshotManager->StoreSnapshotForBlock(llmqType, LookupBlockIndex(quorumRotationInfo.mnListDiffAtHMinus2C.blockHash), quorumRotationInfo.quorumSnaphotAtHMinus2C);
-    }
-    if(!quorumSnapshotManager->GetSnapshotForBlock(llmqType, LookupBlockIndex(quorumRotationInfo.mnListDiffAtHMinus3C.blockHash), s)){
-        quorumSnapshotManager->StoreSnapshotForBlock(llmqType, LookupBlockIndex(quorumRotationInfo.mnListDiffAtHMinus3C.blockHash), quorumRotationInfo.quorumSnaphotAtHMinus3C);
-    }
-
-    return true;
-}
-
 CQuorumSnapshotManager::CQuorumSnapshotManager(CEvoDB& _evoDb) :
         evoDb(_evoDb)
 {

@@ -3906,12 +3906,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     }
 
     if (strCommand == NetMsgType::QUORUMROTATIONINFO) {
-        CQuorumRotationInfo data;
-        vRecv >> data;
-
+        // we have never requested this
         LOCK(cs_main);
-        std::string strError;
-        ProcessIncomingQuorumRotationInfo(data, strError);
+        Misbehaving(pfrom->GetId(), 100, strprintf("received not-requested quorumrotationinfo. peer=%d", pfrom->GetId()));
         return true;
     }
 
