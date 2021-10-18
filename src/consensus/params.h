@@ -24,6 +24,7 @@ enum DeploymentPos
     DEPLOYMENT_REALLOC, // Deployment of Block Reward Reallocation
     DEPLOYMENT_DIP0020, // Deployment of DIP0020, DIP0021 and LMQ_100_67 quorums
     DEPLOYMENT_GOV_FEE, // Deployment of decreased governance proposal fee
+    DEPLOYMENT_QUORUMROT, // Deployment of Quorum Rotation DIP
     // NOTE: Also add new deployments to VersionBitsDeploymentInfo in versionbits.cpp
     MAX_VERSION_BITS_DEPLOYMENTS
 };
@@ -83,10 +84,6 @@ struct Params {
     /** Block height at which DIP0003 becomes enforced */
     int DIP0003EnforcementHeight;
     uint256 DIP0003EnforcementHash;
-    /** Block height at which DIP00XX becomes active */
-    int DIPQuorumRotationHeight;
-    /** Block height at which DIP00XX becomes enforced */
-    int DIPQuorumRotationEnforcementHeight;
     /** Block height at which DIP0008 becomes active */
     int DIP0008Height;
     /** Don't warn about unknown BIP 9 activations below this height.
