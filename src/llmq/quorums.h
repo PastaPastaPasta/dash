@@ -9,6 +9,7 @@
 #include <consensus/params.h>
 #include <saltedhasher.h>
 #include <unordered_lru_cache.h>
+#include <circular_fifo_cache.h>
 #include <threadinterrupt.h>
 
 #include <bls/bls.h>
@@ -206,6 +207,8 @@ private:
     mutable std::map<Consensus::LLMQType, unordered_lru_cache<uint256, CQuorumPtr, StaticSaltedHasher>> mapQuorumsCache GUARDED_BY(quorumsCacheCs);
     mutable std::map<Consensus::LLMQType, unordered_lru_cache<uint256, std::vector<CQuorumCPtr>, StaticSaltedHasher>> scanQuorumsCache GUARDED_BY(quorumsCacheCs);
 
+    mutable std::map<Consensus::LLMQType, circular_fifo_cache<std::pair<uint256, CQuorumPtr>>> indexedQuorumsCache GUARDED_BY(quorumsCacheCs);
+
     mutable ctpl::thread_pool workerPool;
     mutable CThreadInterrupt quorumThreadInterrupt;
 
@@ -232,6 +235,8 @@ public:
 
     // this one is cs_main-free
     std::vector<CQuorumCPtr> ScanQuorums(Consensus::LLMQType llmqType, const CBlockIndex* pindexStart, size_t nCountRequested) const;
+
+    std::vector<CQuorumCPtr> ScanIndexedQuorums(Consensus::LLMQType llmqType, const CBlockIndex* pindexStart, size_t nCountRequested) const;
 
 private:
     // all private methods here are cs_main-free
