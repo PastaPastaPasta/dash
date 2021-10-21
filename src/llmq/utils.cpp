@@ -7,7 +7,7 @@
 #include <llmq/quorums.h>
 #include <llmq/blockprocessor.h>
 #include <llmq/commitment.h>
-#include <llmq/quorums_snapshot.h>
+#include <llmq/snapshot.h>
 #include <llmq/utils.h>
 
 #include <bls/bls.h>

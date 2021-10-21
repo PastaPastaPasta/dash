@@ -57,7 +57,7 @@
 #include <llmq/chainlocks.h>
 #include <llmq/dkgsessionmgr.h>
 #include <llmq/instantsend.h>
-#include <llmq/quorums_snapshot.h>
+#include <llmq/snapshot.h>
 #include <llmq/signing.h>
 #include <llmq/signing_shares.h>
 
