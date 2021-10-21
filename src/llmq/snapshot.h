@@ -2,8 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_QUORUMS_SNAPSHOT_H
-#define BITCOIN_QUORUMS_SNAPSHOT_H
+#ifndef BITCOIN_LLMQ_SNAPSHOT_H
+#define BITCOIN_LLMQ_SNAPSHOT_H
 
 #include <evo/simplifiedmns.h>
 #include <serialize.h>
@@ -125,4 +125,4 @@ public:
 
 extern std::unique_ptr<CQuorumSnapshotManager> quorumSnapshotManager;
 
-#endif //BITCOIN_QUORUMS_SNAPSHOT_H
+#endif //BITCOIN_LLMQ_SNAPSHOT_H
