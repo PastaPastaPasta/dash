@@ -212,7 +212,7 @@ BITCOIN_CORE_H = \
   llmq/dkgsession.h \
   llmq/init.h \
   llmq/instantsend.h \
-  llmq/quorums_snapshot.h \
+  llmq/snapshot.h \
   llmq/signing.h \
   llmq/signing_shares.h \
   llmq/utils.h \
@@ -386,7 +386,7 @@ libdash_server_a_SOURCES = \
   llmq/dkgsession.cpp \
   llmq/init.cpp \
   llmq/instantsend.cpp \
-  llmq/quorums_snapshot.cpp \
+  llmq/snapshot.cpp \
   llmq/signing.cpp \
   llmq/signing_shares.cpp \
   llmq/utils.cpp \

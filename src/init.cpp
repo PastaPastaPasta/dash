@@ -78,7 +78,7 @@
 #include <llmq/init.h>
 #include <llmq/blockprocessor.h>
 #include <llmq/signing.h>
-#include <llmq/quorums_snapshot.h>
+#include <llmq/snapshot.h>
 #include <llmq/utils.h>
 
 #include <statsd_client.h>
