@@ -149,6 +149,7 @@ public:
     Consensus::LLMQType llmqType{Consensus::LLMQType::LLMQ_NONE};
     uint256 quorumHash;
     uint256 proTxHash;
+    uint32_t quorumIndex;
     std::vector<bool> validMembers;
 
     CBLSPublicKey quorumPublicKey;
@@ -173,6 +174,7 @@ public:
                 obj.llmqType,
                 obj.quorumHash,
                 obj.proTxHash,
+                obj.quorumIndex,
                 DYNBITSET(obj.validMembers),
                 obj.quorumPublicKey,
                 obj.quorumVvecHash,
@@ -238,6 +240,7 @@ private:
     CDKGSessionManager& dkgManager;
 
     const CBlockIndex* m_quorum_base_block_index{nullptr};
+    uint32_t quorumIndex{};
 
 private:
     std::vector<std::unique_ptr<CDKGMember>> members;
@@ -277,7 +280,7 @@ public:
     CDKGSession(const Consensus::LLMQParams& _params, CBLSWorker& _blsWorker, CDKGSessionManager& _dkgManager) :
         params(_params), blsWorker(_blsWorker), cache(_blsWorker), dkgManager(_dkgManager) {}
 
-    bool Init(const CBlockIndex* pQuorumBaseBlockIndex, const std::vector<CDeterministicMNCPtr>& mns, const uint256& _myProTxHash);
+    bool Init(const CBlockIndex* pQuorumBaseBlockIndex, const std::vector<CDeterministicMNCPtr>& mns, const uint256& _myProTxHash, const uint32_t _quorumIndex = 0);
 
     size_t GetMyMemberIndex() const { return myIdx; }
 
