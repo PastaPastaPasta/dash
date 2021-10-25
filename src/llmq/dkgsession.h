@@ -150,8 +150,7 @@ public:
     Consensus::LLMQType llmqType{Consensus::LLMQType::LLMQ_NONE};
     uint256 quorumHash;
     uint256 proTxHash;
-    //quorumIndex [0-64]
-    uint32_t quorumIndex;
+    uint32_t quorumIndex; // used to identify quorums of the same type. Example: if 64 quorums of the same type are active at the same time, quorumIndex has a value [0,63]
     std::vector<bool> validMembers;
 
     CBLSPublicKey quorumPublicKey;
