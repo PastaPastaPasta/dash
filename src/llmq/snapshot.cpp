@@ -20,6 +20,8 @@
 #include <univalue.h>
 #include <validation.h>
 
+namespace llmq
+{
 
 static const std::string DB_QUORUM_SNAPSHOT = "llmq_S";
 
@@ -92,7 +94,7 @@ bool BuildQuorumRotationInfo(const CGetQuorumRotationInfo& request, CQuorumRotat
 
     std::vector<const CBlockIndex*> baseBlockIndexes;
     if (request.baseBlockHashesNb == 0) {
-        const CBlockIndex *blockIndex = chainActive.Genesis();
+        const CBlockIndex *blockIndex = ::ChainActive().Genesis();
         if (!blockIndex) {
             errorRet = strprintf("genesis block not found");
             return false;
@@ -106,7 +108,7 @@ bool BuildQuorumRotationInfo(const CGetQuorumRotationInfo& request, CQuorumRotat
                 errorRet = strprintf("block %s not found", blockHash.ToString());
                 return false;
             }
-            if (!chainActive.Contains(blockIndex)){
+            if (!::ChainActive().Contains(blockIndex)){
                 errorRet = strprintf("block %s is not in the active chain", blockHash.ToString());
                 return false;
             }
@@ -117,7 +119,7 @@ bool BuildQuorumRotationInfo(const CGetQuorumRotationInfo& request, CQuorumRotat
         });
     }
 
-    const CBlockIndex* tipBlockIndex = chainActive.Tip();
+    const CBlockIndex* tipBlockIndex = ::ChainActive().Tip();
     if (!tipBlockIndex) {
         errorRet = strprintf("tip block not found");
         return false;
@@ -243,3 +245,5 @@ void CQuorumSnapshotManager::StoreSnapshotForBlock(const Consensus::LLMQType llm
     evoDb.Write(std::make_pair(DB_QUORUM_SNAPSHOT, snapshotHash), snapshot);
     quorumSnapshotCache.emplace(snapshotHash, snapshot);
 }
+
+} // namespace llmq
