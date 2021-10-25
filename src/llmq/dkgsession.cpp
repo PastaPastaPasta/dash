@@ -82,12 +82,11 @@ CDKGPrematureCommitment::CDKGPrematureCommitment(const Consensus::LLMQParams& pa
 {
 }
 
-CDKGMember::CDKGMember(CDeterministicMNCPtr _dmn, size_t _idx) :
+CDKGMember::CDKGMember(const CDeterministicMNCPtr& _dmn, size_t _idx) :
     dmn(_dmn),
     idx(_idx),
     id(_dmn->proTxHash)
 {
-
 }
 
 bool CDKGSession::Init(const CBlockIndex* _pindexQuorum, const std::vector<CDeterministicMNCPtr>& mns, const uint256& _myProTxHash)

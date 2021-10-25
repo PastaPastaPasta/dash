@@ -936,7 +936,7 @@ static void ThreadImport(std::vector<fs::path> vImportFiles)
         LOCK(cs_main);
         int64_t nStart = GetTimeMillis();
         auto mnList = deterministicMNManager->GetListAtChainTip();
-        mnList.ForEachMN(false, [&](const CDeterministicMNCPtr& dmn) {
+        mnList.ForEachMN(false, [&](const CDeterministicMN* dmn) {
             Coin coin;
             GetUTXOCoin(dmn->collateralOutpoint, coin);
         });

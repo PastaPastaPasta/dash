@@ -141,7 +141,7 @@ public:
 
     std::string GetStatus(bool fWaitForBlock) const;
 
-    bool GetMixingMasternodeInfo(CDeterministicMNCPtr& ret) const;
+    const CDeterministicMN* GetMixingMasternodeInfo() const;
 
     /// Passively run mixing in the background according to the configuration in settings
     bool DoAutomaticDenominating(CConnman& connman, bool fDryRun = false);
@@ -225,7 +225,7 @@ public:
     std::string GetStatuses();
     std::string GetSessionDenoms();
 
-    bool GetMixingMasternodesInfo(std::vector<CDeterministicMNCPtr>& vecDmnsRet) const;
+    bool GetMixingMasternodesInfo(std::vector<const CDeterministicMN*>& vecDmnsRet) const;
 
     /// Passively run mixing in the background according to the configuration in settings
     bool DoAutomaticDenominating(CConnman& connman, bool fDryRun = false);

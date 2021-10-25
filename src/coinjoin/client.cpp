@@ -367,18 +367,16 @@ std::string CCoinJoinClientManager::GetSessionDenoms()
     return strSessionDenoms.empty() ? "N/A" : strSessionDenoms;
 }
 
-bool CCoinJoinClientSession::GetMixingMasternodeInfo(CDeterministicMNCPtr& ret) const
+const CDeterministicMN* CCoinJoinClientSession::GetMixingMasternodeInfo() const
 {
-    ret = mixingMasternode;
-    return ret != nullptr;
+    return mixingMasternode.get();
 }
 
-bool CCoinJoinClientManager::GetMixingMasternodesInfo(std::vector<CDeterministicMNCPtr>& vecDmnsRet) const
+bool CCoinJoinClientManager::GetMixingMasternodesInfo(std::vector<const CDeterministicMN*>& vecDmnsRet) const
 {
     LOCK(cs_deqsessions);
     for (const auto& session : deqSessions) {
-        CDeterministicMNCPtr dmn;
-        if (session.GetMixingMasternodeInfo(dmn)) {
+        if (auto dmn = session.GetMixingMasternodeInfo()) {
             vecDmnsRet.push_back(dmn);
         }
     }
@@ -1020,7 +1018,7 @@ CDeterministicMNCPtr CCoinJoinClientManager::GetRandomNotUsedMasternode()
     // fill a vector
     std::vector<CDeterministicMNCPtr> vpMasternodesShuffled;
     vpMasternodesShuffled.reserve(nCountEnabled);
-    mnList.ForEachMN(true, [&vpMasternodesShuffled](const CDeterministicMNCPtr& dmn) {
+    mnList.ForEachMNPtr(true, [&vpMasternodesShuffled](const CDeterministicMNCPtr dmn) {
         vpMasternodesShuffled.emplace_back(dmn);
     });
 
@@ -1058,7 +1056,7 @@ bool CCoinJoinClientSession::JoinExistingQueue(CAmount nBalanceNeedsAnonymized, 
     // Look through the queues and see if anything matches
     CCoinJoinQueue dsq;
     while (coinJoinClientQueueManager.GetQueueItemAndTry(dsq)) {
-        auto dmn = mnList.GetValidMNByCollateral(dsq.masternodeOutpoint);
+        auto dmn = mnList.GetMNShared(mnList.GetValidMNByCollateral(dsq.masternodeOutpoint)->proTxHash);
 
         if (!dmn) {
             LogPrint(BCLog::COINJOIN, "CCoinJoinClientSession::JoinExistingQueue -- dsq masternode is not in masternode list, masternode=%s\n", dsq.masternodeOutpoint.ToStringShort());
@@ -1226,8 +1224,7 @@ bool CCoinJoinClientManager::TrySubmitDenominate(const CService& mnAddr, CConnma
 {
     LOCK(cs_deqsessions);
     for (auto& session : deqSessions) {
-        CDeterministicMNCPtr mnMixing;
-        if (session.GetMixingMasternodeInfo(mnMixing) && mnMixing->pdmnState->addr == mnAddr && session.GetState() == POOL_STATE_QUEUE) {
+        if (auto mnMixing = session.GetMixingMasternodeInfo(); mnMixing && mnMixing->pdmnState->addr == mnAddr && session.GetState() == POOL_STATE_QUEUE) {
             session.SubmitDenominate(connman);
             return true;
         }
@@ -1239,8 +1236,7 @@ bool CCoinJoinClientManager::MarkAlreadyJoinedQueueAsTried(CCoinJoinQueue& dsq) 
 {
     LOCK(cs_deqsessions);
     for (const auto& session : deqSessions) {
-        CDeterministicMNCPtr mnMixing;
-        if (session.GetMixingMasternodeInfo(mnMixing) && mnMixing->collateralOutpoint == dsq.masternodeOutpoint) {
+        if (auto mnMixing = session.GetMixingMasternodeInfo(); mnMixing && mnMixing->collateralOutpoint == dsq.masternodeOutpoint) {
             dsq.fTried = true;
             return true;
         }

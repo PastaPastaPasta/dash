@@ -184,7 +184,7 @@ void MasternodeList::updateDIP3List()
     {
         // Get all UTXOs for each MN collateral in one go so that we can reduce locking overhead for cs_main
         // We also do this outside of the below Qt list update loop to reduce cs_main locking time to a minimum
-        mnList.ForEachMN(false, [&](const CDeterministicMNCPtr& dmn) {
+        mnList.ForEachMN(false, [&](const CDeterministicMN* dmn) {
             CTxDestination collateralDest;
             Coin coin;
             if (clientModel->node().getUnspentOutput(dmn->collateralOutpoint, coin) && ExtractDestination(coin.out.scriptPubKey, collateralDest)) {
@@ -219,7 +219,7 @@ void MasternodeList::updateDIP3List()
         }
     }
 
-    mnList.ForEachMN(false, [&](const CDeterministicMNCPtr& dmn) {
+    mnList.ForEachMN(false, [&](const CDeterministicMN* dmn) {
         if (walletModel && ui->checkBoxMyMasternodesOnly->isChecked()) {
             bool fMyMasternode = setOutpts.count(dmn->collateralOutpoint) ||
                 walletModel->wallet().isSpendable(dmn->pdmnState->keyIDOwner) ||
@@ -233,7 +233,7 @@ void MasternodeList::updateDIP3List()
         auto addr_key = dmn->pdmnState->addr.GetKey();
         QByteArray addr_ba(reinterpret_cast<const char*>(addr_key.data()), addr_key.size());
         QTableWidgetItem* addressItem = new CMasternodeListWidgetItem<QByteArray>(QString::fromStdString(dmn->pdmnState->addr.ToString()), addr_ba);
-        QTableWidgetItem* statusItem = new QTableWidgetItem(mnList.IsMNValid(dmn) ? tr("ENABLED") : (mnList.IsMNPoSeBanned(dmn) ? tr("POSE_BANNED") : tr("UNKNOWN")));
+        QTableWidgetItem* statusItem = new QTableWidgetItem(mnList.IsMNValid(*dmn) ? tr("ENABLED") : (mnList.IsMNPoSeBanned(*dmn) ? tr("POSE_BANNED") : tr("UNKNOWN")));
         QTableWidgetItem* PoSeScoreItem = new CMasternodeListWidgetItem<int>(QString::number(dmn->pdmnState->nPoSePenalty), dmn->pdmnState->nPoSePenalty);
         QTableWidgetItem* registeredItem = new CMasternodeListWidgetItem<int>(QString::number(dmn->pdmnState->nRegisteredHeight), dmn->pdmnState->nRegisteredHeight);
         QTableWidgetItem* lastPaidItem = new CMasternodeListWidgetItem<int>(QString::number(dmn->pdmnState->nLastPaidHeight), dmn->pdmnState->nLastPaidHeight);
@@ -335,7 +335,7 @@ void MasternodeList::on_checkBoxMyMasternodesOnly_stateChanged(int state)
     fFilterUpdatedDIP3 = true;
 }
 
-CDeterministicMNCPtr MasternodeList::GetSelectedDIP3MN()
+const CDeterministicMN* MasternodeList::GetSelectedDIP3MN() const
 {
     if (!clientModel) {
         return nullptr;
@@ -345,7 +345,7 @@ CDeterministicMNCPtr MasternodeList::GetSelectedDIP3MN()
     {
         LOCK(cs_dip3list);
 
-        QItemSelectionModel* selectionModel = ui->tableWidgetMasternodesDIP3->selectionModel();
+        const QItemSelectionModel* selectionModel = ui->tableWidgetMasternodesDIP3->selectionModel();
         QModelIndexList selected = selectionModel->selectedRows();
 
         if (selected.count() == 0) return nullptr;

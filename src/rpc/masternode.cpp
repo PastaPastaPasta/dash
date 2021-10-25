@@ -244,7 +244,7 @@ static UniValue masternode_status(const JSONRPCRequest& request)
 
     UniValue mnObj(UniValue::VOBJ);
 
-    CDeterministicMNCPtr dmn;
+    const CDeterministicMN* dmn;
     {
         LOCK(activeMasternodeInfoCs);
 
@@ -267,7 +267,7 @@ static UniValue masternode_status(const JSONRPCRequest& request)
     return mnObj;
 }
 
-static std::string GetRequiredPaymentsString(int nBlockHeight, const CDeterministicMNCPtr &payee)
+static std::string GetRequiredPaymentsString(int nBlockHeight, const CDeterministicMN* payee)
 {
     std::string strPayments = "Unknown";
     if (payee) {
@@ -594,16 +594,16 @@ static UniValue masternodelist(const JSONRPCRequest& request)
     UniValue obj(UniValue::VOBJ);
 
     auto mnList = deterministicMNManager->GetListAtChainTip();
-    auto dmnToStatus = [&](const CDeterministicMNCPtr& dmn) {
-        if (mnList.IsMNValid(dmn)) {
+    auto dmnToStatus = [&](const CDeterministicMN* dmn) {
+        if (mnList.IsMNValid(*dmn)) {
             return "ENABLED";
         }
-        if (mnList.IsMNPoSeBanned(dmn)) {
+        if (mnList.IsMNPoSeBanned(*dmn)) {
             return "POSE_BANNED";
         }
         return "UNKNOWN";
     };
-    auto dmnToLastPaidTime = [&](const CDeterministicMNCPtr& dmn) {
+    auto dmnToLastPaidTime = [&](const CDeterministicMN* dmn) {
         if (dmn->pdmnState->nLastPaidHeight == 0) {
             return (int)0;
         }
@@ -613,7 +613,7 @@ static UniValue masternodelist(const JSONRPCRequest& request)
         return (int)pindex->nTime;
     };
 
-    mnList.ForEachMN(false, [&](const CDeterministicMNCPtr& dmn) {
+    mnList.ForEachMN(false, [&](const CDeterministicMN* dmn) {
         std::string strOutpoint = dmn->collateralOutpoint.ToStringShort();
         Coin coin;
         std::string collateralAddressStr = "UNKNOWN";

@@ -195,13 +195,13 @@ static CScript GenerateRandomAddress()
     return GetScriptForDestination(key.GetPubKey().GetID());
 }
 
-static CDeterministicMNCPtr FindPayoutDmn(const CBlock& block)
+static const CDeterministicMN* FindPayoutDmn(const CBlock& block)
 {
     auto dmnList = deterministicMNManager->GetListAtChainTip();
 
     for (const auto& txout : block.vtx[0]->vout) {
-        CDeterministicMNCPtr found;
-        dmnList.ForEachMN(true, [&](const CDeterministicMNCPtr& dmn) {
+        const CDeterministicMN* found{nullptr};
+        dmnList.ForEachMN(true, [&](const CDeterministicMN* dmn) {
             if (found == nullptr && txout.scriptPubKey == dmn->pdmnState->scriptPayout) {
                 found = dmn;
             }

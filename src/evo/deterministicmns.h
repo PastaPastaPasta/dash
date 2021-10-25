@@ -374,7 +374,7 @@ public:
     {
         size_t count = 0;
         for (const auto& p : mnMap) {
-            if (IsMNValid(p.second)) {
+            if (IsMNValid(*p.second)) {
                 count++;
             }
         }
@@ -385,7 +385,18 @@ public:
     void ForEachMN(bool onlyValid, Callback&& cb) const
     {
         for (const auto& p : mnMap) {
-            if (!onlyValid || IsMNValid(p.second)) {
+            if (!onlyValid || IsMNValid(*p.second)) {
+                cb(p.second.get());
+            }
+        }
+    }
+
+    template <typename Callback>
+    void ForEachMNPtr(bool onlyValid, Callback&& cb) const
+    {
+        for (const auto& p : mnMap) {
+            assert(p.second);
+            if (!onlyValid || IsMNValid(*p.second)) {
                 cb(p.second);
             }
         }
@@ -414,8 +425,8 @@ public:
 
     bool IsMNValid(const uint256& proTxHash) const;
     bool IsMNPoSeBanned(const uint256& proTxHash) const;
-    static bool IsMNValid(const CDeterministicMNCPtr& dmn);
-    static bool IsMNPoSeBanned(const CDeterministicMNCPtr& dmn);
+    static bool IsMNValid(const CDeterministicMN& dmn);
+    static bool IsMNPoSeBanned(const CDeterministicMN& dmn);
 
     bool HasMN(const uint256& proTxHash) const
     {
@@ -429,14 +440,15 @@ public:
     {
         return GetValidMNByCollateral(collateralOutpoint) != nullptr;
     }
-    CDeterministicMNCPtr GetMN(const uint256& proTxHash) const;
-    CDeterministicMNCPtr GetValidMN(const uint256& proTxHash) const;
-    CDeterministicMNCPtr GetMNByOperatorKey(const CBLSPublicKey& pubKey) const;
-    CDeterministicMNCPtr GetMNByCollateral(const COutPoint& collateralOutpoint) const;
-    CDeterministicMNCPtr GetValidMNByCollateral(const COutPoint& collateralOutpoint) const;
-    CDeterministicMNCPtr GetMNByService(const CService& service) const;
-    CDeterministicMNCPtr GetMNByInternalId(uint64_t internalId) const;
-    CDeterministicMNCPtr GetMNPayee() const;
+    CDeterministicMNCPtr GetMNShared(const uint256& proTxHash) const;
+    const CDeterministicMN* GetMN(const uint256& proTxHash) const;
+    const CDeterministicMN* GetValidMN(const uint256& proTxHash) const;
+    const CDeterministicMN* GetMNByOperatorKey(const CBLSPublicKey& pubKey) const;
+    const CDeterministicMN* GetMNByCollateral(const COutPoint& collateralOutpoint) const;
+    const CDeterministicMN* GetValidMNByCollateral(const COutPoint& collateralOutpoint) const;
+    const CDeterministicMN* GetMNByService(const CService& service) const;
+    const CDeterministicMN* GetMNByInternalId(uint64_t internalId) const;
+    const CDeterministicMN* GetMNPayee() const;
 
     /**
      * Calculates the projected MN payees for the next *count* blocks. The result is not guaranteed to be correct
@@ -444,7 +456,7 @@ public:
      * @param count
      * @return
      */
-    std::vector<CDeterministicMNCPtr> GetProjectedMNPayees(int nCount) const;
+    std::vector<const CDeterministicMN*> GetProjectedMNPayees(int nCount) const;
 
     /**
      * Calculate a quorum based on the modifier. The resulting list is deterministically sorted by score
@@ -493,9 +505,9 @@ public:
     CDeterministicMNList ApplyDiff(const CBlockIndex* pindex, const CDeterministicMNListDiff& diff) const;
 
     void AddMN(const CDeterministicMNCPtr& dmn, bool fBumpTotalCount = true);
-    void UpdateMN(const CDeterministicMNCPtr& oldDmn, const CDeterministicMNStateCPtr& pdmnState);
+    void UpdateMN(const CDeterministicMN& oldDmn, const CDeterministicMNStateCPtr& pdmnState);
     void UpdateMN(const uint256& proTxHash, const CDeterministicMNStateCPtr& pdmnState);
-    void UpdateMN(const CDeterministicMNCPtr& oldDmn, const CDeterministicMNStateDiff& stateDiff);
+    void UpdateMN(const CDeterministicMN* oldDmn, const CDeterministicMNStateDiff& stateDiff);
     void RemoveMN(const uint256& proTxHash);
 
     template <typename T>
@@ -504,7 +516,7 @@ public:
         return mnUniquePropertyMap.count(::SerializeHash(v)) != 0;
     }
     template <typename T>
-    CDeterministicMNCPtr GetUniquePropertyMN(const T& v) const
+    const CDeterministicMN* GetUniquePropertyMN(const T& v) const
     {
         auto p = mnUniquePropertyMap.find(::SerializeHash(v));
         if (!p) {
@@ -515,7 +527,7 @@ public:
 
 private:
     template <typename T>
-    [[nodiscard]] bool AddUniqueProperty(const CDeterministicMNCPtr& dmn, const T& v)
+    [[nodiscard]] bool AddUniqueProperty(const CDeterministicMN& dmn, const T& v)
     {
         static const T nullValue;
         if (v == nullValue) {
@@ -524,10 +536,10 @@ private:
 
         auto hash = ::SerializeHash(v);
         auto oldEntry = mnUniquePropertyMap.find(hash);
-        if (oldEntry != nullptr && oldEntry->first != dmn->proTxHash) {
+        if (oldEntry != nullptr && oldEntry->first != dmn.proTxHash) {
             return false;
         }
-        std::pair<uint256, uint32_t> newEntry(dmn->proTxHash, 1);
+        std::pair<uint256, uint32_t> newEntry(dmn.proTxHash, 1);
         if (oldEntry != nullptr) {
             newEntry.second = oldEntry->second + 1;
         }
@@ -535,7 +547,7 @@ private:
         return true;
     }
     template <typename T>
-    [[nodiscard]] bool DeleteUniqueProperty(const CDeterministicMNCPtr& dmn, const T& oldValue)
+    [[nodiscard]] bool DeleteUniqueProperty(const CDeterministicMN& dmn, const T& oldValue)
     {
         static const T nullValue;
         if (oldValue == nullValue) {
@@ -544,18 +556,18 @@ private:
 
         auto oldHash = ::SerializeHash(oldValue);
         auto p = mnUniquePropertyMap.find(oldHash);
-        if (p == nullptr || p->first != dmn->proTxHash) {
+        if (p == nullptr || p->first != dmn.proTxHash) {
             return false;
         }
         if (p->second == 1) {
             mnUniquePropertyMap = mnUniquePropertyMap.erase(oldHash);
         } else {
-            mnUniquePropertyMap = mnUniquePropertyMap.set(oldHash, std::make_pair(dmn->proTxHash, p->second - 1));
+            mnUniquePropertyMap = mnUniquePropertyMap.set(oldHash, std::make_pair(dmn.proTxHash, p->second - 1));
         }
         return true;
     }
     template <typename T>
-    [[nodiscard]] bool UpdateUniqueProperty(const CDeterministicMNCPtr& dmn, const T& oldValue, const T& newValue)
+    [[nodiscard]] bool UpdateUniqueProperty(const CDeterministicMN& dmn, const T& oldValue, const T& newValue)
     {
         if (oldValue == newValue) {
             return true;

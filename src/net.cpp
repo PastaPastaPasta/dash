@@ -2492,7 +2492,7 @@ void CConnman::ThreadOpenMasternodeConnections()
 
         // NOTE: Process only one pending masternode at a time
 
-        CDeterministicMNCPtr connectToDmn;
+        const CDeterministicMN* connectToDmn{nullptr};
         bool isProbe = false;
         { // don't hold lock while calling OpenMasternodeConnection as cs_main is locked deep inside
             LOCK2(cs_vNodes, cs_vPendingMasternodes);
@@ -2507,7 +2507,7 @@ void CConnman::ThreadOpenMasternodeConnections()
             }
 
             if (!connectToDmn) {
-                std::vector<CDeterministicMNCPtr> pending;
+                std::vector<const CDeterministicMN*> pending;
                 for (const auto& group : masternodeQuorumNodes) {
                     for (const auto& proRegTxHash : group.second) {
                         auto dmn = mnList.GetMN(proRegTxHash);
@@ -2533,7 +2533,7 @@ void CConnman::ThreadOpenMasternodeConnections()
             }
 
             if (!connectToDmn) {
-                std::vector<CDeterministicMNCPtr> pending;
+                std::vector<const CDeterministicMN*> pending;
                 for (auto it = masternodePendingProbes.begin(); it != masternodePendingProbes.end(); ) {
                     auto dmn = mnList.GetMN(*it);
                     if (!dmn) {

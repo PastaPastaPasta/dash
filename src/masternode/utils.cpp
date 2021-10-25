@@ -16,7 +16,7 @@
 
 void CMasternodeUtils::ProcessMasternodeConnections(CConnman& connman)
 {
-    std::vector<CDeterministicMNCPtr> vecDmns; // will be empty when no wallet
+    std::vector<const CDeterministicMN*> vecDmns; // will be empty when no wallet
 #ifdef ENABLE_WALLET
     for (const auto& pair : coinJoinClientManagers) {
         pair.second->GetMixingMasternodesInfo(vecDmns);

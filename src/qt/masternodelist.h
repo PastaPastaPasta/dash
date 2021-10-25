@@ -66,13 +66,13 @@ private:
     WalletModel* walletModel;
 
     // Protects tableWidgetMasternodesDIP3
-    CCriticalSection cs_dip3list;
+    mutable CCriticalSection cs_dip3list;
 
     QString strCurrentFilterDIP3;
 
     bool mnListChanged;
 
-    CDeterministicMNCPtr GetSelectedDIP3MN();
+    const CDeterministicMN* GetSelectedDIP3MN() const;
 
     void updateDIP3List();
 

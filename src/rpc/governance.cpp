@@ -655,7 +655,7 @@ static UniValue gobject_vote_many(const JSONRPCRequest& request)
     std::map<uint256, CKey> votingKeys;
 
     auto mnList = deterministicMNManager->GetListAtChainTip();
-    mnList.ForEachMN(true, [&](const CDeterministicMNCPtr& dmn) {
+    mnList.ForEachMN(true, [&](const CDeterministicMN* dmn) {
         CKey votingKey;
         if (pwallet->GetKey(dmn->pdmnState->keyIDVoting, votingKey)) {
             votingKeys.emplace(dmn->proTxHash, votingKey);

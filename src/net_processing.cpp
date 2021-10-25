@@ -3126,7 +3126,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             }
 
             const CBlockIndex* pindex{nullptr};
-            CDeterministicMNCPtr dmn{nullptr};
+            const CDeterministicMN* dmn{nullptr};
             {
                 LOCK(cs_main);
                 pindex = ::ChainActive().Tip();

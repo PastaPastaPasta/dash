@@ -72,7 +72,7 @@ CSimplifiedMNList::CSimplifiedMNList(const CDeterministicMNList& dmnList)
     mnList.resize(dmnList.GetAllMNsCount());
 
     size_t i = 0;
-    dmnList.ForEachMN(false, [this, &i](const CDeterministicMNCPtr& dmn) {
+    dmnList.ForEachMN(false, [this, &i](const CDeterministicMN* dmn) {
         mnList[i++] = std::make_unique<CSimplifiedMNListEntry>(*dmn);
     });
 
