@@ -92,9 +92,9 @@ std::vector<CDeterministicMNCPtr> CLLMQUtils::GetAllQuorumMembersByQuarterRotati
         return {};
     }
 
-    CQuorumSnapshot quSnapshotHMinusC;
-    CQuorumSnapshot quSnapshotHMinus2C;
-    CQuorumSnapshot quSnapshotHMinus3C;
+    llmq::CQuorumSnapshot quSnapshotHMinusC;
+    llmq::CQuorumSnapshot quSnapshotHMinus2C;
+    llmq::CQuorumSnapshot quSnapshotHMinus3C;
     std::vector<CDeterministicMNCPtr> quarterHMinusC;
     std::vector<CDeterministicMNCPtr> quarterHMinus2C;
     std::vector<CDeterministicMNCPtr> quarterHMinus3C;
@@ -176,7 +176,7 @@ std::vector<CDeterministicMNCPtr> CLLMQUtils::BuildNewQuorumQuarterMembers(Conse
     return quarterQuorumMembers;
 }
 
-std::vector<CDeterministicMNCPtr> CLLMQUtils::GetQuorumQuarterMembersBySnapshot(Consensus::LLMQType llmqType, const CBlockIndex* pquorumBaseBlockIndex, CQuorumSnapshot& snapshot)
+std::vector<CDeterministicMNCPtr> CLLMQUtils::GetQuorumQuarterMembersBySnapshot(Consensus::LLMQType llmqType, const CBlockIndex* pquorumBaseBlockIndex, const llmq::CQuorumSnapshot& snapshot)
 {
     std::vector<CDeterministicMNCPtr> quarterQuorumMembers;
 

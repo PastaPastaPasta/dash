@@ -27,6 +27,7 @@ public:
     uint16_t nVersion{CURRENT_VERSION};
     Consensus::LLMQType llmqType{Consensus::LLMQType::LLMQ_NONE};
     uint256 quorumHash;
+    //quorumIndex [range]
     uint32_t quorumIndex;
     std::vector<bool> signers;
     std::vector<bool> validMembers;
@@ -39,7 +40,7 @@ public:
 
 public:
     CFinalCommitment() = default;
-    CFinalCommitment(const Consensus::LLMQParams& params, const uint256& _quorumHash, const uint32_t _quorumIndex = 0);
+    CFinalCommitment(const Consensus::LLMQParams& params, const uint256& _quorumHash, uint32_t _quorumIndex = 0);
 
     int CountSigners() const
     {

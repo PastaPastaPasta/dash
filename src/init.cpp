@@ -323,7 +323,7 @@ void PrepareShutdown(InitInterfaces& interfaces)
         pblocktree.reset();
         llmq::DestroyLLMQSystem();
         deterministicMNManager.reset();
-        quorumSnapshotManager.reset();
+        llmq::quorumSnapshotManager.reset();
         evoDb.reset();
     }
     for (const auto& client : interfaces.chain_clients) {
@@ -2002,8 +2002,8 @@ bool AppInitMain(InitInterfaces& interfaces)
                 evoDb.reset(new CEvoDB(nEvoDbCache, false, fReset || fReindexChainState));
                 deterministicMNManager.reset();
                 deterministicMNManager.reset(new CDeterministicMNManager(*evoDb));
-                quorumSnapshotManager.reset();
-                quorumSnapshotManager.reset(new CQuorumSnapshotManager(*evoDb));
+                llmq::quorumSnapshotManager.reset();
+                llmq::quorumSnapshotManager.reset(new llmq::CQuorumSnapshotManager(*evoDb));
 
                 llmq::InitLLMQSystem(*evoDb, false, fReset || fReindexChainState);
 
