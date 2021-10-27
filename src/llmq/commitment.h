@@ -22,6 +22,7 @@ class CFinalCommitment
 {
 public:
     static constexpr uint16_t CURRENT_VERSION = 1;
+    static constexpr uint16_t QUORUM_INDEXED_VERSION = 2;
 
 public:
     uint16_t nVersion{CURRENT_VERSION};
@@ -39,7 +40,7 @@ public:
 
 public:
     CFinalCommitment() = default;
-    CFinalCommitment(const Consensus::LLMQParams& params, const uint256& _quorumHash, uint32_t _quorumIndex = 0);
+    CFinalCommitment(const Consensus::LLMQParams& params, const uint256& _quorumHash, uint16_t _nVersion = CURRENT_VERSION, uint32_t _quorumIndex = 0);
 
     int CountSigners() const
     {
@@ -108,7 +109,8 @@ class CFinalCommitmentTxPayload
 {
 public:
     static constexpr uint16_t CURRENT_VERSION = 1;
-
+    //Not sure if this new version is also need for CFinalCommitmentTxPayload
+    static constexpr uint16_t QUORUM_INDEXED_VERSION = 2;
 public:
     uint16_t nVersion{CURRENT_VERSION};
     uint32_t nHeight{(uint32_t)-1};
