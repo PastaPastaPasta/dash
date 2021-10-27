@@ -6,6 +6,7 @@
 #define BITCOIN_LLMQ_UTILS_H
 
 #include <consensus/params.h>
+#include <llmq/snapshot.h>
 
 #include <vector>
 #include <set>
@@ -13,7 +14,6 @@
 #include <sync.h>
 #include <dbwrapper.h>
 #include <versionbits.h>
-#include "snapshot.h"
 
 class CBlockIndex;
 class CDeterministicMN;
@@ -50,7 +50,7 @@ public:
     static void BuildQuorumSnapshot(Consensus::LLMQType llmqType, const CDeterministicMNList& mnAtH, const CDeterministicMNList& mnUsedAtH, const std::vector<CDeterministicMNCPtr>& sortedCombinedMns, std::vector<CDeterministicMNCPtr>& quarterMembers, CQuorumSnapshot& quorumSnapshot);
     static void BuildQuorumSnapshotSkipList(Consensus::LLMQType llmqType, const CDeterministicMNList& mnUsedAtH, const std::vector<CDeterministicMNCPtr>& sortedCombinedMns, std::vector<CDeterministicMNCPtr>& quarterMembers, CQuorumSnapshot& quorumSnapshot);
 
-    static uint256 BuildCommitmentHash(Consensus::LLMQType llmqType, const uint256& blockHash, const std::vector<bool>& validMembers, const CBLSPublicKey& pubKey, const uint256& vvecHash, const uint32_t quorumIndex = 0);
+    static uint256 BuildCommitmentHash(Consensus::LLMQType llmqType, const uint256& blockHash, const std::vector<bool>& validMembers, const CBLSPublicKey& pubKey, const uint256& vvecHash, uint16_t nVersion, uint32_t quorumIndex = 0);
     static uint256 BuildSignHash(Consensus::LLMQType llmqType, const uint256& quorumHash, const uint256& id, const uint256& msgHash);
 
     // works for sig shares and recovered sigs
