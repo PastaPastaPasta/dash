@@ -100,18 +100,21 @@ CIndexedQuorumMembers CLLMQUtils::GetAllQuorumMembersByQuarterRotation(Consensus
 
     if (quorumSnapshotManager->GetSnapshotForBlock(llmqType, pBlockHMinusCIndex, quSnapshotHMinusC)){
         quarterHMinusC = CLLMQUtils::GetQuorumQuarterMembersBySnapshot(llmqType, pBlockHMinusCIndex, quSnapshotHMinusC);
+        assert (!quarterHMinusC.empty());
     }
     if (quorumSnapshotManager->GetSnapshotForBlock(llmqType, pBlockHMinus2CIndex, quSnapshotHMinus2C)){
         quarterHMinus2C = CLLMQUtils::GetQuorumQuarterMembersBySnapshot(llmqType, pBlockHMinus2CIndex, quSnapshotHMinus2C);
+        assert (!quarterHMinus2C.empty());
     }
     if (quorumSnapshotManager->GetSnapshotForBlock(llmqType, pBlockHMinus3CIndex, quSnapshotHMinus3C)) {
         quarterHMinus3C = CLLMQUtils::GetQuorumQuarterMembersBySnapshot(llmqType, pBlockHMinus3CIndex, quSnapshotHMinus3C);
+        assert (!quarterHMinus3C.empty());
     }
-    
-    //TODO Add handling when build of new quorum quarter fails (newQuarterMembers is empty)
+
     std::vector<CDeterministicMNCPtr> quorumMembers;
 
     auto newQuarterMembers = CLLMQUtils::BuildNewQuorumQuarterMembers(llmqType, pQuorumBaseBlockIndex, quarterHMinusC, quarterHMinus2C, quarterHMinus3C);
+    assert (!newQuarterMembers.empty());
 
     std::copy(quarterHMinus3C.begin(),
               quarterHMinus3C.end(),
