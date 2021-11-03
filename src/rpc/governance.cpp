@@ -229,7 +229,7 @@ static UniValue gobject_prepare(const JSONRPCRequest& request)
 
     CTransactionRef tx;
 
-    bool fork_active = VersionBitsTipState(Params().GetConsensus(), Consensus::DEPLOYMENT_GOV_FEE) == ThresholdState::ACTIVE;
+    bool fork_active = VersionBitsTipState(Params().GetConsensus(), Consensus::DEPLOYMENT_DIP0024) == ThresholdState::ACTIVE;
 
     if (!pwallet->GetBudgetSystemCollateralTX(*locked_chain, tx, govobj.GetHash(), govobj.GetMinCollateralFee(fork_active), outpoint)) {
         std::string err = "Error making collateral transaction for governance object. Please check your wallet balance and make sure your wallet is unlocked.";
