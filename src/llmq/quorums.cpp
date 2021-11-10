@@ -336,13 +336,12 @@ CQuorumPtr CQuorumManager::BuildQuorumFromCommitment(const Consensus::LLMQType l
         // sessions if the shares would be calculated on-demand
         StartCachePopulatorThread(quorum);
     }
-    if (CLLMQUtils::IsQuorumRotationEnabled(llmqType)){
-        indexedQuorumsCache[llmqType].insert(std::make_pair(qc->quorumIndex, quorum));
-        mapQuorumsCache[llmqType].insert(quorumHash, quorum);
+    if (CLLMQUtils::IsQuorumRotationEnabled(llmqType)) {
+        uint32_t quorumIndex = GetNextQuorumIndex(llmqType);
+        qc->quorumIndex = quorumIndex;
+        indexedQuorumsCache[llmqType].insert(std::make_pair(quorumIndex, quorumHash));
     }
-    else {
-        mapQuorumsCache[llmqType].insert(quorumHash, quorum);
-    }
+    mapQuorumsCache[llmqType].insert(quorumHash, quorum);
 
     return quorum;
 }
