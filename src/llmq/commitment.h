@@ -62,6 +62,7 @@ public:
                 obj.nVersion,
                 obj.llmqType,
                 obj.quorumHash,
+                obj.quorumIndex,
                 DYNBITSET(obj.signers),
                 DYNBITSET(obj.validMembers),
                 obj.quorumPublicKey,
