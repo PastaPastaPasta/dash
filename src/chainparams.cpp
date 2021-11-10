@@ -152,6 +152,7 @@ public:
         consensus.DIP0003EnforcementHeight = 1047200;
         consensus.DIP0003EnforcementHash = uint256S("000000000000002d1734087b4c5afc3133e4e1c3e1a89218f62bcd9bb3d17f81");
         consensus.DIP0008Height = 1088640; // 00000000000000112e41e4b3afda8b233b8cc07c532d2eac5de097b68358c43e
+        consensus.DIP0024Height = std::numeric_limits<int>::max();
         consensus.powLimit = uint256S("00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"); // ~uint256(0) >> 20
         consensus.nPowTargetTimespan = 24 * 60 * 60; // Dash: 1 day
         consensus.nPowTargetSpacing = 2.5 * 60; // Dash: 2.5 minutes
@@ -371,6 +372,7 @@ public:
         consensus.DIP0003EnforcementHeight = 7300;
         consensus.DIP0003EnforcementHash = uint256S("00000055ebc0e974ba3a3fb785c5ad4365a39637d4df168169ee80d313612f8f");
         consensus.DIP0008Height = 78800; // 000000000e9329d964d80e7dab2e704b43b6bd2b91fea1e9315d38932e55fb55
+        consensus.DIP0024Height = std::numeric_limits<int>::max();
         consensus.powLimit = uint256S("00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"); // ~uint256(0) >> 20
         consensus.nPowTargetTimespan = 24 * 60 * 60; // Dash: 1 day
         consensus.nPowTargetSpacing = 2.5 * 60; // Dash: 2.5 minutes
@@ -562,6 +564,7 @@ public:
         consensus.DIP0003EnforcementHeight = 2; // DIP0003 activated immediately on devnet
         consensus.DIP0003EnforcementHash = uint256();
         consensus.DIP0008Height = 2; // DIP0008 activated immediately on devnet
+        consensus.DIP0024Height = std::numeric_limits<int>::max();
         consensus.powLimit = uint256S("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"); // ~uint256(0) >> 1
         consensus.nPowTargetTimespan = 24 * 60 * 60; // Dash: 1 day
         consensus.nPowTargetSpacing = 2.5 * 60; // Dash: 2.5 minutes
@@ -793,6 +796,7 @@ public:
         consensus.BIP66Height = 1251; // BIP66 activated on regtest (Used in rpc activation tests)
         consensus.DIP0001Height = 2000;
         consensus.DIP0003Height = 432;
+        consensus.DIP0024Height = 400;
         consensus.DIP0003EnforcementHeight = 500;
         consensus.DIP0003EnforcementHash = uint256();
         consensus.DIP0008Height = 432;
@@ -865,6 +869,7 @@ public:
         UpdateVersionBitsParametersFromArgs(args);
         UpdateDIP3ParametersFromArgs(args);
         UpdateDIP8ParametersFromArgs(args);
+        UpdateDIP24ParametersFromArgs(args);
         UpdateBudgetParametersFromArgs(args);
 
         genesis = CreateGenesisBlock(1417713337, 1096447, 0x207fffff, 1, 50 * COIN);
@@ -960,6 +965,15 @@ public:
         consensus.DIP0003EnforcementHeight = nEnforcementHeight;
     }
     void UpdateDIP3ParametersFromArgs(const ArgsManager& args);
+
+    /**
+     * Allows modifying the DIP24 activation height
+     */
+    void UpdateDIP24Parameters(int nActivationHeight)
+    {
+        consensus.DIP0024Height = nActivationHeight;
+    }
+    void UpdateDIP24ParametersFromArgs(const ArgsManager& args);
 
     /**
      * Allows modifying the DIP8 activation height
@@ -1066,6 +1080,24 @@ void CRegTestParams::UpdateDIP3ParametersFromArgs(const ArgsManager& args)
     }
     LogPrintf("Setting DIP3 parameters to activation=%ld, enforcement=%ld\n", nDIP3ActivationHeight, nDIP3EnforcementHeight);
     UpdateDIP3Parameters(nDIP3ActivationHeight, nDIP3EnforcementHeight);
+}
+
+void CRegTestParams::UpdateDIP24ParametersFromArgs(const ArgsManager& args)
+{
+    if (!args.IsArgSet("-dip24params")) return;
+
+    std::string strParams = args.GetArg("-dip24params", "");
+    std::vector<std::string> vParams;
+    boost::split(vParams, strParams, boost::is_any_of(":"));
+    if (vParams.size() != 1) {
+        throw std::runtime_error("DIP24 parameters malformed, expecting <activation>");
+    }
+    int nDIP24ActivationHeight;
+    if (!ParseInt32(vParams[0], &nDIP24ActivationHeight)) {
+        throw std::runtime_error(strprintf("Invalid activation height (%s)", vParams[0]));
+    }
+    LogPrintf("Setting DIP24 parameters to activation=%ld\n", nDIP24ActivationHeight);
+    UpdateDIP24Parameters(nDIP24ActivationHeight);
 }
 
 void CRegTestParams::UpdateDIP8ParametersFromArgs(const ArgsManager& args)
