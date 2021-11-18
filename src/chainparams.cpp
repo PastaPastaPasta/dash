@@ -282,6 +282,7 @@ public:
         consensus.llmqTypeChainLocks = Consensus::LLMQType::LLMQ_400_60;
         consensus.llmqTypeInstantSend = Consensus::LLMQType::LLMQ_50_60;
         consensus.llmqTypePlatform = Consensus::LLMQType::LLMQ_100_67;
+        consensus.llmqTypeMnhf = Consensus::LLMQType::LLMQ_400_85;
 
         fDefaultConsistencyChecks = false;
         fRequireStandard = true;
@@ -493,6 +494,7 @@ public:
         consensus.llmqTypeChainLocks = Consensus::LLMQType::LLMQ_50_60;
         consensus.llmqTypeInstantSend = Consensus::LLMQType::LLMQ_50_60;
         consensus.llmqTypePlatform = Consensus::LLMQType::LLMQ_100_67;
+        consensus.llmqTypeMnhf = Consensus::LLMQType::LLMQ_50_60;
 
         fDefaultConsistencyChecks = false;
         fRequireStandard = false;
@@ -686,6 +688,7 @@ public:
         consensus.llmqTypeChainLocks = Consensus::LLMQType::LLMQ_50_60;
         consensus.llmqTypeInstantSend = Consensus::LLMQType::LLMQ_50_60;
         consensus.llmqTypePlatform = Consensus::LLMQType::LLMQ_100_67;
+        consensus.llmqTypeMnhf = Consensus::LLMQType::LLMQ_50_60;
 
         UpdateDevnetLLMQChainLocksFromArgs(args);
         UpdateDevnetLLMQInstantSendFromArgs(args);
@@ -923,6 +926,7 @@ public:
         consensus.llmqTypeChainLocks = Consensus::LLMQType::LLMQ_TEST;
         consensus.llmqTypeInstantSend = Consensus::LLMQType::LLMQ_TEST;
         consensus.llmqTypePlatform = Consensus::LLMQType::LLMQ_TEST;
+        consensus.llmqTypeMnhf = Consensus::LLMQType::LLMQ_TEST;
 
         UpdateLLMQTestParametersFromArgs(args);
     }
