@@ -336,11 +336,6 @@ CQuorumPtr CQuorumManager::BuildQuorumFromCommitment(const Consensus::LLMQType l
         // sessions if the shares would be calculated on-demand
         StartCachePopulatorThread(quorum);
     }
-    if (CLLMQUtils::IsQuorumRotationEnabled(llmqType)) {
-        uint32_t quorumIndex = GetNextQuorumIndex(llmqType);
-        qc->quorumIndex = quorumIndex;
-        indexedQuorumsCache[llmqType].insert(std::make_pair(quorumIndex, quorumHash));
-    }
     mapQuorumsCache[llmqType].insert(quorumHash, quorum);
 
     return quorum;
@@ -491,31 +486,31 @@ std::vector<CQuorumCPtr> CQuorumManager::ScanQuorums(Consensus::LLMQType llmqTyp
     return ret;
 }
 
-std::vector<CIndexedQuorum> CQuorumManager::ScanIndexedQuorums(Consensus::LLMQType llmqType) const
-{
-    std::vector<CIndexedQuorum> vecResultQuorums;
-
+void CQuorumManager::SetQuorumIndexQuorumHash(Consensus::LLMQType llmqType, const uint256& quorumHash, int quorumIndex) {
     LOCK(quorumsCacheCs);
 
-    auto& cache = indexedQuorumsCache[llmqType];
-
-    cache.get(vecResultQuorums);
-
-    return vecResultQuorums;
-}
-
-uint32_t CQuorumManager::GetNextQuorumIndex(Consensus::LLMQType llmqType) const
-{
-    LOCK(quorumsCacheCs);
-
-    auto& cache = indexedQuorumsCache[llmqType];
-    CIndexedQuorum data;
-    if (cache.back(data)) {
-       return (data.first + 1) % static_cast<uint32_t>(GetLLMQParams(llmqType).signingActiveQuorumCount);
+    auto& mapCache = indexedQuorumsCache[llmqType];
+    if (!mapCache.exists(quorumHash)) {
+        mapCache.insert(quorumHash, quorumIndex);
     }
     else {
-        return {};
+        mapCache.erase(quorumHash);
+        mapCache.insert(quorumHash, quorumIndex);
     }
+}
+
+std::optional<int> CQuorumManager::GetQuorumIndexByQuorumHash(Consensus::LLMQType llmqType, const uint256& quorumHash) {
+    LOCK(quorumsCacheCs);
+
+    auto& mapCache = indexedQuorumsCache[llmqType];
+
+    int value;
+
+    if (mapCache.get(quorumHash, value)) {
+        return std::make_optional(value);
+    }
+
+    return std::nullopt;
 }
 
 CQuorumCPtr CQuorumManager::GetQuorum(Consensus::LLMQType llmqType, const uint256& quorumHash) const
