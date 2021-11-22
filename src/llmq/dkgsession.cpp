@@ -1201,6 +1201,7 @@ std::vector<CFinalCommitment> CDKGSession::FinalizeCommitments()
         fqc.validMembers = first.validMembers;
         fqc.quorumPublicKey = first.quorumPublicKey;
         fqc.quorumVvecHash = first.quorumVvecHash;
+        fqc.quorumIndex = quorumIndex;
 
         uint256 commitmentHash = CLLMQUtils::BuildCommitmentHash(fqc.llmqType, fqc.quorumHash, fqc.validMembers, fqc.quorumPublicKey, fqc.quorumVvecHash);
 
