@@ -109,10 +109,10 @@ void CDKGSessionHandler::UpdatedBlockTip(const CBlockIndex* pindexNew)
     LOCK(cs);
 
     //Indexed quorums (greater than 0) are enabled with Quorum Rotation
-    if(quorumIndex > 1 && !CLLMQUtils::IsQuorumRotationEnabled(params.type))
+    if(quorumIndex > 0 && !CLLMQUtils::IsQuorumRotationEnabled(params.type))
         return;
 
-    int quorumStageInt = (pindexNew->nHeight - quorumIndex) % params.dkgInterval ;
+    int quorumStageInt = (pindexNew->nHeight - quorumIndex) % params.dkgInterval;
 
     const CBlockIndex* pQuorumBaseBlockIndex = pindexNew->GetAncestor(pindexNew->nHeight - quorumStageInt);
 
@@ -170,7 +170,7 @@ bool CDKGSessionHandler::InitNewQuorum(const CBlockIndex* pQuorumBaseBlockIndex)
     }
 
     auto mns = CLLMQUtils::GetAllQuorumMembers(params.type, pQuorumBaseBlockIndex);
-    if (!curSession->Init(pQuorumBaseBlockIndex, mns, WITH_LOCK(activeMasternodeInfoCs, return activeMasternodeInfo.proTxHash))) {
+    if (!curSession->Init(pQuorumBaseBlockIndex, mns, WITH_LOCK(activeMasternodeInfoCs, return activeMasternodeInfo.proTxHash), quorumIndex)) {
         LogPrintf("CDKGSessionManager::%s -- quorum initialization failed for %s\n", __func__, curSession->params.name);
         return false;
     }
@@ -219,9 +219,9 @@ void CDKGSessionHandler::WaitForNextPhase(QuorumPhase curPhase,
     LogPrint(BCLog::LLMQ_DKG, "CDKGSessionManager::%s -- %s - done, curPhase=%d, nextPhase=%d\n", __func__, params.name, curPhase, nextPhase);
 
     if (nextPhase == QuorumPhase_Initialized) {
-        quorumDKGDebugManager->ResetLocalSessionStatus(params.type);
+        quorumDKGDebugManager->ResetLocalSessionStatus(params.type, quorumIndex);
     } else {
-        quorumDKGDebugManager->UpdateLocalSessionStatus(params.type, [&](CDKGDebugSessionStatus& status) {
+        quorumDKGDebugManager->UpdateLocalSessionStatus(params.type, quorumIndex, [&](CDKGDebugSessionStatus& status) {
             bool changed = status.phase != (uint8_t) nextPhase;
             status.phase = (uint8_t) nextPhase;
             return changed;
@@ -497,6 +497,8 @@ void CDKGSessionHandler::HandleDKGRound()
 {
     uint256 curQuorumHash;
 
+
+
     WaitForNextPhase(QuorumPhase_None, QuorumPhase_Initialized, uint256(), []{return false;});
 
     {
@@ -516,7 +518,7 @@ void CDKGSessionHandler::HandleDKGRound()
         throw AbortPhaseException();
     }
 
-    quorumDKGDebugManager->UpdateLocalSessionStatus(params.type, [&](CDKGDebugSessionStatus& status) {
+    quorumDKGDebugManager->UpdateLocalSessionStatus(params.type, quorumIndex, [&](CDKGDebugSessionStatus& status) {
         bool changed = status.phase != (uint8_t) QuorumPhase_Initialized;
         status.phase = (uint8_t) QuorumPhase_Initialized;
         return changed;
@@ -578,7 +580,7 @@ void CDKGSessionHandler::PhaseHandlerThread()
             LogPrint(BCLog::LLMQ_DKG, "CDKGSessionHandler::%s -- %s - starting HandleDKGRound\n", __func__, params.name);
             HandleDKGRound();
         } catch (AbortPhaseException& e) {
-            quorumDKGDebugManager->UpdateLocalSessionStatus(params.type, [&](CDKGDebugSessionStatus& status) {
+            quorumDKGDebugManager->UpdateLocalSessionStatus(params.type, quorumIndex, [&](CDKGDebugSessionStatus& status) {
                 status.aborted = true;
                 return true;
             });
