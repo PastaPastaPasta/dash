@@ -1016,9 +1016,10 @@ CQuorumCPtr CSigningManager::SelectQuorumForSigning(Consensus::LLMQType llmqType
         }
         pindexStart = ::ChainActive()[startBlockHeight];
     }
+    /*
     if (CLLMQUtils::IsQuorumRotationEnabled(llmqType)){
         //TODO Rewrite this part
-        /*
+
         auto indexedQuorums = quorumManager->ScanIndexedQuorums(llmqType);
         if (indexedQuorums.empty()) {
             return nullptr;
@@ -1038,10 +1039,9 @@ CQuorumCPtr CSigningManager::SelectQuorumForSigning(Consensus::LLMQType llmqType
             return nullptr;
         }
         return quorumManager->GetQuorum(llmqType, itQuorum->second);
-        */
-        return nullptr;
     }
     else {
+     */
         auto quorums = quorumManager->ScanQuorums(llmqType, pindexStart, poolSize);
         if (quorums.empty()) {
             return nullptr;
@@ -1058,7 +1058,7 @@ CQuorumCPtr CSigningManager::SelectQuorumForSigning(Consensus::LLMQType llmqType
         }
         std::sort(scores.begin(), scores.end());
         return quorums[scores.front().second];
-    }
+    //}
 
 }
 
