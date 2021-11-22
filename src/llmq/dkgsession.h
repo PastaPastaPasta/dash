@@ -28,7 +28,7 @@ class CDKGLogger : public CBatchedLogger
 {
 public:
     CDKGLogger(const CDKGSession& _quorumDkg, std::string_view _func);
-    CDKGLogger(std::string_view _llmqTypeName, const uint256& _quorumHash, int _height, bool _areWeMember, std::string_view _func);
+    CDKGLogger(std::string_view _llmqTypeName, int _quorumIndex, const uint256& _quorumHash, int _height, bool _areWeMember, std::string_view _func);
 };
 
 class CDKGContribution
@@ -239,6 +239,7 @@ private:
     CDKGSessionManager& dkgManager;
 
     const CBlockIndex* m_quorum_base_block_index{nullptr};
+    int quorumIndex;
 
 private:
     std::vector<std::unique_ptr<CDKGMember>> members;
@@ -276,9 +277,9 @@ private:
 
 public:
     CDKGSession(const Consensus::LLMQParams& _params, CBLSWorker& _blsWorker, CDKGSessionManager& _dkgManager) :
-        params(_params), blsWorker(_blsWorker), cache(_blsWorker), dkgManager(_dkgManager) {}
+        params(_params), blsWorker(_blsWorker), cache(_blsWorker), dkgManager(_dkgManager), quorumIndex(0) {}
 
-    bool Init(const CBlockIndex* pQuorumBaseBlockIndex, const std::vector<CDeterministicMNCPtr>& mns, const uint256& _myProTxHash);
+    bool Init(const CBlockIndex* pQuorumBaseBlockIndex, const std::vector<CDeterministicMNCPtr>& mns, const uint256& _myProTxHash, int _quorumIndex);
 
     size_t GetMyMemberIndex() const { return myIdx; }
 
