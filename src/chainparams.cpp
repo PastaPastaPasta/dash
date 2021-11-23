@@ -844,11 +844,11 @@ public:
 
         // Deployment of Quorum Rotation DIP and decreased proposal fee (Values to be determined)
         consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].bit = 7;
-        consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].nStartTime = 1625097600; // July 1st, 2021
-        consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].nTimeout = 1656633600; // July 1st, 2022
-        consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].nWindowSize = 4032;
-        consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].nThresholdStart = 3226; // 80% of 4032
-        consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].nThresholdMin = 2420; // 60% of 4032
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].nStartTime = 0;
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].nTimeout = 999999999999ULL;
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].nWindowSize = 100;
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].nThresholdStart = 50; // 80% of 4032
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].nThresholdMin = 50; // 60% of 4032
         consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].nFalloffCoeff = 5; // this corresponds to 10 periods
 
         // The best chain should have at least this much work.

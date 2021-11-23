@@ -116,7 +116,7 @@ UniValue CDKGDebugStatus::ToJson(int detailLevel) const
     ret.pushKV("time", nTime);
     ret.pushKV("timeStr", FormatISO8601DateTime(nTime));
 
-    //TODO Support array of sessions
+    // TODO Support array of sessions
     UniValue sessionsArrJson(UniValue::VARR);
     for (const auto& p : sessions) {
         if (!Params().GetConsensus().llmqs.count(p.first.first)) {

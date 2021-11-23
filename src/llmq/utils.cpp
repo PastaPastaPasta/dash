@@ -498,12 +498,9 @@ bool CLLMQUtils::IsQuorumPoseEnabled(Consensus::LLMQType llmqType)
 bool CLLMQUtils::IsQuorumRotationEnabled(Consensus::LLMQType llmqType)
 {
     //TODO Check how to enable Consensus::DEPLOYMENT_DIP0024 in functional tests
-    //bool fQuorumRotationActive = (VersionBitsTipState(Params().GetConsensus(), Consensus::DEPLOYMENT_DIP0024) == ThresholdState::ACTIVE);
-    bool fQuorumRotationActive = ChainActive().Tip()->nHeight >= Params().GetConsensus().DIP0024Height;
-    if (llmqType == Params().GetConsensus().llmqTypeInstantSend && fQuorumRotationActive){
-        return true;
-    }
-    return false;
+    bool fQuorumRotationActive = (VersionBitsTipState(Params().GetConsensus(), Consensus::DEPLOYMENT_DIP0024) == ThresholdState::ACTIVE);
+//    bool fQuorumRotationActive = ChainActive().Tip()->nHeight >= Params().GetConsensus().DIP0024Height;
+    return llmqType == Params().GetConsensus().llmqTypeInstantSend && fQuorumRotationActive;
 }
 
 uint256 CLLMQUtils::DeterministicOutboundConnection(const uint256& proTxHash1, const uint256& proTxHash2)
