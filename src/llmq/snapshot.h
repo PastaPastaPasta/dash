@@ -32,7 +32,7 @@ class CQuorumSnapshot
 {
 public:
     std::vector<bool> activeQuorumMembers;
-    int mnSkipListMode;
+    int mnSkipListMode; // TODO this should be initialized here
     std::vector<int> mnSkipList;
 
     CQuorumSnapshot() = default;
@@ -97,7 +97,7 @@ public:
 class CQuorumRotationInfo
 {
 public:
-    int creationHeight;
+    int creationHeight; // TODO this should be initialized
     CQuorumSnapshot quorumSnaphotAtHMinusC;
     CQuorumSnapshot quorumSnaphotAtHMinus2C;
     CQuorumSnapshot quorumSnaphotAtHMinus3C;
@@ -119,6 +119,7 @@ public:
     }
 
     CQuorumRotationInfo() = default;
+    // Clang-Tidy: Copy constructor should not be declared explicit
     explicit CQuorumRotationInfo(const CQuorumRotationInfo& dmn) {}
 
     void ToJson(UniValue& obj) const;
