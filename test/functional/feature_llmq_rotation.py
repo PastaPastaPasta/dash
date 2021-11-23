@@ -20,6 +20,10 @@ def intersection(lst1, lst2):
     return lst3
 
 
+def extract_quorum_members(quorum_info):
+    return [d['proTxHash'] for d in quorum_info["members"]]
+
+
 class LLMQQuorumRotationTest(DashTestFramework):
     def set_test_params(self):
         self.set_dash_test_params(31, 30, fast_dip3_enforcement=True)
@@ -95,9 +99,6 @@ class LLMQQuorumRotationTest(DashTestFramework):
             self.bump_mocktime(1, nodes=nodes)
             self.nodes[0].generate(skip_count)
         sync_blocks(nodes)
-
-    def extract_quorum_members(self, quorum_info):
-        return [d['proTxHash'] for d in quorum_info["members"]]
 
 
 if __name__ == '__main__':
