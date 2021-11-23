@@ -10,8 +10,6 @@ Checks LLMQs Quorum Rotation
 
 '''
 
-import time
-
 from test_framework.test_framework import DashTestFramework
 from test_framework.util import connect_nodes, isolate_node, reconnect_isolated_node, sync_blocks, assert_equal, \
     assert_greater_than_or_equal, wait_until
