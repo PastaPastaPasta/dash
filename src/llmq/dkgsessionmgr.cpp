@@ -32,8 +32,7 @@ CDKGSessionManager::CDKGSessionManager(CBLSWorker& _blsWorker, bool unitTests, b
     MigrateDKG();
 
     for (const auto& qt : Params().GetConsensus().llmqs) {
-        //TODO Replace this line when test is successfull
-        for (int i: boost::irange(0, qt.first == Consensus::LLMQType::LLMQ_TEST ? qt.second.signingActiveQuorumCount : 1)) {
+        for (int i: boost::irange(0, qt.second.signingActiveQuorumCount)) {
             dkgSessionHandlers.emplace(std::piecewise_construct,
                                        std::forward_as_tuple(qt.first, i),
                                        std::forward_as_tuple(qt.second, blsWorker, *this, i));

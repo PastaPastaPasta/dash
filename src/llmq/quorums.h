@@ -146,8 +146,6 @@ using CQuorumCPtr = std::shared_ptr<const CQuorum>;
 
 class CFinalCommitment;
 using CFinalCommitmentPtr = std::shared_ptr<CFinalCommitment>;
-//Pair of {quorumIndex, quorumHash}
-using CIndexedQuorum = std::pair<uint32_t, uint256>;
 
 class CQuorum
 {
