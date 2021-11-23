@@ -595,7 +595,7 @@ bool CQuorumBlockProcessor::GetMineableCommitments(const Consensus::LLMQParams& 
     AssertLockHeld(cs_main);
     for (int quorumIndex : boost::irange(0, CLLMQUtils::IsQuorumRotationEnabled(llmqParams.type) ? llmqParams.signingActiveQuorumCount : 1)) {
 
-        CFinalCommitment    cf;
+        CFinalCommitment cf;
         if (!IsCommitmentRequired(llmqParams, nHeight, quorumIndex)) {
             // no commitment required
             continue;
