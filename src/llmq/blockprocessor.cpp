@@ -590,6 +590,8 @@ bool CQuorumBlockProcessor::GetMineableCommitmentByHash(const uint256& commitmen
 
 // Will return false if no commitment should be mined
 // Will return true and a null commitment if no mineable commitment is known and none was mined yet
+
+// TODO don't return with param, use optional
 bool CQuorumBlockProcessor::GetMineableCommitments(const Consensus::LLMQParams& llmqParams, int nHeight, std::vector<CFinalCommitment>& ret) const
 {
     AssertLockHeld(cs_main);
