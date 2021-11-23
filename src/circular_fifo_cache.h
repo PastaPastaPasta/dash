@@ -5,6 +5,8 @@
 #ifndef BITCOIN_CIRCULAR_FIFO_CACHE_H
 #define BITCOIN_CIRCULAR_FIFO_CACHE_H
 
+// TODO did you implement this?
+
 template<typename T, size_t MaxSize = 0>
 class circular_fifo_cache {
 private:
