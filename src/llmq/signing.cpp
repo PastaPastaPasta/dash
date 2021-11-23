@@ -1016,32 +1016,28 @@ CQuorumCPtr CSigningManager::SelectQuorumForSigning(Consensus::LLMQType llmqType
         }
         pindexStart = ::ChainActive()[startBlockHeight];
     }
-    /*
     if (CLLMQUtils::IsQuorumRotationEnabled(llmqType)){
-        //TODO Rewrite this part
-
-        auto indexedQuorums = quorumManager->ScanIndexedQuorums(llmqType);
-        if (indexedQuorums.empty()) {
+        auto quorums = quorumManager->ScanQuorums(llmqType, pindexStart, poolSize);
+        if (quorums.empty()) {
             return nullptr;
         }
         //log2 int
         int n = std::log2(GetLLMQParams(llmqType).signingActiveQuorumCount);
-        uint32_t selectedIndex = static_cast<uint32_t>(selectionHash.GetUint64(3) >> n);
-        if (selectedIndex > indexedQuorums.size()) {
+        uint32_t signerIndex = static_cast<uint32_t>(selectionHash.GetUint64(3) >> n);
+        if (signerIndex > quorums.size()) {
             return nullptr;
         }
-        auto itQuorum = std::find_if(indexedQuorums.begin(),
-                                     indexedQuorums.end(),
-                                     [selectedIndex](const CIndexedQuorum& obj){
-                                         return obj.first == selectedIndex;
+        auto itQuorum = std::find_if(quorums.begin(),
+                                     quorums.end(),
+                                     [signerIndex](CQuorumCPtr& obj){
+                                         return obj->qc->quorumIndex == signerIndex;
                                      });
-        if (itQuorum == indexedQuorums.end()) {
+        if (itQuorum == quorums.end()) {
             return nullptr;
         }
-        return quorumManager->GetQuorum(llmqType, itQuorum->second);
+        return *itQuorum;
     }
     else {
-     */
         auto quorums = quorumManager->ScanQuorums(llmqType, pindexStart, poolSize);
         if (quorums.empty()) {
             return nullptr;
@@ -1058,7 +1054,7 @@ CQuorumCPtr CSigningManager::SelectQuorumForSigning(Consensus::LLMQType llmqType
         }
         std::sort(scores.begin(), scores.end());
         return quorums[scores.front().second];
-    //}
+    }
 
 }
 
