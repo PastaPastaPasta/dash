@@ -152,8 +152,8 @@ bool CQuorumBlockProcessor::ProcessBlock(const CBlock& block, const CBlockIndex*
 
         for (int quorumIndex : boost::irange(0, llmq::CLLMQUtils::IsQuorumRotationEnabled(params.type) ? params.signingActiveQuorumCount : 1)) {
             // does the currently processed block contain a (possibly null) commitment for the current session?
-            bool hasCommitmentInNewBlock = qcs.count(params.type) != 0;
-            bool isCommitmentRequired = IsCommitmentRequired(params, pindex->nHeight, quorumIndex);
+            const bool hasCommitmentInNewBlock = qcs.count(params.type) != 0;
+            const bool isCommitmentRequired = IsCommitmentRequired(params, pindex->nHeight, quorumIndex);
 
             if (hasCommitmentInNewBlock && !isCommitmentRequired) {
                 // If we're either not in the mining phase or a non-null commitment was mined already, reject the block
