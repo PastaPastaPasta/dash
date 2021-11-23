@@ -10,6 +10,8 @@ Checks LLMQs Quorum Rotation
 
 '''
 
+import time
+
 from test_framework.test_framework import DashTestFramework
 from test_framework.util import connect_nodes, isolate_node, reconnect_isolated_node, sync_blocks, assert_equal, \
     assert_greater_than_or_equal, wait_until
@@ -60,22 +62,22 @@ class LLMQQuorumRotationTest(DashTestFramework):
         self.log.info("Cycle H+2C height:" + str(self.nodes[0].getblockcount()))
 
         (quorum_info_0_0, quorum_info_0_1) = self.mine_cycle_quorum()
-        quorum_members_0_0 = self.extract_quorum_members(quorum_info_0_0)
-        quorum_members_0_1 = self.extract_quorum_members(quorum_info_0_1)
+        quorum_members_0_0 = extract_quorum_members(quorum_info_0_0)
+        quorum_members_0_1 = extract_quorum_members(quorum_info_0_1)
         assert_equal (len(intersection(quorum_members_0_0, quorum_members_0_1)), 0)
         self.log.info("Quorum #0_0 members: " + str(quorum_members_0_0))
         self.log.info("Quorum #0_1 members: " + str(quorum_members_0_1))
 
         (quorum_info_1_0, quorum_info_1_1) = self.mine_cycle_quorum()
-        quorum_members_1_0 = self.extract_quorum_members(quorum_info_1_0)
-        quorum_members_1_1 = self.extract_quorum_members(quorum_info_1_1)
+        quorum_members_1_0 = extract_quorum_members(quorum_info_1_0)
+        quorum_members_1_1 = extract_quorum_members(quorum_info_1_1)
         assert_equal(len(intersection(quorum_members_1_0, quorum_members_1_1)), 0)
         self.log.info("Quorum #1_0 members: " + str(quorum_members_1_0))
         self.log.info("Quorum #1_1 members: " + str(quorum_members_1_1))
 
         (quorum_info_2_0, quorum_info_2_1) = self.mine_cycle_quorum()
-        quorum_members_2_0 = self.extract_quorum_members(quorum_info_2_0)
-        quorum_members_2_1 = self.extract_quorum_members(quorum_info_2_1)
+        quorum_members_2_0 = extract_quorum_members(quorum_info_2_0)
+        quorum_members_2_1 = extract_quorum_members(quorum_info_2_1)
         assert_equal(len(intersection(quorum_members_2_0, quorum_members_2_1)), 0)
         self.log.info("Quorum #2_0 members: " + str(quorum_members_2_0))
         self.log.info("Quorum #2_1 members: " + str(quorum_members_2_1))
@@ -100,6 +102,7 @@ class LLMQQuorumRotationTest(DashTestFramework):
             self.bump_mocktime(1, nodes=nodes)
             self.nodes[0].generate(skip_count)
         sync_blocks(nodes)
+        # time.sleep(2)
         self.log.info('Moved from block %d to %d' % (cur_block, self.nodes[0].getblockcount()))
 
 

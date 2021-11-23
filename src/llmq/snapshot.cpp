@@ -251,6 +251,7 @@ std::optional<CQuorumSnapshot>  CQuorumSnapshotManager::GetSnapshotForBlock(cons
 
 void CQuorumSnapshotManager::StoreSnapshotForBlock(const Consensus::LLMQType llmqType, const CBlockIndex* pindex, const CQuorumSnapshot& snapshot)
 {
+    LOCK(cs_main);
     AssertLockHeld(cs_main);
     LOCK(cs);
 

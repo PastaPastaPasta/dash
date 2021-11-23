@@ -106,11 +106,17 @@ CDKGSessionHandler::~CDKGSessionHandler() = default;
 
 void CDKGSessionHandler::UpdatedBlockTip(const CBlockIndex* pindexNew)
 {
+    AssertLockNotHeld(cs_main);
+    if (!CLLMQUtils::IsQuorumRotationEnabled(params.type)) {
+        return;
+    }
+
     LOCK(cs);
 
     //Indexed quorums (greater than 0) are enabled with Quorum Rotation
-    if(quorumIndex > 0 && !CLLMQUtils::IsQuorumRotationEnabled(params.type))
+    if(quorumIndex > 0) {
         return;
+    }
 
     int quorumStageInt = (pindexNew->nHeight - quorumIndex) % params.dkgInterval;
 

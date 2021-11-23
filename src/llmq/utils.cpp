@@ -497,6 +497,8 @@ bool CLLMQUtils::IsQuorumPoseEnabled(Consensus::LLMQType llmqType)
 
 bool CLLMQUtils::IsQuorumRotationEnabled(Consensus::LLMQType llmqType)
 {
+//    AssertLockHeld(cs_main);
+    LOCK(cs_main);
     //TODO Check how to enable Consensus::DEPLOYMENT_DIP0024 in functional tests
     bool fQuorumRotationActive = (VersionBitsTipState(Params().GetConsensus(), Consensus::DEPLOYMENT_DIP0024) == ThresholdState::ACTIVE);
 //    bool fQuorumRotationActive = ChainActive().Tip()->nHeight >= Params().GetConsensus().DIP0024Height;
