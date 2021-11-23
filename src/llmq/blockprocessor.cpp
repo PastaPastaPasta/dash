@@ -385,7 +385,6 @@ bool CQuorumBlockProcessor::GetCommitmentsFromBlock(const CBlock& block, const C
     AssertLockHeld(cs_main);
 
     const auto& consensus = Params().GetConsensus();
-    bool fDIP0003Active = pindex->nHeight >= consensus.DIP0003Height;
 
     ret.clear();
 
@@ -407,7 +406,7 @@ bool CQuorumBlockProcessor::GetCommitmentsFromBlock(const CBlock& block, const C
         }
     }
 
-    if (!fDIP0003Active && !ret.empty()) {
+    if (bool fDIP0003Active = pindex->nHeight >= consensus.DIP0003Height; !fDIP0003Active && !ret.empty()) {
         return state.DoS(100, false, REJECT_INVALID, "bad-qc-premature");
     }
 
