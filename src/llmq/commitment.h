@@ -110,7 +110,7 @@ class CFinalCommitmentTxPayload
 {
 public:
     static constexpr uint16_t CURRENT_VERSION = 1;
-    //Not sure if this new version is also need for CFinalCommitmentTxPayload
+    // Not sure if this new version is also need for CFinalCommitmentTxPayload
     static constexpr uint16_t QUORUM_INDEXED_VERSION = 2;
 public:
     uint16_t nVersion{CURRENT_VERSION};
