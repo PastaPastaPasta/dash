@@ -114,7 +114,7 @@ public:
     static constexpr uint16_t QUORUM_INDEXED_VERSION = 2;
 public:
     uint16_t nVersion{CURRENT_VERSION};
-    uint32_t nHeight{(uint32_t)-1};
+    uint32_t nHeight{(uint32_t)-1}; // TODO change to max
     CFinalCommitment commitment;
 
 public:
