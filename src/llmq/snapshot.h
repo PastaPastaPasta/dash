@@ -10,6 +10,8 @@
 #include <saltedhasher.h>
 #include <serialize.h>
 
+#include <optional>
+
 class CBlockIndex;
 class CDeterministicMN;
 class CDeterministicMNList;
