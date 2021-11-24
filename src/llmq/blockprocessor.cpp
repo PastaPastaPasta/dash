@@ -152,8 +152,8 @@ bool CQuorumBlockProcessor::ProcessBlock(const CBlock& block, const CBlockIndex*
 
         for (int quorumIndex : boost::irange(0, llmq::CLLMQUtils::IsQuorumRotationEnabled(params.type) ? params.signingActiveQuorumCount : 1)) {
             // does the currently processed block contain a (possibly null) commitment for the current session?
-            bool hasCommitmentInNewBlock = qcs.count(params.type) != 0;
-            bool isCommitmentRequired = IsCommitmentRequired(params, pindex->nHeight, quorumIndex);
+            const bool hasCommitmentInNewBlock = qcs.count(params.type) != 0;
+            const bool isCommitmentRequired = IsCommitmentRequired(params, pindex->nHeight, quorumIndex);
 
             if (hasCommitmentInNewBlock && !isCommitmentRequired) {
                 // If we're either not in the mining phase or a non-null commitment was mined already, reject the block
@@ -347,45 +347,11 @@ bool CQuorumBlockProcessor::UpgradeDB()
     return true;
 }
 
-bool CQuorumBlockProcessor::GetCommitmentsFromBlock(const CBlock& block, const CBlockIndex* pindex, std::map<Consensus::LLMQType, CFinalCommitment>& ret, CValidationState& state)
-{
-    AssertLockHeld(cs_main);
-
-    const auto& consensus = Params().GetConsensus();
-    bool fDIP0003Active = pindex->nHeight >= consensus.DIP0003Height;
-
-    ret.clear();
-
-    for (const auto& tx : block.vtx) {
-        if (tx->nType == TRANSACTION_QUORUM_COMMITMENT) {
-            CFinalCommitmentTxPayload qc;
-            if (!GetTxPayload(*tx, qc)) {
-                // should not happen as it was verified before processing the block
-                return state.DoS(100, false, REJECT_INVALID, "bad-qc-payload");
-            }
-
-            // only allow one commitment per type and per block
-            if (ret.count(qc.commitment.llmqType)) {
-                return state.DoS(100, false, REJECT_INVALID, "bad-qc-dup");
-            }
-
-            ret.emplace(qc.commitment.llmqType, std::move(qc.commitment));
-        }
-    }
-
-    if (!fDIP0003Active && !ret.empty()) {
-        return state.DoS(100, false, REJECT_INVALID, "bad-qc-premature");
-    }
-
-    return true;
-}
-
 bool CQuorumBlockProcessor::GetCommitmentsFromBlock(const CBlock& block, const CBlockIndex* pindex, std::multimap<Consensus::LLMQType, CFinalCommitment>& ret, CValidationState& state)
 {
     AssertLockHeld(cs_main);
 
     const auto& consensus = Params().GetConsensus();
-    bool fDIP0003Active = pindex->nHeight >= consensus.DIP0003Height;
 
     ret.clear();
 
@@ -407,7 +373,7 @@ bool CQuorumBlockProcessor::GetCommitmentsFromBlock(const CBlock& block, const C
         }
     }
 
-    if (!fDIP0003Active && !ret.empty()) {
+    if (bool fDIP0003Active = pindex->nHeight >= consensus.DIP0003Height; !fDIP0003Active && !ret.empty()) {
         return state.DoS(100, false, REJECT_INVALID, "bad-qc-premature");
     }
 
@@ -591,12 +557,15 @@ bool CQuorumBlockProcessor::GetMineableCommitmentByHash(const uint256& commitmen
 
 // Will return false if no commitment should be mined
 // Will return true and a null commitment if no mineable commitment is known and none was mined yet
-bool CQuorumBlockProcessor::GetMineableCommitments(const Consensus::LLMQParams& llmqParams, int nHeight, std::vector<CFinalCommitment>& ret) const
+std::optional<std::vector<CFinalCommitment>> CQuorumBlockProcessor::GetMineableCommitments(const Consensus::LLMQParams& llmqParams, int nHeight) const
 {
     AssertLockHeld(cs_main);
+
+    std::vector<CFinalCommitment> ret;
+
     for (int quorumIndex : boost::irange(0, CLLMQUtils::IsQuorumRotationEnabled(llmqParams.type) ? llmqParams.signingActiveQuorumCount : 1)) {
 
-        CFinalCommitment    cf;
+        CFinalCommitment cf;
         if (!IsCommitmentRequired(llmqParams, nHeight, quorumIndex)) {
             // no commitment required
             continue;
@@ -623,19 +592,20 @@ bool CQuorumBlockProcessor::GetMineableCommitments(const Consensus::LLMQParams& 
         ret.push_back(std::move(cf));
     }
 
-    return !ret.empty();
+    if (ret.empty())
+        return std::nullopt;
+    else
+        return std::make_optional(ret);
 }
 
 bool CQuorumBlockProcessor::GetMineableCommitmentsTx(const Consensus::LLMQParams& llmqParams, int nHeight, std::vector<CTransactionRef>& ret) const
 {
     AssertLockHeld(cs_main);
-    std::vector<CFinalCommitment> qcs;
-
-    if (!GetMineableCommitments(llmqParams, nHeight, qcs)) {
+    std::optional<std::vector<CFinalCommitment>> qcs = GetMineableCommitments(llmqParams, nHeight);
+    if (!qcs.has_value())
         return false;
-    }
 
-    for (const auto& f : qcs) {
+    for (const auto& f : qcs.value()) {
         CFinalCommitmentTxPayload qc;
         qc.nHeight = nHeight;
         qc.commitment = f;
