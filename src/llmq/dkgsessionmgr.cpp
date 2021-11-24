@@ -29,7 +29,7 @@ CDKGSessionManager::CDKGSessionManager(CBLSWorker& _blsWorker, bool unitTests, b
         blsWorker(_blsWorker)
 {
     MigrateDKG();
-    
+
     for (const auto& params : Params().GetConsensus().llmqs) {
         for (int i: boost::irange(0, params.signingActiveQuorumCount : 1)) {
             dkgSessionHandlers.emplace(std::piecewise_construct,
