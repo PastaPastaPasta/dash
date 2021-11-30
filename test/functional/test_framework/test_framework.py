@@ -692,7 +692,7 @@ class DashTestFramework(BitcoinTestFramework):
         """Tests must override this method to define test logic"""
         raise NotImplementedError
 
-    def set_dash_test_params(self, num_nodes, masterodes_count, extra_args=None, fast_dip3_enforcement=False):
+    def set_dash_test_params(self, num_nodes, masterodes_count, extra_args=None, fast_dip3_enforcement=False, immediate_dip3_enforcement=False):
         self.mn_count = masterodes_count
         self.num_nodes = num_nodes
         self.mninfo = []
@@ -704,9 +704,13 @@ class DashTestFramework(BitcoinTestFramework):
         self.extra_args = [copy.deepcopy(a) for a in extra_args]
         self.extra_args[0] += ["-sporkkey=cP4EKFyJsHT39LDqgdcB43Y3YXjNyjb5Fuas1GQSeAtjnZWmZEQK"]
         self.fast_dip3_enforcement = fast_dip3_enforcement
+        self.immediate_dip3_enforcement = immediate_dip3_enforcement
         if fast_dip3_enforcement:
             for i in range(0, num_nodes):
                 self.extra_args[i].append("-dip3params=30:50")
+        if immediate_dip3_enforcement:
+            for i in range(0, num_nodes):
+                self.extra_args[i].append("-dip3params=3:5")
 
         # make sure to activate dip8 after prepare_masternodes has finished its job already
         self.set_dash_dip8_activation(200)
@@ -884,7 +888,7 @@ class DashTestFramework(BitcoinTestFramework):
             self.create_simple_node()
 
         self.log.info("Activating DIP3")
-        if not self.fast_dip3_enforcement:
+        if not self.fast_dip3_enforcement and not self.immediate_dip3_enforcement:
             while self.nodes[0].getblockcount() < 500:
                 self.nodes[0].generate(10)
         self.sync_all()
