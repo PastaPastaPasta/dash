@@ -2,16 +2,17 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <consensus/validation.h>
 #include <evo/mnhftx.h>
+#include <evo/specialtx.h>
 #include <llmq/commitment.h>
 #include <llmq/signing.h>
-#include <evo/specialtx.h>
-#include <consensus/validation.h>
 
 #include <chain.h>
 #include <chainparams.h>
-#include <logging.h>
 #include <validation.h>
+
+#include <string>
 
 extern const std::string CBLSIG_REQUESTID_PREFIX = "clsig";
 
@@ -25,8 +26,8 @@ bool MNHFTx::Verify(const CBlockIndex* pQuorumIndex) const
     int signOffset{llmq::GetLLMQParams(llmqType).dkgInterval};
 
     const uint256 requestId = ::SerializeHash(std::make_pair(CBLSIG_REQUESTID_PREFIX, pQuorumIndex->nHeight));
-    return llmq::quorumSigningManager->VerifyRecoveredSig(llmqType, pQuorumIndex->nHeight, requestId, pQuorumIndex->GetBlockHash(), sig, 0) ||
-           llmq::quorumSigningManager->VerifyRecoveredSig(llmqType, pQuorumIndex->nHeight, requestId, pQuorumIndex->GetBlockHash(), sig, signOffset);
+    return llmq::CSigningManager::VerifyRecoveredSig(llmqType, pQuorumIndex->nHeight, requestId, pQuorumIndex->GetBlockHash(), sig, 0) ||
+           llmq::CSigningManager::VerifyRecoveredSig(llmqType, pQuorumIndex->nHeight, requestId, pQuorumIndex->GetBlockHash(), sig, signOffset);
 }
 
 bool CheckMNHFTx(const CTransaction& tx, const CBlockIndex* pindexPrev, CValidationState& state) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
@@ -64,6 +65,5 @@ bool CheckMNHFTx(const CTransaction& tx, const CBlockIndex* pindexPrev, CValidat
 std::string MNHFTx::ToString() const
 {
     return strprintf("MNHFTx(nVersion=%d, quorumHash=%s, sig=%s)",
-        nVersion, quorumHash.ToString(), sig.ToString());
+                     nVersion, quorumHash.ToString(), sig.ToString());
 }
-

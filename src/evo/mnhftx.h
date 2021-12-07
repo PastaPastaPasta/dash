@@ -5,11 +5,11 @@
 #ifndef BITCOIN_EVO_MNHFTX_H
 #define BITCOIN_EVO_MNHFTX_H
 
-#include <primitives/transaction.h>
-#include <univalue.h>
 #include <bls/bls.h>
+#include <primitives/transaction.h>
 #include <sync.h>
 #include <threadsafety.h>
+#include <univalue.h>
 
 class CBlockIndex;
 class CValidationState;
@@ -25,7 +25,6 @@ public:
     uint256 quorumHash;
     CBLSSignature sig;
 
-public:
     MNHFTx() = default;
     bool Verify(const CBlockIndex* pQuorumIndex) const;
 
@@ -51,11 +50,9 @@ class MNHFTxPayload
 public:
     static constexpr uint16_t CURRENT_VERSION = 1;
 
-public:
     uint16_t nVersion{CURRENT_VERSION};
     MNHFTx signal;
 
-public:
     SERIALIZE_METHODS(MNHFTxPayload, obj)
     {
         READWRITE(obj.nVersion, obj.signal);

@@ -6,14 +6,14 @@
 
 #include <chainparams.h>
 #include <consensus/validation.h>
+#include <evo/cbtx.h>
+#include <evo/deterministicmns.h>
+#include <evo/mnhftx.h>
 #include <hash.h>
+#include <llmq/blockprocessor.h>
+#include <llmq/commitment.h>
 #include <primitives/block.h>
 #include <validation.h>
-#include <evo/cbtx.h>
-#include <evo/mnhftx.h>
-#include <evo/deterministicmns.h>
-#include <llmq/commitment.h>
-#include <llmq/blockprocessor.h>
 
 bool CheckSpecialTx(const CTransaction& tx, const CBlockIndex* pindexPrev, CValidationState& state, const CCoinsViewCache& view)
 {
