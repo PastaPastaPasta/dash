@@ -225,13 +225,19 @@ std::vector<std::vector<CDeterministicMNCPtr>> CLLMQUtils::BuildNewQuorumQuarter
 
     for (auto i : boost::irange(0, llmqParams.signingActiveQuorumCount)) {
         for (const auto &mn: previousQuarters.quarterHMinusC[i]) {
-            MnsUsedAtH.AddMN(mn);
+            try {
+                MnsUsedAtH.AddMN(mn);
+            } catch(std::runtime_error& e) {}
         }
         for (const auto &mn: previousQuarters.quarterHMinus2C[i]) {
-            MnsUsedAtH.AddMN(mn);
+            try {
+                MnsUsedAtH.AddMN(mn);
+            } catch(std::runtime_error& e) {}
         }
         for (const auto &mn: previousQuarters.quarterHMinus3C[i]) {
-            MnsUsedAtH.AddMN(mn);
+            try {
+                MnsUsedAtH.AddMN(mn);
+            } catch(std::runtime_error& e) {}
         }
     }
 
@@ -457,10 +463,14 @@ std::pair<CDeterministicMNList, CDeterministicMNList> CLLMQUtils::GetMNUsageBySn
     size_t  i = {};
     Mns.ForEachMN(true, [&i, &snapshot, &usedMNs, &nonUsedMNs](const CDeterministicMNCPtr& dmn){
         if (snapshot.activeQuorumMembers[i]) {
-            usedMNs.AddMN(dmn);
+            try {
+                usedMNs.AddMN(dmn);
+            } catch(std::runtime_error& e) {}
         }
         else {
-            nonUsedMNs.AddMN(dmn);
+            try {
+                nonUsedMNs.AddMN(dmn);
+            } catch(std::runtime_error& e) {}
         }
         i++;
     });
