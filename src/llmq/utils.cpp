@@ -225,18 +225,24 @@ std::vector<std::vector<CDeterministicMNCPtr>> CLLMQUtils::BuildNewQuorumQuarter
         for (const auto &mn: previousQuarters.quarterHMinusC[i]) {
             try {
                 MnsUsedAtH.AddMN(mn);
+            } catch(std::runtime_error& e) {}
+            try {
                 MnsUsedAtHIndexed[i].AddMN(mn);
             } catch(std::runtime_error& e) {}
         }
         for (const auto &mn: previousQuarters.quarterHMinus2C[i]) {
             try {
                 MnsUsedAtH.AddMN(mn);
+            } catch(std::runtime_error& e) {}
+            try {
                 MnsUsedAtHIndexed[i].AddMN(mn);
             } catch(std::runtime_error& e) {}
         }
         for (const auto &mn: previousQuarters.quarterHMinus3C[i]) {
             try {
                 MnsUsedAtH.AddMN(mn);
+            } catch(std::runtime_error& e) {}
+            try {
                 MnsUsedAtHIndexed[i].AddMN(mn);
             } catch(std::runtime_error& e) {}
         }
