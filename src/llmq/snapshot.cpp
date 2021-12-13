@@ -46,31 +46,36 @@ void CQuorumSnapshot::ToJson(UniValue &obj) const
 
 void CQuorumRotationInfo::ToJson(UniValue &obj) const
 {
-    //TODO Check this function if correct
     obj.setObject();
     obj.pushKV("creationHeight", creationHeight);
-    CDataStream ss(SER_NETWORK, PROTOCOL_VERSION);
-    ss << quorumSnapshotAtHMinusC;
-    obj.pushKV("quorumSnapshotAtHMinusC", HexStr(ss));
-    ss.clear();
-    ss << quorumSnapshotAtHMinus2C;
-    obj.pushKV("quorumSnapshotAtHMinus2C", HexStr(ss));
-    ss.clear();
-    ss << quorumSnapshotAtHMinus3C;
-    obj.pushKV("quorumSnapshotAtHMinus3C", HexStr(ss));
-    ss.clear();
-    ss << mnListDiffTip;
-    obj.pushKV("mnListDiffTip", HexStr(ss));
-    ss.clear();
-    ss << mnListDiffAtHMinusC;
-    obj.pushKV("mnListDiffAtHMinusC", HexStr(ss));
-    ss.clear();
-    ss << mnListDiffAtHMinus2C;
-    obj.pushKV("mnListDiffAtHMinus2C", HexStr(ss));
-    ss.clear();
-    ss << mnListDiffAtHMinus3C;
-    obj.pushKV("mnListDiffAtHMinus3C", HexStr(ss));
-    ss.clear();
+
+    UniValue objc;
+    quorumSnapshotAtHMinusC.ToJson(objc);
+    obj.pushKV("quorumSnapshotAtHMinusC", objc);
+
+    UniValue obj2c;
+    quorumSnapshotAtHMinus2C.ToJson(obj2c);
+    obj.pushKV("quorumSnapshotAtHMinus2C", obj2c);
+
+    UniValue obj3c;
+    quorumSnapshotAtHMinus3C.ToJson(obj3c);
+    obj.pushKV("quorumSnapshotAtHMinus3C", obj3c);
+
+    UniValue objdifftip;
+    mnListDiffTip.ToJson(objdifftip);
+    obj.pushKV("mnListDiffTip", objdifftip);
+
+    UniValue objdiffc;
+    mnListDiffAtHMinusC.ToJson(objdiffc);
+    obj.pushKV("mnListDiffAtHMinusC", objdiffc);
+
+    UniValue objdiff2c;
+    mnListDiffAtHMinus2C.ToJson(objdiff2c);
+    obj.pushKV("mnListDiffAtHMinus2C", objdiff2c);
+
+    UniValue objdiff3c;
+    mnListDiffAtHMinus3C.ToJson(objdiff3c);
+    obj.pushKV("mnListDiffAtHMinus3C", objdiff3c);
 }
 
 bool BuildQuorumRotationInfo(const CGetQuorumRotationInfo& request, CQuorumRotationInfo& response, std::string& errorRet)
@@ -135,31 +140,20 @@ bool BuildQuorumRotationInfo(const CGetQuorumRotationInfo& request, CQuorumRotat
         return false;
     }
 
-    auto quorums = llmq::quorumBlockProcessor->GetMinedAndActiveCommitmentsUntilBlock(blockIndex);
-    auto itQuorums = quorums.find(llmqType);
-    if (itQuorums == quorums.end()) {
-        errorRet = strprintf("No InstantSend quorum found");
-        return false;
-    }
-    if (itQuorums->second.empty()){
-        errorRet = strprintf("Empty list for InstantSend quorum");
-        return false;
-    }
-
     // Since the returned quorums are in reversed order, the most recent one is at index 0
-    const CBlockIndex* hBlockIndex = LookupBlockIndex(itQuorums->second.at(0)->GetBlockHash());
+    const Consensus::LLMQParams& llmqParams = GetLLMQParams(llmqType);
+    const int cycleLength = llmqParams.dkgInterval;
+
+    const CBlockIndex* hBlockIndex = tipBlockIndex->GetAncestor(tipBlockIndex->nHeight - (tipBlockIndex->nHeight % cycleLength));
     if (!hBlockIndex) {
         errorRet = strprintf("Can not find block H");
         return false;
     }
     response.creationHeight = hBlockIndex->nHeight;
 
-    const Consensus::LLMQParams& llmqParams = GetLLMQParams(llmqType);
-    const int cycleLength = llmqParams.dkgInterval;
-
-    const CBlockIndex* pBlockHMinusCIndex = tipBlockIndex->GetAncestor( tipBlockIndex->nHeight - (tipBlockIndex->nHeight % cycleLength));
-    const CBlockIndex* pBlockHMinus2CIndex = pBlockHMinusCIndex->GetAncestor( pBlockHMinusCIndex->nHeight - cycleLength);
-    const CBlockIndex* pBlockHMinus3CIndex = pBlockHMinusCIndex->GetAncestor( pBlockHMinusCIndex->nHeight - 2 * cycleLength);
+    const CBlockIndex* pBlockHMinusCIndex = tipBlockIndex->GetAncestor( hBlockIndex->nHeight - cycleLength);
+    const CBlockIndex* pBlockHMinus2CIndex = pBlockHMinusCIndex->GetAncestor( hBlockIndex->nHeight - 2 * cycleLength);
+    const CBlockIndex* pBlockHMinus3CIndex = pBlockHMinusCIndex->GetAncestor( hBlockIndex->nHeight - 3 * cycleLength);
 
     // H-C
     if (!pBlockHMinusCIndex) {
@@ -176,7 +170,10 @@ bool BuildQuorumRotationInfo(const CGetQuorumRotationInfo& request, CQuorumRotat
         errorRet = strprintf("Can not find quorum snapshot at H-C");
         return false;
     }
-    response.quorumSnapshotAtHMinusC = std::move(snapshotHMinusC.value());
+    else {
+        response.quorumSnapshotAtHMinusC = std::move(snapshotHMinusC.value());
+    }
+
 
     // H-2C
     if (!pBlockHMinus2CIndex) {
@@ -192,7 +189,10 @@ bool BuildQuorumRotationInfo(const CGetQuorumRotationInfo& request, CQuorumRotat
         errorRet = strprintf("Can not find quorum snapshot at H-C");
         return false;
     }
-    response.quorumSnapshotAtHMinus2C = std::move(snapshotHMinus2C.value());
+    else {
+        response.quorumSnapshotAtHMinus2C = std::move(snapshotHMinus2C.value());
+    }
+
 
     // H-3C
     if (!pBlockHMinus3CIndex) {
@@ -208,8 +208,9 @@ bool BuildQuorumRotationInfo(const CGetQuorumRotationInfo& request, CQuorumRotat
         errorRet = strprintf("Can not find quorum snapshot at H-C");
         return false;
     }
-    response.quorumSnapshotAtHMinus3C = std::move(snapshotHMinus3C.value());
-
+    else {
+        response.quorumSnapshotAtHMinus3C = std::move(snapshotHMinus3C.value());
+    }
 
     return true;
 }
