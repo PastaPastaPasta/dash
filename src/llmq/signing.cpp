@@ -1018,14 +1018,18 @@ CQuorumCPtr CSigningManager::SelectQuorumForSigning(Consensus::LLMQType llmqType
         }
         //log2 int
         int n = std::log2(GetLLMQParams(llmqType).signingActiveQuorumCount);
-        uint32_t signerIndex = static_cast<uint32_t>(selectionHash.GetUint64(3) >> n);
-        if (signerIndex > quorums.size()) {
+        //Extract last 64 bits of selectionHash
+        uint64_t b = selectionHash.GetUint64(3);
+        //Take last n bits of b
+        int signer = static_cast<int>((((1 << n) - 1) & (b >> (64 - n - 1))));
+
+        if (signer > quorums.size()) {
             return nullptr;
         }
         auto itQuorum = std::find_if(quorums.begin(),
-                                     quorums.end(),
-                                     [signerIndex](CQuorumCPtr& obj){
-                                         return obj->qc->quorumIndex == signerIndex;
+                                                  quorums.end(),
+                                                 [signer](CQuorumCPtr& obj){
+                                                    return obj->qc->quorumIndex == signer;
                                      });
         if (itQuorum == quorums.end()) {
             return nullptr;
