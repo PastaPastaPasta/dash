@@ -154,7 +154,7 @@ static constexpr std::array<LLMQParams, 8> available_llmqs = {
     LLMQParams{
         .type = LLMQType::LLMQ_DEVNET,
         .name = "llmq_devnet",
-        .size = 8,
+        .size = 12,
         .minSize = 7,
         .threshold = 6,
 
