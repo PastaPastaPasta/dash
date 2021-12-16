@@ -66,8 +66,7 @@ public:
     void Unserialize(Stream& s) {
         SerializationOpBase(s, CSerActionUnserialize());
 
-        size_t cnt = {};
-        cnt = ReadCompactSize(s);
+        size_t cnt = ReadCompactSize(s);
         ReadFixedBitSet(s, activeQuorumMembers, cnt);
         cnt = ReadCompactSize(s);
         mnSkipList.resize(cnt);

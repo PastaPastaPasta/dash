@@ -152,12 +152,19 @@ bool BuildQuorumRotationInfo(const CGetQuorumRotationInfo& request, CQuorumRotat
     response.creationHeight = hBlockIndex->nHeight;
 
     const CBlockIndex* pBlockHMinusCIndex = tipBlockIndex->GetAncestor( hBlockIndex->nHeight - cycleLength);
-    const CBlockIndex* pBlockHMinus2CIndex = pBlockHMinusCIndex->GetAncestor( hBlockIndex->nHeight - 2 * cycleLength);
-    const CBlockIndex* pBlockHMinus3CIndex = pBlockHMinusCIndex->GetAncestor( hBlockIndex->nHeight - 3 * cycleLength);
-
-    // H-C
     if (!pBlockHMinusCIndex) {
         errorRet = strprintf("Can not find block H-C");
+        return false;
+    }
+
+    const CBlockIndex* pBlockHMinus2CIndex = pBlockHMinusCIndex->GetAncestor( hBlockIndex->nHeight - 2 * cycleLength);
+    if (!pBlockHMinus2CIndex) {
+        errorRet = strprintf("Can not find block H-2C");
+        return false;
+    }
+    const CBlockIndex* pBlockHMinus3CIndex = pBlockHMinusCIndex->GetAncestor( hBlockIndex->nHeight - 3 * cycleLength);
+    if (!pBlockHMinus3CIndex) {
+        errorRet = strprintf("Can not find block H-3C");
         return false;
     }
 
@@ -174,12 +181,6 @@ bool BuildQuorumRotationInfo(const CGetQuorumRotationInfo& request, CQuorumRotat
         response.quorumSnapshotAtHMinusC = std::move(snapshotHMinusC.value());
     }
 
-
-    // H-2C
-    if (!pBlockHMinus2CIndex) {
-        errorRet = strprintf("Can not find block H-2C");
-        return false;
-    }
     if (!BuildSimplifiedMNListDiff(GetLastBaseBlockHash(baseBlockIndexes, pBlockHMinus2CIndex), pBlockHMinus2CIndex->GetBlockHash(), response.mnListDiffAtHMinus2C, errorRet)) {
         return false;
     }
@@ -193,12 +194,6 @@ bool BuildQuorumRotationInfo(const CGetQuorumRotationInfo& request, CQuorumRotat
         response.quorumSnapshotAtHMinus2C = std::move(snapshotHMinus2C.value());
     }
 
-
-    // H-3C
-    if (!pBlockHMinus3CIndex) {
-        errorRet = strprintf("Can not find block H-3C");
-        return false;
-    }
     if (!BuildSimplifiedMNListDiff(GetLastBaseBlockHash(baseBlockIndexes, pBlockHMinus3CIndex), pBlockHMinus3CIndex->GetBlockHash(), response.mnListDiffAtHMinus3C, errorRet)) {
         return false;
     }
