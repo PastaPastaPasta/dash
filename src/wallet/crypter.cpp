@@ -46,7 +46,7 @@ bool CCrypter::SetKeyFromPassphrase(const SecureString& strKeyData, const std::v
     if (nDerivationMethod == 0)
         i = BytesToKeySHA512AES(chSalt, strKeyData, nRounds, vchKey.data(), vchIV.data());
 
-    if (i != (int)WALLET_CRYPTO_KEY_SIZE)
+    if (i != static_cast<int>(WALLET_CRYPTO_KEY_SIZE))
     {
         memory_cleanse(vchKey.data(), vchKey.size());
         memory_cleanse(vchIV.data(), vchIV.size());

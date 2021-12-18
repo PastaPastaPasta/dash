@@ -494,8 +494,8 @@ std::optional<SelectionResult> SelectCoins(const CWallet& wallet, const std::vec
     unsigned int limit_ancestor_count = 0;
     unsigned int limit_descendant_count = 0;
     wallet.chain().getPackageLimits(limit_ancestor_count, limit_descendant_count);
-    const size_t max_ancestors = (size_t)std::max<int64_t>(1, limit_ancestor_count);
-    const size_t max_descendants = (size_t)std::max<int64_t>(1, limit_descendant_count);
+    const size_t max_ancestors = static_cast<size_t>(std::max<int64_t>(1, limit_ancestor_count));
+    const size_t max_descendants = static_cast<size_t>(std::max<int64_t>(1, limit_descendant_count));
     const bool fRejectLongChains = gArgs.GetBoolArg("-walletrejectlongchains", DEFAULT_WALLET_REJECT_LONG_CHAINS);
 
     // form groups from remaining coins; note that preset coins will not
@@ -619,7 +619,7 @@ static uint32_t GetLocktimeForNewTransaction(interfaces::Chain& chain, const uin
         // e.g. high-latency mix networks and some CoinJoin implementations, have
         // better privacy.
         if (GetRandInt(10) == 0)
-            locktime = std::max(0, (int)locktime - GetRandInt(100));
+            locktime = std::max(0, static_cast<int>(locktime) - GetRandInt(100));
     } else {
         // If our chain is lagging behind, we can't discourage fee sniping nor help
         // the privacy of high-latency transactions. To avoid leaking a potentially
@@ -702,7 +702,7 @@ static bool CreateTransactionInternal(
     if (change_spend_size == -1) {
         coin_selection_params.change_spend_size = DUMMY_NESTED_P2WPKH_INPUT_SIZE;
     } else {
-        coin_selection_params.change_spend_size = (size_t)change_spend_size;
+        coin_selection_params.change_spend_size = static_cast<size_t>(change_spend_size);
     }
 
     // Set discard feerate
@@ -778,7 +778,7 @@ static bool CreateTransactionInternal(
         // Insert change txn at random position:
         nChangePosInOut = GetRandInt(txNew.vout.size()+1);
     }
-    else if ((unsigned int)nChangePosInOut > txNew.vout.size())
+    else if (static_cast<unsigned int>(nChangePosInOut) > txNew.vout.size())
     {
         error = _("Change index out of range");
         return false;
