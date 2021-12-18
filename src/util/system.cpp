@@ -1001,7 +1001,7 @@ std::string ArgsManager::GetChainName() const
     const bool fTestNet = get_net("-testnet");
     const bool is_chain_arg_set = IsArgSet("-chain");
 
-    if ((int)is_chain_arg_set + (int)fRegTest + (int)fSigNet + (int)fTestNet > 1) {
+    if (static_cast<int>(is_chain_arg_set) + static_cast<int>(fRegTest) + static_cast<int>(fSigNet) + static_cast<int>(fTestNet) > 1) {
         throw std::runtime_error("Invalid combination of -regtest, -signet, -testnet and -chain. Can use at most one.");
     }
     if (fRegTest)
@@ -1152,7 +1152,7 @@ int RaiseFileDescriptorLimit(int nMinFD) {
 #else
     struct rlimit limitFD;
     if (getrlimit(RLIMIT_NOFILE, &limitFD) != -1) {
-        if (limitFD.rlim_cur < (rlim_t)nMinFD) {
+        if (limitFD.rlim_cur < static_cast<rlim_t>(nMinFD)) {
             limitFD.rlim_cur = nMinFD;
             if (limitFD.rlim_cur > limitFD.rlim_max)
                 limitFD.rlim_cur = limitFD.rlim_max;
@@ -1197,7 +1197,7 @@ void AllocateFileRange(FILE *file, unsigned int offset, unsigned int length) {
 #else
     #if defined(HAVE_POSIX_FALLOCATE)
     // Version using posix_fallocate
-    off_t nEndPos = (off_t)offset + length;
+    off_t nEndPos = static_cast<off_t>(offset) + length;
     if (0 == posix_fallocate(fileno(file), 0, nEndPos)) return;
     #endif
     // Fallback version

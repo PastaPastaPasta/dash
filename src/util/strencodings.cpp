@@ -55,7 +55,7 @@ const signed char p_util_hexdigit[256] =
 
 signed char HexDigit(char c)
 {
-    return p_util_hexdigit[(unsigned char)c];
+    return p_util_hexdigit[static_cast<unsigned char>(c)];
 }
 
 bool IsHex(const std::string& str)
@@ -90,11 +90,11 @@ std::vector<unsigned char> ParseHex(const char* psz)
         while (IsSpace(*psz))
             psz++;
         signed char c = HexDigit(*psz++);
-        if (c == (signed char)-1)
+        if (c == int8_t{-1})
             break;
         auto n{uint8_t(c << 4)};
         c = HexDigit(*psz++);
-        if (c == (signed char)-1)
+        if (c == int8_t{-1})
             break;
         n |= c;
         vch.push_back(n);
@@ -161,7 +161,7 @@ std::vector<unsigned char> DecodeBase64(const char* p, bool* pf_invalid)
     std::vector<uint8_t> val;
     val.reserve(strlen(p));
     while (*p != 0) {
-        int x = decode64_table[(unsigned char)*p];
+        int x = decode64_table[uint8_t(*p)];
         if (x == -1) break;
         val.push_back(uint8_t(x));
         ++p;
@@ -239,7 +239,7 @@ std::vector<unsigned char> DecodeBase32(const char* p, bool* pf_invalid)
     std::vector<uint8_t> val;
     val.reserve(strlen(p));
     while (*p != 0) {
-        int x = decode32_table[(unsigned char)*p];
+        int x = decode32_table[uint8_t(*p)];
         if (x == -1) break;
         val.push_back(uint8_t(x));
         ++p;
