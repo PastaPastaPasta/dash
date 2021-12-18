@@ -53,7 +53,7 @@ bool MutableTransactionSignatureCreator::CreateSig(const SigningProvider& provid
     uint256 hash = SignatureHash(scriptCode, *txTo, nIn, hashtype, amount, sigversion, m_txdata);
     if (!key.Sign(hash, vchSig))
         return false;
-    vchSig.push_back((unsigned char)hashtype);
+    vchSig.push_back(static_cast<unsigned char>(hashtype));
     return true;
 }
 

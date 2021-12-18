@@ -32,7 +32,7 @@ inline void extract3(limb_t& c0, limb_t& c1, limb_t& c2, limb_t& n)
 /** [c0,c1] = a * b */
 inline void mul(limb_t& c0, limb_t& c1, const limb_t& a, const limb_t& b)
 {
-    double_limb_t t = (double_limb_t)a * b;
+    double_limb_t t = static_cast<double_limb_t>(a) * b;
     c1 = t >> LIMB_SIZE;
     c0 = t;
 }
@@ -40,10 +40,10 @@ inline void mul(limb_t& c0, limb_t& c1, const limb_t& a, const limb_t& b)
 /* [c0,c1,c2] += n * [d0,d1,d2]. c2 is 0 initially */
 inline void mulnadd3(limb_t& c0, limb_t& c1, limb_t& c2, limb_t& d0, limb_t& d1, limb_t& d2, const limb_t& n)
 {
-    double_limb_t t = (double_limb_t)d0 * n + c0;
+    double_limb_t t = static_cast<double_limb_t>(d0) * n + c0;
     c0 = t;
     t >>= LIMB_SIZE;
-    t += (double_limb_t)d1 * n + c1;
+    t += static_cast<double_limb_t>(d1) * n + c1;
     c1 = t;
     t >>= LIMB_SIZE;
     c2 = t + d2 * n;
@@ -52,17 +52,17 @@ inline void mulnadd3(limb_t& c0, limb_t& c1, limb_t& c2, limb_t& d0, limb_t& d1,
 /* [c0,c1] *= n */
 inline void muln2(limb_t& c0, limb_t& c1, const limb_t& n)
 {
-    double_limb_t t = (double_limb_t)c0 * n;
+    double_limb_t t = static_cast<double_limb_t>(c0) * n;
     c0 = t;
     t >>= LIMB_SIZE;
-    t += (double_limb_t)c1 * n;
+    t += static_cast<double_limb_t>(c1) * n;
     c1 = t;
 }
 
 /** [c0,c1,c2] += a * b */
 inline void muladd3(limb_t& c0, limb_t& c1, limb_t& c2, const limb_t& a, const limb_t& b)
 {
-    double_limb_t t = (double_limb_t)a * b;
+    double_limb_t t = static_cast<double_limb_t>(a) * b;
     limb_t th = t >> LIMB_SIZE;
     limb_t tl = t;
 
@@ -75,7 +75,7 @@ inline void muladd3(limb_t& c0, limb_t& c1, limb_t& c2, const limb_t& a, const l
 /** [c0,c1,c2] += 2 * a * b */
 inline void muldbladd3(limb_t& c0, limb_t& c1, limb_t& c2, const limb_t& a, const limb_t& b)
 {
-    double_limb_t t = (double_limb_t)a * b;
+    double_limb_t t = static_cast<double_limb_t>(a) * b;
     limb_t th = t >> LIMB_SIZE;
     limb_t tl = t;
 

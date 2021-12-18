@@ -54,7 +54,7 @@ public:
 
     int64_t GetBlockTime() const
     {
-        return (int64_t)nTime;
+        return static_cast<int64_t>(nTime);
     }
 };
 
