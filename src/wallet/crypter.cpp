@@ -23,7 +23,7 @@ int CCrypter::BytesToKeySHA512AES(const std::vector<unsigned char>& chSalt, cons
     unsigned char buf[CSHA512::OUTPUT_SIZE];
     CSHA512 di;
 
-    di.Write((const unsigned char*)strKeyData.data(), strKeyData.size());
+    di.Write(reinterpret_cast<const unsigned char*>(strKeyData.data()), strKeyData.size());
     di.Write(chSalt.data(), chSalt.size());
     di.Finalize(buf);
 
@@ -45,7 +45,7 @@ bool CCrypter::SetKeyFromPassphrase(const SecureString& strKeyData, const std::v
     if (nDerivationMethod == 0)
         i = BytesToKeySHA512AES(chSalt, strKeyData, nRounds, vchKey.data(), vchIV.data());
 
-    if (i != (int)WALLET_CRYPTO_KEY_SIZE)
+    if (i != static_cast<int>(WALLET_CRYPTO_KEY_SIZE))
     {
         memory_cleanse(vchKey.data(), vchKey.size());
         memory_cleanse(vchIV.data(), vchIV.size());
@@ -111,7 +111,7 @@ bool EncryptSecret(const CKeyingMaterial& vMasterKey, const CKeyingMaterial &vch
     memcpy(chIV.data(), &nIV, WALLET_CRYPTO_IV_SIZE);
     if(!cKeyCrypter.SetKey(vMasterKey, chIV))
         return false;
-    return cKeyCrypter.Encrypt(*((const CKeyingMaterial*)&vchPlaintext), vchCiphertext);
+    return cKeyCrypter.Encrypt(*(const_cast<CKeyingMaterial*>(&vchPlaintext)), vchCiphertext);
 }
 
 bool DecryptSecret(const CKeyingMaterial& vMasterKey, const std::vector<unsigned char>& vchCiphertext, const uint256& nIV, CKeyingMaterial& vchPlaintext)

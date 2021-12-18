@@ -943,7 +943,7 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     if (nPruneArg < 0) {
         return InitError(_("Prune cannot be configured with a negative value."));
     }
-    nPruneTarget = (uint64_t) nPruneArg * 1024 * 1024;
+    nPruneTarget = static_cast<uint64_t>(nPruneArg) * 1024 * 1024;
     if (nPruneArg == 1) {  // manual pruning: -prune=1
         LogPrintf("Block pruning enabled.  Use RPC call pruneblockchain(height) to manually prune block and undo files.\n");
         nPruneTarget = std::numeric_limits<uint64_t>::max();
@@ -1300,7 +1300,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
             nets.insert(net);
         }
         for (int n = 0; n < NET_MAX; n++) {
-            enum Network net = (enum Network)n;
+            enum Network net = static_cast<enum Network>(n);
             if (!nets.count(net))
                 SetReachable(net, false);
         }

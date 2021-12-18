@@ -50,7 +50,7 @@ typedef unsigned int SOCKET;
 #define WSAEINPROGRESS      EINPROGRESS
 #define WSAEADDRINUSE       EADDRINUSE
 #define WSAENOTSOCK         EBADF
-#define INVALID_SOCKET      (SOCKET)(~0)
+#define INVALID_SOCKET      static_cast<SOCKET>(~0)
 #define SOCKET_ERROR        -1
 #else
 #ifndef WSAEAGAIN

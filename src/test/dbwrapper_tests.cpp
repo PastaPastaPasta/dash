@@ -296,7 +296,7 @@ BOOST_AUTO_TEST_CASE(iterator_ordering)
     }
 
     for (const int seek_start : {0x00, 0x80}) {
-        it->Seek((uint8_t)seek_start);
+        it->Seek(static_cast<uint8_t>(seek_start));
         for (unsigned int x=seek_start; x<255; ++x) {
             uint8_t key;
             uint32_t value;

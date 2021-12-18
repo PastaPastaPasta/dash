@@ -107,7 +107,7 @@ bool CCoinsViewDB::BatchWrite(CCoinsMap &mapCoins, const uint256 &hashBlock) {
     CDBBatch batch(*m_db);
     size_t count = 0;
     size_t changed = 0;
-    size_t batch_size = (size_t)gArgs.GetIntArg("-dbbatchsize", nDefaultDbBatchSize);
+    size_t batch_size = static_cast<size_t>(gArgs.GetIntArg("-dbbatchsize", nDefaultDbBatchSize));
     int crash_simulate = gArgs.GetIntArg("-dbcrashratio", 0);
     assert(!hashBlock.IsNull());
 
@@ -160,7 +160,7 @@ bool CCoinsViewDB::BatchWrite(CCoinsMap &mapCoins, const uint256 &hashBlock) {
 
     LogPrint(BCLog::COINDB, "Writing final batch of %.2f MiB\n", batch.SizeEstimate() * (1.0 / 1048576.0));
     bool ret = m_db->WriteBatch(batch);
-    LogPrint(BCLog::COINDB, "Committed %u changed transaction outputs (out of %u) to coin database...\n", (unsigned int)changed, (unsigned int)count);
+    LogPrint(BCLog::COINDB, "Committed %u changed transaction outputs (out of %u) to coin database...\n", static_cast<unsigned int>(changed), static_cast<unsigned int>(count));
     return ret;
 }
 
@@ -419,7 +419,7 @@ bool CCoinsViewDB::Upgrade() {
         if (pcursor->GetKey(key) && key.first == DB_COINS) {
             if (count++ % 256 == 0) {
                 uint32_t high = 0x100 * *key.second.begin() + *(key.second.begin() + 1);
-                int percentageDone = (int)(high * 100.0 / 65536.0 + 0.5);
+                int percentageDone = static_cast<int>((high * 100.0 / 65536.0 + 0.5));
                 uiInterface.ShowProgress(_("Upgrading UTXO database").translated, percentageDone, true);
                 if (reportDone < percentageDone/10) {
                     // report max. every 10% step

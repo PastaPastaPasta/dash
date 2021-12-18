@@ -75,7 +75,7 @@ CMutableTransaction ConstructTransaction(const UniValue& inputs_in, const UniVal
             if (seqNr64 < 0 || seqNr64 > CTxIn::SEQUENCE_FINAL) {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, sequence number is out of range");
             } else {
-                nSequence = (uint32_t)seqNr64;
+                nSequence = static_cast<uint32_t>(seqNr64);
             }
         }
 
@@ -144,14 +144,14 @@ static void TxInErrorToJSON(const CTxIn& txin, UniValue& vErrorsRet, const std::
 {
     UniValue entry(UniValue::VOBJ);
     entry.pushKV("txid", txin.prevout.hash.ToString());
-    entry.pushKV("vout", (uint64_t)txin.prevout.n);
+    entry.pushKV("vout", static_cast<uint64_t>(txin.prevout.n));
     UniValue witness(UniValue::VARR);
     for (unsigned int i = 0; i < txin.scriptWitness.stack.size(); i++) {
         witness.push_back(HexStr(txin.scriptWitness.stack[i]));
     }
     entry.pushKV("witness", witness);
     entry.pushKV("scriptSig", HexStr(txin.scriptSig));
-    entry.pushKV("sequence", (uint64_t)txin.nSequence);
+    entry.pushKV("sequence", static_cast<uint64_t>(txin.nSequence));
     entry.pushKV("error", strMessage);
     vErrorsRet.push_back(entry);
 }

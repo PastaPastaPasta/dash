@@ -89,13 +89,13 @@ CScriptWitness ScriptWitnessFromJSON(const UniValue& univalue)
 }
 
 const std::map<std::string, unsigned int> FLAG_NAMES = {
-    {std::string("P2SH"), (unsigned int)SCRIPT_VERIFY_P2SH},
-    {std::string("DERSIG"), (unsigned int)SCRIPT_VERIFY_DERSIG},
-    {std::string("NULLDUMMY"), (unsigned int)SCRIPT_VERIFY_NULLDUMMY},
-    {std::string("CHECKLOCKTIMEVERIFY"), (unsigned int)SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY},
-    {std::string("CHECKSEQUENCEVERIFY"), (unsigned int)SCRIPT_VERIFY_CHECKSEQUENCEVERIFY},
-    {std::string("WITNESS"), (unsigned int)SCRIPT_VERIFY_WITNESS},
-    {std::string("TAPROOT"), (unsigned int)SCRIPT_VERIFY_TAPROOT},
+    {std::string("P2SH"), static_cast<unsigned int>(SCRIPT_VERIFY_P2SH)},
+    {std::string("DERSIG"), static_cast<unsigned int>(SCRIPT_VERIFY_DERSIG)},
+    {std::string("NULLDUMMY"), static_cast<unsigned int>(SCRIPT_VERIFY_NULLDUMMY)},
+    {std::string("CHECKLOCKTIMEVERIFY"), static_cast<unsigned int>(SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY)},
+    {std::string("CHECKSEQUENCEVERIFY"), static_cast<unsigned int>(SCRIPT_VERIFY_CHECKSEQUENCEVERIFY)},
+    {std::string("WITNESS"), static_cast<unsigned int>(SCRIPT_VERIFY_WITNESS)},
+    {std::string("TAPROOT"), static_cast<unsigned int>(SCRIPT_VERIFY_TAPROOT)},
 };
 
 std::vector<unsigned int> AllFlags()
@@ -193,7 +193,7 @@ void test_init()
 FUZZ_TARGET_INIT_HIDDEN(script_assets_test_minimizer, test_init, /*hidden=*/true)
 {
     if (buffer.size() < 2 || buffer.back() != '\n' || buffer[buffer.size() - 2] != ',') return;
-    const std::string str((const char*)buffer.data(), buffer.size() - 2);
+    const std::string str(reinterpret_cast<const char*>(buffer.data()), buffer.size() - 2);
     try {
         Test(str);
     } catch (const std::runtime_error&) {

@@ -170,7 +170,7 @@ TxoutType Solver(const CScript& scriptPubKey, std::vector<std::vector<unsigned c
             return TxoutType::WITNESS_V1_TAPROOT;
         }
         if (witnessversion != 0) {
-            vSolutionsRet.push_back(std::vector<unsigned char>{(unsigned char)witnessversion});
+            vSolutionsRet.push_back(std::vector<unsigned char>{static_cast<unsigned char>(witnessversion)});
             vSolutionsRet.push_back(std::move(witnessprogram));
             return TxoutType::WITNESS_UNKNOWN;
         }
@@ -378,17 +378,17 @@ void TaprootSpendData::Merge(TaprootSpendData other)
 
 void TaprootBuilder::Insert(TaprootBuilder::NodeInfo&& node, int depth)
 {
-    assert(depth >= 0 && (size_t)depth <= TAPROOT_CONTROL_MAX_NODE_COUNT);
+    assert(depth >= 0 && static_cast<size_t>(depth) <= TAPROOT_CONTROL_MAX_NODE_COUNT);
     /* We cannot insert a leaf at a lower depth while a deeper branch is unfinished. Doing
      * so would mean the Add() invocations do not correspond to a DFS traversal of a
      * binary tree. */
-    if ((size_t)depth + 1 < m_branch.size()) {
+    if (static_cast<size_t>(depth) + 1 < m_branch.size()) {
         m_valid = false;
         return;
     }
     /* As long as an entry in the branch exists at the specified depth, combine it and propagate up.
      * The 'node' variable is overwritten here with the newly combined node. */
-    while (m_valid && m_branch.size() > (size_t)depth && m_branch[depth].has_value()) {
+    while (m_valid && m_branch.size() > static_cast<size_t>(depth) && m_branch[depth].has_value()) {
         node = Combine(std::move(node), std::move(*m_branch[depth]));
         m_branch.pop_back();
         if (depth == 0) m_valid = false; /* Can't propagate further up than the root */
@@ -396,7 +396,7 @@ void TaprootBuilder::Insert(TaprootBuilder::NodeInfo&& node, int depth)
     }
     if (m_valid) {
         /* Make sure the branch is big enough to place the new node. */
-        if (m_branch.size() <= (size_t)depth) m_branch.resize((size_t)depth + 1);
+        if (m_branch.size() <= static_cast<size_t>(depth)) m_branch.resize(static_cast<size_t>(depth) + 1);
         assert(!m_branch[depth].has_value());
         m_branch[depth] = std::move(node);
     }
@@ -410,14 +410,14 @@ void TaprootBuilder::Insert(TaprootBuilder::NodeInfo&& node, int depth)
         // as what Insert() performs on the m_branch variable. Instead of
         // storing a NodeInfo object, just remember whether or not there is one
         // at that depth.
-        if (depth < 0 || (size_t)depth > TAPROOT_CONTROL_MAX_NODE_COUNT) return false;
-        if ((size_t)depth + 1 < branch.size()) return false;
-        while (branch.size() > (size_t)depth && branch[depth]) {
+        if (depth < 0 || static_cast<size_t>(depth) > TAPROOT_CONTROL_MAX_NODE_COUNT) return false;
+        if (static_cast<size_t>(depth) + 1 < branch.size()) return false;
+        while (branch.size() > static_cast<size_t>(depth) && branch[depth]) {
             branch.pop_back();
             if (depth == 0) return false;
             --depth;
         }
-        if (branch.size() <= (size_t)depth) branch.resize((size_t)depth + 1);
+        if (branch.size() <= static_cast<size_t>(depth)) branch.resize(static_cast<size_t>(depth) + 1);
         assert(!branch[depth]);
         branch[depth] = true;
     }

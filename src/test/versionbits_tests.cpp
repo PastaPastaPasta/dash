@@ -419,7 +419,7 @@ BOOST_AUTO_TEST_CASE(versionbits_computeblockversion)
     for (const auto& chain_name : {CBaseChainParams::MAIN, CBaseChainParams::TESTNET, CBaseChainParams::SIGNET, CBaseChainParams::REGTEST}) {
         const auto chainParams = CreateChainParams(*m_node.args, chain_name);
         uint32_t chain_all_vbits{0};
-        for (int i = 0; i < (int)Consensus::MAX_VERSION_BITS_DEPLOYMENTS; ++i) {
+        for (int i = 0; i < static_cast<int>(Consensus::MAX_VERSION_BITS_DEPLOYMENTS); ++i) {
             const auto dep = static_cast<Consensus::DeploymentPos>(i);
             // Check that no bits are re-used (within the same chain). This is
             // disallowed because the transition to FAILED (on timeout) does

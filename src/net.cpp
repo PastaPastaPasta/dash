@@ -391,8 +391,8 @@ static CAddress GetBindAddress(SOCKET sock)
     struct sockaddr_storage sockaddr_bind;
     socklen_t sockaddr_bind_len = sizeof(sockaddr_bind);
     if (sock != INVALID_SOCKET) {
-        if (!getsockname(sock, (struct sockaddr*)&sockaddr_bind, &sockaddr_bind_len)) {
-            addr_bind.SetSockAddr((const struct sockaddr*)&sockaddr_bind);
+        if (!getsockname(sock, reinterpret_cast<struct sockaddr*>(&sockaddr_bind), &sockaddr_bind_len)) {
+            addr_bind.SetSockAddr(reinterpret_cast<const struct sockaddr*>(&sockaddr_bind));
         } else {
             LogPrint(BCLog::NET, "Warning: getsockname failed\n");
         }
@@ -420,7 +420,7 @@ CNode* CConnman::ConnectNode(CAddress addrConnect, const char *pszDest, bool fCo
     /// debug print
     LogPrint(BCLog::NET, "trying connection %s lastseen=%.1fhrs\n",
         pszDest ? pszDest : addrConnect.ToString(),
-        pszDest ? 0.0 : (double)(GetAdjustedTime() - addrConnect.nTime)/3600.0);
+        pszDest ? 0.0 : static_cast<double>(GetAdjustedTime() - addrConnect.nTime)/3600.0);
 
     // Resolve
     const uint16_t default_port{pszDest != nullptr ? Params().GetDefaultPort(pszDest) :
@@ -509,7 +509,7 @@ CNode* CConnman::ConnectNode(CAddress addrConnect, const char *pszDest, bool fCo
     pnode->AddRef();
 
     // We're making a new connection, harvest entropy from the time (and our peer count)
-    RandAddEvent((uint32_t)id);
+    RandAddEvent(static_cast<uint32_t>(id));
 
     return pnode;
 }
@@ -1099,7 +1099,7 @@ bool CConnman::AttemptToEvictConnection()
 void CConnman::AcceptConnection(const ListenSocket& hListenSocket) {
     struct sockaddr_storage sockaddr;
     socklen_t len = sizeof(sockaddr);
-    SOCKET hSocket = accept(hListenSocket.socket, (struct sockaddr*)&sockaddr, &len);
+    SOCKET hSocket = accept(hListenSocket.socket, reinterpret_cast<struct sockaddr*>(&sockaddr), &len);
     CAddress addr;
 
     if (hSocket == INVALID_SOCKET) {
@@ -1110,7 +1110,7 @@ void CConnman::AcceptConnection(const ListenSocket& hListenSocket) {
         return;
     }
 
-    if (!addr.SetSockAddr((const struct sockaddr*)&sockaddr)) {
+    if (!addr.SetSockAddr(reinterpret_cast<const struct sockaddr*>(&sockaddr))) {
         LogPrintf("Warning: Unknown socket family\n");
     } else {
         addr = CAddress{MaybeFlipIPv6toCJDNS(addr), NODE_NONE};
@@ -1216,7 +1216,7 @@ void CConnman::CreateNodeFromAcceptedSocket(SOCKET hSocket,
     }
 
     // We received a new connection, harvest entropy from the time (and our peer count)
-    RandAddEvent((uint32_t)id);
+    RandAddEvent(static_cast<uint32_t>(id));
 }
 
 bool CConnman::AddConnection(const std::string& address, ConnectionType conn_type)
@@ -1582,7 +1582,7 @@ void CConnman::SocketHandlerConnected(const std::vector<CNode*>& nodes,
                 LOCK(pnode->cs_hSocket);
                 if (pnode->hSocket == INVALID_SOCKET)
                     continue;
-                nBytes = recv(pnode->hSocket, (char*)pchBuf, sizeof(pchBuf), MSG_DONTWAIT);
+                nBytes = recv(pnode->hSocket, reinterpret_cast<char*>(pchBuf), sizeof(pchBuf), MSG_DONTWAIT);
             }
             if (nBytes > 0)
             {
@@ -2124,7 +2124,7 @@ void CConnman::ThreadOpenConnections(const std::vector<std::string> connect)
                 LogPrint(BCLog::NET, "Making feeler connection to %s\n", addrConnect.ToString());
             }
 
-            OpenNetworkConnection(addrConnect, (int)setConnected.size() >= std::min(nMaxConnections - 1, 2), &grant, nullptr, conn_type);
+            OpenNetworkConnection(addrConnect, static_cast<int>(setConnected.size()) >= std::min(nMaxConnections - 1, 2), &grant, nullptr, conn_type);
         }
     }
 }
@@ -2347,7 +2347,7 @@ bool CConnman::BindListenPort(const CService& addrBind, bilingual_str& strError,
     // Create socket for listening for incoming connections
     struct sockaddr_storage sockaddr;
     socklen_t len = sizeof(sockaddr);
-    if (!addrBind.GetSockAddr((struct sockaddr*)&sockaddr, &len))
+    if (!addrBind.GetSockAddr(reinterpret_cast<struct sockaddr*>(&sockaddr), &len))
     {
         strError = strprintf(Untranslated("Error: Bind address family for %s not supported"), addrBind.ToString());
         LogPrintf("%s\n", strError.original);
@@ -2363,21 +2363,21 @@ bool CConnman::BindListenPort(const CService& addrBind, bilingual_str& strError,
 
     // Allow binding if the port is still in TIME_WAIT state after
     // the program was closed and restarted.
-    setsockopt(sock->Get(), SOL_SOCKET, SO_REUSEADDR, (sockopt_arg_type)&nOne, sizeof(int));
+    setsockopt(sock->Get(), SOL_SOCKET, SO_REUSEADDR, static_cast<sockopt_arg_type>(&nOne), sizeof(int));
 
     // some systems don't have IPV6_V6ONLY but are always v6only; others do have the option
     // and enable it by default or not. Try to enable it, if possible.
     if (addrBind.IsIPv6()) {
 #ifdef IPV6_V6ONLY
-        setsockopt(sock->Get(), IPPROTO_IPV6, IPV6_V6ONLY, (sockopt_arg_type)&nOne, sizeof(int));
+        setsockopt(sock->Get(), IPPROTO_IPV6, IPV6_V6ONLY, static_cast<sockopt_arg_type>(&nOne), sizeof(int));
 #endif
 #ifdef WIN32
         int nProtLevel = PROTECTION_LEVEL_UNRESTRICTED;
-        setsockopt(sock->Get(), IPPROTO_IPV6, IPV6_PROTECTION_LEVEL, (const char*)&nProtLevel, sizeof(int));
+        setsockopt(sock->Get(), IPPROTO_IPV6, IPV6_PROTECTION_LEVEL, reinterpret_cast<const char*>(&nProtLevel), sizeof(int));
 #endif
     }
 
-    if (::bind(sock->Get(), (struct sockaddr*)&sockaddr, len) == SOCKET_ERROR)
+    if (::bind(sock->Get(), reinterpret_cast<struct sockaddr*>(&sockaddr), len) == SOCKET_ERROR)
     {
         int nErr = WSAGetLastError();
         if (nErr == WSAEADDRINUSE)
@@ -2434,14 +2434,14 @@ void Discover()
             if (strcmp(ifa->ifa_name, "lo0") == 0) continue;
             if (ifa->ifa_addr->sa_family == AF_INET)
             {
-                struct sockaddr_in* s4 = (struct sockaddr_in*)(ifa->ifa_addr);
+                struct sockaddr_in* s4 = reinterpret_cast<struct sockaddr_in*>(ifa->ifa_addr);
                 CNetAddr addr(s4->sin_addr);
                 if (AddLocal(addr, LOCAL_IF))
                     LogPrintf("%s: IPv4 %s: %s\n", __func__, ifa->ifa_name, addr.ToString());
             }
             else if (ifa->ifa_addr->sa_family == AF_INET6)
             {
-                struct sockaddr_in6* s6 = (struct sockaddr_in6*)(ifa->ifa_addr);
+                struct sockaddr_in6* s6 = reinterpret_cast<struct sockaddr_in6*>(ifa->ifa_addr);
                 CNetAddr addr(s6->sin6_addr);
                 if (AddLocal(addr, LOCAL_IF))
                     LogPrintf("%s: IPv6 %s: %s\n", __func__, ifa->ifa_name, addr.ToString());
@@ -3126,5 +3126,5 @@ void CaptureMessage(const CAddress& addr, const std::string& msg_type, const Spa
     }
     uint32_t size = data.size();
     ser_writedata32(f, size);
-    f.write((const char*)data.data(), data.size());
+    f.write(reinterpret_cast<const char*>(data.data()), data.size());
 }

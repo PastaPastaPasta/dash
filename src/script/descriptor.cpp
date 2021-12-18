@@ -336,8 +336,8 @@ public:
 
         // Info of the derived key itself which is copied out upon successful completion
         KeyOriginInfo final_info_out_tmp = parent_info;
-        if (m_derive == DeriveType::UNHARDENED) final_info_out_tmp.path.push_back((uint32_t)pos);
-        if (m_derive == DeriveType::HARDENED) final_info_out_tmp.path.push_back(((uint32_t)pos) | 0x80000000L);
+        if (m_derive == DeriveType::UNHARDENED) final_info_out_tmp.path.push_back(static_cast<uint32_t>(pos));
+        if (m_derive == DeriveType::HARDENED) final_info_out_tmp.path.push_back(static_cast<uint32_t>(pos) | 0x80000000L);
 
         // Derive keys or fetch them from cache
         CExtPubKey final_extkey = m_root_extkey;
@@ -420,7 +420,7 @@ public:
             return true;
         }
         // Step backwards to find the last hardened step in the path
-        int i = (int)m_path.size() - 1;
+        int i = static_cast<int>(m_path.size()) - 1;
         for (; i >= 0; --i) {
             if (m_path.at(i) >> 31) {
                 break;
@@ -440,7 +440,7 @@ public:
         }
         // Build the remaining path
         KeyPath end_path;
-        for (; k < (int)m_path.size(); ++k) {
+        for (; k < static_cast<int>(m_path.size()); ++k) {
             end_path.push_back(m_path.at(k));
         }
         // Get the fingerprint
@@ -860,7 +860,7 @@ protected:
         std::vector<bool> path;
         for (size_t pos = 0; pos < m_depths.size(); ++pos) {
             if (pos) ret += ',';
-            while ((int)path.size() <= m_depths[pos]) {
+            while (static_cast<int>(path.size()) <= m_depths[pos]) {
                 if (path.size()) ret += '{';
                 path.push_back(false);
             }
@@ -915,7 +915,7 @@ enum class ParseScriptContext {
             error = strprintf("Key path value %u is out of range", p);
             return false;
         }
-        out.push_back(p | (((uint32_t)hardened) << 31));
+        out.push_back(p | (static_cast<uint32_t>(hardened) << 31));
     }
     return true;
 }
@@ -1287,7 +1287,7 @@ std::unique_ptr<DescriptorImpl> InferScript(const CScript& script, ParseScriptCo
             CPubKey pubkey(data[i]);
             providers.push_back(InferPubkey(pubkey, ctx, provider));
         }
-        return std::make_unique<MultisigDescriptor>((int)data[0][0], std::move(providers));
+        return std::make_unique<MultisigDescriptor>(static_cast<int>(data[0][0]), std::move(providers));
     }
     if (txntype == TxoutType::SCRIPTHASH && ctx == ParseScriptContext::TOP) {
         uint160 hash(data[0]);

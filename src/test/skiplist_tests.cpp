@@ -53,7 +53,7 @@ BOOST_AUTO_TEST_CASE(getlocator_test)
         vBlocksMain[i].pprev = i ? &vBlocksMain[i - 1] : nullptr;
         vBlocksMain[i].phashBlock = &vHashMain[i];
         vBlocksMain[i].BuildSkip();
-        BOOST_CHECK_EQUAL((int)UintToArith256(vBlocksMain[i].GetBlockHash()).GetLow64(), vBlocksMain[i].nHeight);
+        BOOST_CHECK_EQUAL(static_cast<int>(UintToArith256(vBlocksMain[i].GetBlockHash()).GetLow64()), vBlocksMain[i].nHeight);
         BOOST_CHECK(vBlocksMain[i].pprev == nullptr || vBlocksMain[i].nHeight == vBlocksMain[i].pprev->nHeight + 1);
     }
 
@@ -66,7 +66,7 @@ BOOST_AUTO_TEST_CASE(getlocator_test)
         vBlocksSide[i].pprev = i ? &vBlocksSide[i - 1] : (vBlocksMain.data()+49999);
         vBlocksSide[i].phashBlock = &vHashSide[i];
         vBlocksSide[i].BuildSkip();
-        BOOST_CHECK_EQUAL((int)UintToArith256(vBlocksSide[i].GetBlockHash()).GetLow64(), vBlocksSide[i].nHeight);
+        BOOST_CHECK_EQUAL(static_cast<int>(UintToArith256(vBlocksSide[i].GetBlockHash()).GetLow64()), vBlocksSide[i].nHeight);
         BOOST_CHECK(vBlocksSide[i].pprev == nullptr || vBlocksSide[i].nHeight == vBlocksSide[i].pprev->nHeight + 1);
     }
 

@@ -29,7 +29,7 @@ sign_multisig(const CScript& scriptPubKey, const std::vector<CKey>& keys, const 
     {
         std::vector<unsigned char> vchSig;
         BOOST_CHECK(key.Sign(hash, vchSig));
-        vchSig.push_back((unsigned char)SIGHASH_ALL);
+        vchSig.push_back(static_cast<unsigned char>(SIGHASH_ALL));
         result << vchSig;
     }
     return result;

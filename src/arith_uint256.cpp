@@ -56,7 +56,7 @@ base_uint<BITS>& base_uint<BITS>::operator*=(uint32_t b32)
 {
     uint64_t carry = 0;
     for (int i = 0; i < WIDTH; i++) {
-        uint64_t n = carry + (uint64_t)b32 * pn[i];
+        uint64_t n = carry + static_cast<uint64_t>(b32) * pn[i];
         pn[i] = n & 0xffffffff;
         carry = n >> 32;
     }
@@ -70,7 +70,7 @@ base_uint<BITS>& base_uint<BITS>::operator*=(const base_uint& b)
     for (int j = 0; j < WIDTH; j++) {
         uint64_t carry = 0;
         for (int i = 0; i + j < WIDTH; i++) {
-            uint64_t n = carry + a.pn[i + j] + (uint64_t)pn[j] * b.pn[i];
+            uint64_t n = carry + a.pn[i + j] + static_cast<uint64_t>(pn[j]) * b.pn[i];
             a.pn[i + j] = n & 0xffffffff;
             carry = n >> 32;
         }

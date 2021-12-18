@@ -138,7 +138,7 @@ bool static IsValidSignatureEncoding(const std::vector<unsigned char> &sig) {
 
     // Verify that the length of the signature matches the sum of the length
     // of the elements.
-    if ((size_t)(lenR + lenS + 7) != sig.size()) return false;
+    if (static_cast<size_t>(lenR + lenS + 7) != sig.size()) return false;
 
     // Check whether the R element is an integer.
     if (sig[2] != 0x02) return false;
@@ -529,7 +529,7 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                 case OP_16:
                 {
                     // ( -- value)
-                    CScriptNum bn((int)opcode - (int)(OP_1 - 1));
+                    CScriptNum bn(static_cast<int>(opcode) - static_cast<int>(OP_1 - 1));
                     stack.push_back(bn.getvch());
                     // The result of these opcodes should always be the minimal way to push the data
                     // they push, so no need for a CheckMinimalPush here.
@@ -853,7 +853,7 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
                     int n = CScriptNum(stacktop(-1), fRequireMinimal).getint();
                     popstack(stack);
-                    if (n < 0 || n >= (int)stack.size())
+                    if (n < 0 || n >= static_cast<int>(stack.size()))
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
                     valtype vch = stacktop(-n-1);
                     if (opcode == OP_ROLL)
@@ -1134,7 +1134,7 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     // ([sig ...] num_of_signatures [pubkey ...] num_of_pubkeys -- bool)
 
                     int i = 1;
-                    if ((int)stack.size() < i)
+                    if (static_cast<int>(stack.size()) < i)
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
 
                     int nKeysCount = CScriptNum(stacktop(-i), fRequireMinimal).getint();
@@ -1148,7 +1148,7 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                     // With SCRIPT_VERIFY_NULLFAIL, this is used for cleanup if operation fails.
                     int ikey2 = nKeysCount + 2;
                     i += nKeysCount;
-                    if ((int)stack.size() < i)
+                    if (static_cast<int>(stack.size()) < i)
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
 
                     int nSigsCount = CScriptNum(stacktop(-i), fRequireMinimal).getint();
@@ -1156,7 +1156,7 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                         return set_error(serror, SCRIPT_ERR_SIG_COUNT);
                     int isig = ++i;
                     i += nSigsCount;
-                    if ((int)stack.size() < i)
+                    if (static_cast<int>(stack.size()) < i)
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
 
                     // Subset of script starting at the most recent codeseparator
@@ -1303,12 +1303,12 @@ public:
         it = itBegin;
         while (scriptCode.GetOp(it, opcode)) {
             if (opcode == OP_CODESEPARATOR) {
-                s.write((char*)&itBegin[0], it-itBegin-1);
+                s.write(reinterpret_cast<const char*>(&itBegin[0]), it-itBegin-1);
                 itBegin = it;
             }
         }
         if (itBegin != scriptCode.end())
-            s.write((char*)&itBegin[0], it-itBegin);
+            s.write(reinterpret_cast<const char*>(&itBegin[0]), it-itBegin);
     }
 
     /** Serialize an input of txTo */
@@ -1328,7 +1328,7 @@ public:
         // Serialize the nSequence
         if (nInput != nIn && (fHashSingle || fHashNone))
             // let the others update at will
-            ::Serialize(s, (int)0);
+            ::Serialize(s, int{0});
         else
             ::Serialize(s, txTo.vin[nInput].nSequence);
     }
@@ -1737,7 +1737,7 @@ bool GenericTransactionSignatureChecker<T>::CheckLockTime(const CScriptNum& nLoc
 
     // Now that we know we're comparing apples-to-apples, the
     // comparison is a simple numeric one.
-    if (nLockTime > (int64_t)txTo->nLockTime)
+    if (nLockTime > static_cast<int64_t>(txTo->nLockTime))
         return false;
 
     // Finally the nLockTime feature can be disabled in IsFinalTx()
@@ -1761,7 +1761,7 @@ bool GenericTransactionSignatureChecker<T>::CheckSequence(const CScriptNum& nSeq
 {
     // Relative lock times are supported by comparing the passed
     // in operand to the sequence number of the input.
-    const int64_t txToSequence = (int64_t)txTo->vin[nIn].nSequence;
+    const int64_t txToSequence = static_cast<int64_t>(txTo->vin[nIn].nSequence);
 
     // Fail if the transaction's version number is not set high
     // enough to trigger BIP 68 rules.

@@ -67,7 +67,7 @@ public:
         if (id.version < 1 || id.version > 16 || id.length < 2 || id.length > 40) {
             return {};
         }
-        std::vector<unsigned char> data = {(unsigned char)id.version};
+        std::vector<unsigned char> data = {static_cast<unsigned char>(id.version)};
         data.reserve(1 + (id.length * 8 + 4) / 5);
         ConvertBits<8, 5, true>([&](unsigned char c) { data.push_back(c); }, id.program, id.program + id.length);
         return bech32::Encode(bech32::Encoding::BECH32M, m_params.Bech32HRP(), data);

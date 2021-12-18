@@ -49,9 +49,9 @@ constexpr deserialize_type deserialize {};
 
 //! Safely convert odd char pointer types to standard ones.
 inline char* CharCast(char* c) { return c; }
-inline char* CharCast(unsigned char* c) { return (char*)c; }
+inline char* CharCast(unsigned char* c) { return reinterpret_cast<char*>(c); }
 inline const char* CharCast(const char* c) { return c; }
-inline const char* CharCast(const unsigned char* c) { return (const char*)c; }
+inline const char* CharCast(const unsigned char* c) { return reinterpret_cast<const char*>(c); }
 
 /*
  * Lowest-level serialization and conversion.
@@ -59,67 +59,67 @@ inline const char* CharCast(const unsigned char* c) { return (const char*)c; }
  */
 template<typename Stream> inline void ser_writedata8(Stream &s, uint8_t obj)
 {
-    s.write((char*)&obj, 1);
+    s.write(reinterpret_cast<char*>(&obj), 1);
 }
 template<typename Stream> inline void ser_writedata16(Stream &s, uint16_t obj)
 {
     obj = htole16(obj);
-    s.write((char*)&obj, 2);
+    s.write(reinterpret_cast<char*>(&obj), 2);
 }
 template<typename Stream> inline void ser_writedata16be(Stream &s, uint16_t obj)
 {
     obj = htobe16(obj);
-    s.write((char*)&obj, 2);
+    s.write(reinterpret_cast<char*>(&obj), 2);
 }
 template<typename Stream> inline void ser_writedata32(Stream &s, uint32_t obj)
 {
     obj = htole32(obj);
-    s.write((char*)&obj, 4);
+    s.write(reinterpret_cast<char*>(&obj), 4);
 }
 template<typename Stream> inline void ser_writedata32be(Stream &s, uint32_t obj)
 {
     obj = htobe32(obj);
-    s.write((char*)&obj, 4);
+    s.write(reinterpret_cast<char*>(&obj), 4);
 }
 template<typename Stream> inline void ser_writedata64(Stream &s, uint64_t obj)
 {
     obj = htole64(obj);
-    s.write((char*)&obj, 8);
+    s.write(reinterpret_cast<char*>(&obj), 8);
 }
 template<typename Stream> inline uint8_t ser_readdata8(Stream &s)
 {
     uint8_t obj;
-    s.read((char*)&obj, 1);
+    s.read(reinterpret_cast<char*>(&obj), 1);
     return obj;
 }
 template<typename Stream> inline uint16_t ser_readdata16(Stream &s)
 {
     uint16_t obj;
-    s.read((char*)&obj, 2);
+    s.read(reinterpret_cast<char*>(&obj), 2);
     return le16toh(obj);
 }
 template<typename Stream> inline uint16_t ser_readdata16be(Stream &s)
 {
     uint16_t obj;
-    s.read((char*)&obj, 2);
+    s.read(reinterpret_cast<char*>(&obj), 2);
     return be16toh(obj);
 }
 template<typename Stream> inline uint32_t ser_readdata32(Stream &s)
 {
     uint32_t obj;
-    s.read((char*)&obj, 4);
+    s.read(reinterpret_cast<char*>(&obj), 4);
     return le32toh(obj);
 }
 template<typename Stream> inline uint32_t ser_readdata32be(Stream &s)
 {
     uint32_t obj;
-    s.read((char*)&obj, 4);
+    s.read(reinterpret_cast<char*>(&obj), 4);
     return be32toh(obj);
 }
 template<typename Stream> inline uint64_t ser_readdata64(Stream &s)
 {
     uint64_t obj;
-    s.read((char*)&obj, 8);
+    s.read(reinterpret_cast<char*>(&obj), 8);
     return le64toh(obj);
 }
 
@@ -479,10 +479,10 @@ struct CustomUintFormatter
         if (v < 0 || v > MAX) throw std::ios_base::failure("CustomUintFormatter value out of range");
         if (BigEndian) {
             uint64_t raw = htobe64(v);
-            s.write(((const char*)&raw) + 8 - Bytes, Bytes);
+            s.write((reinterpret_cast<const char*>(&raw)) + 8 - Bytes, Bytes);
         } else {
             uint64_t raw = htole64(v);
-            s.write((const char*)&raw, Bytes);
+            s.write(reinterpret_cast<const char*>(&raw), Bytes);
         }
     }
 
@@ -492,10 +492,10 @@ struct CustomUintFormatter
         static_assert(std::numeric_limits<U>::max() >= MAX && std::numeric_limits<U>::min() <= 0, "Assigned type too small");
         uint64_t raw = 0;
         if (BigEndian) {
-            s.read(((char*)&raw) + 8 - Bytes, Bytes);
+            s.read((reinterpret_cast<char*>(&raw)) + 8 - Bytes, Bytes);
             v = static_cast<I>(be64toh(raw));
         } else {
-            s.read((char*)&raw, Bytes);
+            s.read(reinterpret_cast<char*>(&raw), Bytes);
             v = static_cast<I>(le64toh(raw));
         }
     }
@@ -551,7 +551,7 @@ struct LimitedStringFormatter
             throw std::ios_base::failure("String length limit exceeded");
         }
         v.resize(size);
-        if (size != 0) s.read((char*)v.data(), size);
+        if (size != 0) s.read(reinterpret_cast<char*>(v.data()), size);
     }
 
     template<typename Stream>
@@ -715,7 +715,7 @@ void Serialize(Stream& os, const std::basic_string<C>& str)
 {
     WriteCompactSize(os, str.size());
     if (!str.empty())
-        os.write((char*)str.data(), str.size() * sizeof(C));
+        os.write(reinterpret_cast<const char*>(str.data()), str.size() * sizeof(C));
 }
 
 template<typename Stream, typename C>
@@ -724,7 +724,7 @@ void Unserialize(Stream& is, std::basic_string<C>& str)
     unsigned int nSize = ReadCompactSize(is);
     str.resize(nSize);
     if (nSize != 0)
-        is.read((char*)str.data(), nSize * sizeof(C));
+        is.read(reinterpret_cast<char*>(str.data()), nSize * sizeof(C));
 }
 
 
@@ -737,7 +737,7 @@ void Serialize_impl(Stream& os, const prevector<N, T>& v, const unsigned char&)
 {
     WriteCompactSize(os, v.size());
     if (!v.empty())
-        os.write((char*)v.data(), v.size() * sizeof(T));
+        os.write(reinterpret_cast<const char*>(v.data()), v.size() * sizeof(T));
 }
 
 template<typename Stream, unsigned int N, typename T, typename V>
@@ -762,9 +762,9 @@ void Unserialize_impl(Stream& is, prevector<N, T>& v, const unsigned char&)
     unsigned int i = 0;
     while (i < nSize)
     {
-        unsigned int blk = std::min(nSize - i, (unsigned int)(1 + 4999999 / sizeof(T)));
+        unsigned int blk = std::min(nSize - i, static_cast<unsigned int>((1 + 4999999 / sizeof(T))));
         v.resize_uninitialized(i + blk);
-        is.read((char*)&v[i], blk * sizeof(T));
+        is.read(reinterpret_cast<char*>(&v[i]), blk * sizeof(T));
         i += blk;
     }
 }
@@ -791,7 +791,7 @@ void Serialize_impl(Stream& os, const std::vector<T, A>& v, const unsigned char&
 {
     WriteCompactSize(os, v.size());
     if (!v.empty())
-        os.write((char*)v.data(), v.size() * sizeof(T));
+        os.write(reinterpret_cast<const char*>(v.data()), v.size() * sizeof(T));
 }
 
 template<typename Stream, typename T, typename A>
@@ -828,9 +828,9 @@ void Unserialize_impl(Stream& is, std::vector<T, A>& v, const unsigned char&)
     unsigned int i = 0;
     while (i < nSize)
     {
-        unsigned int blk = std::min(nSize - i, (unsigned int)(1 + 4999999 / sizeof(T)));
+        unsigned int blk = std::min(nSize - i, static_cast<unsigned int>((1 + 4999999 / sizeof(T))));
         v.resize(i + blk);
-        is.read((char*)&v[i], blk * sizeof(T));
+        is.read(reinterpret_cast<char*>(&v[i]), blk * sizeof(T));
         i += blk;
     }
 }

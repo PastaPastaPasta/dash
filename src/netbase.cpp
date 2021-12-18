@@ -383,7 +383,7 @@ bool Socks5(const std::string& strDest, uint16_t port, const ProxyCredentials* a
         vSocks5Init.push_back(SOCKS5Method::NOAUTH);
     }
     ssize_t ret = sock.Send(vSocks5Init.data(), vSocks5Init.size(), MSG_NOSIGNAL);
-    if (ret != (ssize_t)vSocks5Init.size()) {
+    if (ret != static_cast<ssize_t>(vSocks5Init.size())) {
         return error("Error sending to proxy");
     }
     uint8_t pchRet1[2];
@@ -405,7 +405,7 @@ bool Socks5(const std::string& strDest, uint16_t port, const ProxyCredentials* a
         vAuth.push_back(auth->password.size());
         vAuth.insert(vAuth.end(), auth->password.begin(), auth->password.end());
         ret = sock.Send(vAuth.data(), vAuth.size(), MSG_NOSIGNAL);
-        if (ret != (ssize_t)vAuth.size()) {
+        if (ret != static_cast<ssize_t>(vAuth.size())) {
             return error("Error sending authentication to proxy");
         }
         LogPrint(BCLog::PROXY, "SOCKS5 sending proxy authentication %s:%s\n", auth->username, auth->password);
@@ -431,7 +431,7 @@ bool Socks5(const std::string& strDest, uint16_t port, const ProxyCredentials* a
     vSocks5.push_back((port >> 8) & 0xFF);
     vSocks5.push_back((port >> 0) & 0xFF);
     ret = sock.Send(vSocks5.data(), vSocks5.size(), MSG_NOSIGNAL);
-    if (ret != (ssize_t)vSocks5.size()) {
+    if (ret != static_cast<ssize_t>(vSocks5.size())) {
         return error("Error sending to proxy");
     }
     uint8_t pchRet2[4];
@@ -488,13 +488,13 @@ std::unique_ptr<Sock> CreateSockTCP(const CService& address_family)
     // Create a sockaddr from the specified service.
     struct sockaddr_storage sockaddr;
     socklen_t len = sizeof(sockaddr);
-    if (!address_family.GetSockAddr((struct sockaddr*)&sockaddr, &len)) {
+    if (!address_family.GetSockAddr(reinterpret_cast<struct sockaddr*>(&sockaddr), &len)) {
         LogPrintf("Cannot create socket for %s: unsupported network\n", address_family.ToString());
         return nullptr;
     }
 
     // Create a TCP socket in the address family of the specified service.
-    SOCKET hSocket = socket(((struct sockaddr*)&sockaddr)->sa_family, SOCK_STREAM, IPPROTO_TCP);
+    SOCKET hSocket = socket(reinterpret_cast<struct sockaddr*>(&sockaddr)->sa_family, SOCK_STREAM, IPPROTO_TCP);
     if (hSocket == INVALID_SOCKET) {
         return nullptr;
     }
@@ -547,7 +547,7 @@ bool ConnectSocketDirectly(const CService &addrConnect, const Sock& sock, int nT
         LogPrintf("Cannot connect to %s: invalid socket\n", addrConnect.ToString());
         return false;
     }
-    if (!addrConnect.GetSockAddr((struct sockaddr*)&sockaddr, &len)) {
+    if (!addrConnect.GetSockAddr(reinterpret_cast<struct sockaddr*>(&sockaddr), &len)) {
         LogPrintf("Cannot connect to %s: unsupported network\n", addrConnect.ToString());
         return false;
     }
@@ -579,7 +579,7 @@ bool ConnectSocketDirectly(const CService &addrConnect, const Sock& sock, int nT
             // sockerr here.
             int sockerr;
             socklen_t sockerr_len = sizeof(sockerr);
-            if (sock.GetSockOpt(SOL_SOCKET, SO_ERROR, (sockopt_arg_type)&sockerr, &sockerr_len) ==
+            if (sock.GetSockOpt(SOL_SOCKET, SO_ERROR, static_cast<sockopt_arg_type>(&sockerr), &sockerr_len) ==
                 SOCKET_ERROR) {
                 LogPrintf("getsockopt() for %s failed: %s\n", addrConnect.ToString(), NetworkErrorString(WSAGetLastError()));
                 return false;
@@ -745,7 +745,7 @@ bool SetSocketNonBlocking(const SOCKET& hSocket, bool fNonBlocking)
 bool SetSocketNoDelay(const SOCKET& hSocket)
 {
     int set = 1;
-    int rc = setsockopt(hSocket, IPPROTO_TCP, TCP_NODELAY, (const char*)&set, sizeof(int));
+    int rc = setsockopt(hSocket, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&set), sizeof(int));
     return rc == 0;
 }
 

@@ -225,8 +225,8 @@ bool CScript::IsWitnessProgram(int& version, std::vector<unsigned char>& program
     if ((*this)[0] != OP_0 && ((*this)[0] < OP_1 || (*this)[0] > OP_16)) {
         return false;
     }
-    if ((size_t)((*this)[1] + 2) == this->size()) {
-        version = DecodeOP_N((opcodetype)(*this)[0]);
+    if (static_cast<size_t>((*this)[1] + 2) == this->size()) {
+        version = DecodeOP_N(static_cast<opcodetype>((*this)[0]));
         program = std::vector<unsigned char>(this->begin() + 2, this->end());
         return true;
     }
@@ -321,7 +321,7 @@ bool GetScriptOp(CScriptBase::const_iterator& pc, CScriptBase::const_iterator en
             nSize = ReadLE32(&pc[0]);
             pc += 4;
         }
-        if (end - pc < 0 || (unsigned int)(end - pc) < nSize)
+        if (end - pc < 0 || static_cast<unsigned int>((end - pc)) < nSize)
             return false;
         if (pvchRet)
             pvchRet->assign(pc, pc + nSize);

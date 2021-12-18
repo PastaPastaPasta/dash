@@ -283,7 +283,7 @@ public:
         test.SetupArgs({{"-value", flags}});
         const char* argv[] = {"ignored", arg};
         std::string error;
-        bool success = test.ParseParameters(arg ? 2 : 1, (char**)argv, error);
+        bool success = test.ParseParameters(arg ? 2 : 1, const_cast<char**>(argv), error);
 
         BOOST_CHECK_EQUAL(test.GetSetting("-value").write(), expect.setting.write());
         auto settings_list = test.GetSettingsList("-value");
@@ -388,13 +388,13 @@ BOOST_AUTO_TEST_CASE(util_ParseParameters)
     std::string error;
     LOCK(testArgs.cs_args);
     testArgs.SetupArgs({a, b, ccc, d});
-    BOOST_CHECK(testArgs.ParseParameters(0, (char**)argv_test, error));
+    BOOST_CHECK(testArgs.ParseParameters(0, const_cast<char**>(argv_test), error));
     BOOST_CHECK(testArgs.m_settings.command_line_options.empty() && testArgs.m_settings.ro_config.empty());
 
-    BOOST_CHECK(testArgs.ParseParameters(1, (char**)argv_test, error));
+    BOOST_CHECK(testArgs.ParseParameters(1, const_cast<char**>(argv_test), error));
     BOOST_CHECK(testArgs.m_settings.command_line_options.empty() && testArgs.m_settings.ro_config.empty());
 
-    BOOST_CHECK(testArgs.ParseParameters(7, (char**)argv_test, error));
+    BOOST_CHECK(testArgs.ParseParameters(7, const_cast<char**>(argv_test), error));
     // expectation: -ignored is ignored (program name argument),
     // -a, -b and -ccc end up in map, -d ignored because it is after
     // a non-option argument (non-GNU option parsing)
@@ -419,17 +419,17 @@ BOOST_AUTO_TEST_CASE(util_ParseInvalidParameters)
 
     const char* argv[] = {"ignored", "-registered"};
     std::string error;
-    BOOST_CHECK(test.ParseParameters(2, (char**)argv, error));
+    BOOST_CHECK(test.ParseParameters(2, const_cast<char**>(argv), error));
     BOOST_CHECK_EQUAL(error, "");
 
     argv[1] = "-unregistered";
-    BOOST_CHECK(!test.ParseParameters(2, (char**)argv, error));
+    BOOST_CHECK(!test.ParseParameters(2, const_cast<char**>(argv), error));
     BOOST_CHECK_EQUAL(error, "Invalid parameter -unregistered");
 
     // Make sure registered parameters prefixed with a chain name trigger errors.
     // (Previously, they were accepted and ignored.)
     argv[1] = "-test.registered";
-    BOOST_CHECK(!test.ParseParameters(2, (char**)argv, error));
+    BOOST_CHECK(!test.ParseParameters(2, const_cast<char**>(argv), error));
     BOOST_CHECK_EQUAL(error, "Invalid parameter -test.registered");
 }
 
@@ -440,7 +440,7 @@ static void TestParse(const std::string& str, bool expected_bool, int64_t expect
     std::string arg = "-value=" + str;
     const char* argv[] = {"ignored", arg.c_str()};
     std::string error;
-    BOOST_CHECK(test.ParseParameters(2, (char**)argv, error));
+    BOOST_CHECK(test.ParseParameters(2, const_cast<char**>(argv), error));
     BOOST_CHECK_EQUAL(test.GetBoolArg("-value", false), expected_bool);
     BOOST_CHECK_EQUAL(test.GetBoolArg("-value", true), expected_bool);
     BOOST_CHECK_EQUAL(test.GetIntArg("-value", 99998), expected_int);
@@ -502,7 +502,7 @@ BOOST_AUTO_TEST_CASE(util_GetBoolArg)
     std::string error;
     LOCK(testArgs.cs_args);
     testArgs.SetupArgs({a, b, c, d, e, f});
-    BOOST_CHECK(testArgs.ParseParameters(7, (char**)argv_test, error));
+    BOOST_CHECK(testArgs.ParseParameters(7, const_cast<char**>(argv_test), error));
 
     // Each letter should be set.
     for (const char opt : "abcdef")
@@ -539,7 +539,7 @@ BOOST_AUTO_TEST_CASE(util_GetBoolArgEdgeCases)
     const char *argv_test[] = {"ignored", "-nofoo", "-foo", "-nobar=0"};
     testArgs.SetupArgs({foo, bar});
     std::string error;
-    BOOST_CHECK(testArgs.ParseParameters(4, (char**)argv_test, error));
+    BOOST_CHECK(testArgs.ParseParameters(4, const_cast<char**>(argv_test), error));
 
     // This was passed twice, second one overrides the negative setting.
     BOOST_CHECK(!testArgs.IsArgNegated("-foo"));
@@ -551,7 +551,7 @@ BOOST_AUTO_TEST_CASE(util_GetBoolArgEdgeCases)
 
     // Config test
     const char *conf_test = "nofoo=1\nfoo=1\nnobar=0\n";
-    BOOST_CHECK(testArgs.ParseParameters(1, (char**)argv_test, error));
+    BOOST_CHECK(testArgs.ParseParameters(1, const_cast<char**>(argv_test), error));
     testArgs.ReadConfigString(conf_test);
 
     // This was passed twice, second one overrides the negative setting,
@@ -566,7 +566,7 @@ BOOST_AUTO_TEST_CASE(util_GetBoolArgEdgeCases)
     // Combined test
     const char *combo_test_args[] = {"ignored", "-nofoo", "-bar"};
     const char *combo_test_conf = "foo=1\nnobar=1\n";
-    BOOST_CHECK(testArgs.ParseParameters(3, (char**)combo_test_args, error));
+    BOOST_CHECK(testArgs.ParseParameters(3, const_cast<char**>(combo_test_args), error));
     testArgs.ReadConfigString(combo_test_conf);
 
     // Command line overrides, but doesn't erase old setting
@@ -826,38 +826,38 @@ BOOST_AUTO_TEST_CASE(util_GetChainName)
     const char* testnetconf = "testnet=1\nregtest=0\n[test]\nregtest=1";
     std::string error;
 
-    BOOST_CHECK(test_args.ParseParameters(0, (char**)argv_testnet, error));
+    BOOST_CHECK(test_args.ParseParameters(0, const_cast<char**>(argv_testnet), error));
     BOOST_CHECK_EQUAL(test_args.GetChainName(), "main");
 
-    BOOST_CHECK(test_args.ParseParameters(2, (char**)argv_testnet, error));
+    BOOST_CHECK(test_args.ParseParameters(2, const_cast<char**>(argv_testnet), error));
     BOOST_CHECK_EQUAL(test_args.GetChainName(), "test");
 
-    BOOST_CHECK(test_args.ParseParameters(2, (char**)argv_regtest, error));
+    BOOST_CHECK(test_args.ParseParameters(2, const_cast<char**>(argv_regtest), error));
     BOOST_CHECK_EQUAL(test_args.GetChainName(), "regtest");
 
-    BOOST_CHECK(test_args.ParseParameters(3, (char**)argv_test_no_reg, error));
+    BOOST_CHECK(test_args.ParseParameters(3, const_cast<char**>(argv_test_no_reg), error));
     BOOST_CHECK_EQUAL(test_args.GetChainName(), "test");
 
-    BOOST_CHECK(test_args.ParseParameters(3, (char**)argv_both, error));
+    BOOST_CHECK(test_args.ParseParameters(3, const_cast<char**>(argv_both), error));
     BOOST_CHECK_THROW(test_args.GetChainName(), std::runtime_error);
 
-    BOOST_CHECK(test_args.ParseParameters(0, (char**)argv_testnet, error));
+    BOOST_CHECK(test_args.ParseParameters(0, const_cast<char**>(argv_testnet), error));
     test_args.ReadConfigString(testnetconf);
     BOOST_CHECK_EQUAL(test_args.GetChainName(), "test");
 
-    BOOST_CHECK(test_args.ParseParameters(2, (char**)argv_testnet, error));
+    BOOST_CHECK(test_args.ParseParameters(2, const_cast<char**>(argv_testnet), error));
     test_args.ReadConfigString(testnetconf);
     BOOST_CHECK_EQUAL(test_args.GetChainName(), "test");
 
-    BOOST_CHECK(test_args.ParseParameters(2, (char**)argv_regtest, error));
+    BOOST_CHECK(test_args.ParseParameters(2, const_cast<char**>(argv_regtest), error));
     test_args.ReadConfigString(testnetconf);
     BOOST_CHECK_THROW(test_args.GetChainName(), std::runtime_error);
 
-    BOOST_CHECK(test_args.ParseParameters(3, (char**)argv_test_no_reg, error));
+    BOOST_CHECK(test_args.ParseParameters(3, const_cast<char**>(argv_test_no_reg), error));
     test_args.ReadConfigString(testnetconf);
     BOOST_CHECK_EQUAL(test_args.GetChainName(), "test");
 
-    BOOST_CHECK(test_args.ParseParameters(3, (char**)argv_both, error));
+    BOOST_CHECK(test_args.ParseParameters(3, const_cast<char**>(argv_both), error));
     test_args.ReadConfigString(testnetconf);
     BOOST_CHECK_THROW(test_args.GetChainName(), std::runtime_error);
 
@@ -865,23 +865,23 @@ BOOST_AUTO_TEST_CASE(util_GetChainName)
     // [test] regtest=1 potentially relevant) doesn't break things
     test_args.SelectConfigNetwork("test");
 
-    BOOST_CHECK(test_args.ParseParameters(0, (char**)argv_testnet, error));
+    BOOST_CHECK(test_args.ParseParameters(0, const_cast<char**>(argv_testnet), error));
     test_args.ReadConfigString(testnetconf);
     BOOST_CHECK_EQUAL(test_args.GetChainName(), "test");
 
-    BOOST_CHECK(test_args.ParseParameters(2, (char**)argv_testnet, error));
+    BOOST_CHECK(test_args.ParseParameters(2, const_cast<char**>(argv_testnet), error));
     test_args.ReadConfigString(testnetconf);
     BOOST_CHECK_EQUAL(test_args.GetChainName(), "test");
 
-    BOOST_CHECK(test_args.ParseParameters(2, (char**)argv_regtest, error));
+    BOOST_CHECK(test_args.ParseParameters(2, const_cast<char**>(argv_regtest), error));
     test_args.ReadConfigString(testnetconf);
     BOOST_CHECK_THROW(test_args.GetChainName(), std::runtime_error);
 
-    BOOST_CHECK(test_args.ParseParameters(2, (char**)argv_test_no_reg, error));
+    BOOST_CHECK(test_args.ParseParameters(2, const_cast<char**>(argv_test_no_reg), error));
     test_args.ReadConfigString(testnetconf);
     BOOST_CHECK_EQUAL(test_args.GetChainName(), "test");
 
-    BOOST_CHECK(test_args.ParseParameters(3, (char**)argv_both, error));
+    BOOST_CHECK(test_args.ParseParameters(3, const_cast<char**>(argv_both), error));
     test_args.ReadConfigString(testnetconf);
     BOOST_CHECK_THROW(test_args.GetChainName(), std::runtime_error);
 }
@@ -1373,7 +1373,7 @@ BOOST_AUTO_TEST_CASE(util_seed_insecure_rand)
             uint32_t rval;
             do{
                 rval=InsecureRand32()&mask;
-            }while(rval>=(uint32_t)mod);
+            }while(rval>=static_cast<uint32_t>(mod));
             count += rval==0;
         }
         BOOST_CHECK(count<=10000/mod+err);
@@ -1669,8 +1669,8 @@ BOOST_AUTO_TEST_CASE(test_ParseInt64)
     BOOST_CHECK(ParseInt64("01234", &n) && n == 1234LL); // no octal
     BOOST_CHECK(ParseInt64("2147483647", &n) && n == 2147483647LL);
     BOOST_CHECK(ParseInt64("-2147483648", &n) && n == -2147483648LL);
-    BOOST_CHECK(ParseInt64("9223372036854775807", &n) && n == (int64_t)9223372036854775807);
-    BOOST_CHECK(ParseInt64("-9223372036854775808", &n) && n == (int64_t)-9223372036854775807-1);
+    BOOST_CHECK(ParseInt64("9223372036854775807", &n) && n == int64_t{9223372036854775807});
+    BOOST_CHECK(ParseInt64("-9223372036854775808", &n) && n == int64_t{-9223372036854775807-1});
     BOOST_CHECK(ParseInt64("-1234", &n) && n == -1234LL);
     // Invalid values
     BOOST_CHECK(!ParseInt64("", &n));
@@ -1766,8 +1766,8 @@ BOOST_AUTO_TEST_CASE(test_ParseUInt32)
     BOOST_CHECK(ParseUInt32("1234", &n) && n == 1234);
     BOOST_CHECK(ParseUInt32("01234", &n) && n == 1234); // no octal
     BOOST_CHECK(ParseUInt32("2147483647", &n) && n == 2147483647);
-    BOOST_CHECK(ParseUInt32("2147483648", &n) && n == (uint32_t)2147483648);
-    BOOST_CHECK(ParseUInt32("4294967295", &n) && n == (uint32_t)4294967295);
+    BOOST_CHECK(ParseUInt32("2147483648", &n) && n == uint32_t{2147483648});
+    BOOST_CHECK(ParseUInt32("4294967295", &n) && n == uint32_t{4294967295});
     BOOST_CHECK(ParseUInt32("+1234", &n) && n == 1234);
     BOOST_CHECK(ParseUInt32("00000000000000001234", &n) && n == 1234);
     BOOST_CHECK(ParseUInt32("00000000000000000000", &n) && n == 0);
@@ -2021,7 +2021,7 @@ BOOST_AUTO_TEST_CASE(test_LockDirectory)
     char ch;
     BOOST_CHECK_EQUAL(write(fd[1], &LockCommand, 1), 1);
     BOOST_CHECK_EQUAL(read(fd[1], &ch, 1), 1);
-    BOOST_CHECK_EQUAL((bool)ch, false);
+    BOOST_CHECK_EQUAL(static_cast<bool>(ch), false);
 
     // Give up our lock
     ReleaseDirectoryLocks();
@@ -2031,7 +2031,7 @@ BOOST_AUTO_TEST_CASE(test_LockDirectory)
     // Try to acquire the lock in the child process, this should be successful.
     BOOST_CHECK_EQUAL(write(fd[1], &LockCommand, 1), 1);
     BOOST_CHECK_EQUAL(read(fd[1], &ch, 1), 1);
-    BOOST_CHECK_EQUAL((bool)ch, true);
+    BOOST_CHECK_EQUAL(static_cast<bool>(ch), true);
 
     // When we try to probe the lock now, it should fail.
     BOOST_CHECK_EQUAL(LockDirectory(dirname, lockname, true), false);
@@ -2039,7 +2039,7 @@ BOOST_AUTO_TEST_CASE(test_LockDirectory)
     // Unlock the lock in the child process
     BOOST_CHECK_EQUAL(write(fd[1], &UnlockCommand, 1), 1);
     BOOST_CHECK_EQUAL(read(fd[1], &ch, 1), 1);
-    BOOST_CHECK_EQUAL((bool)ch, true);
+    BOOST_CHECK_EQUAL(static_cast<bool>(ch), true);
 
     // When we try to probe the lock now, it should succeed.
     BOOST_CHECK_EQUAL(LockDirectory(dirname, lockname, true), true);
@@ -2441,9 +2441,9 @@ BOOST_AUTO_TEST_CASE(message_hash)
 {
     const std::string unsigned_tx = "...";
     const std::string prefixed_message =
-        std::string(1, (char)MESSAGE_MAGIC.length()) +
+        std::string(1, static_cast<char>(MESSAGE_MAGIC.length())) +
         MESSAGE_MAGIC +
-        std::string(1, (char)unsigned_tx.length()) +
+        std::string(1, static_cast<char>(unsigned_tx.length())) +
         unsigned_tx;
 
     const uint256 signature_hash = Hash(unsigned_tx);

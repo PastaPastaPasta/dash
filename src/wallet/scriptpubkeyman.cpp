@@ -331,14 +331,14 @@ bool LegacyScriptPubKeyMan::TopUpInactiveHDChain(const CKeyID seed_id, int64_t i
     CHDChain& chain = it->second;
 
     // Top up key pool
-    int64_t target_size = std::max(gArgs.GetIntArg("-keypool", DEFAULT_KEYPOOL_SIZE), (int64_t) 1);
+    int64_t target_size = std::max(gArgs.GetIntArg("-keypool", DEFAULT_KEYPOOL_SIZE), int64_t{1});
 
     // "size" of the keypools. Not really the size, actually the difference between index and the chain counter
     // Since chain counter is 1 based and index is 0 based, one of them needs to be offset by 1.
     int64_t kp_size = (internal ? chain.nInternalChainCounter : chain.nExternalChainCounter) - (index + 1);
 
     // make sure the keypool fits the user-selected target (-keypool)
-    int64_t missing = std::max(target_size - kp_size, (int64_t) 0);
+    int64_t missing = std::max(target_size - kp_size, int64_t{0});
 
     if (missing > 0) {
         WalletBatch batch(m_storage.GetDatabase());
@@ -1268,12 +1268,12 @@ bool LegacyScriptPubKeyMan::TopUp(unsigned int kpSize)
         if (kpSize > 0)
             nTargetSize = kpSize;
         else
-            nTargetSize = std::max(gArgs.GetIntArg("-keypool", DEFAULT_KEYPOOL_SIZE), (int64_t) 0);
+            nTargetSize = std::max(gArgs.GetIntArg("-keypool", DEFAULT_KEYPOOL_SIZE), int64_t{0});
 
         // count amount of available keys (internal, external)
         // make sure the keypool of external and internal keys fits the user selected target (-keypool)
-        int64_t missingExternal = std::max(std::max((int64_t) nTargetSize, (int64_t) 1) - (int64_t)setExternalKeyPool.size(), (int64_t) 0);
-        int64_t missingInternal = std::max(std::max((int64_t) nTargetSize, (int64_t) 1) - (int64_t)setInternalKeyPool.size(), (int64_t) 0);
+        int64_t missingExternal = std::max(std::max(static_cast<int64_t>(nTargetSize), int64_t{1}) - static_cast<int64_t>(setExternalKeyPool.size()), int64_t{0});
+        int64_t missingInternal = std::max(std::max(static_cast<int64_t>(nTargetSize), int64_t{1}) - static_cast<int64_t>(setInternalKeyPool.size()), int64_t{0});
 
         if (!IsHDEnabled() || !m_storage.CanSupportFeature(FEATURE_HD_SPLIT))
         {
@@ -1777,11 +1777,11 @@ bool DescriptorScriptPubKeyMan::TopUp(unsigned int size)
     if (size > 0) {
         target_size = size;
     } else {
-        target_size = std::max(gArgs.GetIntArg("-keypool", DEFAULT_KEYPOOL_SIZE), (int64_t) 1);
+        target_size = std::max(gArgs.GetIntArg("-keypool", DEFAULT_KEYPOOL_SIZE), int64_t{1});
     }
 
     // Calculate the new range_end
-    int32_t new_range_end = std::max(m_wallet_descriptor.next_index + (int32_t)target_size, m_wallet_descriptor.range_end);
+    int32_t new_range_end = std::max(m_wallet_descriptor.next_index + static_cast<int32_t>(target_size), m_wallet_descriptor.range_end);
 
     // If the descriptor is not ranged, we actually just want to fill the first cache item
     if (!m_wallet_descriptor.descriptor->IsRange()) {
@@ -2196,7 +2196,7 @@ uint256 DescriptorScriptPubKeyMan::GetID() const
     LOCK(cs_desc_man);
     std::string desc_str = m_wallet_descriptor.descriptor->ToString();
     uint256 id;
-    CSHA256().Write((unsigned char*)desc_str.data(), desc_str.size()).Finalize(id.begin());
+    CSHA256().Write(reinterpret_cast<unsigned char*>(desc_str.data()), desc_str.size()).Finalize(id.begin());
     return id;
 }
 

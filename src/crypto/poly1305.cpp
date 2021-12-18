@@ -10,7 +10,7 @@
 
 #include <string.h>
 
-#define mul32x32_64(a,b) ((uint64_t)(a) * (b))
+#define mul32x32_64(a,b) (static_cast<uint64_t>((a)) * (b))
 
 void poly1305_auth(unsigned char out[POLY1305_TAGLEN], const unsigned char *m, size_t inlen, const unsigned char key[POLY1305_KEYLEN]) {
     uint32_t t0,t1,t2,t3;
@@ -62,9 +62,9 @@ poly1305_donna_16bytes:
     t3 = ReadLE32(m-4);
 
     h0 += t0 & 0x3ffffff;
-    h1 += ((((uint64_t)t1 << 32) | t0) >> 26) & 0x3ffffff;
-    h2 += ((((uint64_t)t2 << 32) | t1) >> 20) & 0x3ffffff;
-    h3 += ((((uint64_t)t3 << 32) | t2) >> 14) & 0x3ffffff;
+    h1 += (((static_cast<uint64_t>(t1) << 32) | t0) >> 26) & 0x3ffffff;
+    h2 += (((static_cast<uint64_t>(t2) << 32) | t1) >> 20) & 0x3ffffff;
+    h3 += (((static_cast<uint64_t>(t3) << 32) | t2) >> 14) & 0x3ffffff;
     h4 += (t3 >> 8) | (1 << 24);
 
 
@@ -75,11 +75,11 @@ poly1305_donna_mul:
     t[3]  = mul32x32_64(h0,r3) + mul32x32_64(h1,r2) + mul32x32_64(h2,r1) + mul32x32_64(h3,r0) + mul32x32_64(h4,s4);
     t[4]  = mul32x32_64(h0,r4) + mul32x32_64(h1,r3) + mul32x32_64(h2,r2) + mul32x32_64(h3,r1) + mul32x32_64(h4,r0);
 
-                    h0 = (uint32_t)t[0] & 0x3ffffff; c =           (t[0] >> 26);
-    t[1] += c;      h1 = (uint32_t)t[1] & 0x3ffffff; b = (uint32_t)(t[1] >> 26);
-    t[2] += b;      h2 = (uint32_t)t[2] & 0x3ffffff; b = (uint32_t)(t[2] >> 26);
-    t[3] += b;      h3 = (uint32_t)t[3] & 0x3ffffff; b = (uint32_t)(t[3] >> 26);
-    t[4] += b;      h4 = (uint32_t)t[4] & 0x3ffffff; b = (uint32_t)(t[4] >> 26);
+                    h0 = static_cast<uint32_t>(t[0]) & 0x3ffffff; c =           (t[0] >> 26);
+    t[1] += c;      h1 = static_cast<uint32_t>(t[1]) & 0x3ffffff; b = static_cast<uint32_t>((t[1]) >> 26);
+    t[2] += b;      h2 = static_cast<uint32_t>(t[2]) & 0x3ffffff; b = static_cast<uint32_t>((t[2]) >> 26);
+    t[3] += b;      h3 = static_cast<uint32_t>(t[3]) & 0x3ffffff; b = static_cast<uint32_t>((t[3]) >> 26);
+    t[4] += b;      h4 = static_cast<uint32_t>(t[4]) & 0x3ffffff; b = static_cast<uint32_t>((t[4]) >> 26);
     h0 += b * 5;
 
     if (inlen >= 16) goto poly1305_donna_16bytes;
@@ -99,9 +99,9 @@ poly1305_donna_atmost15bytes:
     t3 = ReadLE32(mp+12);
 
     h0 += t0 & 0x3ffffff;
-    h1 += ((((uint64_t)t1 << 32) | t0) >> 26) & 0x3ffffff;
-    h2 += ((((uint64_t)t2 << 32) | t1) >> 20) & 0x3ffffff;
-    h3 += ((((uint64_t)t3 << 32) | t2) >> 14) & 0x3ffffff;
+    h1 += (((static_cast<uint64_t>(t1) << 32) | t0) >> 26) & 0x3ffffff;
+    h2 += (((static_cast<uint64_t>(t2) << 32) | t1) >> 20) & 0x3ffffff;
+    h3 += (((static_cast<uint64_t>(t3) << 32) | t2) >> 14) & 0x3ffffff;
     h4 += (t3 >> 8);
 
     goto poly1305_donna_mul;
@@ -129,10 +129,10 @@ poly1305_donna_finish:
     h3 = (h3 & nb) | (g3 & b);
     h4 = (h4 & nb) | (g4 & b);
 
-    f0 = ((h0      ) | (h1 << 26)) + (uint64_t)ReadLE32(&key[16]);
-    f1 = ((h1 >>  6) | (h2 << 20)) + (uint64_t)ReadLE32(&key[20]);
-    f2 = ((h2 >> 12) | (h3 << 14)) + (uint64_t)ReadLE32(&key[24]);
-    f3 = ((h3 >> 18) | (h4 <<  8)) + (uint64_t)ReadLE32(&key[28]);
+    f0 = ((h0      ) | (h1 << 26)) + static_cast<uint64_t>(ReadLE32(&key[16]));
+    f1 = ((h1 >>  6) | (h2 << 20)) + static_cast<uint64_t>(ReadLE32(&key[20]));
+    f2 = ((h2 >> 12) | (h3 << 14)) + static_cast<uint64_t>(ReadLE32(&key[24]));
+    f3 = ((h3 >> 18) | (h4 <<  8)) + static_cast<uint64_t>(ReadLE32(&key[28]));
 
     WriteLE32(&out[ 0], f0); f1 += (f0 >> 32);
     WriteLE32(&out[ 4], f1); f2 += (f1 >> 32);

@@ -124,7 +124,7 @@ static bool UndoWriteToDisk(const CBlockUndo& blockundo, FlatFilePos& pos, const
     if (fileOutPos < 0) {
         return error("%s: ftell failed", __func__);
     }
-    pos.nPos = (unsigned int)fileOutPos;
+    pos.nPos = static_cast<unsigned int>(fileOutPos);
     fileout << blockundo;
 
     // calculate & write checksum
@@ -250,7 +250,7 @@ bool FindBlockPos(FlatFilePos& pos, unsigned int nAddSize, unsigned int nHeight,
             // when the undo file is keeping up with the block file, we want to flush it explicitly
             // when it is lagging behind (more blocks arrive than are being connected), we let the
             // undo block write case handle it
-            finalize_undo = (vinfoBlockFile[nFile].nHeightLast == (unsigned int)active_chain.Tip()->nHeight);
+            finalize_undo = (vinfoBlockFile[nFile].nHeightLast == static_cast<unsigned int>(active_chain.Tip()->nHeight));
             nFile++;
             if (vinfoBlockFile.size() <= nFile) {
                 vinfoBlockFile.resize(nFile + 1);
@@ -260,7 +260,7 @@ bool FindBlockPos(FlatFilePos& pos, unsigned int nAddSize, unsigned int nHeight,
         pos.nPos = vinfoBlockFile[nFile].nSize;
     }
 
-    if ((int)nFile != nLastBlockFile) {
+    if (static_cast<int>(nFile) != nLastBlockFile) {
         if (!fKnown) {
             LogPrint(BCLog::BLOCKSTORE, "Leaving block file %i: %s\n", nLastBlockFile, vinfoBlockFile[nLastBlockFile].ToString());
         }
@@ -329,7 +329,7 @@ static bool WriteBlockToDisk(const CBlock& block, FlatFilePos& pos, const CMessa
     if (fileOutPos < 0) {
         return error("WriteBlockToDisk: ftell failed");
     }
-    pos.nPos = (unsigned int)fileOutPos;
+    pos.nPos = static_cast<unsigned int>(fileOutPos);
     fileout << block;
 
     return true;
@@ -435,7 +435,7 @@ bool ReadRawBlockFromDisk(std::vector<uint8_t>& block, const FlatFilePos& pos, c
         }
 
         block.resize(blk_size); // Zeroing of memory is intentional here
-        filein.read((char*)block.data(), blk_size);
+        filein.read(reinterpret_cast<char*>(block.data()), blk_size);
     } catch (const std::exception& e) {
         return error("%s: Read from block file failed: %s for %s", __func__, e.what(), pos.ToString());
     }
@@ -509,7 +509,7 @@ void ThreadImport(ChainstateManager& chainman, std::vector<fs::path> vImportFile
                 if (!file) {
                     break; // This error is logged in OpenBlockFile
                 }
-                LogPrintf("Reindexing block file blk%05u.dat...\n", (unsigned int)nFile);
+                LogPrintf("Reindexing block file blk%05u.dat...\n", static_cast<unsigned int>(nFile));
                 chainman.ActiveChainstate().LoadExternalBlockFile(file, &pos);
                 if (ShutdownRequested()) {
                     LogPrintf("Shutdown requested. Exit %s\n", __func__);

@@ -534,7 +534,7 @@ static std::string GetAllOutputTypes()
 {
     std::vector<std::string> ret;
     using U = std::underlying_type<TxoutType>::type;
-    for (U i = (U)TxoutType::NONSTANDARD; i <= (U)TxoutType::WITNESS_UNKNOWN; ++i) {
+    for (U i = static_cast<U>(TxoutType::NONSTANDARD); i <= static_cast<U>(TxoutType::WITNESS_UNKNOWN); ++i) {
         ret.emplace_back(GetTxnOutputType(static_cast<TxoutType>(i)));
     }
     return Join(ret, ", ");
@@ -2044,7 +2044,7 @@ static RPCHelpMan analyzepsbt()
     if (!inputs_result.empty()) result.pushKV("inputs", inputs_result);
 
     if (psbta.estimated_vsize != std::nullopt) {
-        result.pushKV("estimated_vsize", (int)*psbta.estimated_vsize);
+        result.pushKV("estimated_vsize", static_cast<int>(*psbta.estimated_vsize));
     }
     if (psbta.estimated_feerate != std::nullopt) {
         result.pushKV("estimated_feerate", ValueFromAmount(psbta.estimated_feerate->GetFeePerK()));

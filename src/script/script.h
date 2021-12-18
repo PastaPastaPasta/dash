@@ -383,7 +383,7 @@ private:
       // If the input vector's most significant byte is 0x80, remove it from
       // the result's msb and return a negative.
       if (vch.back() & 0x80)
-          return -((int64_t)(result & ~(0x80ULL << (8 * (vch.size() - 1)))));
+          return -(static_cast<int64_t>(result & ~(0x80ULL << (8 * (vch.size() - 1)))));
 
       return result;
     }
@@ -445,7 +445,7 @@ public:
     {
         if (opcode < 0 || opcode > 0xff)
             throw std::runtime_error("CScript::operator<<(): invalid opcode");
-        insert(end(), (unsigned char)opcode);
+        insert(end(), static_cast<unsigned char>(opcode));
         return *this;
     }
 
@@ -459,12 +459,12 @@ public:
     {
         if (b.size() < OP_PUSHDATA1)
         {
-            insert(end(), (unsigned char)b.size());
+            insert(end(), static_cast<unsigned char>(b.size()));
         }
         else if (b.size() <= 0xff)
         {
             insert(end(), OP_PUSHDATA1);
-            insert(end(), (unsigned char)b.size());
+            insert(end(), static_cast<unsigned char>(b.size()));
         }
         else if (b.size() <= 0xffff)
         {
@@ -500,14 +500,14 @@ public:
         if (opcode == OP_0)
             return 0;
         assert(opcode >= OP_1 && opcode <= OP_16);
-        return (int)opcode - (int)(OP_1 - 1);
+        return static_cast<int>(opcode) - static_cast<int>(OP_1 - 1);
     }
     static opcodetype EncodeOP_N(int n)
     {
         assert(n >= 0 && n <= 16);
         if (n == 0)
             return OP_0;
-        return (opcodetype)(OP_1+n-1);
+        return static_cast<opcodetype>((OP_1+n-1));
     }
 
     /**

@@ -36,7 +36,7 @@ BOOST_AUTO_TEST_CASE(getcoinscachesizestate)
         COutPoint outp{txid, 0};
         newcoin.nHeight = 1;
         newcoin.out.nValue = InsecureRand32();
-        newcoin.out.scriptPubKey.assign((uint32_t)56, 1);
+        newcoin.out.scriptPubKey.assign(uint32_t{56}, 1);
         coins_view.AddCoin(outp, std::move(newcoin), false);
 
         return outp;
@@ -130,7 +130,7 @@ BOOST_AUTO_TEST_CASE(getcoinscachesizestate)
 
     // Only perform these checks on 64 bit hosts; I haven't done the math for 32.
     if (is_64_bit) {
-        float usage_percentage = (float)view.DynamicMemoryUsage() / (MAX_COINS_CACHE_BYTES + (1 << 10));
+        float usage_percentage = static_cast<float>(view.DynamicMemoryUsage()) / (MAX_COINS_CACHE_BYTES + (1 << 10));
         BOOST_TEST_MESSAGE("CoinsTip usage percentage: " << usage_percentage);
         BOOST_CHECK(usage_percentage >= 0.9);
         BOOST_CHECK(usage_percentage < 1);

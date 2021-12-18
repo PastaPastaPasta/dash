@@ -657,7 +657,7 @@ static size_t CalculateNestedKeyhashInputSize(bool use_max_sig)
 
     CTxIn tx_in;
     UpdateInput(tx_in, sig_data);
-    return (size_t)GetVirtualTransactionInputSize(tx_in);
+    return static_cast<size_t>(GetVirtualTransactionInputSize(tx_in));
 }
 
 BOOST_FIXTURE_TEST_CASE(dummy_input_size_test, TestChain100Setup)
@@ -677,10 +677,10 @@ BOOST_FIXTURE_TEST_CASE(wallet_descriptor_test, BasicTestingSetup)
     std::vector<unsigned char> malformed_record;
     CVectorWriter vw(0, 0, malformed_record, 0);
     vw << std::string("notadescriptor");
-    vw << (uint64_t)0;
-    vw << (int32_t)0;
-    vw << (int32_t)0;
-    vw << (int32_t)1;
+    vw << uint64_t{0};
+    vw << int32_t{0};
+    vw << int32_t{0};
+    vw << int32_t{1};
 
     SpanReader vr{0, 0, malformed_record};
     WalletDescriptor w_desc;

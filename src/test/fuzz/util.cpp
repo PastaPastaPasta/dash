@@ -125,7 +125,7 @@ ssize_t FuzzedSock::Recv(void* buf, size_t len, int flags) const
     std::memcpy(buf, random_bytes.data(), random_bytes.size());
     if (pad_to_len_bytes) {
         if (len > random_bytes.size()) {
-            std::memset((char*)buf + random_bytes.size(), 0, len - random_bytes.size());
+            std::memset(static_cast<char*>(buf) + random_bytes.size(), 0, len - random_bytes.size());
         }
         return len;
     }
@@ -526,7 +526,7 @@ FILE* FuzzedFileProvider::open()
 
 ssize_t FuzzedFileProvider::read(void* cookie, char* buf, size_t size)
 {
-    FuzzedFileProvider* fuzzed_file = (FuzzedFileProvider*)cookie;
+    FuzzedFileProvider* fuzzed_file = static_cast<FuzzedFileProvider*>(cookie);
     SetFuzzedErrNo(fuzzed_file->m_fuzzed_data_provider);
     if (buf == nullptr || size == 0 || fuzzed_file->m_fuzzed_data_provider.ConsumeBool()) {
         return fuzzed_file->m_fuzzed_data_provider.ConsumeBool() ? 0 : -1;
@@ -536,7 +536,7 @@ ssize_t FuzzedFileProvider::read(void* cookie, char* buf, size_t size)
         return 0;
     }
     std::memcpy(buf, random_bytes.data(), random_bytes.size());
-    if (AdditionOverflow(fuzzed_file->m_offset, (int64_t)random_bytes.size())) {
+    if (AdditionOverflow(fuzzed_file->m_offset, static_cast<int64_t>(random_bytes.size()))) {
         return fuzzed_file->m_fuzzed_data_provider.ConsumeBool() ? 0 : -1;
     }
     fuzzed_file->m_offset += random_bytes.size();
@@ -545,10 +545,10 @@ ssize_t FuzzedFileProvider::read(void* cookie, char* buf, size_t size)
 
 ssize_t FuzzedFileProvider::write(void* cookie, const char* buf, size_t size)
 {
-    FuzzedFileProvider* fuzzed_file = (FuzzedFileProvider*)cookie;
+    FuzzedFileProvider* fuzzed_file = static_cast<FuzzedFileProvider*>(cookie);
     SetFuzzedErrNo(fuzzed_file->m_fuzzed_data_provider);
     const ssize_t n = fuzzed_file->m_fuzzed_data_provider.ConsumeIntegralInRange<ssize_t>(0, size);
-    if (AdditionOverflow(fuzzed_file->m_offset, (int64_t)n)) {
+    if (AdditionOverflow(fuzzed_file->m_offset, static_cast<int64_t>(n))) {
         return fuzzed_file->m_fuzzed_data_provider.ConsumeBool() ? 0 : -1;
     }
     fuzzed_file->m_offset += n;
@@ -558,7 +558,7 @@ ssize_t FuzzedFileProvider::write(void* cookie, const char* buf, size_t size)
 int FuzzedFileProvider::seek(void* cookie, int64_t* offset, int whence)
 {
     assert(whence == SEEK_SET || whence == SEEK_CUR || whence == SEEK_END);
-    FuzzedFileProvider* fuzzed_file = (FuzzedFileProvider*)cookie;
+    FuzzedFileProvider* fuzzed_file = static_cast<FuzzedFileProvider*>(cookie);
     SetFuzzedErrNo(fuzzed_file->m_fuzzed_data_provider);
     int64_t new_offset = 0;
     if (whence == SEEK_SET) {
@@ -585,7 +585,7 @@ int FuzzedFileProvider::seek(void* cookie, int64_t* offset, int whence)
 
 int FuzzedFileProvider::close(void* cookie)
 {
-    FuzzedFileProvider* fuzzed_file = (FuzzedFileProvider*)cookie;
+    FuzzedFileProvider* fuzzed_file = static_cast<FuzzedFileProvider*>(cookie);
     SetFuzzedErrNo(fuzzed_file->m_fuzzed_data_provider);
     return fuzzed_file->m_fuzzed_data_provider.ConsumeIntegralInRange<int>(-1, 0);
 }

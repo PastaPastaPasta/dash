@@ -32,7 +32,7 @@ void CBlockHeaderAndShortTxIDs::FillShortTxIDSelector() const {
     CDataStream stream(SER_NETWORK, PROTOCOL_VERSION);
     stream << header << nonce;
     CSHA256 hasher;
-    hasher.Write((unsigned char*)&(*stream.begin()), stream.end() - stream.begin());
+    hasher.Write(reinterpret_cast<const unsigned char*>(&(*stream.begin())), stream.end() - stream.begin());
     uint256 shorttxidhash;
     hasher.Finalize(shorttxidhash.begin());
     shorttxidk0 = shorttxidhash.GetUint64(0);
@@ -64,7 +64,7 @@ ReadStatus PartiallyDownloadedBlock::InitData(const CBlockHeaderAndShortTxIDs& c
         lastprefilledindex += cmpctblock.prefilledtxn[i].index + 1; //index is a uint16_t, so can't overflow here
         if (lastprefilledindex > std::numeric_limits<uint16_t>::max())
             return READ_STATUS_INVALID;
-        if ((uint32_t)lastprefilledindex > cmpctblock.shorttxids.size() + i) {
+        if (static_cast<uint32_t>(lastprefilledindex > cmpctblock.shorttxids.size()) + i) {
             // If we are inserting a tx at an index greater than our full list of shorttxids
             // plus the number of prefilled txn we've inserted, then we have txn for which we
             // have neither a prefilled txn or a shorttxid!

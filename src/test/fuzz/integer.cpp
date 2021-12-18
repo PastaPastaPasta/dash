@@ -217,7 +217,7 @@ FUZZ_TARGET_INIT(integer, initialize_integer)
     }
 
     {
-        const ServiceFlags service_flags = (ServiceFlags)u64;
+        const ServiceFlags service_flags = static_cast<ServiceFlags>(u64);
         (void)HasAllDesirableServiceFlags(service_flags);
         (void)MayHaveUsefulAddressDB(service_flags);
     }

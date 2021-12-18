@@ -4,7 +4,7 @@
 
 #include <crypto/siphash.h>
 
-#define ROTL(x, b) (uint64_t)(((x) << (b)) | ((x) >> (64 - (b))))
+#define ROTL(x, b) static_cast<uint64_t>(((x) << (b)) | ((x) >> (64 - (b))))
 
 #define SIPROUND do { \
     v0 += v1; v1 = ROTL(v1, 13); v1 ^= v0; \
@@ -52,7 +52,7 @@ CSipHasher& CSipHasher::Write(const unsigned char* data, size_t size)
     uint8_t c = count;
 
     while (size--) {
-        t |= ((uint64_t)(*(data++))) << (8 * (c % 8));
+        t |= (static_cast<uint64_t>(*(data++))) << (8 * (c % 8));
         c++;
         if ((c & 7) == 0) {
             v3 ^= t;
@@ -77,7 +77,7 @@ uint64_t CSipHasher::Finalize() const
 {
     uint64_t v0 = v[0], v1 = v[1], v2 = v[2], v3 = v[3];
 
-    uint64_t t = tmp | (((uint64_t)count) << 56);
+    uint64_t t = tmp | (static_cast<uint64_t>(count) << 56);
 
     v3 ^= t;
     SIPROUND;
@@ -119,10 +119,10 @@ uint64_t SipHashUint256(uint64_t k0, uint64_t k1, const uint256& val)
     SIPROUND;
     SIPROUND;
     v0 ^= d;
-    v3 ^= ((uint64_t)4) << 59;
+    v3 ^= (uint64_t{4}) << 59;
     SIPROUND;
     SIPROUND;
-    v0 ^= ((uint64_t)4) << 59;
+    v0 ^= (uint64_t{4}) << 59;
     v2 ^= 0xFF;
     SIPROUND;
     SIPROUND;
@@ -159,7 +159,7 @@ uint64_t SipHashUint256Extra(uint64_t k0, uint64_t k1, const uint256& val, uint3
     SIPROUND;
     SIPROUND;
     v0 ^= d;
-    d = (((uint64_t)36) << 56) | extra;
+    d = ((uint64_t{36}) << 56) | extra;
     v3 ^= d;
     SIPROUND;
     SIPROUND;

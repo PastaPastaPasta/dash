@@ -170,10 +170,10 @@ void TxToUniv(const CTransaction& tx, const uint256& hashBlock, UniValue& entry,
     // Transaction version is actually unsigned in consensus checks, just signed in memory,
     // so cast to unsigned before giving it to the user.
     entry.pushKV("version", static_cast<int64_t>(static_cast<uint32_t>(tx.nVersion)));
-    entry.pushKV("size", (int)::GetSerializeSize(tx, PROTOCOL_VERSION));
+    entry.pushKV("size", static_cast<int>(::GetSerializeSize(tx, PROTOCOL_VERSION)));
     entry.pushKV("vsize", (GetTransactionWeight(tx) + WITNESS_SCALE_FACTOR - 1) / WITNESS_SCALE_FACTOR);
     entry.pushKV("weight", GetTransactionWeight(tx));
-    entry.pushKV("locktime", (int64_t)tx.nLockTime);
+    entry.pushKV("locktime", static_cast<int64_t>(tx.nLockTime));
 
     UniValue vin{UniValue::VARR};
 
@@ -190,7 +190,7 @@ void TxToUniv(const CTransaction& tx, const uint256& hashBlock, UniValue& entry,
             in.pushKV("coinbase", HexStr(txin.scriptSig));
         } else {
             in.pushKV("txid", txin.prevout.hash.GetHex());
-            in.pushKV("vout", (int64_t)txin.prevout.n);
+            in.pushKV("vout", static_cast<int64_t>(txin.prevout.n));
             UniValue o(UniValue::VOBJ);
             o.pushKV("asm", ScriptToAsmStr(txin.scriptSig, true));
             o.pushKV("hex", HexStr(txin.scriptSig));
@@ -226,7 +226,7 @@ void TxToUniv(const CTransaction& tx, const uint256& hashBlock, UniValue& entry,
                     break;
             }
         }
-        in.pushKV("sequence", (int64_t)txin.nSequence);
+        in.pushKV("sequence", static_cast<int64_t>(txin.nSequence));
         vin.push_back(in);
     }
     entry.pushKV("vin", vin);
@@ -238,7 +238,7 @@ void TxToUniv(const CTransaction& tx, const uint256& hashBlock, UniValue& entry,
         UniValue out(UniValue::VOBJ);
 
         out.pushKV("value", ValueFromAmount(txout.nValue));
-        out.pushKV("n", (int64_t)i);
+        out.pushKV("n", static_cast<int64_t>(i));
 
         UniValue o(UniValue::VOBJ);
         ScriptPubKeyToUniv(txout.scriptPubKey, o, true);

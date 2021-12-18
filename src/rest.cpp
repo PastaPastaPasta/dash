@@ -513,7 +513,7 @@ static bool rest_getutxos(const std::any& context, HTTPRequest* req, const std::
                 return RESTERR(req, HTTP_BAD_REQUEST, "Parse error");
 
             txid.SetHex(strTxid);
-            vOutPoints.push_back(COutPoint(txid, (uint32_t)nOutput));
+            vOutPoints.push_back(COutPoint(txid, static_cast<uint32_t>(nOutput)));
         }
 
         if (vOutPoints.size() > 0)
@@ -599,7 +599,7 @@ static bool rest_getutxos(const std::any& context, HTTPRequest* req, const std::
         for (size_t i = 0; i < hits.size(); ++i) {
             const bool hit = hits[i];
             bitmapStringRepresentation.append(hit ? "1" : "0"); // form a binary string representation (human-readable for json output)
-            bitmap[i / 8] |= ((uint8_t)hit) << (i % 8);
+            bitmap[i / 8] |= (static_cast<uint8_t>(hit)) << (i % 8);
         }
     }
 
@@ -638,7 +638,7 @@ static bool rest_getutxos(const std::any& context, HTTPRequest* req, const std::
         UniValue utxos(UniValue::VARR);
         for (const CCoin& coin : outs) {
             UniValue utxo(UniValue::VOBJ);
-            utxo.pushKV("height", (int32_t)coin.nHeight);
+            utxo.pushKV("height", static_cast<int32_t>(coin.nHeight));
             utxo.pushKV("value", ValueFromAmount(coin.out.nValue));
 
             // include the script in a json output

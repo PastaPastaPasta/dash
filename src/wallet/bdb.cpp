@@ -97,7 +97,7 @@ void BerkeleyEnvironment::Close()
     if (ret != 0)
         LogPrintf("BerkeleyEnvironment::Close: Error %d closing database environment: %s\n", ret, DbEnv::strerror(ret));
     if (!fMockDb)
-        DbEnv((u_int32_t)0).remove(strPath.c_str(), 0);
+        DbEnv(uint32_t{0}).remove(strPath.c_str(), 0);
 
     if (error_file) fclose(error_file);
 
@@ -488,9 +488,9 @@ bool BerkeleyDatabase::Rewrite(const char* pszSkip)
                                 break;
                             }
                             if (pszSkip &&
-                                strncmp((const char*)ssKey.data(), pszSkip, std::min(ssKey.size(), strlen(pszSkip))) == 0)
+                                strncmp(reinterpret_cast<const char*>(ssKey.data()), pszSkip, std::min(ssKey.size(), strlen(pszSkip))) == 0)
                                 continue;
-                            if (strncmp((const char*)ssKey.data(), "\x07version", 8) == 0) {
+                            if (strncmp(reinterpret_cast<const char*>(ssKey.data()), "\x07version", 8) == 0) {
                                 // Update version:
                                 ssValue.clear();
                                 ssValue << CLIENT_VERSION;
@@ -680,10 +680,10 @@ bool BerkeleyBatch::ReadAtCursor(CDataStream& ssKey, CDataStream& ssValue, bool&
     // Convert to streams
     ssKey.SetType(SER_DISK);
     ssKey.clear();
-    ssKey.write((char*)datKey.get_data(), datKey.get_size());
+    ssKey.write(const_cast<char*>(reinterpret_cast<const char*>(datKey.get_data())), datKey.get_size());
     ssValue.SetType(SER_DISK);
     ssValue.clear();
-    ssValue.write((char*)datValue.get_data(), datValue.get_size());
+    ssValue.write(const_cast<char*>(reinterpret_cast<const char*>(datValue.get_data())), datValue.get_size());
     return true;
 }
 
@@ -755,7 +755,7 @@ bool BerkeleyBatch::ReadKey(CDataStream&& key, CDataStream& value)
     SafeDbt datValue;
     int ret = pdb->get(activeTxn, datKey, datValue, 0);
     if (ret == 0 && datValue.get_data() != nullptr) {
-        value.write((char*)datValue.get_data(), datValue.get_size());
+        value.write(const_cast<char*>(reinterpret_cast<const char*>(datValue.get_data())), datValue.get_size());
         return true;
     }
     return false;

@@ -388,7 +388,7 @@ bool InitHTTPServer()
     }
 
     LogPrint(BCLog::HTTP, "Initialized HTTP server\n");
-    int workQueueDepth = std::max((long)gArgs.GetIntArg("-rpcworkqueue", DEFAULT_HTTP_WORKQUEUE), 1L);
+    int workQueueDepth = std::max(static_cast<long>(gArgs.GetIntArg("-rpcworkqueue", DEFAULT_HTTP_WORKQUEUE)), 1L);
     LogPrintf("HTTP: creating work queue of depth %d\n", workQueueDepth);
 
     g_work_queue = std::make_unique<WorkQueue<HTTPClosure>>(workQueueDepth);
@@ -418,7 +418,7 @@ static std::vector<std::thread> g_thread_http_workers;
 void StartHTTPServer()
 {
     LogPrint(BCLog::HTTP, "Starting HTTP server\n");
-    int rpcThreads = std::max((long)gArgs.GetIntArg("-rpcthreads", DEFAULT_HTTP_THREADS), 1L);
+    int rpcThreads = std::max(static_cast<long>(gArgs.GetIntArg("-rpcthreads", DEFAULT_HTTP_THREADS)), 1L);
     LogPrintf("HTTP: starting %d worker threads\n", rpcThreads);
     g_thread_http = std::thread(ThreadHTTP, eventBase);
 
@@ -539,7 +539,7 @@ std::string HTTPRequest::ReadBody()
      * better to not copy into an intermediate string but use a stream
      * abstraction to consume the evbuffer on the fly in the parsing algorithm.
      */
-    const char* data = (const char*)evbuffer_pullup(buf, size);
+    const char* data = reinterpret_cast<const char*>(evbuffer_pullup(buf, size));
     if (!data) // returns nullptr in case of empty buffer
         return "";
     std::string rv(data, size);
@@ -597,7 +597,7 @@ CService HTTPRequest::GetPeer() const
         // evhttp retains ownership over returned address string
         const char* address = "";
         uint16_t port = 0;
-        evhttp_connection_get_peer(con, (char**)&address, &port);
+        evhttp_connection_get_peer(con, const_cast<char**>(reinterpret_cast<const char**>(&address)), &port);
         peer = LookupNumeric(address, port);
     }
     return peer;

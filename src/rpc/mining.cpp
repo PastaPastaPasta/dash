@@ -436,9 +436,9 @@ static RPCHelpMan getmininginfo()
     obj.pushKV("blocks",           active_chain.Height());
     if (BlockAssembler::m_last_block_weight) obj.pushKV("currentblockweight", *BlockAssembler::m_last_block_weight);
     if (BlockAssembler::m_last_block_num_txs) obj.pushKV("currentblocktx", *BlockAssembler::m_last_block_num_txs);
-    obj.pushKV("difficulty",       (double)GetDifficulty(active_chain.Tip()));
+    obj.pushKV("difficulty",       static_cast<double>(GetDifficulty(active_chain.Tip())));
     obj.pushKV("networkhashps",    getnetworkhashps().HandleRequest(request));
-    obj.pushKV("pooledtx",         (uint64_t)mempool.size());
+    obj.pushKV("pooledtx",         static_cast<uint64_t>(mempool.size()));
     obj.pushKV("chain",            Params().NetworkIDString());
     obj.pushKV("warnings",         GetWarnings(false).original);
     return obj;
@@ -844,7 +844,7 @@ static RPCHelpMan getblocktemplate()
     }
 
     UniValue vbavailable(UniValue::VOBJ);
-    for (int j = 0; j < (int)Consensus::MAX_VERSION_BITS_DEPLOYMENTS; ++j) {
+    for (int j = 0; j < static_cast<int>(Consensus::MAX_VERSION_BITS_DEPLOYMENTS); ++j) {
         Consensus::DeploymentPos pos = Consensus::DeploymentPos(j);
         ThresholdState state = g_versionbitscache.State(pindexPrev, consensusParams, pos);
         switch (state) {
@@ -900,10 +900,10 @@ static RPCHelpMan getblocktemplate()
     result.pushKV("previousblockhash", pblock->hashPrevBlock.GetHex());
     result.pushKV("transactions", transactions);
     result.pushKV("coinbaseaux", aux);
-    result.pushKV("coinbasevalue", (int64_t)pblock->vtx[0]->vout[0].nValue);
+    result.pushKV("coinbasevalue", static_cast<int64_t>(pblock->vtx[0]->vout[0].nValue));
     result.pushKV("longpollid", active_chain.Tip()->GetBlockHash().GetHex() + ToString(nTransactionsUpdatedLast));
     result.pushKV("target", hashTarget.GetHex());
-    result.pushKV("mintime", (int64_t)pindexPrev->GetMedianTimePast()+1);
+    result.pushKV("mintime", static_cast<int64_t>(pindexPrev->GetMedianTimePast()+1));
     result.pushKV("mutable", aMutable);
     result.pushKV("noncerange", "00000000ffffffff");
     int64_t nSigOpLimit = MAX_BLOCK_SIGOPS_COST;
@@ -917,11 +917,11 @@ static RPCHelpMan getblocktemplate()
     result.pushKV("sigoplimit", nSigOpLimit);
     result.pushKV("sizelimit", nSizeLimit);
     if (!fPreSegWit) {
-        result.pushKV("weightlimit", (int64_t)MAX_BLOCK_WEIGHT);
+        result.pushKV("weightlimit", static_cast<int64_t>(MAX_BLOCK_WEIGHT));
     }
     result.pushKV("curtime", pblock->GetBlockTime());
     result.pushKV("bits", strprintf("%08x", pblock->nBits));
-    result.pushKV("height", (int64_t)(pindexPrev->nHeight+1));
+    result.pushKV("height", static_cast<int64_t>((pindexPrev->nHeight+1)));
 
     if (consensusParams.signet_blocks) {
         result.pushKV("signet_challenge", HexStr(consensusParams.signet_challenge));
@@ -1238,14 +1238,14 @@ static RPCHelpMan estimaterawfee()
         if (feeRate != CFeeRate(0)) {
             horizon_result.pushKV("feerate", ValueFromAmount(feeRate.GetFeePerK()));
             horizon_result.pushKV("decay", buckets.decay);
-            horizon_result.pushKV("scale", (int)buckets.scale);
+            horizon_result.pushKV("scale", static_cast<int>(buckets.scale));
             horizon_result.pushKV("pass", passbucket);
             // buckets.fail.start == -1 indicates that all buckets passed, there is no fail bucket to output
             if (buckets.fail.start != -1) horizon_result.pushKV("fail", failbucket);
         } else {
             // Output only information that is still meaningful in the event of error
             horizon_result.pushKV("decay", buckets.decay);
-            horizon_result.pushKV("scale", (int)buckets.scale);
+            horizon_result.pushKV("scale", static_cast<int>(buckets.scale));
             horizon_result.pushKV("fail", failbucket);
             errors.push_back("Insufficient data or no feerate found which meets threshold");
             horizon_result.pushKV("errors",errors);

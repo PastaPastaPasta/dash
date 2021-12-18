@@ -58,7 +58,7 @@ static RPCHelpMan getconnectioncount()
     NodeContext& node = EnsureAnyNodeContext(request.context);
     const CConnman& connman = EnsureConnman(node);
 
-    return (int)connman.GetNodeCount(ConnectionDirection::Both);
+    return static_cast<int>(connman.GetNodeCount(ConnectionDirection::Both));
 },
     };
 }
@@ -410,7 +410,7 @@ static RPCHelpMan disconnectnode()
         success = connman.DisconnectNode(address_arg.get_str());
     } else if (!id_arg.isNull() && (address_arg.isNull() || (address_arg.isStr() && address_arg.get_str().empty()))) {
         /* handle disconnect-by-id */
-        NodeId nodeid = (NodeId) id_arg.get_int64();
+        NodeId nodeid = static_cast<NodeId>(id_arg.get_int64());
         success = connman.DisconnectNode(nodeid);
     } else {
         throw JSONRPCError(RPC_INVALID_PARAMS, "Only one of address and nodeid should be provided.");
@@ -637,9 +637,9 @@ static RPCHelpMan getnetworkinfo()
     obj.pushKV("timeoffset",    GetTimeOffset());
     if (node.connman) {
         obj.pushKV("networkactive", node.connman->GetNetworkActive());
-        obj.pushKV("connections", (int)node.connman->GetNodeCount(ConnectionDirection::Both));
-        obj.pushKV("connections_in", (int)node.connman->GetNodeCount(ConnectionDirection::In));
-        obj.pushKV("connections_out", (int)node.connman->GetNodeCount(ConnectionDirection::Out));
+        obj.pushKV("connections", static_cast<int>(node.connman->GetNodeCount(ConnectionDirection::Both)));
+        obj.pushKV("connections_in", static_cast<int>(node.connman->GetNodeCount(ConnectionDirection::In)));
+        obj.pushKV("connections_out", static_cast<int>(node.connman->GetNodeCount(ConnectionDirection::Out)));
     }
     obj.pushKV("networks",      GetNetworksInfo());
     obj.pushKV("relayfee",      ValueFromAmount(::minRelayTxFee.GetFeePerK()));
@@ -889,8 +889,8 @@ static RPCHelpMan getnodeaddresses()
 
     for (const CAddress& addr : vAddr) {
         UniValue obj(UniValue::VOBJ);
-        obj.pushKV("time", (int)addr.nTime);
-        obj.pushKV("services", (uint64_t)addr.nServices);
+        obj.pushKV("time", static_cast<int>(addr.nTime));
+        obj.pushKV("services", static_cast<uint64_t>(addr.nServices));
         obj.pushKV("address", addr.ToStringIP());
         obj.pushKV("port", addr.GetPort());
         obj.pushKV("network", GetNetworkName(addr.GetNetClass()));

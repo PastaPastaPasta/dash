@@ -241,21 +241,21 @@ private:
      */
     inline std::array<uint32_t, 8> compute_hashes(const Element& e) const
     {
-        return {{(uint32_t)(((uint64_t)hash_function.template operator()<0>(e) * (uint64_t)size) >> 32),
-                 (uint32_t)(((uint64_t)hash_function.template operator()<1>(e) * (uint64_t)size) >> 32),
-                 (uint32_t)(((uint64_t)hash_function.template operator()<2>(e) * (uint64_t)size) >> 32),
-                 (uint32_t)(((uint64_t)hash_function.template operator()<3>(e) * (uint64_t)size) >> 32),
-                 (uint32_t)(((uint64_t)hash_function.template operator()<4>(e) * (uint64_t)size) >> 32),
-                 (uint32_t)(((uint64_t)hash_function.template operator()<5>(e) * (uint64_t)size) >> 32),
-                 (uint32_t)(((uint64_t)hash_function.template operator()<6>(e) * (uint64_t)size) >> 32),
-                 (uint32_t)(((uint64_t)hash_function.template operator()<7>(e) * (uint64_t)size) >> 32)}};
+        return {{static_cast<uint32_t>((static_cast<uint64_t>(hash_function.template operator()<0>(e)) * static_cast<uint64_t>(size)) >> 32),
+                 static_cast<uint32_t>((static_cast<uint64_t>(hash_function.template operator()<1>(e)) * static_cast<uint64_t>(size)) >> 32),
+                 static_cast<uint32_t>((static_cast<uint64_t>(hash_function.template operator()<2>(e)) * static_cast<uint64_t>(size)) >> 32),
+                 static_cast<uint32_t>((static_cast<uint64_t>(hash_function.template operator()<3>(e)) * static_cast<uint64_t>(size)) >> 32),
+                 static_cast<uint32_t>((static_cast<uint64_t>(hash_function.template operator()<4>(e)) * static_cast<uint64_t>(size)) >> 32),
+                 static_cast<uint32_t>((static_cast<uint64_t>(hash_function.template operator()<5>(e)) * static_cast<uint64_t>(size)) >> 32),
+                 static_cast<uint32_t>((static_cast<uint64_t>(hash_function.template operator()<6>(e)) * static_cast<uint64_t>(size)) >> 32),
+                 static_cast<uint32_t>((static_cast<uint64_t>(hash_function.template operator()<7>(e)) * static_cast<uint64_t>(size)) >> 32)}};
     }
 
     /** invalid returns a special index that can never be inserted to
      * @returns the special constexpr index that can never be inserted to */
     constexpr uint32_t invalid() const
     {
-        return ~(uint32_t)0;
+        return ~static_cast<uint32_t>(0);
     }
 
     /** allow_erase marks the element at index `n` as discardable. Threadsafe
@@ -339,13 +339,13 @@ public:
     uint32_t setup(uint32_t new_size)
     {
         // depth_limit must be at least one otherwise errors can occur.
-        depth_limit = static_cast<uint8_t>(std::log2(static_cast<float>(std::max((uint32_t)2, new_size))));
+        depth_limit = static_cast<uint8_t>(std::log2(static_cast<float>(std::max(uint32_t{2}, new_size))));
         size = std::max<uint32_t>(2, new_size);
         table.resize(size);
         collection_flags.setup(size);
         epoch_flags.resize(size);
         // Set to 45% as described above
-        epoch_size = std::max((uint32_t)1, (45 * size) / 100);
+        epoch_size = std::max(uint32_t{1}, (45 * size) / 100);
         // Initially set to wait for a whole epoch
         epoch_heuristic_counter = epoch_size;
         return size;

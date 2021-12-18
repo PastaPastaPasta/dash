@@ -189,7 +189,7 @@ const std::vector<std::string> &getAllNetMessageTypes()
 static std::string serviceFlagToStr(size_t bit)
 {
     const uint64_t service_flag = 1ULL << bit;
-    switch ((ServiceFlags)service_flag) {
+    switch (static_cast<ServiceFlags>(service_flag)) {
     case NODE_NONE: abort();  // impossible
     case NODE_NETWORK:         return "NETWORK";
     case NODE_BLOOM:           return "BLOOM";

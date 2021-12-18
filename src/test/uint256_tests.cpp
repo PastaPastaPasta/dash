@@ -54,7 +54,7 @@ static std::string ArrayToString(const unsigned char A[], unsigned int width)
     Stream << std::hex;
     for (unsigned int i = 0; i < width; ++i)
     {
-        Stream<<std::setw(2)<<std::setfill('0')<<(unsigned int)A[width-i-1];
+        Stream<<std::setw(2)<<std::setfill('0')<<static_cast<unsigned int>(A[width-i-1]);
     }
     return Stream.str();
 }

@@ -225,8 +225,8 @@ public:
     {
         // Compare feerate with descendants to feerate of the transaction, and
         // return the fee/size for the max.
-        double f1 = (double)a.GetModifiedFee() * a.GetSizeWithDescendants();
-        double f2 = (double)a.GetModFeesWithDescendants() * a.GetTxSize();
+        double f1 = static_cast<double>(a.GetModifiedFee()) * a.GetSizeWithDescendants();
+        double f2 = static_cast<double>(a.GetModFeesWithDescendants()) * a.GetTxSize();
 
         if (f2 > f1) {
             mod_fee = a.GetModFeesWithDescendants();
@@ -250,8 +250,8 @@ class CompareTxMemPoolEntryByScore
 public:
     bool operator()(const CTxMemPoolEntry& a, const CTxMemPoolEntry& b) const
     {
-        double f1 = (double)a.GetFee() * b.GetTxSize();
-        double f2 = (double)b.GetFee() * a.GetTxSize();
+        double f1 = static_cast<double>(a.GetFee()) * b.GetTxSize();
+        double f2 = static_cast<double>(b.GetFee()) * a.GetTxSize();
         if (f1 == f2) {
             return b.GetTx().GetHash() < a.GetTx().GetHash();
         }
@@ -299,8 +299,8 @@ public:
     {
         // Compare feerate with ancestors to feerate of the transaction, and
         // return the fee/size for the min.
-        double f1 = (double)a.GetModifiedFee() * a.GetSizeWithAncestors();
-        double f2 = (double)a.GetModFeesWithAncestors() * a.GetTxSize();
+        double f1 = static_cast<double>(a.GetModifiedFee()) * a.GetSizeWithAncestors();
+        double f2 = static_cast<double>(a.GetModFeesWithAncestors()) * a.GetTxSize();
 
         if (f1 > f2) {
             mod_fee = a.GetModFeesWithAncestors();

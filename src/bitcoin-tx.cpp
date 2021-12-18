@@ -203,7 +203,7 @@ static void MutateTxVersion(CMutableTransaction& tx, const std::string& cmdVal)
         throw std::runtime_error("Invalid TX version requested: '" + cmdVal + "'");
     }
 
-    tx.nVersion = (int) newVersion;
+    tx.nVersion = static_cast<int>(newVersion);
 }
 
 static void MutateTxLocktime(CMutableTransaction& tx, const std::string& cmdVal)
@@ -212,7 +212,7 @@ static void MutateTxLocktime(CMutableTransaction& tx, const std::string& cmdVal)
     if (!ParseInt64(cmdVal, &newLocktime) || newLocktime < 0LL || newLocktime > 0xffffffffLL)
         throw std::runtime_error("Invalid TX locktime requested: '" + cmdVal + "'");
 
-    tx.nLockTime = (unsigned int) newLocktime;
+    tx.nLockTime = static_cast<unsigned int>(newLocktime);
 }
 
 static void MutateTxRBFOptIn(CMutableTransaction& tx, const std::string& strInIdx)

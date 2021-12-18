@@ -229,7 +229,7 @@ CTxDestination AddAndGetMultisigDestination(const int required, const std::vecto
     if (required < 1) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "a multisignature address must require at least one key to redeem");
     }
-    if ((int)pubkeys.size() < required) {
+    if (static_cast<int>(pubkeys.size()) < required) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("not enough keys supplied (got %u keys, but need at least %d to redeem)", pubkeys.size(), required));
     }
     if (pubkeys.size() > MAX_PUBKEYS_PER_MULTISIG) {
@@ -316,7 +316,7 @@ public:
     {
         UniValue obj(UniValue::VOBJ);
         obj.pushKV("iswitness", true);
-        obj.pushKV("witness_version", (int)id.version);
+        obj.pushKV("witness_version", static_cast<int>(id.version));
         obj.pushKV("witness_program", HexStr({id.program, id.length}));
         return obj;
     }

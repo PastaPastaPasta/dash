@@ -136,7 +136,7 @@ void DoTest(const CScript& scriptPubKey, const CScript& scriptSig, const CScript
     CMutableTransaction tx = BuildSpendingTransaction(scriptSig, scriptWitness, txCredit);
     CMutableTransaction tx2 = tx;
     BOOST_CHECK_MESSAGE(VerifyScript(scriptSig, scriptPubKey, &scriptWitness, flags, MutableTransactionSignatureChecker(&tx, 0, txCredit.vout[0].nValue, MissingDataBehavior::ASSERT_FAIL), &err) == expect, message);
-    BOOST_CHECK_MESSAGE(err == scriptError, FormatScriptError(err) + " where " + FormatScriptError((ScriptError_t)scriptError) + " expected: " + message);
+    BOOST_CHECK_MESSAGE(err == scriptError, FormatScriptError(err) + " where " + FormatScriptError(static_cast<ScriptError_t>(scriptError)) + " expected: " + message);
 
     // Verify that removing flags from a passing test or adding flags to a failing test does not change the result.
     for (int i = 0; i < 16; ++i) {
@@ -183,7 +183,7 @@ void static NegateSignatureS(std::vector<unsigned char>& vchSig) {
     }
     int carry = 0;
     for (int p = 32; p >= 1; p--) {
-        int n = (int)order[p] - s[p] - carry;
+        int n = static_cast<int>(order[p]) - s[p] - carry;
         s[p] = (n + 256) & 0xFF;
         carry = (n < 0);
     }
@@ -428,7 +428,7 @@ public:
         array.push_back(FormatScript(spendTx.vin[0].scriptSig));
         array.push_back(FormatScript(creditTx->vout[0].scriptPubKey));
         array.push_back(FormatScriptFlags(flags));
-        array.push_back(FormatScriptError((ScriptError_t)scriptError));
+        array.push_back(FormatScriptError(static_cast<ScriptError_t>(scriptError)));
         array.push_back(comment);
         return array;
     }
@@ -1043,7 +1043,7 @@ sign_multisig(const CScript& scriptPubKey, const std::vector<CKey>& keys, const 
     {
         std::vector<unsigned char> vchSig;
         BOOST_CHECK(key.Sign(hash, vchSig));
-        vchSig.push_back((unsigned char)SIGHASH_ALL);
+        vchSig.push_back(static_cast<unsigned char>(SIGHASH_ALL));
         result << vchSig;
     }
     return result;
@@ -1747,7 +1747,7 @@ BOOST_AUTO_TEST_CASE(script_assets_test)
 BOOST_AUTO_TEST_CASE(bip341_keypath_test_vectors)
 {
     UniValue tests;
-    tests.read((const char*)json_tests::bip341_wallet_vectors, sizeof(json_tests::bip341_wallet_vectors));
+    tests.read(reinterpret_cast<const char*>(json_tests::bip341_wallet_vectors), sizeof(json_tests::bip341_wallet_vectors));
 
     const auto& vectors = tests["keyPathSpending"];
 

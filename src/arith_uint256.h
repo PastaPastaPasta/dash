@@ -55,8 +55,8 @@ public:
     {
         static_assert(BITS/32 > 0 && BITS%32 == 0, "Template parameter BITS must be a positive multiple of 32.");
 
-        pn[0] = (unsigned int)b;
-        pn[1] = (unsigned int)(b >> 32);
+        pn[0] = static_cast<unsigned int>(b);
+        pn[1] = static_cast<unsigned int>((b >> 32));
         for (int i = 2; i < WIDTH; i++)
             pn[i] = 0;
     }
@@ -84,8 +84,8 @@ public:
 
     base_uint& operator=(uint64_t b)
     {
-        pn[0] = (unsigned int)b;
-        pn[1] = (unsigned int)(b >> 32);
+        pn[0] = static_cast<unsigned int>(b);
+        pn[1] = static_cast<unsigned int>((b >> 32));
         for (int i = 2; i < WIDTH; i++)
             pn[i] = 0;
         return *this;
@@ -114,15 +114,15 @@ public:
 
     base_uint& operator^=(uint64_t b)
     {
-        pn[0] ^= (unsigned int)b;
-        pn[1] ^= (unsigned int)(b >> 32);
+        pn[0] ^= static_cast<unsigned int>(b);
+        pn[1] ^= static_cast<unsigned int>((b >> 32));
         return *this;
     }
 
     base_uint& operator|=(uint64_t b)
     {
-        pn[0] |= (unsigned int)b;
-        pn[1] |= (unsigned int)(b >> 32);
+        pn[0] |= static_cast<unsigned int>(b);
+        pn[1] |= static_cast<unsigned int>((b >> 32));
         return *this;
     }
 
@@ -242,7 +242,7 @@ public:
     uint64_t GetLow64() const
     {
         static_assert(WIDTH >= 2, "Assertion WIDTH >= 2 failed (WIDTH = BITS / 32). BITS is a template parameter.");
-        return pn[0] | (uint64_t)pn[1] << 32;
+        return pn[0] | static_cast<uint64_t>(pn[1]) << 32;
     }
 };
 

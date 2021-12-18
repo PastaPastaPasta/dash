@@ -272,12 +272,12 @@ public:
 
     int64_t GetBlockTime() const
     {
-        return (int64_t)nTime;
+        return static_cast<int64_t>(nTime);
     }
 
     int64_t GetBlockTimeMax() const
     {
-        return (int64_t)nTimeMax;
+        return static_cast<int64_t>(nTimeMax);
     }
 
     static constexpr int nMedianTimeSpan = 11;
@@ -439,7 +439,7 @@ public:
     /** Returns the index entry at a particular height in this chain, or nullptr if no such height exists. */
     CBlockIndex* operator[](int nHeight) const
     {
-        if (nHeight < 0 || nHeight >= (int)vChain.size())
+        if (nHeight < 0 || nHeight >= static_cast<int>(vChain.size()))
             return nullptr;
         return vChain[nHeight];
     }

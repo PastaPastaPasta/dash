@@ -27,10 +27,10 @@ double DecodeDouble(uint64_t v) noexcept {
         return NANVAL;
     } else if (exp == 0) {
         // Subnormal
-        return copysign(ldexp((double)man, -1074), sign);
+        return copysign(ldexp(static_cast<double>(man), -1074), sign);
     } else {
         // Normal
-        return copysign(ldexp((double)(man + 0x10000000000000), -1075 + exp), sign);
+        return copysign(ldexp(static_cast<double>((man + 0x10000000000000)), -1075 + exp), sign);
     }
 }
 
@@ -59,6 +59,6 @@ uint64_t EncodeDouble(double f) noexcept {
         // Too big to represent, encode infinity
         if (exp > 1024) return sign | 0x7ff0000000000000;
         // Normal numbers
-        return sign | (((uint64_t)(1022 + exp)) << 52) | (man & 0xFFFFFFFFFFFFF);
+        return sign | ((static_cast<uint64_t>(1022 + exp)) << 52) | (man & 0xFFFFFFFFFFFFF);
     }
 }

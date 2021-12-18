@@ -467,7 +467,7 @@ public:
     bool IsAbortingRescan() const { return fAbortRescan; }
     bool IsScanning() const { return fScanningWallet; }
     int64_t ScanningDuration() const { return fScanningWallet ? GetTimeMillis() - m_scanning_start : 0; }
-    double ScanningProgress() const { return fScanningWallet ? (double) m_scanning_progress : 0; }
+    double ScanningProgress() const { return fScanningWallet ? static_cast<double>(m_scanning_progress) : 0; }
 
     //! Upgrade stored CKeyMetadata objects to store key origin info as KeyOriginInfo
     void UpgradeKeyMetadata() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);

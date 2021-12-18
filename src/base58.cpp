@@ -55,7 +55,7 @@ static const int8_t mapBase58[256] = {
     static_assert(std::size(mapBase58) == 256, "mapBase58.size() should be 256"); // guarantee not out of range
     while (*psz && !IsSpace(*psz)) {
         // Decode base58 character
-        int carry = mapBase58[(uint8_t)*psz];
+        int carry = mapBase58[static_cast<uint8_t>(*psz)];
         if (carry == -1)  // Invalid b58 character
             return false;
         int i = 0;
@@ -137,7 +137,7 @@ std::string EncodeBase58Check(Span<const unsigned char> input)
     // add 4-byte hash check to the end
     std::vector<unsigned char> vch(input.begin(), input.end());
     uint256 hash = Hash(vch);
-    vch.insert(vch.end(), (unsigned char*)&hash, (unsigned char*)&hash + 4);
+    vch.insert(vch.end(), reinterpret_cast<unsigned char*>(&hash), reinterpret_cast<unsigned char*>(&hash) + 4);
     return EncodeBase58(vch);
 }
 

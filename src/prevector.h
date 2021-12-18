@@ -182,11 +182,11 @@ private:
                 /* FIXME: Because malloc/realloc here won't call new_handler if allocation fails, assert
                     success. These should instead use an allocator or new/delete so that handlers
                     are called as necessary, but performance would be slightly degraded by doing so. */
-                _union.indirect_contents.indirect = static_cast<char*>(realloc(_union.indirect_contents.indirect, ((size_t)sizeof(T)) * new_capacity));
+                _union.indirect_contents.indirect = static_cast<char*>(realloc(_union.indirect_contents.indirect, static_cast<size_t>(sizeof(T)) * new_capacity));
                 assert(_union.indirect_contents.indirect);
                 _union.indirect_contents.capacity = new_capacity;
             } else {
-                char* new_indirect = static_cast<char*>(malloc(((size_t)sizeof(T)) * new_capacity));
+                char* new_indirect = static_cast<char*>(malloc((static_cast<size_t>(sizeof(T))) * new_capacity));
                 assert(new_indirect);
                 T* src = direct_ptr(0);
                 T* dst = reinterpret_cast<T*>(new_indirect);
@@ -410,7 +410,7 @@ public:
         // necessary to switch to the (more efficient) directly allocated
         // representation (with capacity N and size <= N).
         iterator p = first;
-        char* endp = (char*)&(*end());
+        char* endp = reinterpret_cast<char*>(&(*end()));
         if (!std::is_trivially_destructible<T>::value) {
             while (p != last) {
                 (*p).~T();
@@ -420,7 +420,7 @@ public:
         } else {
             _size -= last - p;
         }
-        memmove(&(*first), &(*last), endp - ((char*)(&(*last))));
+        memmove(&(*first), &(*last), endp - (reinterpret_cast<char*>(&(*last))));
         return first;
     }
 
@@ -521,7 +521,7 @@ public:
         if (is_direct()) {
             return 0;
         } else {
-            return ((size_t)(sizeof(T))) * _union.indirect_contents.capacity;
+            return static_cast<size_t>(sizeof(T)) * _union.indirect_contents.capacity;
         }
     }
 

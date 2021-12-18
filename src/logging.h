@@ -62,7 +62,7 @@ namespace BCLog {
         LOCK        = (1 << 24),
         UTIL        = (1 << 25),
         BLOCKSTORE  = (1 << 26),
-        ALL         = ~(uint32_t)0,
+        ALL         = ~static_cast<uint32_t>(0),
     };
 
     class Logger

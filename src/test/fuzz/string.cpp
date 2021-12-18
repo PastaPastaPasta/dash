@@ -54,7 +54,7 @@ bool LegacyParseInt32(const std::string& str, int32_t* out)
     char* endp = nullptr;
     errno = 0; // strtol will not set errno if valid
     long int n = strtol(str.c_str(), &endp, 10);
-    if (out) *out = (int32_t)n;
+    if (out) *out = static_cast<int32_t>(n);
     // Note that strtol returns a *long int*, so even if strtol doesn't report an over/underflow
     // we still have to check that the returned value is within the range of an *int32_t*. On 64-bit
     // platforms the size of these types may be different.
@@ -70,7 +70,7 @@ bool LegacyParseInt64(const std::string& str, int64_t* out)
     char* endp = nullptr;
     errno = 0; // strtoll will not set errno if valid
     long long int n = strtoll(str.c_str(), &endp, 10);
-    if (out) *out = (int64_t)n;
+    if (out) *out = static_cast<int64_t>(n);
     // Note that strtoll returns a *long long int*, so even if strtol doesn't report an over/underflow
     // we still have to check that the returned value is within the range of an *int64_t*.
     return endp && *endp == 0 && !errno &&
@@ -87,7 +87,7 @@ bool LegacyParseUInt32(const std::string& str, uint32_t* out)
     char* endp = nullptr;
     errno = 0; // strtoul will not set errno if valid
     unsigned long int n = strtoul(str.c_str(), &endp, 10);
-    if (out) *out = (uint32_t)n;
+    if (out) *out = static_cast<uint32_t>(n);
     // Note that strtoul returns a *unsigned long int*, so even if it doesn't report an over/underflow
     // we still have to check that the returned value is within the range of an *uint32_t*. On 64-bit
     // platforms the size of these types may be different.
@@ -116,7 +116,7 @@ bool LegacyParseUInt64(const std::string& str, uint64_t* out)
     char* endp = nullptr;
     errno = 0; // strtoull will not set errno if valid
     unsigned long long int n = strtoull(str.c_str(), &endp, 10);
-    if (out) *out = (uint64_t)n;
+    if (out) *out = static_cast<uint64_t>(n);
     // Note that strtoull returns a *unsigned long long int*, so even if it doesn't report an over/underflow
     // we still have to check that the returned value is within the range of an *uint64_t*.
     return endp && *endp == 0 && !errno &&

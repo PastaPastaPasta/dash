@@ -35,7 +35,7 @@ FUZZ_TARGET(buffered_file)
                 [&] {
                     std::array<uint8_t, 4096> arr{};
                     try {
-                        opt_buffered_file->read((char*)arr.data(), fuzzed_data_provider.ConsumeIntegralInRange<size_t>(0, 4096));
+                        opt_buffered_file->read(reinterpret_cast<char*>(arr.data()), fuzzed_data_provider.ConsumeIntegralInRange<size_t>(0, 4096));
                     } catch (const std::ios_base::failure&) {
                     }
                 },

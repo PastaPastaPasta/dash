@@ -60,7 +60,7 @@ static std::string ArrayToString(const unsigned char A[], unsigned int width)
     Stream << std::hex;
     for (unsigned int i = 0; i < width; ++i)
     {
-        Stream<<std::setw(2)<<std::setfill('0')<<(unsigned int)A[width-i-1];
+        Stream<<std::setw(2)<<std::setfill('0')<<static_cast<unsigned int>(A[width-i-1]);
     }
     return Stream.str();
 }
@@ -399,7 +399,7 @@ BOOST_AUTO_TEST_CASE( methods ) // GetHex SetHex size() GetLow64 GetSerializeSiz
     uint64_t R1L64part = (R1L>>192).GetLow64();
     for (int i = 53; i > 0; --i) // doubles can store all integers in {0,...,2^54-1} exactly
     {
-        BOOST_CHECK((R1L>>(256-i)).getdouble() == (double)(R1L64part >> (64-i)));
+        BOOST_CHECK((R1L>>(256-i)).getdouble() == static_cast<double>(R1L64part >> (64-i)));
     }
 }
 

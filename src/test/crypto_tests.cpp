@@ -33,7 +33,7 @@ static void TestVector(const Hasher &h, const In &in, const Out &out) {
     hash.resize(out.size());
     {
         // Test that writing the whole input string at once works.
-        Hasher(h).Write((const uint8_t*)in.data(), in.size()).Finalize(hash.data());
+        Hasher(h).Write(reinterpret_cast<const uint8_t*>(in.data()), in.size()).Finalize(hash.data());
         BOOST_CHECK(hash == out);
     }
     for (int i=0; i<32; i++) {
@@ -42,11 +42,11 @@ static void TestVector(const Hasher &h, const In &in, const Out &out) {
         size_t pos = 0;
         while (pos < in.size()) {
             size_t len = InsecureRandRange((in.size() - pos + 1) / 2 + 1);
-            hasher.Write((const uint8_t*)in.data() + pos, len);
+            hasher.Write(reinterpret_cast<const uint8_t*>(in.data()) + pos, len);
             pos += len;
             if (pos > 0 && pos + 2 * out.size() > in.size() && pos < in.size()) {
                 // Test that writing the rest at once to a copy of a hasher works.
-                Hasher(hasher).Write((const uint8_t*)in.data() + pos, in.size() - pos).Finalize(hash.data());
+                Hasher(hasher).Write(reinterpret_cast<const uint8_t*>(in.data()) + pos, in.size() - pos).Finalize(hash.data());
                 BOOST_CHECK(hash == out);
             }
         }
@@ -193,11 +193,11 @@ static std::string LongTestString()
 {
     std::string ret;
     for (int i = 0; i < 200000; i++) {
-        ret += (char)(i);
-        ret += (char)(i >> 4);
-        ret += (char)(i >> 8);
-        ret += (char)(i >> 12);
-        ret += (char)(i >> 16);
+        ret += static_cast<char>(i);
+        ret += static_cast<char>(i >> 4);
+        ret += static_cast<char>(i >> 8);
+        ret += static_cast<char>(i >> 12);
+        ret += static_cast<char>(i >> 16);
     }
     return ret;
 }
@@ -723,14 +723,14 @@ BOOST_AUTO_TEST_CASE(countbits_tests)
             // Check handling of zero.
             BOOST_CHECK_EQUAL(CountBits(0), 0U);
         } else if (i < 10) {
-            for (uint64_t j = (uint64_t)1 << (i - 1); (j >> i) == 0; ++j) {
+            for (uint64_t j = uint64_t{1} << (i - 1); (j >> i) == 0; ++j) {
                 // Exhaustively test up to 10 bits
                 BOOST_CHECK_EQUAL(CountBits(j), i);
             }
         } else {
             for (int k = 0; k < 1000; k++) {
                 // Randomly test 1000 samples of each length above 10 bits.
-                uint64_t j = ((uint64_t)1) << (i - 1) | ctx.randbits(i - 1);
+                uint64_t j = (uint64_t{1}) << (i - 1) | ctx.randbits(i - 1);
                 BOOST_CHECK_EQUAL(CountBits(j), i);
             }
         }

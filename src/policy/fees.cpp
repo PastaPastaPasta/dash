@@ -459,7 +459,7 @@ void TxConfirmStats::removeTx(unsigned int entryHeight, unsigned int nBestSeenHe
         return;  //This can't happen because we call this with our best seen height, no entries can have higher
     }
 
-    if (blocksAgo >= (int)unconfTxs.size()) {
+    if (blocksAgo >= static_cast<int>(unconfTxs.size())) {
         if (oldUnconfTxs[bucketindex] > 0) {
             oldUnconfTxs[bucketindex]--;
         } else {
@@ -476,7 +476,7 @@ void TxConfirmStats::removeTx(unsigned int entryHeight, unsigned int nBestSeenHe
                      blockIndex, bucketindex);
         }
     }
-    if (!inBlock && (unsigned int)blocksAgo >= scale) { // Only counts as a failure if not confirmed for entire period
+    if (!inBlock && static_cast<unsigned int>(blocksAgo) >= scale) { // Only counts as a failure if not confirmed for entire period
         assert(scale != 0);
         unsigned int periodsAgo = blocksAgo / scale;
         for (size_t i = 0; i < periodsAgo && i < failAvg.size(); i++) {
@@ -572,11 +572,11 @@ void CBlockPolicyEstimator::processTransaction(const CTxMemPoolEntry& entry, boo
     CFeeRate feeRate(entry.GetFee(), entry.GetTxSize());
 
     mapMemPoolTxs[hash].blockHeight = txHeight;
-    unsigned int bucketIndex = feeStats->NewTx(txHeight, (double)feeRate.GetFeePerK());
+    unsigned int bucketIndex = feeStats->NewTx(txHeight, static_cast<double>(feeRate.GetFeePerK()));
     mapMemPoolTxs[hash].bucketIndex = bucketIndex;
-    unsigned int bucketIndex2 = shortStats->NewTx(txHeight, (double)feeRate.GetFeePerK());
+    unsigned int bucketIndex2 = shortStats->NewTx(txHeight, static_cast<double>(feeRate.GetFeePerK()));
     assert(bucketIndex == bucketIndex2);
-    unsigned int bucketIndex3 = longStats->NewTx(txHeight, (double)feeRate.GetFeePerK());
+    unsigned int bucketIndex3 = longStats->NewTx(txHeight, static_cast<double>(feeRate.GetFeePerK()));
     assert(bucketIndex == bucketIndex3);
 }
 
@@ -602,9 +602,9 @@ bool CBlockPolicyEstimator::processBlockTx(unsigned int nBlockHeight, const CTxM
     // Feerates are stored and reported as BTC-per-kb:
     CFeeRate feeRate(entry->GetFee(), entry->GetTxSize());
 
-    feeStats->Record(blocksToConfirm, (double)feeRate.GetFeePerK());
-    shortStats->Record(blocksToConfirm, (double)feeRate.GetFeePerK());
-    longStats->Record(blocksToConfirm, (double)feeRate.GetFeePerK());
+    feeStats->Record(blocksToConfirm, static_cast<double>(feeRate.GetFeePerK()));
+    shortStats->Record(blocksToConfirm, static_cast<double>(feeRate.GetFeePerK()));
+    longStats->Record(blocksToConfirm, static_cast<double>(feeRate.GetFeePerK()));
     return true;
 }
 
@@ -689,7 +689,7 @@ CFeeRate CBlockPolicyEstimator::estimateRawFee(int confTarget, double successThr
 
     LOCK(m_cs_fee_estimator);
     // Return failure if trying to analyze a target we're not tracking
-    if (confTarget <= 0 || (unsigned int)confTarget > stats->GetMaxConfirms())
+    if (confTarget <= 0 || static_cast<unsigned int>(confTarget) > stats->GetMaxConfirms())
         return CFeeRate(0);
     if (successThreshold > 1)
         return CFeeRate(0);
@@ -823,7 +823,7 @@ CFeeRate CBlockPolicyEstimator::estimateSmartFee(int confTarget, FeeCalculation 
     EstimationResult tempResult;
 
     // Return failure if trying to analyze a target we're not tracking
-    if (confTarget <= 0 || (unsigned int)confTarget > longStats->GetMaxConfirms()) {
+    if (confTarget <= 0 || static_cast<unsigned int>(confTarget )> longStats->GetMaxConfirms()) {
         return CFeeRate(0);  // error condition
     }
 
@@ -831,7 +831,7 @@ CFeeRate CBlockPolicyEstimator::estimateSmartFee(int confTarget, FeeCalculation 
     if (confTarget == 1) confTarget = 2;
 
     unsigned int maxUsableEstimate = MaxUsableEstimate();
-    if ((unsigned int)confTarget > maxUsableEstimate) {
+    if (static_cast<unsigned int>(confTarget) > maxUsableEstimate) {
         confTarget = maxUsableEstimate;
     }
     if (feeCalc) feeCalc->returnedTarget = confTarget;

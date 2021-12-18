@@ -74,7 +74,7 @@ double GetDifficulty(const CBlockIndex* blockindex)
 
     int nShift = (blockindex->nBits >> 24) & 0xff;
     double dDiff =
-        (double)0x0000ffff / (double)(blockindex->nBits & 0x00ffffff);
+        static_cast<double>(0x0000ffff) / static_cast<double>(blockindex->nBits & 0x00ffffff);
 
     while (nShift < 29)
     {
@@ -141,13 +141,13 @@ UniValue blockheaderToJSON(const CBlockIndex* tip, const CBlockIndex* blockindex
     result.pushKV("version", blockindex->nVersion);
     result.pushKV("versionHex", strprintf("%08x", blockindex->nVersion));
     result.pushKV("merkleroot", blockindex->hashMerkleRoot.GetHex());
-    result.pushKV("time", (int64_t)blockindex->nTime);
-    result.pushKV("mediantime", (int64_t)blockindex->GetMedianTimePast());
-    result.pushKV("nonce", (uint64_t)blockindex->nNonce);
+    result.pushKV("time", static_cast<int64_t>(blockindex->nTime));
+    result.pushKV("mediantime", static_cast<int64_t>(blockindex->GetMedianTimePast()));
+    result.pushKV("nonce", static_cast<uint64_t>(blockindex->nNonce));
     result.pushKV("bits", strprintf("%08x", blockindex->nBits));
     result.pushKV("difficulty", GetDifficulty(blockindex));
     result.pushKV("chainwork", blockindex->nChainWork.GetHex());
-    result.pushKV("nTx", (uint64_t)blockindex->nTx);
+    result.pushKV("nTx", static_cast<uint64_t>(blockindex->nTx));
 
     if (blockindex->pprev)
         result.pushKV("previousblockhash", blockindex->pprev->GetBlockHash().GetHex());
@@ -160,9 +160,9 @@ UniValue blockToJSON(const CBlock& block, const CBlockIndex* tip, const CBlockIn
 {
     UniValue result = blockheaderToJSON(tip, blockindex);
 
-    result.pushKV("strippedsize", (int)::GetSerializeSize(block, PROTOCOL_VERSION | SERIALIZE_TRANSACTION_NO_WITNESS));
-    result.pushKV("size", (int)::GetSerializeSize(block, PROTOCOL_VERSION));
-    result.pushKV("weight", (int)::GetBlockWeight(block));
+    result.pushKV("strippedsize", static_cast<int>(::GetSerializeSize(block, PROTOCOL_VERSION | SERIALIZE_TRANSACTION_NO_WITNESS)));
+    result.pushKV("size", static_cast<int>(::GetSerializeSize(block, PROTOCOL_VERSION)));
+    result.pushKV("weight", static_cast<int>(::GetBlockWeight(block)));
     UniValue txs(UniValue::VARR);
 
     switch (verbosity) {
@@ -455,8 +455,8 @@ static void entryToJSON(const CTxMemPool& pool, UniValue& info, const CTxMemPool
 {
     AssertLockHeld(pool.cs);
 
-    info.pushKV("vsize", (int)e.GetTxSize());
-    info.pushKV("weight", (int)e.GetTxWeight());
+    info.pushKV("vsize", static_cast<int>(e.GetTxSize()));
+    info.pushKV("weight", static_cast<int>(e.GetTxWeight()));
     // TODO: top-level fee fields are deprecated. deprecated_fee_fields_enabled blocks should be removed in v24
     const bool deprecated_fee_fields_enabled{IsDeprecatedRPCEnabled("fees")};
     if (deprecated_fee_fields_enabled) {
@@ -464,7 +464,7 @@ static void entryToJSON(const CTxMemPool& pool, UniValue& info, const CTxMemPool
         info.pushKV("modifiedfee", ValueFromAmount(e.GetModifiedFee()));
     }
     info.pushKV("time", count_seconds(e.GetTime()));
-    info.pushKV("height", (int)e.GetHeight());
+    info.pushKV("height", static_cast<int>(e.GetHeight()));
     info.pushKV("descendantcount", e.GetCountWithDescendants());
     info.pushKV("descendantsize", e.GetSizeWithDescendants());
     if (deprecated_fee_fields_enabled) {
@@ -1103,8 +1103,8 @@ static RPCHelpMan pruneblockchain()
         heightParam = pindex->nHeight;
     }
 
-    unsigned int height = (unsigned int) heightParam;
-    unsigned int chainHeight = (unsigned int) active_chain.Height();
+    unsigned int height = static_cast<unsigned int>(heightParam);
+    unsigned int chainHeight = static_cast<unsigned int>(active_chain.Height());
     if (chainHeight < Params().PruneAfterHeight())
         throw JSONRPCError(RPC_MISC_ERROR, "Blockchain is too short for pruning.");
     else if (height > chainHeight)
@@ -1234,10 +1234,10 @@ static RPCHelpMan gettxoutsetinfo()
     }
 
     if (GetUTXOStats(coins_view, *blockman, stats, node.rpc_interruption_point, pindex)) {
-        ret.pushKV("height", (int64_t)stats.nHeight);
+        ret.pushKV("height", static_cast<int64_t>(stats.nHeight));
         ret.pushKV("bestblock", stats.hashBlock.GetHex());
-        ret.pushKV("txouts", (int64_t)stats.nTransactionOutputs);
-        ret.pushKV("bogosize", (int64_t)stats.nBogoSize);
+        ret.pushKV("txouts", static_cast<int64_t>(stats.nTransactionOutputs));
+        ret.pushKV("bogosize", static_cast<int64_t>(stats.nBogoSize));
         if (hash_type == CoinStatsHashType::HASH_SERIALIZED) {
             ret.pushKV("hash_serialized_2", stats.hashSerialized.GetHex());
         }
@@ -1349,13 +1349,13 @@ static RPCHelpMan gettxout()
     if (coin.nHeight == MEMPOOL_HEIGHT) {
         ret.pushKV("confirmations", 0);
     } else {
-        ret.pushKV("confirmations", (int64_t)(pindex->nHeight - coin.nHeight + 1));
+        ret.pushKV("confirmations", static_cast<int64_t>((pindex->nHeight - coin.nHeight + 1)));
     }
     ret.pushKV("value", ValueFromAmount(coin.out.nValue));
     UniValue o(UniValue::VOBJ);
     ScriptPubKeyToUniv(coin.out.scriptPubKey, o, true);
     ret.pushKV("scriptPubKey", o);
-    ret.pushKV("coinbase", (bool)coin.fCoinBase);
+    ret.pushKV("coinbase", static_cast<bool>(coin.fCoinBase));
 
     return ret;
 },
@@ -1524,9 +1524,9 @@ RPCHelpMan getblockchaininfo()
     obj.pushKV("blocks",                height);
     obj.pushKV("headers",               pindexBestHeader ? pindexBestHeader->nHeight : -1);
     obj.pushKV("bestblockhash",         tip->GetBlockHash().GetHex());
-    obj.pushKV("difficulty",            (double)GetDifficulty(tip));
-    obj.pushKV("time",                  (int64_t)tip->nTime);
-    obj.pushKV("mediantime",            (int64_t)tip->GetMedianTimePast());
+    obj.pushKV("difficulty",            static_cast<double>(GetDifficulty(tip)));
+    obj.pushKV("time",                  static_cast<int64_t>(tip->nTime));
+    obj.pushKV("mediantime",            static_cast<int64_t>(tip->GetMedianTimePast()));
     obj.pushKV("verificationprogress",  GuessVerificationProgress(Params().TxData(), tip));
     obj.pushKV("initialblockdownload",  active_chainstate.IsInitialBlockDownload());
     obj.pushKV("chainwork",             tip->nChainWork.GetHex());
@@ -1685,12 +1685,12 @@ UniValue MempoolInfoToJSON(const CTxMemPool& pool)
     LOCK(pool.cs);
     UniValue ret(UniValue::VOBJ);
     ret.pushKV("loaded", pool.IsLoaded());
-    ret.pushKV("size", (int64_t)pool.size());
-    ret.pushKV("bytes", (int64_t)pool.GetTotalTxSize());
-    ret.pushKV("usage", (int64_t)pool.DynamicMemoryUsage());
+    ret.pushKV("size", static_cast<int64_t>(pool.size()));
+    ret.pushKV("bytes", static_cast<int64_t>(pool.GetTotalTxSize()));
+    ret.pushKV("usage", static_cast<int64_t>(pool.DynamicMemoryUsage()));
     ret.pushKV("total_fee", ValueFromAmount(pool.GetTotalFee()));
     size_t maxmempool = gArgs.GetIntArg("-maxmempool", DEFAULT_MAX_MEMPOOL_SIZE) * 1000000;
-    ret.pushKV("maxmempool", (int64_t) maxmempool);
+    ret.pushKV("maxmempool", static_cast<int64_t>(maxmempool));
     ret.pushKV("mempoolminfee", ValueFromAmount(std::max(pool.GetMinFee(maxmempool), ::minRelayTxFee).GetFeePerK()));
     ret.pushKV("minrelaytxfee", ValueFromAmount(::minRelayTxFee.GetFeePerK()));
     ret.pushKV("unbroadcastcount", uint64_t{pool.GetUnbroadcastTxs().size()});
@@ -1909,8 +1909,8 @@ static RPCHelpMan getchaintxstats()
     int nTxDiff = pindex->nChainTx - pindexPast->nChainTx;
 
     UniValue ret(UniValue::VOBJ);
-    ret.pushKV("time", (int64_t)pindex->nTime);
-    ret.pushKV("txcount", (int64_t)pindex->nChainTx);
+    ret.pushKV("time", static_cast<int64_t>(pindex->nTime));
+    ret.pushKV("txcount", static_cast<int64_t>(pindex->nChainTx));
     ret.pushKV("window_final_block_hash", pindex->GetBlockHash().GetHex());
     ret.pushKV("window_final_block_height", pindex->nHeight);
     ret.pushKV("window_block_count", blockcount);
@@ -1918,7 +1918,7 @@ static RPCHelpMan getchaintxstats()
         ret.pushKV("window_tx_count", nTxDiff);
         ret.pushKV("window_interval", nTimeDiff);
         if (nTimeDiff > 0) {
-            ret.pushKV("txrate", ((double)nTxDiff) / nTimeDiff);
+            ret.pushKV("txrate", (static_cast<double>(nTxDiff)) / nTimeDiff);
         }
     }
 
@@ -2180,7 +2180,7 @@ static RPCHelpMan getblockstats()
     ret_all.pushKV("avgtxsize", (block.vtx.size() > 1) ? total_size / (block.vtx.size() - 1) : 0);
     ret_all.pushKV("blockhash", pindex->GetBlockHash().GetHex());
     ret_all.pushKV("feerate_percentiles", feerates_res);
-    ret_all.pushKV("height", (int64_t)pindex->nHeight);
+    ret_all.pushKV("height", static_cast<int64_t>(pindex->nHeight));
     ret_all.pushKV("ins", inputs);
     ret_all.pushKV("maxfee", maxfee);
     ret_all.pushKV("maxfeerate", maxfeerate);
@@ -2201,7 +2201,7 @@ static RPCHelpMan getblockstats()
     ret_all.pushKV("total_size", total_size);
     ret_all.pushKV("total_weight", total_weight);
     ret_all.pushKV("totalfee", totalfee);
-    ret_all.pushKV("txs", (int64_t)block.vtx.size());
+    ret_all.pushKV("txs", static_cast<int64_t>(block.vtx.size()));
     ret_all.pushKV("utxo_increase", outputs - inputs);
     ret_all.pushKV("utxo_size_inc", utxo_size_inc);
 
@@ -2278,7 +2278,7 @@ bool FindScriptPubKey(std::atomic<int>& scan_progress, const std::atomic<bool>& 
         if (count % 256 == 0) {
             // update progress reference every 256 item
             uint32_t high = 0x100 * *key.hash.begin() + *(key.hash.begin() + 1);
-            scan_progress = (int)(high * 100.0 / 65536.0 + 0.5);
+            scan_progress = static_cast<int>((high * 100.0 / 65536.0 + 0.5));
         }
         if (needles.count(coin.out.scriptPubKey)) {
             out_results.emplace(key, coin);
@@ -2470,11 +2470,11 @@ static RPCHelpMan scantxoutset()
 
             UniValue unspent(UniValue::VOBJ);
             unspent.pushKV("txid", outpoint.hash.GetHex());
-            unspent.pushKV("vout", (int32_t)outpoint.n);
+            unspent.pushKV("vout", static_cast<int32_t>(outpoint.n));
             unspent.pushKV("scriptPubKey", HexStr(txo.scriptPubKey));
             unspent.pushKV("desc", descriptors[txo.scriptPubKey]);
             unspent.pushKV("amount", ValueFromAmount(txo.nValue));
-            unspent.pushKV("height", (int32_t)coin.nHeight);
+            unspent.pushKV("height", static_cast<int32_t>(coin.nHeight));
 
             unspents.push_back(unspent);
         }

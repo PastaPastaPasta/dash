@@ -255,7 +255,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_activate_snapshot, TestChain100Setup)
             CCoinsViewCache& coinscache = chainstate->CoinsTip();
 
             // Both caches will be empty initially.
-            BOOST_CHECK_EQUAL((unsigned int)0, coinscache.GetCacheSize());
+            BOOST_CHECK_EQUAL(static_cast<unsigned int>(0), coinscache.GetCacheSize());
 
             size_t total_coins{0};
 

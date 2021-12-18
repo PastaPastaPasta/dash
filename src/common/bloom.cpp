@@ -27,13 +27,13 @@ CBloomFilter::CBloomFilter(const unsigned int nElements, const double nFPRate, c
      * - nElements * log(fp rate) / ln(2)^2
      * We ignore filter parameters which will create a bloom filter larger than the protocol limits
      */
-    vData(std::min((unsigned int)(-1  / LN2SQUARED * nElements * log(nFPRate)), MAX_BLOOM_FILTER_SIZE * 8) / 8),
+    vData(std::min(static_cast<unsigned int>((-1  / LN2SQUARED * nElements * log(nFPRate))), MAX_BLOOM_FILTER_SIZE * 8) / 8),
     /**
      * The ideal number of hash functions is filter size * ln(2) / number of elements
      * Again, we ignore filter parameters which will create a bloom filter with more hash functions than the protocol limits
      * See https://en.wikipedia.org/wiki/Bloom_filter for an explanation of these formulas
      */
-    nHashFuncs(std::min((unsigned int)(vData.size() * 8 / nElements * LN2), MAX_HASH_FUNCS)),
+    nHashFuncs(std::min(static_cast<unsigned int>(vData.size() * 8 / nElements * LN2), MAX_HASH_FUNCS)),
     nTweak(nTweakIn),
     nFlags(nFlagsIn)
 {
@@ -163,7 +163,7 @@ CRollingBloomFilter::CRollingBloomFilter(const unsigned int nElements, const dou
     double logFpRate = log(fpRate);
     /* The optimal number of hash functions is log(fpRate) / log(0.5), but
      * restrict it to the range 1-50. */
-    nHashFuncs = std::max(1, std::min((int)round(logFpRate / log(0.5)), 50));
+    nHashFuncs = std::max(1, std::min(static_cast<int>(round(logFpRate / log(0.5))), 50));
     /* In this rolling bloom filter, we'll store between 2 and 3 generations of nElements / 2 entries. */
     nEntriesPerGeneration = (nElements + 1) / 2;
     uint32_t nMaxElements = nEntriesPerGeneration * 3;
@@ -174,7 +174,7 @@ CRollingBloomFilter::CRollingBloomFilter(const unsigned int nElements, const dou
      * =>          nFilterBits = -nHashFuncs * nMaxElements / log(1.0 - pow(fpRate, 1.0 / nHashFuncs))
      * =>          nFilterBits = -nHashFuncs * nMaxElements / log(1.0 - exp(logFpRate / nHashFuncs))
      */
-    uint32_t nFilterBits = (uint32_t)ceil(-1.0 * nHashFuncs * nMaxElements / log(1.0 - exp(logFpRate / nHashFuncs)));
+    uint32_t nFilterBits = static_cast<uint32_t>(ceil(-1.0 * nHashFuncs * nMaxElements / log(1.0 - exp(logFpRate / nHashFuncs))));
     data.clear();
     /* For each data element we need to store 2 bits. If both bits are 0, the
      * bit is treated as unset. If the bits are (01), (10), or (11), the bit is
@@ -196,7 +196,7 @@ static inline uint32_t RollingBloomHash(unsigned int nHashNum, uint32_t nTweak, 
 // which should be the case for a good hash.
 // See https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
 static inline uint32_t FastMod(uint32_t x, size_t n) {
-    return ((uint64_t)x * (uint64_t)n) >> 32;
+    return (static_cast<uint64_t>(x) * static_cast<uint64_t>(n)) >> 32;
 }
 
 void CRollingBloomFilter::insert(Span<const unsigned char> vKey)
@@ -207,8 +207,8 @@ void CRollingBloomFilter::insert(Span<const unsigned char> vKey)
         if (nGeneration == 4) {
             nGeneration = 1;
         }
-        uint64_t nGenerationMask1 = 0 - (uint64_t)(nGeneration & 1);
-        uint64_t nGenerationMask2 = 0 - (uint64_t)(nGeneration >> 1);
+        uint64_t nGenerationMask1 = 0 - static_cast<uint64_t>((nGeneration & 1));
+        uint64_t nGenerationMask2 = 0 - static_cast<uint64_t>((nGeneration >> 1));
         /* Wipe old entries that used this generation number. */
         for (uint32_t p = 0; p < data.size(); p += 2) {
             uint64_t p1 = data[p], p2 = data[p + 1];
@@ -225,8 +225,8 @@ void CRollingBloomFilter::insert(Span<const unsigned char> vKey)
         /* FastMod works with the upper bits of h, so it is safe to ignore that the lower bits of h are already used for bit. */
         uint32_t pos = FastMod(h, data.size());
         /* The lowest bit of pos is ignored, and set to zero for the first bit, and to one for the second. */
-        data[pos & ~1] = (data[pos & ~1] & ~(((uint64_t)1) << bit)) | ((uint64_t)(nGeneration & 1)) << bit;
-        data[pos | 1] = (data[pos | 1] & ~(((uint64_t)1) << bit)) | ((uint64_t)(nGeneration >> 1)) << bit;
+        data[pos & ~1] = (data[pos & ~1] & ~((uint64_t{1}) << bit)) | (static_cast<uint64_t>((nGeneration & 1))) << bit;
+        data[pos | 1] = (data[pos | 1] & ~((uint64_t{1}) << bit)) | (static_cast<uint64_t>((nGeneration >> 1))) << bit;
     }
 }
 

@@ -527,7 +527,7 @@ RPCHelpMan importwallet()
         }
         CHECK_NONFATAL(pwallet->chain().findBlock(pwallet->GetLastBlockHash(), FoundBlock().time(nTimeBegin)));
 
-        int64_t nFilesize = std::max((int64_t)1, (int64_t)file.tellg());
+        int64_t nFilesize = std::max(int64_t{1}, static_cast<int64_t>(file.tellg()));
         file.seekg(0, file.beg);
 
         // Use uiInterface.ShowProgress instead of pwallet.ShowProgress because pwallet.ShowProgress has a cancel button tied to AbortRescan which
@@ -536,7 +536,7 @@ RPCHelpMan importwallet()
         std::vector<std::tuple<CKey, int64_t, bool, std::string>> keys;
         std::vector<std::pair<CScript, int64_t>> scripts;
         while (file.good()) {
-            pwallet->chain().showProgress("", std::max(1, std::min(50, (int)(((double)file.tellg() / (double)nFilesize) * 100))), false);
+            pwallet->chain().showProgress("", std::max(1, std::min(50, static_cast<int>((static_cast<double>(file.tellg()) / static_cast<double>(nFilesize)) * 100))), false);
             std::string line;
             std::getline(file, line);
             if (line.empty() || line[0] == '#')
@@ -577,10 +577,10 @@ RPCHelpMan importwallet()
             pwallet->chain().showProgress("", 100, false); // hide progress dialog in GUI
             throw JSONRPCError(RPC_WALLET_ERROR, "Importing wallets is disabled when private keys are disabled");
         }
-        double total = (double)(keys.size() + scripts.size());
+        double total = static_cast<double>(keys.size() + scripts.size());
         double progress = 0;
         for (const auto& key_tuple : keys) {
-            pwallet->chain().showProgress("", std::max(50, std::min(75, (int)((progress / total) * 100) + 50)), false);
+            pwallet->chain().showProgress("", std::max(50, std::min(75, static_cast<int>((progress / total) * 100) + 50)), false);
             const CKey& key = std::get<0>(key_tuple);
             int64_t time = std::get<1>(key_tuple);
             bool has_label = std::get<2>(key_tuple);
@@ -605,7 +605,7 @@ RPCHelpMan importwallet()
             progress++;
         }
         for (const auto& script_pair : scripts) {
-            pwallet->chain().showProgress("", std::max(50, std::min(75, (int)((progress / total) * 100) + 50)), false);
+            pwallet->chain().showProgress("", std::max(50, std::min(75, static_cast<int>((progress / total) * 100) + 50)), false);
             const CScript& script = script_pair.first;
             int64_t time = script_pair.second;
 
