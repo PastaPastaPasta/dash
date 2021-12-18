@@ -252,7 +252,7 @@ private:
      * @returns the special constexpr index that can never be inserted to */
     constexpr uint32_t invalid() const
     {
-        return ~(uint32_t)0;
+        return ~uint32_t{0};
     }
 
     /** allow_erase marks the element at index `n` as discardable. Threadsafe

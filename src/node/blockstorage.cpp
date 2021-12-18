@@ -499,7 +499,7 @@ static bool UndoWriteToDisk(const CBlockUndo& blockundo, FlatFilePos& pos, const
     if (fileOutPos < 0) {
         return error("%s: ftell failed", __func__);
     }
-    pos.nPos = (unsigned int)fileOutPos;
+    pos.nPos = uint32_t(fileOutPos);
     fileout << blockundo;
 
     // calculate & write checksum
@@ -625,7 +625,7 @@ bool BlockManager::FindBlockPos(FlatFilePos& pos, unsigned int nAddSize, unsigne
             // when the undo file is keeping up with the block file, we want to flush it explicitly
             // when it is lagging behind (more blocks arrive than are being connected), we let the
             // undo block write case handle it
-            finalize_undo = (m_blockfile_info[nFile].nHeightLast == (unsigned int)active_chain.Tip()->nHeight);
+            finalize_undo = (m_blockfile_info[nFile].nHeightLast == uint32_t(active_chain.Tip()->nHeight));
             nFile++;
             if (m_blockfile_info.size() <= nFile) {
                 m_blockfile_info.resize(nFile + 1);
@@ -635,7 +635,7 @@ bool BlockManager::FindBlockPos(FlatFilePos& pos, unsigned int nAddSize, unsigne
         pos.nPos = m_blockfile_info[nFile].nSize;
     }
 
-    if ((int)nFile != m_last_blockfile) {
+    if (int32_t(nFile) != m_last_blockfile) {
         if (!fKnown) {
             LogPrint(BCLog::BLOCKSTORE, "Leaving block file %i: %s\n", m_last_blockfile, m_blockfile_info[m_last_blockfile].ToString());
         }
@@ -704,7 +704,7 @@ static bool WriteBlockToDisk(const CBlock& block, FlatFilePos& pos, const CMessa
     if (fileOutPos < 0) {
         return error("WriteBlockToDisk: ftell failed");
     }
-    pos.nPos = (unsigned int)fileOutPos;
+    pos.nPos = uint32_t(fileOutPos);
     fileout << block;
 
     return true;
@@ -884,7 +884,7 @@ void ThreadImport(ChainstateManager& chainman, std::vector<fs::path> vImportFile
                 if (!file) {
                     break; // This error is logged in OpenBlockFile
                 }
-                LogPrintf("Reindexing block file blk%05u.dat...\n", (unsigned int)nFile);
+                LogPrintf("Reindexing block file blk%05u.dat...\n", uint32_t(nFile));
                 chainman.ActiveChainstate().LoadExternalBlockFile(file, &pos);
                 if (ShutdownRequested()) {
                     LogPrintf("Shutdown requested. Exit %s\n", __func__);

@@ -584,7 +584,7 @@ bool AddrManImpl::AddSingle(const CAddress& addr, const CNetAddr& source, int64_
             return false;
     } else {
         pinfo = Create(addr, source, &nId);
-        pinfo->nTime = std::max((int64_t)0, (int64_t)pinfo->nTime - nTimePenalty);
+        pinfo->nTime = std::max(int64_t{0}, int64_t{pinfo->nTime - nTimePenalty});
         nNew++;
     }
 
@@ -978,7 +978,7 @@ int AddrManImpl::CheckAddrman() const
     std::unordered_set<int> setTried;
     std::unordered_map<int, int> mapNew;
 
-    if (vRandom.size() != (size_t)(nTried + nNew))
+    if (vRandom.size() != size_t(nTried + nNew))
         return -7;
 
     for (const auto& entry : mapInfo) {
@@ -1001,7 +1001,7 @@ int AddrManImpl::CheckAddrman() const
         if (it == mapAddr.end() || it->second != n) {
             return -5;
         }
-        if (info.nRandomPos < 0 || (size_t)info.nRandomPos >= vRandom.size() || vRandom[info.nRandomPos] != n)
+        if (info.nRandomPos < 0 || size_t(info.nRandomPos) >= vRandom.size() || vRandom[info.nRandomPos] != n)
             return -14;
         if (info.nLastTry < 0)
             return -6;
@@ -1009,9 +1009,9 @@ int AddrManImpl::CheckAddrman() const
             return -8;
     }
 
-    if (setTried.size() != (size_t)nTried)
+    if (setTried.size() != size_t(nTried))
         return -9;
-    if (mapNew.size() != (size_t)nNew)
+    if (mapNew.size() != size_t(nNew))
         return -10;
 
     for (int n = 0; n < ADDRMAN_TRIED_BUCKET_COUNT; n++) {

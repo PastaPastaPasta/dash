@@ -383,7 +383,7 @@ bool Socks5(const std::string& strDest, uint16_t port, const ProxyCredentials* a
         vSocks5Init.push_back(SOCKS5Method::NOAUTH);
     }
     ssize_t ret = sock.Send(vSocks5Init.data(), vSocks5Init.size(), MSG_NOSIGNAL);
-    if (ret != (ssize_t)vSocks5Init.size()) {
+    if (ret != ssize_t(vSocks5Init.size())) {
         return error("Error sending to proxy");
     }
     uint8_t pchRet1[2];
@@ -405,7 +405,7 @@ bool Socks5(const std::string& strDest, uint16_t port, const ProxyCredentials* a
         vAuth.push_back(auth->password.size());
         vAuth.insert(vAuth.end(), auth->password.begin(), auth->password.end());
         ret = sock.Send(vAuth.data(), vAuth.size(), MSG_NOSIGNAL);
-        if (ret != (ssize_t)vAuth.size()) {
+        if (ret != ssize_t(vAuth.size())) {
             return error("Error sending authentication to proxy");
         }
         LogPrint(BCLog::PROXY, "SOCKS5 sending proxy authentication %s:%s\n", auth->username, auth->password);
@@ -431,7 +431,7 @@ bool Socks5(const std::string& strDest, uint16_t port, const ProxyCredentials* a
     vSocks5.push_back((port >> 8) & 0xFF);
     vSocks5.push_back((port >> 0) & 0xFF);
     ret = sock.Send(vSocks5.data(), vSocks5.size(), MSG_NOSIGNAL);
-    if (ret != (ssize_t)vSocks5.size()) {
+    if (ret != ssize_t(vSocks5.size())) {
         return error("Error sending to proxy");
     }
     uint8_t pchRet2[4];

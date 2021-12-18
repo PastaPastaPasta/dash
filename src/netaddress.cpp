@@ -993,7 +993,7 @@ bool operator<(const CService& a, const CService& b)
 bool CService::GetSockAddr(struct sockaddr* paddr, socklen_t *addrlen) const
 {
     if (IsIPv4()) {
-        if (*addrlen < (socklen_t)sizeof(struct sockaddr_in))
+        if (*addrlen < static_cast<socklen_t>(sizeof(struct sockaddr_in)))
             return false;
         *addrlen = sizeof(struct sockaddr_in);
         struct sockaddr_in *paddrin = reinterpret_cast<struct sockaddr_in*>(paddr);
@@ -1005,7 +1005,7 @@ bool CService::GetSockAddr(struct sockaddr* paddr, socklen_t *addrlen) const
         return true;
     }
     if (IsIPv6() || IsCJDNS()) {
-        if (*addrlen < (socklen_t)sizeof(struct sockaddr_in6))
+        if (*addrlen < static_cast<socklen_t>(sizeof(struct sockaddr_in6)))
             return false;
         *addrlen = sizeof(struct sockaddr_in6);
         struct sockaddr_in6 *paddrin6 = reinterpret_cast<struct sockaddr_in6*>(paddr);
@@ -1071,7 +1071,7 @@ CSubNet::CSubNet(const CNetAddr& addr, uint8_t mask) : CSubNet()
     uint8_t n = mask;
     for (size_t i = 0; i < network.m_addr.size(); ++i) {
         const uint8_t bits = n < 8 ? n : 8;
-        netmask[i] = (uint8_t)((uint8_t)0xFF << (8 - bits)); // Set first bits.
+        netmask[i] = uint8_t(uint8_t{0xFF} << (8 - bits)); // Set first bits.
         network.m_addr[i] &= netmask[i]; // Normalize network according to netmask.
         n -= bits;
     }

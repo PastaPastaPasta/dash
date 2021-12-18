@@ -762,7 +762,7 @@ void Unserialize_impl(Stream& is, prevector<N, T>& v, const unsigned char&)
     unsigned int i = 0;
     while (i < nSize)
     {
-        unsigned int blk = std::min(nSize - i, (unsigned int)(1 + 4999999 / sizeof(T)));
+        unsigned int blk = std::min(nSize - i, uint32_t{(1 + 4999999 / sizeof(T))});
         v.resize_uninitialized(i + blk);
         is.read(reinterpret_cast<char*>(&v[i]), blk * sizeof(T));
         i += blk;
@@ -828,7 +828,7 @@ void Unserialize_impl(Stream& is, std::vector<T, A>& v, const unsigned char&)
     unsigned int i = 0;
     while (i < nSize)
     {
-        unsigned int blk = std::min(nSize - i, (unsigned int)(1 + 4999999 / sizeof(T)));
+        unsigned int blk = std::min(nSize - i, uint32_t{(1 + 4999999 / sizeof(T))});
         v.resize(i + blk);
         is.read(reinterpret_cast<char*>(&v[i]), blk * sizeof(T));
         i += blk;

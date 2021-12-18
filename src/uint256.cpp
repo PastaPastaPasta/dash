@@ -48,7 +48,7 @@ void base_blob<BITS>::SetHex(const char* psz)
     while (digits > 0 && p1 < pend) {
         *p1 = ::HexDigit(psz[--digits]);
         if (digits > 0) {
-            *p1 |= ((unsigned char)::HexDigit(psz[--digits]) << 4);
+            *p1 |= (static_cast<unsigned char>(::HexDigit(psz[--digits]) << 4));
             p1++;
         }
     }

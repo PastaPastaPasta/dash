@@ -248,7 +248,7 @@ public:
     {
         if (last == first) return;
         assert(last - first > 0);
-        if (it == vch.begin() + nReadPos && (unsigned int)(last - first) <= nReadPos)
+        if (it == vch.begin() + nReadPos && static_cast<unsigned int>(last - first) <= nReadPos)
         {
             // special case for inserting at the front when there's room
             nReadPos -= (last - first);
@@ -262,7 +262,7 @@ public:
     {
         if (last == first) return;
         assert(last - first > 0);
-        if (it == vch.begin() + nReadPos && (unsigned int)(last - first) <= nReadPos)
+        if (it == vch.begin() + nReadPos && static_cast<unsigned int>(last - first) <= nReadPos)
         {
             // special case for inserting at the front when there's room
             nReadPos -= (last - first);
