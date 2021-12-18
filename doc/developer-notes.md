@@ -81,6 +81,8 @@ tool to clean up patches automatically before submission.
     function declarations over multiple lines using the Clang Format
     [AlignAfterOpenBracket](https://clang.llvm.org/docs/ClangFormatStyleOptions.html)
     style option.
+  - Never use a C-Style cast, always use a named-cast. Follow
+    [CppCoreGuideline ES-40](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#es49-if-you-must-use-a-cast-use-a-named-cast).
 
 - **Symbol naming conventions**. These are preferred in new code, but are not
 required when doing so would need changes to significant pieces of existing
