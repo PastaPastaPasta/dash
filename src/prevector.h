@@ -412,9 +412,9 @@ public:
         // necessary to switch to the (more efficient) directly allocated
         // representation (with capacity N and size <= N).
         iterator p = first;
-        char* endp = (char*)&(*end());
+        char* endp = reinterpret_cast<char*>(&(*end()));
         _size -= last - p;
-        memmove(&(*first), &(*last), endp - ((char*)(&(*last))));
+        memmove(&(*first), &(*last), endp - (reinterpret_cast<char*>(&(*last))));
         return first;
     }
 

@@ -93,7 +93,7 @@ class LOCKABLE AnnotatedMixin : public PARENT
 {
 public:
     ~AnnotatedMixin() {
-        DeleteLock((void*)this);
+        DeleteLock(reinterpret_cast<void*>(this));
     }
 
     void lock() EXCLUSIVE_LOCK_FUNCTION()
@@ -216,7 +216,7 @@ public:
     class reverse_lock {
     public:
         explicit reverse_lock(UniqueLock& _lock, const char* _guardname, const char* _file, int _line) : lock(_lock), file(_file), line(_line) {
-            CheckLastCritical((void*)lock.mutex(), lockname, _guardname, _file, _line);
+            CheckLastCritical(reinterpret_cast<void*>(lock.mutex()), lockname, _guardname, _file, _line);
             lock.unlock();
             LeaveCritical();
             lock.swap(templock);
@@ -271,7 +271,7 @@ inline MutexType* MaybeCheckNotHeld(MutexType* m) LOCKS_EXCLUDED(m) LOCK_RETURNE
 #define LEAVE_CRITICAL_SECTION(cs)                                          \
     {                                                                       \
         std::string lockname;                                               \
-        CheckLastCritical((void*)(&cs), lockname, #cs, __FILE__, __LINE__); \
+        CheckLastCritical(reinterpret_cast<void*>((&cs)), lockname, #cs, __FILE__, __LINE__); \
         (cs).unlock();                                                      \
         LeaveCritical();                                                    \
     }
