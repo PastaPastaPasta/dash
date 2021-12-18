@@ -681,10 +681,10 @@ bool BerkeleyBatch::ReadAtCursor(CDataStream& ssKey, CDataStream& ssValue, bool&
     // Convert to streams
     ssKey.SetType(SER_DISK);
     ssKey.clear();
-    ssKey.write((char*)datKey.get_data(), datKey.get_size());
+    ssKey.write(const_cast<char*>(reinterpret_cast<const char*>(datKey.get_data())), datKey.get_size());
     ssValue.SetType(SER_DISK);
     ssValue.clear();
-    ssValue.write((char*)datValue.get_data(), datValue.get_size());
+    ssValue.write(const_cast<char*>(reinterpret_cast<const char*>(datValue.get_data())), datValue.get_size());
     return true;
 }
 
@@ -756,7 +756,7 @@ bool BerkeleyBatch::ReadKey(CDataStream&& key, CDataStream& value)
     SafeDbt datValue;
     int ret = pdb->get(activeTxn, datKey, datValue, 0);
     if (ret == 0 && datValue.get_data() != nullptr) {
-        value.write((char*)datValue.get_data(), datValue.get_size());
+        value.write(const_cast<char*>(reinterpret_cast<const char*>(datValue.get_data())), datValue.get_size());
         return true;
     }
     return false;
