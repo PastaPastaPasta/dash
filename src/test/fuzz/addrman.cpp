@@ -151,7 +151,7 @@ public:
             hasher.Write(source_key.size());
             hasher.Write(addr_key.data(), addr_key.size());
             hasher.Write(source_key.data(), source_key.size());
-            return (size_t)hasher.Finalize();
+            return static_cast<size_t>(hasher.Finalize());
         };
 
         auto addrinfo_eq = [](const AddrInfo& lhs, const AddrInfo& rhs) {

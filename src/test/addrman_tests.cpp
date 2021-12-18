@@ -351,8 +351,8 @@ BOOST_AUTO_TEST_CASE(caddrinfo_get_tried_bucket_legacy)
 
     AddrInfo info1 = AddrInfo(addr1, source1);
 
-    uint256 nKey1 = (uint256)(CHashWriter(SER_GETHASH, 0) << 1).GetHash();
-    uint256 nKey2 = (uint256)(CHashWriter(SER_GETHASH, 0) << 2).GetHash();
+    uint256 nKey1 = static_cast<uint256>((CHashWriter(SER_GETHASH, 0) << 1).GetHash());
+    uint256 nKey2 = static_cast<uint256>((CHashWriter(SER_GETHASH, 0) << 2).GetHash());
 
     std::vector<bool> asmap; // use /16
 
@@ -403,8 +403,8 @@ BOOST_AUTO_TEST_CASE(caddrinfo_get_new_bucket_legacy)
 
     AddrInfo info1 = AddrInfo(addr1, source1);
 
-    uint256 nKey1 = (uint256)(CHashWriter(SER_GETHASH, 0) << 1).GetHash();
-    uint256 nKey2 = (uint256)(CHashWriter(SER_GETHASH, 0) << 2).GetHash();
+    uint256 nKey1 = static_cast<uint256>((CHashWriter(SER_GETHASH, 0) << 1).GetHash());
+    uint256 nKey2 = static_cast<uint256>((CHashWriter(SER_GETHASH, 0) << 2).GetHash());
 
     std::vector<bool> asmap; // use /16
 
@@ -480,8 +480,8 @@ BOOST_AUTO_TEST_CASE(caddrinfo_get_tried_bucket)
 
     AddrInfo info1 = AddrInfo(addr1, source1);
 
-    uint256 nKey1 = (uint256)(CHashWriter(SER_GETHASH, 0) << 1).GetHash();
-    uint256 nKey2 = (uint256)(CHashWriter(SER_GETHASH, 0) << 2).GetHash();
+    uint256 nKey1 = static_cast<uint256>((CHashWriter(SER_GETHASH, 0) << 1).GetHash());
+    uint256 nKey2 = static_cast<uint256>((CHashWriter(SER_GETHASH, 0) << 2).GetHash());
 
     std::vector<bool> asmap = FromBytes(asmap_raw, sizeof(asmap_raw) * 8);
 
@@ -532,8 +532,8 @@ BOOST_AUTO_TEST_CASE(caddrinfo_get_new_bucket)
 
     AddrInfo info1 = AddrInfo(addr1, source1);
 
-    uint256 nKey1 = (uint256)(CHashWriter(SER_GETHASH, 0) << 1).GetHash();
-    uint256 nKey2 = (uint256)(CHashWriter(SER_GETHASH, 0) << 2).GetHash();
+    uint256 nKey1 = static_cast<uint256>((CHashWriter(SER_GETHASH, 0) << 1).GetHash());
+    uint256 nKey2 = static_cast<uint256>((CHashWriter(SER_GETHASH, 0) << 2).GetHash());
 
     std::vector<bool> asmap = FromBytes(asmap_raw, sizeof(asmap_raw) * 8);
 
@@ -911,7 +911,7 @@ static CDataStream MakeCorruptPeersDat()
 
     unsigned char nVersion = 1;
     s << nVersion;
-    s << ((unsigned char)32);
+    s << (static_cast<unsigned char>(32));
     s << uint256::ONE;
     s << 10; // nNew
     s << 10; // nTried

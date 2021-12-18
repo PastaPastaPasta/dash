@@ -164,7 +164,7 @@ static void Correct_Queue_range(std::vector<size_t> range)
         FakeCheckCheckCompletion::n_calls = 0;
         CCheckQueueControl<FakeCheckCheckCompletion> control(small_queue.get());
         while (total) {
-            vChecks.resize(std::min(total, (size_t) InsecureRandRange(10)));
+            vChecks.resize(std::min(total, static_cast<size_t>(InsecureRandRange(10))));
             total -= vChecks.size();
             control.Add(vChecks);
         }
@@ -206,7 +206,7 @@ BOOST_AUTO_TEST_CASE(test_CheckQueue_Correct_Random)
 {
     std::vector<size_t> range;
     range.reserve(100000/1000);
-    for (size_t i = 2; i < 100000; i += std::max((size_t)1, (size_t)InsecureRandRange(std::min((size_t)1000, ((size_t)100000) - i))))
+    for (size_t i = 2; i < 100000; i += std::max(size_t{1}, static_cast<size_t>(InsecureRandRange(std::min(size_t{1000}, (size_t{100000}) - i)))))
         range.push_back(i);
     Correct_Queue_range(range);
 }

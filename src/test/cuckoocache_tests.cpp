@@ -77,7 +77,7 @@ static double test_cache(size_t megabytes, double load)
     uint32_t count = 0;
     for (const uint256& h : hashes)
         count += set.contains(h, false);
-    double hit_rate = ((double)count) / ((double)n_insert);
+    double hit_rate = (static_cast<double>(count)) / (static_cast<double>(n_insert));
     return hit_rate;
 }
 

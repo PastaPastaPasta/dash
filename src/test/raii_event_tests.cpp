@@ -42,7 +42,7 @@ BOOST_AUTO_TEST_CASE(raii_event_creation)
     void* base_ptr = nullptr;
     {
         auto base = obtain_event_base();
-        base_ptr = (void*)base.get();
+        base_ptr = static_cast<void*>(base.get());
         BOOST_CHECK(tags[base_ptr] == 1);
     }
     BOOST_CHECK(tags[base_ptr] == 0);
@@ -52,8 +52,8 @@ BOOST_AUTO_TEST_CASE(raii_event_creation)
         auto base = obtain_event_base();
         auto event = obtain_event(base.get(), -1, 0, nullptr, nullptr);
 
-        base_ptr = (void*)base.get();
-        event_ptr = (void*)event.get();
+        base_ptr = static_cast<void*>(base.get());
+        event_ptr = static_cast<void*>(event.get());
 
         BOOST_CHECK(tags[base_ptr] == 1);
         BOOST_CHECK(tags[event_ptr] == 1);
@@ -74,8 +74,8 @@ BOOST_AUTO_TEST_CASE(raii_event_order)
         auto base = obtain_event_base();
         auto event = obtain_event(base.get(), -1, 0, nullptr, nullptr);
 
-        base_ptr = (void*)base.get();
-        event_ptr = (void*)event.get();
+        base_ptr = static_cast<void*>(base.get());
+        event_ptr = static_cast<void*>(event.get());
 
         // base should have allocated before event
         BOOST_CHECK(orders[base_ptr] < orders[event_ptr]);

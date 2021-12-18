@@ -216,7 +216,7 @@ FUZZ_TARGET(prevector)
             test.insert(prov.ConsumeIntegralInRange<size_t>(0, test.size()), prov.ConsumeIntegral<int>());
             break;
         case 1:
-            test.resize(std::max(0, std::min(30, (int)test.size() + prov.ConsumeIntegralInRange<int>(0, 4) - 2)));
+            test.resize(std::max(0, std::min(30, static_cast<int>(test.size()) + prov.ConsumeIntegralInRange<int>(0, 4) - 2)));
             break;
         case 2:
             test.insert(prov.ConsumeIntegralInRange<size_t>(0, test.size()), 1 + prov.ConsumeBool(), prov.ConsumeIntegral<int>());

@@ -1376,7 +1376,7 @@ BOOST_AUTO_TEST_CASE(util_seed_insecure_rand)
             uint32_t rval;
             do{
                 rval=InsecureRand32()&mask;
-            }while(rval>=(uint32_t)mod);
+            }while(rval>=static_cast<uint32_t>(mod));
             count += rval==0;
         }
         BOOST_CHECK(count<=10000/mod+err);
@@ -2081,7 +2081,7 @@ BOOST_AUTO_TEST_CASE(test_LockDirectory)
     char ch;
     BOOST_CHECK_EQUAL(write(fd[1], &LockCommand, 1), 1);
     BOOST_CHECK_EQUAL(read(fd[1], &ch, 1), 1);
-    BOOST_CHECK_EQUAL((bool)ch, false);
+    BOOST_CHECK_EQUAL(static_cast<bool>(ch), false);
 
     // Give up our lock
     ReleaseDirectoryLocks();
@@ -2091,7 +2091,7 @@ BOOST_AUTO_TEST_CASE(test_LockDirectory)
     // Try to acquire the lock in the child process, this should be successful.
     BOOST_CHECK_EQUAL(write(fd[1], &LockCommand, 1), 1);
     BOOST_CHECK_EQUAL(read(fd[1], &ch, 1), 1);
-    BOOST_CHECK_EQUAL((bool)ch, true);
+    BOOST_CHECK_EQUAL(static_cast<bool>(ch), true);
 
     // When we try to probe the lock now, it should fail.
     BOOST_CHECK_EQUAL(LockDirectory(dirname, lockname, true), false);
@@ -2099,7 +2099,7 @@ BOOST_AUTO_TEST_CASE(test_LockDirectory)
     // Unlock the lock in the child process
     BOOST_CHECK_EQUAL(write(fd[1], &UnlockCommand, 1), 1);
     BOOST_CHECK_EQUAL(read(fd[1], &ch, 1), 1);
-    BOOST_CHECK_EQUAL((bool)ch, true);
+    BOOST_CHECK_EQUAL(static_cast<bool>(ch), true);
 
     // When we try to probe the lock now, it should succeed.
     BOOST_CHECK_EQUAL(LockDirectory(dirname, lockname, true), true);
@@ -2501,9 +2501,9 @@ BOOST_AUTO_TEST_CASE(message_hash)
 {
     const std::string unsigned_tx = "...";
     const std::string prefixed_message =
-        std::string(1, (char)MESSAGE_MAGIC.length()) +
+        std::string(1, static_cast<char>(MESSAGE_MAGIC.length())) +
         MESSAGE_MAGIC +
-        std::string(1, (char)unsigned_tx.length()) +
+        std::string(1, static_cast<char>(unsigned_tx.length())) +
         unsigned_tx;
 
     const uint256 signature_hash = Hash(unsigned_tx);

@@ -193,11 +193,11 @@ static std::string LongTestString()
 {
     std::string ret;
     for (int i = 0; i < 200000; i++) {
-        ret += (char)(i);
-        ret += (char)(i >> 4);
-        ret += (char)(i >> 8);
-        ret += (char)(i >> 12);
-        ret += (char)(i >> 16);
+        ret += static_cast<char>(i);
+        ret += static_cast<char>(i >> 4);
+        ret += static_cast<char>(i >> 8);
+        ret += static_cast<char>(i >> 12);
+        ret += static_cast<char>(i >> 16);
     }
     return ret;
 }

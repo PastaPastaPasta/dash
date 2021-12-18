@@ -43,27 +43,27 @@ typedef std::vector<unsigned char> valtype;
 UniValue read_json(const std::string& jsondata);
 
 static std::map<std::string, unsigned int> mapFlagNames = {
-    {std::string("P2SH"), (unsigned int)SCRIPT_VERIFY_P2SH},
-    {std::string("STRICTENC"), (unsigned int)SCRIPT_VERIFY_STRICTENC},
-    {std::string("DERSIG"), (unsigned int)SCRIPT_VERIFY_DERSIG},
-    {std::string("LOW_S"), (unsigned int)SCRIPT_VERIFY_LOW_S},
-    {std::string("SIGPUSHONLY"), (unsigned int)SCRIPT_VERIFY_SIGPUSHONLY},
-    {std::string("MINIMALDATA"), (unsigned int)SCRIPT_VERIFY_MINIMALDATA},
-    {std::string("NULLDUMMY"), (unsigned int)SCRIPT_VERIFY_NULLDUMMY},
-    {std::string("DISCOURAGE_UPGRADABLE_NOPS"), (unsigned int)SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS},
-    {std::string("CLEANSTACK"), (unsigned int)SCRIPT_VERIFY_CLEANSTACK},
-    {std::string("MINIMALIF"), (unsigned int)SCRIPT_VERIFY_MINIMALIF},
-    {std::string("NULLFAIL"), (unsigned int)SCRIPT_VERIFY_NULLFAIL},
-    {std::string("CHECKLOCKTIMEVERIFY"), (unsigned int)SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY},
-    {std::string("CHECKSEQUENCEVERIFY"), (unsigned int)SCRIPT_VERIFY_CHECKSEQUENCEVERIFY},
-    {std::string("WITNESS"), (unsigned int)SCRIPT_VERIFY_WITNESS},
-    {std::string("DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM"), (unsigned int)SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM},
-    {std::string("WITNESS_PUBKEYTYPE"), (unsigned int)SCRIPT_VERIFY_WITNESS_PUBKEYTYPE},
-    {std::string("CONST_SCRIPTCODE"), (unsigned int)SCRIPT_VERIFY_CONST_SCRIPTCODE},
-    {std::string("TAPROOT"), (unsigned int)SCRIPT_VERIFY_TAPROOT},
-    {std::string("DISCOURAGE_UPGRADABLE_PUBKEYTYPE"), (unsigned int)SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_PUBKEYTYPE},
-    {std::string("DISCOURAGE_OP_SUCCESS"), (unsigned int)SCRIPT_VERIFY_DISCOURAGE_OP_SUCCESS},
-    {std::string("DISCOURAGE_UPGRADABLE_TAPROOT_VERSION"), (unsigned int)SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_TAPROOT_VERSION},
+    {std::string("P2SH"), static_cast<unsigned int>(SCRIPT_VERIFY_P2SH)},
+    {std::string("STRICTENC"), static_cast<unsigned int>(SCRIPT_VERIFY_STRICTENC)},
+    {std::string("DERSIG"), static_cast<unsigned int>(SCRIPT_VERIFY_DERSIG)},
+    {std::string("LOW_S"), static_cast<unsigned int>(SCRIPT_VERIFY_LOW_S)},
+    {std::string("SIGPUSHONLY"), static_cast<unsigned int>(SCRIPT_VERIFY_SIGPUSHONLY)},
+    {std::string("MINIMALDATA"), static_cast<unsigned int>(SCRIPT_VERIFY_MINIMALDATA)},
+    {std::string("NULLDUMMY"), static_cast<unsigned int>(SCRIPT_VERIFY_NULLDUMMY)},
+    {std::string("DISCOURAGE_UPGRADABLE_NOPS"), static_cast<unsigned int>(SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS)},
+    {std::string("CLEANSTACK"), static_cast<unsigned int>(SCRIPT_VERIFY_CLEANSTACK)},
+    {std::string("MINIMALIF"), static_cast<unsigned int>(SCRIPT_VERIFY_MINIMALIF)},
+    {std::string("NULLFAIL"), static_cast<unsigned int>(SCRIPT_VERIFY_NULLFAIL)},
+    {std::string("CHECKLOCKTIMEVERIFY"), static_cast<unsigned int>(SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY)},
+    {std::string("CHECKSEQUENCEVERIFY"), static_cast<unsigned int>(SCRIPT_VERIFY_CHECKSEQUENCEVERIFY)},
+    {std::string("WITNESS"), static_cast<unsigned int>(SCRIPT_VERIFY_WITNESS)},
+    {std::string("DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM"), static_cast<unsigned int>(SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM)},
+    {std::string("WITNESS_PUBKEYTYPE"), static_cast<unsigned int>(SCRIPT_VERIFY_WITNESS_PUBKEYTYPE)},
+    {std::string("CONST_SCRIPTCODE"), static_cast<unsigned int>(SCRIPT_VERIFY_CONST_SCRIPTCODE)},
+    {std::string("TAPROOT"), static_cast<unsigned int>(SCRIPT_VERIFY_TAPROOT)},
+    {std::string("DISCOURAGE_UPGRADABLE_PUBKEYTYPE"), static_cast<unsigned int>(SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_PUBKEYTYPE)},
+    {std::string("DISCOURAGE_OP_SUCCESS"), static_cast<unsigned int>(SCRIPT_VERIFY_DISCOURAGE_OP_SUCCESS)},
+    {std::string("DISCOURAGE_UPGRADABLE_TAPROOT_VERSION"), static_cast<unsigned int>(SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_TAPROOT_VERSION)},
 };
 
 unsigned int ParseScriptFlags(std::string strFlags)
@@ -150,10 +150,10 @@ bool CheckTxScripts(const CTransaction& tx, const std::map<COutPoint, CScript>& 
 unsigned int TrimFlags(unsigned int flags)
 {
     // WITNESS requires P2SH
-    if (!(flags & SCRIPT_VERIFY_P2SH)) flags &= ~(unsigned int)SCRIPT_VERIFY_WITNESS;
+    if (!(flags & SCRIPT_VERIFY_P2SH)) flags &= ~static_cast<unsigned int>(SCRIPT_VERIFY_WITNESS);
 
     // CLEANSTACK requires WITNESS (and transitively CLEANSTACK requires P2SH)
-    if (!(flags & SCRIPT_VERIFY_WITNESS)) flags &= ~(unsigned int)SCRIPT_VERIFY_CLEANSTACK;
+    if (!(flags & SCRIPT_VERIFY_WITNESS)) flags &= ~static_cast<unsigned int>(SCRIPT_VERIFY_CLEANSTACK);
     Assert(IsValidFlagCombination(flags));
     return flags;
 }
@@ -260,7 +260,7 @@ BOOST_AUTO_TEST_CASE(tx_valid)
                     BOOST_ERROR("Tx unexpectedly failed with flag " << name << " unset: " << strTest);
                 }
                 // Removing random combinations of flags
-                flags = TrimFlags(~(verify_flags | (unsigned int)InsecureRandBits(mapFlagNames.size())));
+                flags = TrimFlags(~(verify_flags | static_cast<unsigned int>(InsecureRandBits(mapFlagNames.size()))));
                 if (!CheckTxScripts(tx, mapprevOutScriptPubKeys, mapprevOutValues, flags, txdata, strTest, /*expect_valid=*/true)) {
                     BOOST_ERROR("Tx unexpectedly failed with random flags " << ToString(flags) << ": " << strTest);
                 }
@@ -351,7 +351,7 @@ BOOST_AUTO_TEST_CASE(tx_invalid)
                     BOOST_ERROR("Tx unexpectedly passed with flag " << name << " set: " << strTest);
                 }
                 // Adding random combinations of flags
-                flags = FillFlags(verify_flags | (unsigned int)InsecureRandBits(mapFlagNames.size()));
+                flags = FillFlags(verify_flags | static_cast<unsigned int>(InsecureRandBits(mapFlagNames.size())));
                 if (!CheckTxScripts(tx, mapprevOutScriptPubKeys, mapprevOutValues, flags, txdata, strTest, /*expect_valid=*/false)) {
                     BOOST_ERROR("Tx unexpectedly passed with random flags " << name << ": " << strTest);
                 }
@@ -954,7 +954,7 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
 
     // Check future Witness Program versions dust threshold
     for (int op = OP_2; op <= OP_16; op += 1) {
-        t.vout[0].scriptPubKey = CScript() << (opcodetype)op << ParseHex("ffff");
+        t.vout[0].scriptPubKey = CScript() << static_cast<opcodetype>(op) << ParseHex("ffff");
         t.vout[0].nValue = 240;
         CheckIsStandard(t);
 
