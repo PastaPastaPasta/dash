@@ -90,7 +90,7 @@ public:
     {
         int len = pend == pbegin ? 0 : GetLen(pbegin[0]);
         if (len && len == (pend - pbegin))
-            memcpy(vch, (unsigned char*)&pbegin[0], len);
+            memcpy(vch, reinterpret_cast<const unsigned char*>(&pbegin[0]), len);
         else
             Invalidate();
     }
@@ -142,14 +142,14 @@ public:
     {
         unsigned int len = size();
         ::WriteCompactSize(s, len);
-        s.write((char*)vch, len);
+        s.write(reinterpret_cast<const char*>(vch), len);
     }
     template <typename Stream>
     void Unserialize(Stream& s)
     {
         const unsigned int len(::ReadCompactSize(s));
         if (len <= SIZE) {
-            s.read((char*)vch, len);
+            s.read(reinterpret_cast<char*>(vch), len);
             if (len != size()) {
                 Invalidate();
             }

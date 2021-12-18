@@ -213,7 +213,7 @@ static void http_request_done(struct evhttp_request *req, void *ctx)
     if (buf)
     {
         size_t size = evbuffer_get_length(buf);
-        const char *data = (const char*)evbuffer_pullup(buf, size);
+        const char *data = reinterpret_cast<const char*>(evbuffer_pullup(buf, size));
         if (data)
             reply->body = std::string(data, size);
         evbuffer_drain(buf, size);
@@ -735,7 +735,7 @@ static UniValue CallRPC(BaseRequestHandler* rh, const std::string& strMethod, co
     }
 
     HTTPReply response;
-    raii_evhttp_request req = obtain_evhttp_request(http_request_done, (void*)&response);
+    raii_evhttp_request req = obtain_evhttp_request(http_request_done, reinterpret_cast<void*>(&response));
     if (req == nullptr)
         throw std::runtime_error("create http request failed");
 #if LIBEVENT_VERSION_NUMBER >= 0x02010300

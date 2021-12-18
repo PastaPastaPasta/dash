@@ -390,7 +390,7 @@ public:
     {
         // Special case: stream << stream concatenates like stream += stream
         if (!vch.empty())
-            s.write((char*)vch.data(), vch.size() * sizeof(value_type));
+            s.write(reinterpret_cast<const char*>(vch.data()), vch.size() * sizeof(value_type));
     }
 
     template<typename T>
@@ -673,7 +673,7 @@ protected:
             readNow = nAvail;
         if (readNow == 0)
             return false;
-        size_t nBytes = fread((void*)&vchBuf[pos], 1, readNow, src);
+        size_t nBytes = fread(reinterpret_cast<void*>(&vchBuf[pos]), 1, readNow, src);
         if (nBytes == 0) {
             throw std::ios_base::failure(feof(src) ? "CBufferedFile::Fill: end of file" : "CBufferedFile::Fill: fread failed");
         }

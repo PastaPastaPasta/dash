@@ -112,7 +112,7 @@ public:
     int GetVersion() const { return nVersion; }
 
     void write(const char *pch, size_t size) {
-        ctx.Write((const unsigned char*)pch, size);
+        ctx.Write(reinterpret_cast<const unsigned char*>(pch), size);
     }
 
     /** Compute the double-SHA256 hash of all data written to this object.
