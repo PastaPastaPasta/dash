@@ -228,7 +228,7 @@ private:
     void HandleNewInputLockRecoveredSig(const CRecoveredSig& recoveredSig, const uint256& txid);
     void HandleNewInstantSendLockRecoveredSig(const CRecoveredSig& recoveredSig);
 
-    bool TrySignInputLocks(const CTransaction& tx, bool allowResigning, Consensus::LLMQType llmqType);
+    bool TrySignInputLocks(const CTransaction& tx, bool allowResigning, const Consensus::LLMQParams& llmqParams);
     void TrySignInstantSendLock(const CTransaction& tx);
 
     void ProcessMessageInstantSendLock(const CNode* pfrom, const CInstantSendLockPtr& islock) LOCKS_EXCLUDED(cs);

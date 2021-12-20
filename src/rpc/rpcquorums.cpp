@@ -413,7 +413,10 @@ static UniValue quorum_sigs_cmd(const JSONRPCRequest& request)
     }
 
     Consensus::LLMQType llmqType = (Consensus::LLMQType)ParseInt32V(request.params[1], "llmqType");
-    if (!Params().GetConsensus().llmqs.count(llmqType)) {
+    Consensus::LLMQParams llmqParams;
+    if (auto it = Params().GetConsensus().llmqs.find(llmqType); it != Params().GetConsensus().llmqs.end()) {
+        llmqParams = it->second;
+    } else {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "invalid LLMQ type");
     }
 
@@ -430,13 +433,13 @@ static UniValue quorum_sigs_cmd(const JSONRPCRequest& request)
             fSubmit = ParseBoolV(request.params[5], "submit");
         }
         if (fSubmit) {
-            return llmq::quorumSigningManager->AsyncSignIfMember(llmqType, id, msgHash, quorumHash);
+            return llmq::quorumSigningManager->AsyncSignIfMember(llmqParams, id, msgHash, quorumHash);
         } else {
 
             llmq::CQuorumCPtr pQuorum;
 
             if (quorumHash.IsNull()) {
-                pQuorum = llmq::quorumSigningManager->SelectQuorumForSigning(llmqType, id);
+                pQuorum = llmq::quorumSigningManager->SelectQuorumForSigning(llmqParams, id);
             } else {
                 pQuorum = llmq::quorumManager->GetQuorum(llmqType, quorumHash);
             }
@@ -475,8 +478,8 @@ static UniValue quorum_sigs_cmd(const JSONRPCRequest& request)
             }
             // First check against the current active set, if it fails check against the last active set
             int signOffset{llmq::GetLLMQParams(llmqType).dkgInterval};
-            return llmq::quorumSigningManager->VerifyRecoveredSig(llmqType, signHeight, id, msgHash, sig, 0) ||
-                   llmq::quorumSigningManager->VerifyRecoveredSig(llmqType, signHeight, id, msgHash, sig, signOffset);
+            return llmq::quorumSigningManager->VerifyRecoveredSig(llmqParams, signHeight, id, msgHash, sig, 0) ||
+                   llmq::quorumSigningManager->VerifyRecoveredSig(llmqParams, signHeight, id, msgHash, sig, signOffset);
         } else {
             uint256 quorumHash = ParseHashV(request.params[5], "quorumHash");
             llmq::CQuorumCPtr quorum = llmq::quorumManager->GetQuorum(llmqType, quorumHash);
@@ -528,7 +531,10 @@ static UniValue quorum_selectquorum(const JSONRPCRequest& request)
     }
 
     Consensus::LLMQType llmqType = (Consensus::LLMQType)ParseInt32V(request.params[1], "llmqType");
-    if (!Params().GetConsensus().llmqs.count(llmqType)) {
+    Consensus::LLMQParams llmqParams;
+    if (auto it = Params().GetConsensus().llmqs.find(llmqType); it != Params().GetConsensus().llmqs.end()) {
+        llmqParams = it->second;
+    } else {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "invalid LLMQ type");
     }
 
@@ -536,7 +542,7 @@ static UniValue quorum_selectquorum(const JSONRPCRequest& request)
 
     UniValue ret(UniValue::VOBJ);
 
-    auto quorum = llmq::quorumSigningManager->SelectQuorumForSigning(llmqType, id);
+    auto quorum = llmq::quorumSigningManager->SelectQuorumForSigning(llmqParams, id);
     if (!quorum) {
         throw JSONRPCError(RPC_MISC_ERROR, "no quorums active");
     }
@@ -796,12 +802,12 @@ static UniValue verifyislock(const JSONRPCRequest& request)
         signHeight = pindexMined->nHeight;
     }
 
-    auto llmqType = Params().GetConsensus().llmqTypeInstantSend;
+    const auto& llmqParams = Params().GetConsensus().llmqTypeInstantSend;
 
     // First check against the current active set, if it fails check against the last active set
-    int signOffset{llmq::GetLLMQParams(llmqType).dkgInterval};
-    return llmq::quorumSigningManager->VerifyRecoveredSig(llmqType, signHeight, id, txid, sig, 0) ||
-           llmq::quorumSigningManager->VerifyRecoveredSig(llmqType, signHeight, id, txid, sig, signOffset);
+    int signOffset{llmqParams.dkgInterval};
+    return llmq::quorumSigningManager->VerifyRecoveredSig(llmqParams, signHeight, id, txid, sig, 0) ||
+           llmq::quorumSigningManager->VerifyRecoveredSig(llmqParams, signHeight, id, txid, sig, signOffset);
 }
 // clang-format off
 static const CRPCCommand commands[] =

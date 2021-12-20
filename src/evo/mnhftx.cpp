@@ -22,12 +22,12 @@ bool MNHFTx::Verify(const CBlockIndex* pQuorumIndex) const
         return false;
     }
 
-    Consensus::LLMQType llmqType = Params().GetConsensus().llmqTypeMnhf;
-    int signOffset{llmq::GetLLMQParams(llmqType).dkgInterval};
+    Consensus::LLMQParams llmqParams = Params().GetConsensus().llmqTypeMnhf;
+    int signOffset{llmqParams.dkgInterval};
 
     const uint256 requestId = ::SerializeHash(std::make_pair(CBLSIG_REQUESTID_PREFIX, pQuorumIndex->nHeight));
-    return llmq::CSigningManager::VerifyRecoveredSig(llmqType, pQuorumIndex->nHeight, requestId, pQuorumIndex->GetBlockHash(), sig, 0) ||
-           llmq::CSigningManager::VerifyRecoveredSig(llmqType, pQuorumIndex->nHeight, requestId, pQuorumIndex->GetBlockHash(), sig, signOffset);
+    return llmq::CSigningManager::VerifyRecoveredSig(llmqParams, pQuorumIndex->nHeight, requestId, pQuorumIndex->GetBlockHash(), sig, 0) ||
+           llmq::CSigningManager::VerifyRecoveredSig(llmqParams, pQuorumIndex->nHeight, requestId, pQuorumIndex->GetBlockHash(), sig, signOffset);
 }
 
 bool CheckMNHFTx(const CTransaction& tx, const CBlockIndex* pindexPrev, CValidationState& state) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
@@ -51,7 +51,7 @@ bool CheckMNHFTx(const CTransaction& tx, const CBlockIndex* pindexPrev, CValidat
         return state.DoS(100, false, REJECT_INVALID, "bad-mnhf-quorum-hash");
     }
 
-    if (!Params().GetConsensus().llmqs.count(Params().GetConsensus().llmqTypeMnhf)) {
+    if (!Params().GetConsensus().llmqs.count(Params().GetConsensus().llmqTypeMnhf.type)) {
         return state.DoS(100, false, REJECT_INVALID, "bad-mnhf-type");
     }
 

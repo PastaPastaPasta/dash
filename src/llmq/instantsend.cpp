@@ -501,8 +501,8 @@ void CInstantSendManager::ProcessTx(const CTransaction& tx, bool fRetroactive, c
         return;
     }
 
-    auto llmqType = params.llmqTypeInstantSend;
-    if (llmqType == Consensus::LLMQType::LLMQ_NONE) {
+    const auto& llmqParams = params.llmqTypeInstantSend;
+    if (llmqParams.isEmpty()) {
         return;
     }
 
@@ -526,14 +526,14 @@ void CInstantSendManager::ProcessTx(const CTransaction& tx, bool fRetroactive, c
     // block after we retroactively locked all transactions.
     if (!IsInstantSendMempoolSigningEnabled() && !fRetroactive) return;
 
-    if (!TrySignInputLocks(tx, fRetroactive, llmqType)) return;
+    if (!TrySignInputLocks(tx, fRetroactive, llmqParams)) return;
 
     // We might have received all input locks before we got the corresponding TX. In this case, we have to sign the
     // islock now instead of waiting for the input locks.
     TrySignInstantSendLock(tx);
 }
 
-bool CInstantSendManager::TrySignInputLocks(const CTransaction& tx, bool fRetroactive, Consensus::LLMQType llmqType)
+bool CInstantSendManager::TrySignInputLocks(const CTransaction& tx, bool fRetroactive, const Consensus::LLMQParams& llmqParams)
 {
     std::vector<uint256> ids;
     ids.reserve(tx.vin.size());
@@ -544,7 +544,7 @@ bool CInstantSendManager::TrySignInputLocks(const CTransaction& tx, bool fRetroa
         ids.emplace_back(id);
 
         uint256 otherTxHash;
-        if (quorumSigningManager->GetVoteForId(llmqType, id, otherTxHash)) {
+        if (quorumSigningManager->GetVoteForId(llmqParams.type, id, otherTxHash)) {
             if (otherTxHash != tx.GetHash()) {
                 LogPrintf("CInstantSendManager::%s -- txid=%s: input %s is conflicting with previous vote for tx %s\n", __func__,
                           tx.GetHash().ToString(), in.prevout.ToStringShort(), otherTxHash.ToString());
@@ -554,7 +554,7 @@ bool CInstantSendManager::TrySignInputLocks(const CTransaction& tx, bool fRetroa
         }
 
         // don't even try the actual signing if any input is conflicting
-        if (quorumSigningManager->IsConflicting(llmqType, id, tx.GetHash())) {
+        if (quorumSigningManager->IsConflicting(llmqParams.type, id, tx.GetHash())) {
             LogPrintf("CInstantSendManager::%s -- txid=%s: quorumSigningManager->IsConflicting returned true. id=%s\n", __func__,
                       tx.GetHash().ToString(), id.ToString());
             return false;
@@ -575,7 +575,7 @@ bool CInstantSendManager::TrySignInputLocks(const CTransaction& tx, bool fRetroa
         WITH_LOCK(cs, inputRequestIds.emplace(id));
         LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- txid=%s: trying to vote on input %s with id %s. fRetroactive=%d\n", __func__,
                  tx.GetHash().ToString(), in.prevout.ToStringShort(), id.ToString(), fRetroactive);
-        if (quorumSigningManager->AsyncSignIfMember(llmqType, id, tx.GetHash(), {}, fRetroactive)) {
+        if (quorumSigningManager->AsyncSignIfMember(llmqParams, id, tx.GetHash(), {}, fRetroactive)) {
             LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- txid=%s: voted on input %s with id %s\n", __func__,
                      tx.GetHash().ToString(), in.prevout.ToStringShort(), id.ToString());
         }
@@ -657,7 +657,7 @@ void CInstantSendManager::HandleNewRecoveredSig(const CRecoveredSig& recoveredSi
     }
 
     auto llmqType = Params().GetConsensus().llmqTypeInstantSend;
-    if (llmqType == Consensus::LLMQType::LLMQ_NONE) {
+    if (llmqType.isEmpty()) {
         return;
     }
 
@@ -707,11 +707,11 @@ void CInstantSendManager::HandleNewInputLockRecoveredSig(const CRecoveredSig& re
 
 void CInstantSendManager::TrySignInstantSendLock(const CTransaction& tx)
 {
-    const auto llmqType = Params().GetConsensus().llmqTypeInstantSend;
+    const auto llmqParams = Params().GetConsensus().llmqTypeInstantSend;
 
     for (auto& in : tx.vin) {
         auto id = ::SerializeHash(std::make_pair(INPUTLOCK_REQUESTID_PREFIX, in.prevout));
-        if (!quorumSigningManager->HasRecoveredSig(llmqType, id, tx.GetHash())) {
+        if (!quorumSigningManager->HasRecoveredSig(llmqParams.type, id, tx.GetHash())) {
             return;
         }
     }
@@ -728,14 +728,14 @@ void CInstantSendManager::TrySignInstantSendLock(const CTransaction& tx)
     // compute cycle hash
     {
         LOCK(cs_main);
-        const auto dkgInterval = GetLLMQParams(llmqType).dkgInterval;
+        const auto dkgInterval = llmqParams.dkgInterval;
         const auto quorumHeight = ::ChainActive().Height() - (::ChainActive().Height() % dkgInterval);
         islock.cycleHash = ::ChainActive()[quorumHeight]->GetBlockHash();
     }
 
     auto id = islock.GetRequestId();
 
-    if (quorumSigningManager->HasRecoveredSigForId(llmqType, id)) {
+    if (quorumSigningManager->HasRecoveredSigForId(llmqParams.type, id)) {
         return;
     }
 
@@ -748,7 +748,7 @@ void CInstantSendManager::TrySignInstantSendLock(const CTransaction& tx)
         txToCreatingInstantSendLocks.emplace(tx.GetHash(), &e.first->second);
     }
 
-    quorumSigningManager->AsyncSignIfMember(llmqType, id, tx.GetHash());
+    quorumSigningManager->AsyncSignIfMember(llmqParams, id, tx.GetHash());
 }
 
 void CInstantSendManager::HandleNewInstantSendLockRecoveredSig(const llmq::CRecoveredSig& recoveredSig)
@@ -821,8 +821,7 @@ void CInstantSendManager::ProcessMessageInstantSendLock(const CNode* pfrom, cons
             return;
         }
 
-        const auto llmqType = Params().GetConsensus().llmqTypeInstantSend;
-        const auto dkgInterval = GetLLMQParams(llmqType).dkgInterval;
+        const auto dkgInterval = Params().GetConsensus().llmqTypeInstantSend.dkgInterval;
         if (blockIndex->nHeight % dkgInterval != 0) {
             WITH_LOCK(cs_main, Misbehaving(pfrom->GetId(), 100));
             return;
@@ -892,8 +891,7 @@ bool CInstantSendManager::ProcessPendingInstantSendLocks()
         return false;
     }
 
-    auto llmqType = Params().GetConsensus().llmqTypeInstantSend;
-    auto dkgInterval = GetLLMQParams(llmqType).dkgInterval;
+    auto dkgInterval = Params().GetConsensus().llmqTypeInstantSend.dkgInterval;
 
     // First check against the current active set and don't ban
     auto badISLocks = ProcessPendingInstantSendLocks(0, pend, false);
@@ -917,7 +915,7 @@ bool CInstantSendManager::ProcessPendingInstantSendLocks()
 
 std::unordered_set<uint256, StaticSaltedHasher> CInstantSendManager::ProcessPendingInstantSendLocks(int signOffset, const std::unordered_map<uint256, std::pair<NodeId, CInstantSendLockPtr>, StaticSaltedHasher>& pend, bool ban)
 {
-    auto llmqType = Params().GetConsensus().llmqTypeInstantSend;
+    auto llmqParams = Params().GetConsensus().llmqTypeInstantSend;
 
     CBLSBatchVerifier<NodeId, uint256> batchVerifier(false, true, 8);
     std::unordered_map<uint256, CRecoveredSig, StaticSaltedHasher> recSigs;
@@ -941,7 +939,7 @@ std::unordered_set<uint256, StaticSaltedHasher> CInstantSendManager::ProcessPend
         auto id = islock->GetRequestId();
 
         // no need to verify an ISLOCK if we already have verified the recovered sig that belongs to it
-        if (quorumSigningManager->HasRecoveredSig(llmqType, id, islock->txid)) {
+        if (quorumSigningManager->HasRecoveredSig(llmqParams.type, id, islock->txid)) {
             alreadyVerified++;
             continue;
         }
@@ -956,26 +954,26 @@ std::unordered_set<uint256, StaticSaltedHasher> CInstantSendManager::ProcessPend
                 continue;
             }
 
-            const auto dkgInterval = GetLLMQParams(Params().GetConsensus().llmqTypeInstantSend).dkgInterval;
+            const auto dkgInterval = llmqParams.dkgInterval;
             if (blockIndex->nHeight + dkgInterval < ::ChainActive().Height()) {
                 nSignHeight = blockIndex->nHeight + dkgInterval - 1;
             }
         }
 
-        auto quorum = llmq::CSigningManager::SelectQuorumForSigning(llmqType, id, nSignHeight, signOffset);
+        auto quorum = llmq::CSigningManager::SelectQuorumForSigning(llmqParams, id, nSignHeight, signOffset);
         if (!quorum) {
             // should not happen, but if one fails to select, all others will also fail to select
             return {};
         }
-        uint256 signHash = CLLMQUtils::BuildSignHash(llmqType, quorum->qc->quorumHash, id, islock->txid);
+        uint256 signHash = CLLMQUtils::BuildSignHash(llmqParams.type, quorum->qc->quorumHash, id, islock->txid);
         batchVerifier.PushMessage(nodeId, hash, signHash, islock->sig.Get(), quorum->qc->quorumPublicKey);
         verifyCount++;
 
         // We can reconstruct the CRecoveredSig objects from the islock and pass it to the signing manager, which
         // avoids unnecessary double-verification of the signature. We however only do this when verification here
         // turns out to be good (which is checked further down)
-        if (!quorumSigningManager->HasRecoveredSigForId(llmqType, id)) {
-            recSigs.try_emplace(hash, CRecoveredSig(llmqType, quorum->qc->quorumHash, id, islock->txid, islock->sig));
+        if (!quorumSigningManager->HasRecoveredSigForId(llmqParams.type, id)) {
+            recSigs.try_emplace(hash, CRecoveredSig(llmqParams.type, quorum->qc->quorumHash, id, islock->txid, islock->sig));
         }
     }
 
@@ -1015,7 +1013,7 @@ std::unordered_set<uint256, StaticSaltedHasher> CInstantSendManager::ProcessPend
         auto it = recSigs.find(hash);
         if (it != recSigs.end()) {
             auto recSig = std::make_shared<CRecoveredSig>(std::move(it->second));
-            if (!quorumSigningManager->HasRecoveredSigForId(llmqType, recSig->id)) {
+            if (!quorumSigningManager->HasRecoveredSigForId(llmqParams.type, recSig->id)) {
                 LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- txid=%s, islock=%s: passing reconstructed recSig to signing mgr, peer=%d\n", __func__,
                          islock->txid.ToString(), hash.ToString(), nodeId);
                 quorumSigningManager->PushReconstructedRecoveredSig(recSig);
@@ -1302,7 +1300,7 @@ void CInstantSendManager::TruncateRecoveredSigsForInputs(const llmq::CInstantSen
     for (auto& in : islock.inputs) {
         auto inputRequestId = ::SerializeHash(std::make_pair(INPUTLOCK_REQUESTID_PREFIX, in));
         inputRequestIds.erase(inputRequestId);
-        quorumSigningManager->TruncateRecoveredSig(consensusParams.llmqTypeInstantSend, inputRequestId);
+        quorumSigningManager->TruncateRecoveredSig(consensusParams.llmqTypeInstantSend.type, inputRequestId);
     }
 }
 
@@ -1357,7 +1355,7 @@ void CInstantSendManager::HandleFullyConfirmedBlock(const CBlockIndex* pindex)
 
         // And we don't need the recovered sig for the ISLOCK anymore, as the block in which it got mined is considered
         // fully confirmed now
-        quorumSigningManager->TruncateRecoveredSig(consensusParams.llmqTypeInstantSend, islock->GetRequestId());
+        quorumSigningManager->TruncateRecoveredSig(consensusParams.llmqTypeInstantSend.type, islock->GetRequestId());
     }
 
     db.RemoveArchivedInstantSendLocks(pindex->nHeight - 100);

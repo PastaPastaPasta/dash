@@ -18,6 +18,8 @@
 
 #include <assert.h>
 
+#include <optional>
+
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
 
@@ -279,10 +281,10 @@ public:
         AddLLMQ(Consensus::LLMQType::LLMQ_400_60);
         AddLLMQ(Consensus::LLMQType::LLMQ_400_85);
         AddLLMQ(Consensus::LLMQType::LLMQ_100_67);
-        consensus.llmqTypeChainLocks = Consensus::LLMQType::LLMQ_400_60;
-        consensus.llmqTypeInstantSend = Consensus::LLMQType::LLMQ_50_60;
-        consensus.llmqTypePlatform = Consensus::LLMQType::LLMQ_100_67;
-        consensus.llmqTypeMnhf = Consensus::LLMQType::LLMQ_400_85;
+        consensus.llmqTypeChainLocks = Consensus::LLMQParam::LLMQ_400_60;
+        consensus.llmqTypeInstantSend = Consensus::LLMQParam::LLMQ_50_60;
+        consensus.llmqTypePlatform = Consensus::LLMQParam::LLMQ_100_67;
+        consensus.llmqTypeMnhf = Consensus::LLMQParam::LLMQ_400_85;
 
         fDefaultConsistencyChecks = false;
         fRequireStandard = true;
@@ -492,10 +494,10 @@ public:
         AddLLMQ(Consensus::LLMQType::LLMQ_400_60);
         AddLLMQ(Consensus::LLMQType::LLMQ_400_85);
         AddLLMQ(Consensus::LLMQType::LLMQ_100_67);
-        consensus.llmqTypeChainLocks = Consensus::LLMQType::LLMQ_50_60;
-        consensus.llmqTypeInstantSend = Consensus::LLMQType::LLMQ_50_60;
-        consensus.llmqTypePlatform = Consensus::LLMQType::LLMQ_100_67;
-        consensus.llmqTypeMnhf = Consensus::LLMQType::LLMQ_50_60;
+        consensus.llmqTypeChainLocks = Consensus::LLMQParam::LLMQ_50_60;
+        consensus.llmqTypeInstantSend = Consensus::LLMQParam::LLMQ_50_60;
+        consensus.llmqTypePlatform = Consensus::LLMQParam::LLMQ_100_67;
+        consensus.llmqTypeMnhf = Consensus::LLMQParam::LLMQ_50_60;
 
         fDefaultConsistencyChecks = false;
         fRequireStandard = false;
@@ -687,10 +689,10 @@ public:
         AddLLMQ(Consensus::LLMQType::LLMQ_400_60);
         AddLLMQ(Consensus::LLMQType::LLMQ_400_85);
         AddLLMQ(Consensus::LLMQType::LLMQ_100_67);
-        consensus.llmqTypeChainLocks = Consensus::LLMQType::LLMQ_50_60;
-        consensus.llmqTypeInstantSend = Consensus::LLMQType::LLMQ_50_60;
-        consensus.llmqTypePlatform = Consensus::LLMQType::LLMQ_100_67;
-        consensus.llmqTypeMnhf = Consensus::LLMQType::LLMQ_50_60;
+        consensus.llmqTypeChainLocks = Consensus::LLMQParam::LLMQ_400_60;
+        consensus.llmqTypeInstantSend = Consensus::LLMQParam::LLMQ_50_60;
+        consensus.llmqTypePlatform = Consensus::LLMQParam::LLMQ_100_67;
+        consensus.llmqTypeMnhf = Consensus::LLMQParam::LLMQ_50_60;
 
         UpdateDevnetLLMQChainLocksFromArgs(args);
         UpdateDevnetLLMQInstantSendFromArgs(args);
@@ -741,18 +743,18 @@ public:
     /**
      * Allows modifying the LLMQ type for ChainLocks.
      */
-    void UpdateDevnetLLMQChainLocks(Consensus::LLMQType llmqType)
+    void UpdateDevnetLLMQChainLocks(const Consensus::LLMQParams& llmqParams)
     {
-        consensus.llmqTypeChainLocks = llmqType;
+        consensus.llmqTypeChainLocks = llmqParams;
     }
     void UpdateDevnetLLMQChainLocksFromArgs(const ArgsManager& args);
 
     /**
      * Allows modifying the LLMQ type for InstantSend.
      */
-    void UpdateDevnetLLMQInstantSend(Consensus::LLMQType llmqType)
+    void UpdateDevnetLLMQInstantSend(const Consensus::LLMQParams& llmqParams)
     {
-        consensus.llmqTypeInstantSend = llmqType;
+        consensus.llmqTypeInstantSend = llmqParams;
     }
     void UpdateDevnetLLMQInstantSendFromArgs(const ArgsManager& args);
 
@@ -926,10 +928,10 @@ public:
         // long living quorum params
         AddLLMQ(Consensus::LLMQType::LLMQ_TEST);
         AddLLMQ(Consensus::LLMQType::LLMQ_TEST_V17);
-        consensus.llmqTypeChainLocks = Consensus::LLMQType::LLMQ_TEST;
-        consensus.llmqTypeInstantSend = Consensus::LLMQType::LLMQ_TEST;
-        consensus.llmqTypePlatform = Consensus::LLMQType::LLMQ_TEST;
-        consensus.llmqTypeMnhf = Consensus::LLMQType::LLMQ_TEST;
+        consensus.llmqTypeChainLocks = Consensus::LLMQParam::LLMQ_TEST;
+        consensus.llmqTypeInstantSend = Consensus::LLMQParam::LLMQ_TEST;
+        consensus.llmqTypePlatform = Consensus::LLMQParam::LLMQ_TEST;
+        consensus.llmqTypeMnhf = Consensus::LLMQParam::LLMQ_TEST;
 
         UpdateLLMQTestParametersFromArgs(args);
     }
@@ -1151,36 +1153,36 @@ void CDevNetParams::UpdateDevnetLLMQChainLocksFromArgs(const ArgsManager& args)
 {
     if (!args.IsArgSet("-llmqchainlocks")) return;
 
-    std::string strLLMQType = gArgs.GetArg("-llmqchainlocks", std::string(consensus.llmqs.at(consensus.llmqTypeChainLocks).name));
-    Consensus::LLMQType llmqType = Consensus::LLMQType::LLMQ_NONE;
+    std::string strLLMQType = gArgs.GetArg("-llmqchainlocks", std::string(consensus.llmqTypeChainLocks.name));
+    std::optional<Consensus::LLMQParams> optLlmqParams{};
     for (const auto& p : consensus.llmqs) {
         if (p.second.name == strLLMQType) {
-            llmqType = p.first;
+            optLlmqParams = p.second;
         }
     }
-    if (llmqType == Consensus::LLMQType::LLMQ_NONE) {
+    if (!optLlmqParams) {
         throw std::runtime_error("Invalid LLMQ type specified for -llmqchainlocks.");
     }
-    LogPrintf("Setting llmqchainlocks to size=%ld\n", static_cast<uint8_t>(llmqType));
-    UpdateDevnetLLMQChainLocks(llmqType);
+    LogPrintf("Setting llmqchainlocks to size=%ld\n", static_cast<uint8_t>(optLlmqParams->type));
+    UpdateDevnetLLMQChainLocks(*optLlmqParams);
 }
 
 void CDevNetParams::UpdateDevnetLLMQInstantSendFromArgs(const ArgsManager& args)
 {
     if (!args.IsArgSet("-llmqinstantsend")) return;
 
-    std::string strLLMQType = gArgs.GetArg("-llmqinstantsend", std::string(consensus.llmqs.at(consensus.llmqTypeInstantSend).name));
-    Consensus::LLMQType llmqType = Consensus::LLMQType::LLMQ_NONE;
+    std::string strLLMQType = gArgs.GetArg("-llmqinstantsend", std::string(consensus.llmqTypeInstantSend.name));
+    std::optional<Consensus::LLMQParams> optLlmqParams{};
     for (const auto& p : consensus.llmqs) {
         if (p.second.name == strLLMQType) {
-            llmqType = p.first;
+            optLlmqParams = p.second;
         }
     }
-    if (llmqType == Consensus::LLMQType::LLMQ_NONE) {
+    if (!optLlmqParams) {
         throw std::runtime_error("Invalid LLMQ type specified for -llmqinstantsend.");
     }
-    LogPrintf("Setting llmqinstantsend to size=%ld\n", static_cast<uint8_t>(llmqType));
-    UpdateDevnetLLMQInstantSend(llmqType);
+    LogPrintf("Setting llmqinstantsend to size=%ld\n", static_cast<uint8_t>(optLlmqParams->size));
+    UpdateDevnetLLMQInstantSend(*optLlmqParams);
 }
 
 void CDevNetParams::UpdateLLMQDevnetParametersFromArgs(const ArgsManager& args)

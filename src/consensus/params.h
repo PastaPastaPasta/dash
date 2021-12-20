@@ -116,10 +116,10 @@ struct Params {
     int nHighSubsidyFactor{1};
 
     std::map<LLMQType, LLMQParams> llmqs;
-    LLMQType llmqTypeChainLocks;
-    LLMQType llmqTypeInstantSend{LLMQType::LLMQ_NONE};
-    LLMQType llmqTypePlatform{LLMQType::LLMQ_NONE};
-    LLMQType llmqTypeMnhf{LLMQType::LLMQ_NONE};
+    LLMQParams llmqTypeChainLocks{};
+    LLMQParams llmqTypeInstantSend{};
+    LLMQParams llmqTypePlatform{};
+    LLMQParams llmqTypeMnhf{};
 };
 } // namespace Consensus
 
