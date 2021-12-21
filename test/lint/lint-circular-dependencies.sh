@@ -37,7 +37,6 @@ EXPECTED_CIRCULAR_DEPENDENCIES=(
     "coinjoin/server -> net_processing -> coinjoin/server"
     "evo/cbtx -> evo/simplifiedmns -> evo/cbtx"
     "evo/cbtx -> evo/specialtx -> evo/cbtx"
-    "evo/deterministicmns -> evo/providertx -> evo/deterministicmns"
     "evo/deterministicmns -> evo/simplifiedmns -> evo/deterministicmns"
     "evo/deterministicmns -> evo/specialtx -> evo/deterministicmns"
     "evo/deterministicmns -> llmq/commitment -> evo/deterministicmns"
@@ -88,7 +87,6 @@ EXPECTED_CIRCULAR_DEPENDENCIES=(
     "evo/deterministicmns -> evo/simplifiedmns -> llmq/blockprocessor -> llmq/debug -> evo/deterministicmns"
     "evo/deterministicmns -> evo/simplifiedmns -> llmq/blockprocessor -> net_processing -> evo/deterministicmns"
     "evo/specialtx -> llmq/blockprocessor -> net_processing -> txmempool -> evo/specialtx"
-    "evo/providertx -> evo/specialtx -> llmq/blockprocessor -> net_processing -> txmempool -> evo/providertx"
 
     "coinjoin/client -> net_processing -> coinjoin/client"
     "llmq/quorums -> net_processing -> llmq/quorums"
