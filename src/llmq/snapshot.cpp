@@ -144,7 +144,7 @@ bool BuildQuorumRotationInfo(const CGetQuorumRotationInfo& request, CQuorumRotat
     const Consensus::LLMQParams& llmqParams = GetLLMQParams(llmqType);
     const int cycleLength = llmqParams.dkgInterval;
 
-    const CBlockIndex* hBlockIndex = tipBlockIndex->GetAncestor(tipBlockIndex->nHeight - (tipBlockIndex->nHeight % cycleLength));
+    const CBlockIndex* hBlockIndex = blockIndex->GetAncestor(blockIndex->nHeight - (blockIndex->nHeight % cycleLength));
     if (!hBlockIndex) {
         errorRet = strprintf("Can not find block H");
         return false;
