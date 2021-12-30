@@ -1,6 +1,20 @@
 name: conflibot
 on: pull_request
 
+permissions:
+  contents: read
+  pull-requests: write
+  # Enforce other not needed permissions are off
+  actions: none
+  checks: none
+  deployments: none
+  issues: none
+  packages: none
+  repository-projects: none
+  security-events: none
+  statuses: none
+
+
 jobs:
   conflibot:
     runs-on: ubuntu-latest
