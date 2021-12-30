@@ -22,3 +22,6 @@ jobs:
         uses: PastaPastaPasta/potential-conflicts-checker-action@0.1.2
         with:
           ghToken: "${{ secrets.GITHUB_TOKEN }}"
+      - name: process output
+        run: echo "Hello World!"
+        run: echo ${{join(steps.check_potential_conflicts.outputs.*, '\n')}}
