@@ -23,5 +23,5 @@ jobs:
         with:
           ghToken: "${{ secrets.GITHUB_TOKEN }}"
       - name: process output
-        run: echo "Hello World!" && echo ${{join(steps.check_potential_conflicts.outputs.*, '\n')}}
+        run: echo "Hello World!" && echo ${{steps.check_potential_conflicts.outputs.conflicts}}
 
