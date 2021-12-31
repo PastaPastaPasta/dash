@@ -23,5 +23,5 @@ jobs:
         with:
           ghToken: "${{ secrets.GITHUB_TOKEN }}"
       - name: process output
-        run: wget https://gist.githubusercontent.com/PastaPastaPasta/141cc264d17364941bdd75f915407d54/raw/067fb218c0485790624e6760fd9275a2efe52743/handle_potential_conflicts.py && pip3 install hjson && python3 handle_potential_conflicts.py ${conflicts}
+        run: wget https://gist.githubusercontent.com/PastaPastaPasta/141cc264d17364941bdd75f915407d54/raw/eab01181f3f2c301bd0e68fd20e9b673fee3ae14/handle_potential_conflicts.py && pip3 install hjson && python3 handle_potential_conflicts.py ${conflicts}
 

@@ -16,6 +16,7 @@ input = '''{ pull_number: 26,
 '''stuff'''
 def main():
     input = sys.argv[1]
+    print(input)
     j_input = hjson.loads(input)
     print(j_input)
 
