@@ -51,7 +51,7 @@ def main():
 
 
 def get_label(pr_num):
-    returnrequests.get(f'https://api.github.com/repos/PastaPastaPasta/dash/pulls/{pr_num}').json()['head']['label']
+    return requests.get(f'https://api.github.com/repos/PastaPastaPasta/dash/pulls/{pr_num}').json()['head']['label']
 
 
 if __name__ == "__main__":
