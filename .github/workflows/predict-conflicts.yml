@@ -23,5 +23,5 @@ jobs:
         with:
           ghToken: "${{ secrets.GITHUB_TOKEN }}"
       - name: process output
-        run: echo ${{steps.check.outputs.conflicts}} && echo ${conflicts} && echo $conflicts && echo $test && echo ${test}
+        run: python3 .github/workflows/handle_potential_conflicts.py ${conflicts}
 
