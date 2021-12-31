@@ -23,5 +23,5 @@ jobs:
         with:
           ghToken: "${{ secrets.GITHUB_TOKEN }}"
       - name: process output
-        run: python3 .github/workflows/handle_potential_conflicts.py ${conflicts}
+        run: ls && python3 dash/.github/workflows/handle_potential_conflicts.py ${conflicts}
 
