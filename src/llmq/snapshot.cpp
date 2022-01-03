@@ -122,11 +122,6 @@ bool BuildQuorumRotationInfo(const CGetQuorumRotationInfo& request, CQuorumRotat
 {
     AssertLockHeld(cs_main);
 
-    if (request.baseBlockHashesNb > 4) {
-        errorRet = strprintf("invalid requested baseBlockHashesNb");
-        return false;
-    }
-
     if (request.baseBlockHashesNb != request.baseBlockHashes.size()) {
         errorRet = strprintf("missmatch requested baseBlockHashesNb and size(baseBlockHashes)");
         return false;
