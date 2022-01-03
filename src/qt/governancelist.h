@@ -27,15 +27,19 @@ class Proposal : public QObject
 private:
     Q_OBJECT
 
-    const CGovernanceObject* pGovObj;
     QString m_title;
     QDateTime m_startDate;
     QDateTime m_endDate;
     float m_paymentAmount;
     QString m_url;
+    const QString m_hash_str;
+    const QString m_json_str;
+    QString m_status_str;
+    bool m_is_active;
+    const int32_t m_abs_yes_count;
 
 public:
-    explicit Proposal(const CGovernanceObject* p, QObject* parent = nullptr);
+    explicit Proposal(const CGovernanceObject* p, QObject* parent, int nAbsVoteReq);
     QString title() const;
     QString hash() const;
     QDateTime startDate() const;
@@ -43,7 +47,7 @@ public:
     float paymentAmount() const;
     QString url() const;
     bool isActive() const;
-    QString votingStatus(int nAbsVoteReq) const;
+    QString votingStatus() const;
     int GetAbsoluteYesCount() const;
 
     void openUrl() const;
@@ -55,7 +59,7 @@ class ProposalModel : public QAbstractTableModel
 {
 private:
     QList<const Proposal*> m_data;
-    int nAbsVoteReq = 0;
+    int nAbsVoteReq{0};
 
 public:
     explicit ProposalModel(QObject* parent = nullptr) :

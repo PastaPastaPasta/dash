@@ -22,9 +22,11 @@
 /// Proposal wrapper
 ///
 
-Proposal::Proposal(const CGovernanceObject* p, QObject* parent) :
+Proposal::Proposal(const CGovernanceObject* pGovObj, QObject* parent, const int nAbsVoteReq) :
     QObject(parent),
-    pGovObj(p)
+    m_hash_str(QString::fromStdString(pGovObj->GetHash().ToString())),
+    m_json_str(QString::fromStdString(pGovObj->ToJson().write(2))),
+    m_abs_yes_count(pGovObj->GetAbsoluteYesCount(VOTE_SIGNAL_FUNDING))
 {
     UniValue prop_data;
     if (prop_data.read(pGovObj->GetDataAsPlainString())) {
@@ -48,11 +50,25 @@ Proposal::Proposal(const CGovernanceObject* p, QObject* parent) :
             m_url = QString::fromStdString(urlValue.get_str());
         }
     }
+
+    std::string strError;
+    m_is_active = WITH_LOCK(cs_main, return pGovObj->IsValidLocally(strError, false));
+
+    // Voting status...
+    // TODO: determine if voting is in progress vs. funded or not funded for past proposals.
+    // see CSuperblock::GetNearestSuperblocksHeights(nBlockHeight, nLastSuperblock, nNextSuperblock);
+    if (const int absYesCount = GetAbsoluteYesCount(); absYesCount >= nAbsVoteReq) {
+        // Could use pGovObj->IsSetCachedFunding here, but need nAbsVoteReq to display numbers anyway.
+        m_status_str = tr("Passing +%1").arg(absYesCount - nAbsVoteReq);
+    } else {
+        m_status_str = tr("Needs additional %1 votes").arg(nAbsVoteReq - absYesCount);
+    }
+
 }
 
 QString Proposal::title() const { return m_title; }
 
-QString Proposal::hash() const { return QString::fromStdString(pGovObj->GetHash().ToString()); }
+QString Proposal::hash() const { return m_hash_str; }
 
 QDateTime Proposal::startDate() const { return m_startDate; }
 
@@ -62,32 +78,11 @@ float Proposal::paymentAmount() const { return m_paymentAmount; }
 
 QString Proposal::url() const { return m_url; }
 
-bool Proposal::isActive() const
-{
-    std::string strError;
-    LOCK(cs_main);
-    return pGovObj->IsValidLocally(strError, false);
-}
+bool Proposal::isActive() const { return m_is_active; }
 
-QString Proposal::votingStatus(const int nAbsVoteReq) const
-{
-    // Voting status...
-    // TODO: determine if voting is in progress vs. funded or not funded for past proposals.
-    // see CSuperblock::GetNearestSuperblocksHeights(nBlockHeight, nLastSuperblock, nNextSuperblock);
-    const int absYesCount = pGovObj->GetAbsoluteYesCount(VOTE_SIGNAL_FUNDING);
-    QString qStatusString;
-    if (absYesCount >= nAbsVoteReq) {
-        // Could use pGovObj->IsSetCachedFunding here, but need nAbsVoteReq to display numbers anyway.
-        return tr("Passing +%1").arg(absYesCount - nAbsVoteReq);
-    } else {
-        return tr("Needs additional %1 votes").arg(nAbsVoteReq - absYesCount);
-    }
-}
+QString Proposal::votingStatus() const { return m_status_str; }
 
-int Proposal::GetAbsoluteYesCount() const
-{
-    return pGovObj->GetAbsoluteYesCount(VOTE_SIGNAL_FUNDING);
-}
+int Proposal::GetAbsoluteYesCount() const { return m_abs_yes_count; }
 
 void Proposal::openUrl() const
 {
@@ -96,8 +91,7 @@ void Proposal::openUrl() const
 
 QString Proposal::toJson() const
 {
-    const auto json = pGovObj->ToJson();
-    return QString::fromStdString(json.write(2));
+    return m_json_str;
 }
 
 ///
@@ -136,7 +130,7 @@ QVariant ProposalModel::data(const QModelIndex& index, int role) const
         case Column::IS_ACTIVE:
             return proposal->isActive() ? "Y" : "N";
         case Column::VOTING_STATUS:
-            return proposal->votingStatus(nAbsVoteReq);
+            return proposal->votingStatus();
         default:
             return {};
         };
@@ -345,7 +339,7 @@ void GovernanceList::updateProposalList()
                 continue; // Skip triggers.
             }
 
-            newProposals.emplace_back(new Proposal(pGovObj, proposalModel));
+            newProposals.emplace_back(new Proposal(pGovObj, proposalModel, nAbsVoteReq));
         }
         proposalModel->reconcile(newProposals);
     }
