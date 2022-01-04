@@ -25,6 +25,14 @@ static constexpr int RATE_BUFFER_SIZE = 5;
 class CDeterministicMNList;
 using CDeterministicMNListPtr = std::shared_ptr<CDeterministicMNList>;
 
+
+template<class T>
+struct ReturnWithLock
+{
+    T data;
+    const std::unique_lock<std::recursive_mutex> lock;
+};
+
 class CRateCheckBuffer
 {
 private:
@@ -240,7 +248,7 @@ public:
 
     // These commands are only used in RPC
     std::vector<CGovernanceVote> GetCurrentVotes(const uint256& nParentHash, const COutPoint& mnCollateralOutpointFilter) const;
-    std::vector<const CGovernanceObject*> GetAllNewerThan(int64_t nMoreThanTime) const;
+    ReturnWithLock<std::vector<const CGovernanceObject*>> GetAllNewerThan(int64_t nMoreThanTime) const;
 
     void AddGovernanceObject(CGovernanceObject& govobj, CConnman& connman, const CNode* pfrom = nullptr);
 

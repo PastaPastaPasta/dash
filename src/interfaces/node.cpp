@@ -68,7 +68,7 @@ public:
 class GOVImpl : public GOV
 {
 public:
-    std::vector<const CGovernanceObject*> getAllNewerThan(int64_t nMoreThanTime) override
+    ReturnWithLock<std::vector<const CGovernanceObject*>> getAllNewerThan(int64_t nMoreThanTime) override
     {
         return governance.GetAllNewerThan(nMoreThanTime);
     }

@@ -332,9 +332,9 @@ void GovernanceList::updateProposalList()
         const int nAbsVoteReq = std::max(Params().GetConsensus().nGovernanceMinQuorum, nMnCount / 10);
         proposalModel->setVotingParams(nAbsVoteReq);
 
-        const std::vector<const CGovernanceObject*> govObjList = clientModel->getAllGovernanceObjects();
+        const ReturnWithLock<std::vector<const CGovernanceObject*>> govObjList = clientModel->getAllGovernanceObjects();
         std::vector<const Proposal*> newProposals;
-        for (const auto pGovObj : govObjList) {
+        for (const auto pGovObj : govObjList.data) {
             if (pGovObj->GetObjectType() != GOVERNANCE_OBJECT_PROPOSAL) {
                 continue; // Skip triggers.
             }

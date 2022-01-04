@@ -18,6 +18,8 @@
 #include <tuple>
 #include <vector>
 
+#include <governance/governance.h> // temp for ReturnWithLock
+
 class BanMan;
 class CCoinControl;
 class CDeterministicMNList;
@@ -47,7 +49,7 @@ class GOV
 {
 public:
     virtual ~GOV() {}
-    virtual std::vector<const CGovernanceObject*> getAllNewerThan(int64_t nMoreThanTime) = 0;
+    virtual ReturnWithLock<std::vector<const CGovernanceObject*>> getAllNewerThan(int64_t nMoreThanTime) = 0;
 };
 
 //! Interface for the src/llmq part of a dash node (dashd process).

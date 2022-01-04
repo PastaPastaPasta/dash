@@ -503,9 +503,9 @@ std::vector<CGovernanceVote> CGovernanceManager::GetCurrentVotes(const uint256& 
     return vecResult;
 }
 
-std::vector<const CGovernanceObject*> CGovernanceManager::GetAllNewerThan(int64_t nMoreThanTime) const
+ReturnWithLock<std::vector<const CGovernanceObject*>> CGovernanceManager::GetAllNewerThan(int64_t nMoreThanTime) const
 {
-    LOCK(cs);
+    TRY_LOCK(cs, lock);
 
     std::vector<const CGovernanceObject*> vGovObjs;
 
@@ -520,7 +520,7 @@ std::vector<const CGovernanceObject*> CGovernanceManager::GetAllNewerThan(int64_
         vGovObjs.push_back(pGovObj);
     }
 
-    return vGovObjs;
+    return {vGovObjs, std::move(lock)};
 }
 
 //

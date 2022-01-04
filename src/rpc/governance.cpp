@@ -727,11 +727,11 @@ static UniValue ListObjects(const std::string& strCachedSignal, const std::strin
 
     LOCK2(cs_main, governance.cs);
 
-    std::vector<const CGovernanceObject*> objs = governance.GetAllNewerThan(nStartTime);
+    ReturnWithLock<std::vector<const CGovernanceObject*>> objs = governance.GetAllNewerThan(nStartTime);
     governance.UpdateLastDiffTime(GetTime());
     // CREATE RESULTS FOR USER
 
-    for (const auto& pGovObj : objs) {
+    for (const auto& pGovObj : objs.data) {
         if (strCachedSignal == "valid" && !pGovObj->IsSetCachedValid()) continue;
         if (strCachedSignal == "funding" && !pGovObj->IsSetCachedFunding()) continue;
         if (strCachedSignal == "delete" && !pGovObj->IsSetCachedDelete()) continue;
