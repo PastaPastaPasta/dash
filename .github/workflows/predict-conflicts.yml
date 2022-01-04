@@ -26,11 +26,3 @@ jobs:
           ghToken: "${{ secrets.GITHUB_TOKEN }}"
       - name: process output
         run: wget https://gist.githubusercontent.com/PastaPastaPasta/141cc264d17364941bdd75f915407d54/raw/df4e0f5092ed20493909960178786c7991c46563/handle_potential_conflicts.py && pip3 install hjson && python3 handle_potential_conflicts.py "$conflicts"
-      - name: 'Comment PR'
-        uses: actions/github-script@0.3.0
-        if: ${{ failure() }}
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { issue: { number: issue_number }, repo: { owner, repo }  } = context;
-            github.issues.createComment({ issue_number, owner, repo, body: 'Hello world ! 👋' });
