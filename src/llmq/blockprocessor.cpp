@@ -169,7 +169,7 @@ bool CQuorumBlockProcessor::ProcessBlock(const CBlock& block, const CBlockIndex*
             LogPrintf("[ProcessBlock] h[%d] isCommitmentRequired[%d] numCommitmentsInNewBlock[%d]\n", pindex->nHeight, isCommitmentRequired, numCommitmentsInNewBlock);
         }
     }
-
+/*
     for (const auto& p : qcs) {
         const auto& qc = p.second;
         if (!ProcessCommitment(pindex->nHeight, blockHash, qc, state, fJustCheck)) {
@@ -177,7 +177,7 @@ bool CQuorumBlockProcessor::ProcessBlock(const CBlock& block, const CBlockIndex*
             return false;
         }
     }
-
+*/
     evoDb.Write(DB_BEST_BLOCK_UPGRADE, blockHash);
 
     return true;
