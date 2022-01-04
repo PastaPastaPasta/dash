@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: check
-        uses: PastaPastaPasta/potential-conflicts-checker-action@0.1.8
+        uses: PastaPastaPasta/potential-conflicts-checker-action@0.1.9
         with:
           ghToken: "${{ secrets.GITHUB_TOKEN }}"
       - name: process output
