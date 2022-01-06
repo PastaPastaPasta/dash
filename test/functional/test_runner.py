@@ -76,20 +76,34 @@ EXTENDED_SCRIPTS = [
 BASE_SCRIPTS = [
     # Scripts that are run by default.
     # Longest test should go first, to favor running tests in parallel
-    'feature_dip3_deterministicmns.py', # NOTE: needs dash_hash to pass
+    'feature_block.py', # NOTE: needs dash_hash to pass
+    'feature_llmq_is_retroactive.py', # NOTE: needs dash_hash to pass
+    'feature_llmq_simplepose.py', # NOTE: needs dash_hash to pass
+    'p2p_permissions.py',
+    'mining_getblocktemplate_longpoll.py', # FIXME: "socket.error: [Errno 54] Connection reset by peer" on my Mac, same as https://github.com/bitcoin/bitcoin/issues/6651
+    'feature_abortnode.py',
     'feature_llmq_data_recovery.py',
+<<<<<<< HEAD
     'feature_llmq_qvvec_sync.py',
+=======
+    'feature_dip3_deterministicmns.py', # NOTE: needs dash_hash to pass
+    'wallet_multiwallet.py --usecli',
+    'wallet_multiwallet.py',
+    'feature_timestampindex.py',
+    'feature_llmq_signing.py --spork21', # NOTE: needs dash_hash to pass
+    'wallet_upgradetohd.py',
+    'p2p_blockfilters.py',
+    'feature_multikeysporks.py',
+    'feature_llmq_signing.py', # NOTE: needs dash_hash to pass
+    'p2p_quorum_data.py',
+>>>>>>> 7b0738e3d0... tests: reorder test_runner to be mildly faster
     'feature_fee_estimation.py',
     'wallet_hd.py',
     'wallet_backup.py',
     # vv Tests less than 5m vv
-    'mining_getblocktemplate_longpoll.py', # FIXME: "socket.error: [Errno 54] Connection reset by peer" on my Mac, same as https://github.com/bitcoin/bitcoin/issues/6651
     'feature_maxuploadtarget.py',
-    'feature_block.py', # NOTE: needs dash_hash to pass
     'rpc_fundrawtransaction.py',
     'rpc_fundrawtransaction_hd.py',
-    'wallet_multiwallet.py --usecli',
-    'p2p_quorum_data.py',
     # vv Tests less than 2m vv
     'p2p_instantsend.py',
     'wallet_basic.py',
@@ -98,14 +112,9 @@ BASE_SCRIPTS = [
     'feature_bip68_sequence.py',
     'wallet_dump.py',
     'wallet_listtransactions.py',
-    'feature_multikeysporks.py',
-    'feature_llmq_signing.py', # NOTE: needs dash_hash to pass
-    'feature_llmq_signing.py --spork21', # NOTE: needs dash_hash to pass
     'feature_llmq_chainlocks.py', # NOTE: needs dash_hash to pass
     'feature_llmq_connections.py', # NOTE: needs dash_hash to pass
-    'feature_llmq_simplepose.py', # NOTE: needs dash_hash to pass
     'feature_llmq_is_cl_conflicts.py', # NOTE: needs dash_hash to pass
-    'feature_llmq_is_retroactive.py', # NOTE: needs dash_hash to pass
     'feature_llmq_dkgerrors.py', # NOTE: needs dash_hash to pass
     'feature_dip4_coinbasemerkleroots.py', # NOTE: needs dash_hash to pass
     # vv Tests less than 60s vv
@@ -119,7 +128,6 @@ BASE_SCRIPTS = [
     'feature_csv_activation.py',
     'rpc_rawtransaction.py',
     'feature_reindex.py',
-    'feature_abortnode.py',
     # vv Tests less than 30s vv
     'wallet_keypool_topup.py',
     'interface_zmq_dash.py',
@@ -135,7 +143,6 @@ BASE_SCRIPTS = [
     'mempool_spend_coinbase.py',
     'mempool_reorg.py',
     'mempool_persist.py',
-    'wallet_multiwallet.py',
     'wallet_createwallet.py',
     'wallet_createwallet.py --usecli',
     'interface_http.py',
@@ -148,7 +155,6 @@ BASE_SCRIPTS = [
     'wallet_groups.py',
     'p2p_disconnect_ban.py',
     'feature_addressindex.py',
-    'feature_timestampindex.py',
     'feature_spentindex.py',
     'rpc_decodescript.py',
     'rpc_blockchain.py',
@@ -194,10 +200,11 @@ BASE_SCRIPTS = [
     'p2p_leak.py',
     'p2p_compactblocks.py',
     'p2p_connect_to_devnet.py',
+    'p2p_node_network_limited.py',
+    'feature_config_args.py',
     'feature_sporks.py',
     'rpc_getblockstats.py',
     'wallet_encryption.py',
-    'wallet_upgradetohd.py',
     'feature_dersig.py',
     'feature_cltv.py',
     'feature_new_quorum_type_activation.py',
@@ -218,17 +225,13 @@ BASE_SCRIPTS = [
     'feature_dip0020_activation.py',
     'feature_uacomment.py',
     'feature_filelock.py',
-    'p2p_blockfilters.py',
     'feature_asmap.py',
     'feature_includeconf.py',
     'rpc_deriveaddresses.py',
     'rpc_deriveaddresses.py --usecli',
     'rpc_scantxoutset.py',
     'feature_logging.py',
-    'p2p_node_network_limited.py',
-    'p2p_permissions.py',
     'feature_blocksdir.py',
-    'feature_config_args.py',
     'rpc_help.py',
     'feature_help.py',
     # Don't append tests at the end to avoid merge conflicts
