@@ -630,6 +630,7 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_DIP0020].nThresholdMin = 60; // 60% of 100
         consensus.vDeployments[Consensus::DEPLOYMENT_DIP0020].nFalloffCoeff = 5; // this corresponds to 10 periods
 
+        consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].bit = 7;
         consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].nStartTime = 1625097600; // July 1st, 2021
         consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].nTimeout = 1656633600; // July 1st, 2022
         consensus.vDeployments[Consensus::DEPLOYMENT_DIP0024].nWindowSize = 100;
