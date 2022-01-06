@@ -1155,7 +1155,7 @@ class DashTestFramework(BitcoinTestFramework):
             return all_ok
         wait_until(check_dkg_comitments, timeout=timeout, sleep=0.1)
 
-    def wait_for_quorum_list(self, quorum_hash, nodes, timeout=15, sleep=0.1):
+    def wait_for_quorum_list(self, quorum_hash, nodes, timeout=15, sleep=1):
         def wait_func():
             if quorum_hash in self.nodes[0].quorum("list")["llmq_test"]:
                 return True
