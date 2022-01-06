@@ -146,7 +146,7 @@ class LLMQSimplePoSeTest(DashTestFramework):
         # Make sure all masternodes will reconnect/re-probe
         self.bump_mocktime(50 * 60 + 1)
         # Sleep a couple of seconds to let mn sync tick to happen
-        time.sleep(2)
+        time.sleep(0.5)
 
     def check_punished(self, mn):
         info = self.nodes[0].protx('info', mn.proTxHash)
