@@ -22,7 +22,7 @@ llmq_test_v17 = 102
 llmq_type_strings = {llmq_test: 'llmq_test', llmq_test_v17: 'llmq_test_v17'}
 
 
-class QuorumDataRecoveryTest(DashTestFramework):
+class QuorumQvvecSync(DashTestFramework):
     def set_test_params(self):
         extra_args = [["-vbparams=dip0020:0:999999999999:10:8:6:5"] for _ in range(9)]
         self.set_dash_test_params(9, 7, fast_dip3_enforcement=True, extra_args=extra_args)
@@ -61,11 +61,7 @@ class QuorumDataRecoveryTest(DashTestFramework):
 
     def get_member_mns(self, quorum_type, quorum_hash):
         members = self.nodes[0].quorum("info", quorum_type, quorum_hash)["members"]
-        mns = []
-        for member in members:
-            if member["valid"]:
-                mns.append(self.get_mn(member["proTxHash"]))
-        return mns
+        return [self.get_mn(member["proTxHash"]) for member in members if member["valid"]]
 
     def get_subset_only_in_left(self, quorum_members_left, quorum_members_right):
         quorum_members_subset = quorum_members_left.copy()
@@ -126,90 +122,11 @@ class QuorumDataRecoveryTest(DashTestFramework):
         self.wait_for_sporks_same()
         self.activate_dip8()
 
-        logger.info("Test automated DGK data recovery")
-        # This two nodes will remain the only ones with valid DKG data
-        last_resort_test = None
-        last_resort_v17 = None
-        while True:
-            # Mine the quorums used for the recovery test
-            quorum_hash_recover = self.mine_quorum()
-            # Get all their member masternodes
-            member_mns_recover_test = self.get_member_mns(llmq_test, quorum_hash_recover)
-            member_mns_recover_v17 = self.get_member_mns(llmq_test_v17, quorum_hash_recover)
-            # All members should initially be valid
-            self.test_mns(llmq_test, quorum_hash_recover, valid_mns=member_mns_recover_test)
-            self.test_mns(llmq_test_v17, quorum_hash_recover, valid_mns=member_mns_recover_v17)
-            try:
-                # As last resorts find one node which is in llmq_test but not in llmq_test_v17 and one other vice versa
-                last_resort_test = self.get_subset_only_in_left(member_mns_recover_test, member_mns_recover_v17)[0]
-                last_resort_v17 = self.get_subset_only_in_left(member_mns_recover_v17, member_mns_recover_test)[0]
-                break
-            except IndexError:
-                continue
-        assert last_resort_test != last_resort_v17
-        # Reindex all other nodes the to drop their DKG data, first run with recovery disabled to make sure disabling
-        # works as expected
-        recover_members = member_mns_recover_test + member_mns_recover_v17
-        exclude_members = [last_resort_test, last_resort_v17]
-        # Reindex all masternodes but exclude the last_resort for both testing quorums
-        self.restart_mns(exclude=exclude_members, reindex=True, qdata_recovery_enabled=False)
-        # Validate all but one are invalid members now
-        self.test_mns(llmq_test, quorum_hash_recover, valid_mns=[last_resort_test], all_mns=member_mns_recover_test)
-        self.test_mns(llmq_test_v17, quorum_hash_recover, valid_mns=[last_resort_v17], all_mns=member_mns_recover_v17)
-        # If recovery would be enabled it would trigger after the mocktime bump / mined block
-        self.bump_mocktime(self.quorum_data_request_expiration_timeout + 1)
-        node.generate(1)
-        time.sleep(10)
-        # Make sure they are still invalid
-        self.test_mns(llmq_test, quorum_hash_recover, valid_mns=[last_resort_test], all_mns=member_mns_recover_test)
-        self.test_mns(llmq_test_v17, quorum_hash_recover, valid_mns=[last_resort_v17], all_mns=member_mns_recover_v17)
-        # Mining a block should not result in a chainlock now because the responsible quorum shouldn't have enough
-        # valid members.
-        self.wait_for_chainlocked_block(node, node.generate(1)[0], False, 5)
-        # Now restart with recovery enabled
-        self.restart_mns(mns=recover_members, exclude=exclude_members, reindex=True, qdata_recovery_enabled=True)
-        # Validate that all invalid members recover. Note: recover=True leads to mocktime bumps and mining while waiting
-        # which trigger CQuorumManger::TriggerQuorumDataRecoveryThreads()
-        self.test_mns(llmq_test, quorum_hash_recover, valid_mns=member_mns_recover_test, recover=True)
-        self.test_mns(llmq_test_v17, quorum_hash_recover, valid_mns=member_mns_recover_v17, recover=True)
-        # Mining a block should result in a chainlock now because the quorum should be healed
-        self.wait_for_chainlocked_block_all_nodes(node.getbestblockhash())
-        logger.info("Test -llmq-qvvec-sync command line parameter")
-        logger.info("Test invalid command line parameter values")
-        node.stop_node()
-        node.wait_until_stopped()
-        # Test -llmq-qvvec-sync entry format
-        node.assert_start_raises_init_error(["-llmq-qvvec-sync="],
-                                            "Error: Invalid format in -llmq-qvvec-sync:")
-        node.assert_start_raises_init_error(["-llmq-qvvec-sync=0"],
-                                            "Error: Invalid format in -llmq-qvvec-sync: 0")
-        node.assert_start_raises_init_error(["-llmq-qvvec-sync=0:"],
-                                            "Error: Invalid format in -llmq-qvvec-sync: 0:")
-        node.assert_start_raises_init_error(["-llmq-qvvec-sync=:0"],
-                                            "Error: Invalid format in -llmq-qvvec-sync: :0")
-        node.assert_start_raises_init_error(["-llmq-qvvec-sync=0:0:0"],
-                                            "Error: Invalid format in -llmq-qvvec-sync: 0:0:0")
-        node.assert_start_raises_init_error(["-llmq-qvvec-sync=0::"],
-                                            "Error: Invalid format in -llmq-qvvec-sync: 0::")
-        node.assert_start_raises_init_error(["-llmq-qvvec-sync=::0"],
-                                            "Error: Invalid format in -llmq-qvvec-sync: ::0")
-        node.assert_start_raises_init_error(["-llmq-qvvec-sync=:0:"],
-                                            "Error: Invalid format in -llmq-qvvec-sync: :0:")
-        # Test llmqType
-        node.assert_start_raises_init_error(["-llmq-qvvec-sync=0:0"],
-                                            "Error: Invalid llmqType in -llmq-qvvec-sync: 0:0")
-        node.assert_start_raises_init_error(["-llmq-qvvec-sync=llmq-test:0"],
-                                            "Error: Invalid llmqType in -llmq-qvvec-sync: llmq-test:0")
-        node.assert_start_raises_init_error(["-llmq-qvvec-sync=100:0", "-llmq-qvvec-sync=0"],
-                                            "Error: Invalid llmqType in -llmq-qvvec-sync: 100:0")
-        node.assert_start_raises_init_error(["-llmq-qvvec-sync=llmq_test:0", "-llmq-qvvec-sync=llmq_test:0"],
-                                            "Error: Duplicated llmqType in -llmq-qvvec-sync: llmq_test:0")
-        # Test mode
-        node.assert_start_raises_init_error(["-llmq-qvvec-sync=llmq_test:-1"],
-                                            "Error: Invalid mode in -llmq-qvvec-sync: llmq_test:-1")
-        node.assert_start_raises_init_error(["-llmq-qvvec-sync=llmq_test:2"],
-                                            "Error: Invalid mode in -llmq-qvvec-sync: llmq_test:2")
-
+        # Run with one type separated and then both possible (for regtest) together, both calls generate new quorums
+        # and are restarting the nodes with the other parameters
+        self.test_llmq_qvvec_sync([(llmq_test, 0)])
+        self.test_llmq_qvvec_sync([(llmq_test_v17, 1)])
+        self.test_llmq_qvvec_sync([(llmq_test, 0), (llmq_test_v17, 1)])
 
 if __name__ == '__main__':
-    QuorumDataRecoveryTest().main()
+    QuorumQvvecSync().main()
