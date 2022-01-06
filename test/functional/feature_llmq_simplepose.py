@@ -96,7 +96,7 @@ class LLMQSimplePoSeTest(DashTestFramework):
         mninfos_online = self.mninfo.copy()
         mninfos_valid = self.mninfo.copy()
         expected_contributors = len(mninfos_online)
-        for i in range(2):
+        for _ in range(2):
             mn = mninfos_valid.pop()
             went_offline = invalidate_proc(mn)
             if went_offline:

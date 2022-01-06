@@ -61,11 +61,7 @@ class QuorumDataRecoveryTest(DashTestFramework):
 
     def get_member_mns(self, quorum_type, quorum_hash):
         members = self.nodes[0].quorum("info", quorum_type, quorum_hash)["members"]
-        mns = []
-        for member in members:
-            if member["valid"]:
-                mns.append(self.get_mn(member["proTxHash"]))
-        return mns
+        return [self.get_mn(member["proTxHash"]) for member in members if member["valid"]]
 
     def get_subset_only_in_left(self, quorum_members_left, quorum_members_right):
         quorum_members_subset = quorum_members_left.copy()
