@@ -83,9 +83,7 @@ BASE_SCRIPTS = [
     'mining_getblocktemplate_longpoll.py', # FIXME: "socket.error: [Errno 54] Connection reset by peer" on my Mac, same as https://github.com/bitcoin/bitcoin/issues/6651
     'feature_abortnode.py',
     'feature_llmq_data_recovery.py',
-<<<<<<< HEAD
     'feature_llmq_qvvec_sync.py',
-=======
     'feature_dip3_deterministicmns.py', # NOTE: needs dash_hash to pass
     'wallet_multiwallet.py --usecli',
     'wallet_multiwallet.py',
@@ -96,7 +94,6 @@ BASE_SCRIPTS = [
     'feature_multikeysporks.py',
     'feature_llmq_signing.py', # NOTE: needs dash_hash to pass
     'p2p_quorum_data.py',
->>>>>>> 7b0738e3d0... tests: reorder test_runner to be mildly faster
     'feature_fee_estimation.py',
     'wallet_hd.py',
     'wallet_backup.py',
