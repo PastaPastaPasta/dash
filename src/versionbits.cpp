@@ -176,19 +176,19 @@ private:
     const Consensus::DeploymentPos id;
 
 protected:
-    int64_t BeginTime(const Consensus::Params& params) const override { return params.vDeployments[id].nStartTime; }
-    int64_t EndTime(const Consensus::Params& params) const override { return params.vDeployments[id].nTimeout; }
-    int Period(const Consensus::Params& params) const override { return params.vDeployments[id].nWindowSize ? params.vDeployments[id].nWindowSize : params.nMinerConfirmationWindow; }
+    int64_t BeginTime(const Consensus::Params& params) const override { return params.vDeployments.at(id).nStartTime; }
+    int64_t EndTime(const Consensus::Params& params) const override { return params.vDeployments.at(id).nTimeout; }
+    int Period(const Consensus::Params& params) const override { return params.vDeployments.at(id).nWindowSize ? params.vDeployments.at(id).nWindowSize : params.nMinerConfirmationWindow; }
     int Threshold(const Consensus::Params& params, int nAttempt) const override
     {
-        if (params.vDeployments[id].nThresholdStart == 0) {
+        if (params.vDeployments.at(id).nThresholdStart == 0) {
             return params.nRuleChangeActivationThreshold;
         }
-        if (params.vDeployments[id].nThresholdMin == 0 || params.vDeployments[id].nFalloffCoeff == 0) {
-            return params.vDeployments[id].nThresholdStart;
+        if (params.vDeployments.at(id).nThresholdMin == 0 || params.vDeployments.at(id).nFalloffCoeff == 0) {
+            return params.vDeployments.at(id).nThresholdStart;
         }
-        int64_t nThresholdCalc = params.vDeployments[id].nThresholdStart - nAttempt * nAttempt * Period(params) / 100 / params.vDeployments[id].nFalloffCoeff;
-        return std::max(params.vDeployments[id].nThresholdMin, nThresholdCalc);
+        int64_t nThresholdCalc = params.vDeployments.at(id).nThresholdStart - nAttempt * nAttempt * Period(params) / 100 / params.vDeployments.at(id).nFalloffCoeff;
+        return std::max(params.vDeployments.at(id).nThresholdMin, nThresholdCalc);
     }
 
     bool Condition(const CBlockIndex* pindex, const Consensus::Params& params) const override
@@ -198,7 +198,7 @@ protected:
 
 public:
     explicit VersionBitsConditionChecker(Consensus::DeploymentPos id_) : id(id_) {}
-    uint32_t Mask(const Consensus::Params& params) const { return ((uint32_t)1) << params.vDeployments[id].bit; }
+    uint32_t Mask(const Consensus::Params& params) const { return ((uint32_t)1) << params.vDeployments.at(id).bit; }
 };
 
 } // namespace

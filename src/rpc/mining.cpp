@@ -622,7 +622,7 @@ static UniValue getblocktemplate(const JSONRPCRequest& request)
             case ThresholdState::STARTED:
             {
                 const struct VBDeploymentInfo& vbinfo = VersionBitsDeploymentInfo[pos];
-                vbavailable.pushKV(gbt_vb_name(pos), consensusParams.vDeployments[pos].bit);
+                vbavailable.pushKV(gbt_vb_name(pos), consensusParams.vDeployments.at(pos).bit);
                 if (setClientRules.find(vbinfo.name) == setClientRules.end()) {
                     if (!vbinfo.gbt_force) {
                         // If the client doesn't support this, don't indicate it in the [default] version

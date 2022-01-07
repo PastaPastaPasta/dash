@@ -33,7 +33,7 @@ enum DeploymentPos
  */
 struct BIP9Deployment {
     /** Bit position to select the particular bit in nVersion. */
-    int bit;
+    const int bit;
     /** Start MedianTime for version bits miner confirmation. Can be a date in the past */
     int64_t nStartTime;
     /** Timeout/expiry MedianTime for the deployment attempt. */
@@ -46,6 +46,11 @@ struct BIP9Deployment {
     int64_t nThresholdMin{0};
     /** A coefficient which adjusts the speed a required number of signaling blocks is decreasing from nThresholdStart to nThresholdMin at with each period. */
     int64_t nFalloffCoeff{0};
+
+    constexpr BIP9Deployment(int _bit, int64_t _nStartTime, int64_t _nTimeout) :
+        bit(_bit),
+        nStartTime(_nStartTime),
+        nTimeout(_nTimeout) {};
 };
 
 /**
@@ -97,7 +102,7 @@ struct Params {
     uint32_t nRuleChangeActivationThreshold;
     // Default BIP9Deployment::nWindowSize value for deployments where it's not specified and for unknown deployments.
     uint32_t nMinerConfirmationWindow;
-    BIP9Deployment vDeployments[MAX_VERSION_BITS_DEPLOYMENTS];
+    std::map<int, BIP9Deployment> vDeployments;
     /** Proof of work parameters */
     uint256 powLimit;
     bool fPowAllowMinDifficultyBlocks;

@@ -1434,10 +1434,10 @@ static UniValue BIP9SoftForkDesc(const Consensus::Params& consensusParams, Conse
     }
     if (ThresholdState::STARTED == thresholdState)
     {
-        rv.pushKV("bit", consensusParams.vDeployments[id].bit);
+        rv.pushKV("bit", consensusParams.vDeployments.at(id).bit);
     }
-    rv.pushKV("startTime", consensusParams.vDeployments[id].nStartTime);
-    rv.pushKV("timeout", consensusParams.vDeployments[id].nTimeout);
+    rv.pushKV("startTime", consensusParams.vDeployments.at(id).nStartTime);
+    rv.pushKV("timeout", consensusParams.vDeployments.at(id).nTimeout);
     rv.pushKV("since", VersionBitsTipStateSinceHeight(consensusParams, id));
     if (ThresholdState::STARTED == thresholdState)
     {
@@ -1458,7 +1458,7 @@ static void BIP9SoftForkDescPushBack(UniValue& bip9_softforks, const Consensus::
     // Deployments with timeout value of 0 are hidden.
     // A timeout value of 0 guarantees a softfork will never be activated.
     // This is used when softfork codes are merged without specifying the deployment schedule.
-    if (consensusParams.vDeployments[id].nTimeout > 0)
+    if (consensusParams.vDeployments.at(id).nTimeout > 0)
         bip9_softforks.pushKV(VersionBitsDeploymentInfo[id].name, BIP9SoftForkDesc(consensusParams, id));
 }
 
