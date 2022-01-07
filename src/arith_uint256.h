@@ -11,12 +11,13 @@
 #include <stdexcept>
 #include <stdint.h>
 #include <string>
+#include <string_view>
 
 class uint256;
 
 class uint_error : public std::runtime_error {
 public:
-    explicit uint_error(const std::string& str) : std::runtime_error(str) {}
+    explicit uint_error(std::string_view str) : std::runtime_error(str) {}
 };
 
 /** Template base class for unsigned big integers. */
@@ -61,7 +62,7 @@ public:
             pn[i] = 0;
     }
 
-    explicit base_uint(const std::string& str);
+    explicit base_uint(std::string_view str);
 
     const base_uint operator~() const
     {
@@ -225,7 +226,7 @@ public:
 
     std::string GetHex() const;
     void SetHex(const char* psz);
-    void SetHex(const std::string& str);
+    void SetHex(std::string_view str);
     std::string ToString() const;
 
     unsigned int size() const
@@ -252,7 +253,7 @@ public:
     arith_uint256() {}
     arith_uint256(const base_uint<256>& b) : base_uint<256>(b) {}
     arith_uint256(uint64_t b) : base_uint<256>(b) {}
-    explicit arith_uint256(const std::string& str) : base_uint<256>(str) {}
+    explicit arith_uint256(std::string_view str) : base_uint<256>(str) {}
 
     /**
      * The "compact" format is a representation of a whole
