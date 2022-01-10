@@ -6,7 +6,7 @@
 
 #include <consensus/params.h>
 
-const struct VBDeploymentInfo VersionBitsDeploymentInfo[Consensus::MAX_VERSION_BITS_DEPLOYMENTS] = {
+const std::array<VBDeploymentInfo, Consensus::MAX_VERSION_BITS_DEPLOYMENTS> VersionBitsDeploymentInfo{{
     {
         /*.name =*/ "testdummy",
         /*.gbt_force =*/ true,
@@ -15,7 +15,7 @@ const struct VBDeploymentInfo VersionBitsDeploymentInfo[Consensus::MAX_VERSION_B
         /*.name =*/ "taproot",
         /*.gbt_force =*/ true,
     },
-};
+}};
 
 std::string DeploymentName(Consensus::BuriedDeployment dep)
 {
