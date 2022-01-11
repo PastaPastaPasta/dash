@@ -9,6 +9,7 @@
 #include <consensus/merkle.h>
 #include <deploymentinfo.h>
 #include <hash.h> // for signet block challenge hash
+#include <util/syntaxhelp.h>
 #include <util/system.h>
 
 #include <assert.h>
@@ -56,6 +57,25 @@ static CBlock CreateGenesisBlock(uint32_t nTime, uint32_t nNonce, uint32_t nBits
 }
 
 /**
+ * Helper for initializing vDeployments via util::ArrayInit
+ */
+static constexpr util::NamedArgument<int, struct bit_arg> _bit;
+static constexpr util::NamedArgument<int64_t, struct start_time_arg> _start_time;
+static constexpr util::NamedArgument<int64_t, struct timeout_arg> _timeout;
+static constexpr util::NamedArgument<int, struct minactheight_arg> _minactheight;
+
+template<size_t Offset>
+static inline util::ArrayInitElement<Offset, Consensus::BIP9Deployment> DepSettings(decltype(_bit)::Arg bit, decltype(_start_time)::Arg start_time, decltype(_timeout)::Arg timeout, decltype(_minactheight)::Arg minactheight)
+{
+    Consensus::BIP9Deployment dep;
+    dep.bit = bit.v;
+    dep.nStartTime = start_time.v;
+    dep.nTimeout = timeout.v;
+    dep.min_activation_height = minactheight.v;
+    return util::ArrayInitElement<Offset, Consensus::BIP9Deployment>{dep};
+}
+
+/**
  * Main network on which people trade goods and services.
  */
 class CMainParams : public CChainParams {
@@ -80,16 +100,24 @@ public:
         consensus.fPowNoRetargeting = false;
         consensus.nRuleChangeActivationThreshold = 1815; // 90% of 2016
         consensus.nMinerConfirmationWindow = 2016; // nPowTargetTimespan / nPowTargetSpacing
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TESTDUMMY).bit = 28;
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TESTDUMMY).nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TESTDUMMY).nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TESTDUMMY).min_activation_height = 0; // No activation delay
 
-        // Deployment of Taproot (BIPs 340-342)
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TAPROOT).bit = 2;
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TAPROOT).nStartTime = 1619222400; // April 24th, 2021
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TAPROOT).nTimeout = 1628640000; // August 11th, 2021
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TAPROOT).min_activation_height = 709632; // Approximately November 12th, 2021
+        util::ArrayInit(consensus.vDeployments,
+            DepSettings<Consensus::DEPLOYMENT_TESTDUMMY>(
+                _bit = 28,
+                _start_time = Consensus::BIP9Deployment::NEVER_ACTIVE,
+                _timeout = Consensus::BIP9Deployment::NO_TIMEOUT,
+                _minactheight = 0 // No activation delay
+            ),
+
+            // Deployment of Taproot (BIPs 340-342)
+            DepSettings<Consensus::DEPLOYMENT_TAPROOT>(
+                _bit = 2,
+                _start_time = 1619222400, // April 24th, 2021
+                _timeout = 1628640000, // August 11th, 2021
+                _minactheight = 709632 // Approximately November 12th, 2021
+            )
+        );
+
 
         consensus.nMinimumChainWork = uint256S("0x00000000000000000000000000000000000000001fa4663bbbe19f82de910280");
         consensus.defaultAssumeValid = uint256S("0x00000000000000000008a89e854d57e5667df88f1cdef6fde2fbca1de5b639ad"); // 691719
@@ -199,16 +227,23 @@ public:
         consensus.fPowNoRetargeting = false;
         consensus.nRuleChangeActivationThreshold = 1512; // 75% for testchains
         consensus.nMinerConfirmationWindow = 2016; // nPowTargetTimespan / nPowTargetSpacing
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TESTDUMMY).bit = 28;
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TESTDUMMY).nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TESTDUMMY).nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TESTDUMMY).min_activation_height = 0; // No activation delay
 
-        // Deployment of Taproot (BIPs 340-342)
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TAPROOT).bit = 2;
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TAPROOT).nStartTime = 1619222400; // April 24th, 2021
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TAPROOT).nTimeout = 1628640000; // August 11th, 2021
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TAPROOT).min_activation_height = 0; // No activation delay
+        util::ArrayInit(consensus.vDeployments,
+            DepSettings<Consensus::DEPLOYMENT_TESTDUMMY>(
+                _bit = 28,
+                _start_time = Consensus::BIP9Deployment::NEVER_ACTIVE,
+                _timeout = Consensus::BIP9Deployment::NO_TIMEOUT,
+                _minactheight = 0 // No activation delay
+            ),
+
+            // Deployment of Taproot (BIPs 340-342)
+            DepSettings<Consensus::DEPLOYMENT_TAPROOT>(
+                _bit = 2,
+                _start_time = 1619222400, // April 24th, 2021
+                _timeout = 1628640000, // August 11th, 2021
+                _minactheight = 0 // No activation delay
+            )
+        );
 
         consensus.nMinimumChainWork = uint256S("0x0000000000000000000000000000000000000000000005180c3bd8290da33a1a");
         consensus.defaultAssumeValid = uint256S("0x0000000000004ae2f3896ca8ecd41c460a35bf6184e145d91558cece1c688a76"); // 2010000
@@ -338,16 +373,23 @@ public:
         consensus.nMinerConfirmationWindow = 2016; // nPowTargetTimespan / nPowTargetSpacing
         consensus.MinBIP9WarningHeight = 0;
         consensus.powLimit = uint256S("00000377ae000000000000000000000000000000000000000000000000000000");
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TESTDUMMY).bit = 28;
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TESTDUMMY).nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TESTDUMMY).nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TESTDUMMY).min_activation_height = 0; // No activation delay
 
-        // Activation of Taproot (BIPs 340-342)
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TAPROOT).bit = 2;
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TAPROOT).nStartTime = Consensus::BIP9Deployment::ALWAYS_ACTIVE;
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TAPROOT).nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TAPROOT).min_activation_height = 0; // No activation delay
+        util::ArrayInit(consensus.vDeployments,
+            DepSettings<Consensus::DEPLOYMENT_TESTDUMMY>(
+                _bit = 28,
+                _start_time = Consensus::BIP9Deployment::NEVER_ACTIVE,
+                _timeout = Consensus::BIP9Deployment::NO_TIMEOUT,
+                _minactheight = 0 // No activation delay
+            ),
+
+            // Deployment of Taproot (BIPs 340-342)
+            DepSettings<Consensus::DEPLOYMENT_TAPROOT>(
+                _bit = 2,
+                _start_time = Consensus::BIP9Deployment::ALWAYS_ACTIVE,
+                _timeout = Consensus::BIP9Deployment::NO_TIMEOUT,
+                _minactheight = 0 // No activation delay
+            )
+        );
 
         // message start is defined as the first 4 bytes of the sha256d of the block script
         CHashWriter h(SER_DISK, 0);
@@ -407,15 +449,22 @@ public:
         consensus.nRuleChangeActivationThreshold = 108; // 75% for testchains
         consensus.nMinerConfirmationWindow = 144; // Faster than normal for regtest (144 instead of 2016)
 
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TESTDUMMY).bit = 28;
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TESTDUMMY).nStartTime = 0;
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TESTDUMMY).nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TESTDUMMY).min_activation_height = 0; // No activation delay
+        util::ArrayInit(consensus.vDeployments,
+            DepSettings<Consensus::DEPLOYMENT_TESTDUMMY>(
+                _bit = 28,
+                _start_time = 0,
+                _timeout = Consensus::BIP9Deployment::NO_TIMEOUT,
+                _minactheight = 0 // No activation delay
+            ),
 
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TAPROOT).bit = 2;
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TAPROOT).nStartTime = Consensus::BIP9Deployment::ALWAYS_ACTIVE;
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TAPROOT).nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-        consensus.vDeployments.at(Consensus::DEPLOYMENT_TAPROOT).min_activation_height = 0; // No activation delay
+            // Deployment of Taproot (BIPs 340-342)
+            DepSettings<Consensus::DEPLOYMENT_TAPROOT>(
+                _bit = 2,
+                _start_time = Consensus::BIP9Deployment::ALWAYS_ACTIVE,
+                _timeout = Consensus::BIP9Deployment::NO_TIMEOUT,
+                _minactheight = 0 // No activation delay
+            )
+        );
 
         consensus.nMinimumChainWork = uint256{};
         consensus.defaultAssumeValid = uint256{};

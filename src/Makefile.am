@@ -258,6 +258,7 @@ BITCOIN_CORE_H = \
   util/sock.h \
   util/spanparsing.h \
   util/string.h \
+  util/syntaxhelp.h \
   util/syscall_sandbox.h \
   util/system.h \
   util/thread.h \
