@@ -24,7 +24,7 @@ std::string DeploymentName(Consensus::BuriedDeployment dep);
 inline std::string DeploymentName(Consensus::DeploymentPos pos)
 {
     assert(Consensus::ValidDeployment(pos));
-    return VersionBitsDeploymentInfo[pos].name;
+    return VersionBitsDeploymentInfo.at(pos).name;
 }
 
 #endif // BITCOIN_DEPLOYMENTINFO_H

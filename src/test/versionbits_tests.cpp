@@ -262,10 +262,10 @@ static void check_computeblockversion(const Consensus::Params& params, Consensus
     // This implicitly uses g_versionbitscache, so clear it every time
     g_versionbitscache.Clear();
 
-    int64_t bit = params.vDeployments[dep].bit;
-    int64_t nStartTime = params.vDeployments[dep].nStartTime;
-    int64_t nTimeout = params.vDeployments[dep].nTimeout;
-    int min_activation_height = params.vDeployments[dep].min_activation_height;
+    int64_t bit = params.vDeployments.at(dep).bit;
+    int64_t nStartTime = params.vDeployments.at(dep).nStartTime;
+    int64_t nTimeout = params.vDeployments.at(dep).nTimeout;
+    int min_activation_height = params.vDeployments.at(dep).min_activation_height;
 
     // should not be any signalling for first block
     BOOST_CHECK_EQUAL(g_versionbitscache.ComputeBlockVersion(nullptr, params), VERSIONBITS_TOP_BITS);

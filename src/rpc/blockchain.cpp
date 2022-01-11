@@ -1457,10 +1457,10 @@ static void SoftForkDescPushBack(const CBlockIndex* active_chain_tip, UniValue& 
     }
     const bool has_signal = (ThresholdState::STARTED == thresholdState || ThresholdState::LOCKED_IN == thresholdState);
     if (has_signal) {
-        bip9.pushKV("bit", consensusParams.vDeployments[id].bit);
+        bip9.pushKV("bit", consensusParams.vDeployments.at(id).bit);
     }
-    bip9.pushKV("start_time", consensusParams.vDeployments[id].nStartTime);
-    bip9.pushKV("timeout", consensusParams.vDeployments[id].nTimeout);
+    bip9.pushKV("start_time", consensusParams.vDeployments.at(id).nStartTime);
+    bip9.pushKV("timeout", consensusParams.vDeployments.at(id).nTimeout);
     int64_t since_height = g_versionbitscache.StateSinceHeight(active_chain_tip, consensusParams, id);
     bip9.pushKV("since", since_height);
     if (has_signal) {
@@ -1475,7 +1475,7 @@ static void SoftForkDescPushBack(const CBlockIndex* active_chain_tip, UniValue& 
         }
         bip9.pushKV("statistics", statsUV);
     }
-    bip9.pushKV("min_activation_height", consensusParams.vDeployments[id].min_activation_height);
+    bip9.pushKV("min_activation_height", consensusParams.vDeployments.at(id).min_activation_height);
 
     UniValue rv(UniValue::VOBJ);
     rv.pushKV("type", "bip9");
