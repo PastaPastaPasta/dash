@@ -53,7 +53,7 @@ protected:
 
 public:
     /// Constructs a new TimestampIndex.
-    explicit TimestampIndex(size_t n_cache_size, bool f_memory = false, bool f_wipe = false);
+    explicit TimestampIndex(std::unique_ptr<interfaces::Chain> chain, size_t n_cache_size, bool f_memory = false, bool f_wipe = false);
 
     /// Destructor
     virtual ~TimestampIndex() override;

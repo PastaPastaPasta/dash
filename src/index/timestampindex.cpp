@@ -49,7 +49,8 @@ bool TimestampIndex::DB::EraseTimestampIndex(const CTimestampIndexKey& key)
     return CDBWrapper::Erase(std::make_pair(DB_TIMESTAMPINDEX, key));
 }
 
-TimestampIndex::TimestampIndex(size_t n_cache_size, bool f_memory, bool f_wipe) :
+TimestampIndex::TimestampIndex(std::unique_ptr<interfaces::Chain> chain, size_t n_cache_size, bool f_memory, bool f_wipe) :
+    BaseIndex(std::move(chain)),
     m_db(std::make_unique<TimestampIndex::DB>(n_cache_size, f_memory, f_wipe))
 {
 }

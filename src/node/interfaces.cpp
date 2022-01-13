@@ -1515,6 +1515,7 @@ public:
         return chainman().IsSnapshotActive();
     }
 
+    NodeContext* context() override { return &m_node; }
     NodeContext& m_node;
 };
 } // namespace

@@ -8,6 +8,7 @@
 #include <dbwrapper.h>
 #include <tinyformat.h>
 #include <util/threadinterrupt.h>
+#include <interfaces/chain.h>
 #include <validationinterface.h>
 
 #include <atomic>
@@ -15,6 +16,9 @@
 class CBlock;
 class CBlockIndex;
 class CChainState;
+namespace interfaces {
+class Chain;
+} // namespace interfaces
 
 struct IndexSummary {
     std::string name;
@@ -86,6 +90,7 @@ private:
     virtual bool AllowPrune() const = 0;
 
 protected:
+    std::unique_ptr<interfaces::Chain> m_chain;
     CChainState* m_chainstate{nullptr};
 
     void BlockConnected(const std::shared_ptr<const CBlock>& block, const CBlockIndex* pindex) override;
@@ -128,6 +133,7 @@ protected:
     void SetBestBlockIndex(const CBlockIndex* block);
 
 public:
+    BaseIndex(std::unique_ptr<interfaces::Chain> chain);
     /// Destructor interrupts sync thread if running and blocks until it exits.
     virtual ~BaseIndex();
 
@@ -142,7 +148,7 @@ public:
 
     /// Start initializes the sync state and registers the instance as a
     /// ValidationInterface so that it stays in sync with blockchain updates.
-    [[nodiscard]] bool Start(CChainState& active_chainstate);
+    [[nodiscard]] bool Start();
 
     /// Stops the instance from staying in sync with blockchain updates.
     void Stop();

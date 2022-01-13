@@ -64,7 +64,7 @@ protected:
 
 public:
     /// Constructs a new SpentIndex.
-    explicit SpentIndex(size_t n_cache_size, bool f_memory = false, bool f_wipe = false);
+    explicit SpentIndex(std::unique_ptr<interfaces::Chain> chain, size_t n_cache_size, bool f_memory = false, bool f_wipe = false);
 
     /// Destructor
     virtual ~SpentIndex() override;

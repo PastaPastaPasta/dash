@@ -48,6 +48,9 @@ EXPECTED_CIRCULAR_DEPENDENCIES = (
     "qt/clientfeeds -> qt/clientmodel -> qt/clientfeeds",
     "qt/guiutil -> qt/qvalidatedlineedit -> qt/guiutil",
     "wallet/coinjoin -> wallet/receive -> wallet/coinjoin",
+
+    # Temporary, removed in followup https://github.com/bitcoin/bitcoin/pull/24230
+    "index/base -> node/context -> net_processing -> index/blockfilterindex -> index/base",
 )
 
 CODE_DIR = "src"

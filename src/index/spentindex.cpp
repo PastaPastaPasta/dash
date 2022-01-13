@@ -53,7 +53,8 @@ bool SpentIndex::DB::EraseSpentIndex(const std::vector<CSpentIndexKey>& keys)
     return CDBWrapper::WriteBatch(batch);
 }
 
-SpentIndex::SpentIndex(size_t n_cache_size, bool f_memory, bool f_wipe) :
+SpentIndex::SpentIndex(std::unique_ptr<interfaces::Chain> chain, size_t n_cache_size, bool f_memory, bool f_wipe) :
+    BaseIndex(std::move(chain)),
     m_db(std::make_unique<SpentIndex::DB>(n_cache_size, f_memory, f_wipe))
 {
 }
