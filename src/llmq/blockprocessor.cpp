@@ -161,11 +161,6 @@ bool CQuorumBlockProcessor::ProcessBlock(const CBlock& block, const CBlockIndex*
             return state.DoS(100, false, REJECT_INVALID, "bad-qc-missing");
         }
         if (llmq::CLLMQUtils::IsQuorumRotationEnabled(params.type)) {
-
-            if (isCommitmentRequired && numCommitmentsInNewBlock != params.signingActiveQuorumCount) {
-                LogPrintf("[ProcessBlock] h[%d] isCommitmentRequired[%d] numCommitmentsInNewBlock[%d] ###\n", pindex->nHeight, isCommitmentRequired, numCommitmentsInNewBlock);
-            }
-
             LogPrintf("[ProcessBlock] h[%d] isCommitmentRequired[%d] numCommitmentsInNewBlock[%d]\n", pindex->nHeight, isCommitmentRequired, numCommitmentsInNewBlock);
         }
     }
@@ -247,7 +242,11 @@ bool CQuorumBlockProcessor::ProcessCommitment(int nHeight, const uint256& blockH
         return true;
     }
 
-    LogPrintf("[ProcessCommitment] height[%d] pQuorumBaseBlockIndex[%d] quorumIndex[%d] Checks passed\n", nHeight, pQuorumBaseBlockIndex->nHeight, qc.quorumIndex);
+    if (llmq::CLLMQUtils::IsQuorumRotationEnabled(llmq_params.type)) {
+        LogPrintf("[ProcessCommitment] height[%d] pQuorumBaseBlockIndex[%d] quorumIndex[%d] qversion[%d] Built\n",
+                  nHeight, pQuorumBaseBlockIndex->nHeight, qc.quorumIndex, qc.nVersion);
+    }
+
     // Store commitment in DB
     LOCK(evoDb.cs);
     auto cacheKey = std::make_pair(llmq_params.type, quorumHash);
@@ -631,12 +630,19 @@ std::vector<const CBlockIndex*> CQuorumBlockProcessor::GetMinedCommitmentsIndexe
 std::map<Consensus::LLMQType, std::vector<const CBlockIndex*>> CQuorumBlockProcessor::GetMinedAndActiveCommitmentsUntilBlock(const CBlockIndex* pindex) const
 {
     std::map<Consensus::LLMQType, std::vector<const CBlockIndex*>> ret;
-
-    for (const auto& params : Params().GetConsensus().llmqs) {
-        auto& v = ret[params.type];
-        v.reserve(params.signingActiveQuorumCount);
-        auto commitments = GetMinedCommitmentsUntilBlock(params.type, pindex, params.signingActiveQuorumCount);
-        std::copy(commitments.begin(), commitments.end(), std::back_inserter(v));
+    
+    for (const auto& p : Params().GetConsensus().llmqs) {
+        auto& v = ret[p.second.type];
+        v.reserve(p.second.signingActiveQuorumCount);
+        if (CLLMQUtils::IsQuorumRotationEnabled(p.second.type)) {
+            std::vector<std::pair<int, const CBlockIndex*>> commitments = GetLastMinedCommitmentsPerQuorumIndexUntilBlock(p.second.type, pindex, 0);
+            std::transform( commitments.begin(), commitments.end(), std::back_inserter( v ),
+                            [](const std::pair<int, const CBlockIndex*>& p) { return p.second; });
+        }
+        else {
+            auto commitments = GetMinedCommitmentsUntilBlock(p.second.type, pindex, p.second.signingActiveQuorumCount);
+            std::copy(commitments.begin(), commitments.end(), std::back_inserter(v));
+        }
     }
 
     return ret;
