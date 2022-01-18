@@ -61,8 +61,11 @@ SpentIndex::SpentIndex(std::unique_ptr<interfaces::Chain> chain, size_t n_cache_
 
 SpentIndex::~SpentIndex() = default;
 
-bool SpentIndex::WriteBlock(const CBlock& block, const CBlockIndex* pindex)
+bool SpentIndex::CustomAppend(const interfaces::BlockInfo& block)
 {
+    assert(block.data);
+    const CBlockIndex* pindex = m_chainstate->m_blockman.LookupBlockIndex(block.hash);
+    assert(pindex);
     // Skip genesis block (no inputs to index)
     if (pindex->nHeight == 0) {
         return true;
@@ -79,13 +82,13 @@ bool SpentIndex::WriteBlock(const CBlock& block, const CBlockIndex* pindex)
 
     // Process each non-coinbase transaction
     // blockundo.vtxundo[i] corresponds to block.vtx[i+1] (coinbase is skipped in undo data)
-    if (blockundo.vtxundo.size() != block.vtx.size() - 1) {
+    if (blockundo.vtxundo.size() != block.data->vtx.size() - 1) {
         return error("%s: Undo data size mismatch for block %s (expected %zu, got %zu)", __func__,
-                     pindex->GetBlockHash().ToString(), block.vtx.size() - 1, blockundo.vtxundo.size());
+                     pindex->GetBlockHash().ToString(), block.data->vtx.size() - 1, blockundo.vtxundo.size());
     }
 
     for (size_t i = 0; i < blockundo.vtxundo.size(); i++) {
-        const CTransactionRef& tx = block.vtx[i + 1]; // +1 to skip coinbase
+        const CTransactionRef& tx = block.data->vtx[i + 1]; // +1 to skip coinbase
         const CTxUndo& txundo = blockundo.vtxundo[i];
         const uint256 txhash = tx->GetHash();
 

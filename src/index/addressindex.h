@@ -62,7 +62,7 @@ protected:
     bool AllowPrune() const override { return false; }
 
     /// Write block data to the index databases
-    bool WriteBlock(const CBlock& block, const CBlockIndex* pindex) override;
+    bool CustomAppend(const interfaces::BlockInfo& block) override;
 
     /// Custom rewind to handle both transaction history and unspent index
     bool Rewind(const CBlockIndex* current_tip, const CBlockIndex* new_tip) override;

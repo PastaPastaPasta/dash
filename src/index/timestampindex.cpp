@@ -57,8 +57,10 @@ TimestampIndex::TimestampIndex(std::unique_ptr<interfaces::Chain> chain, size_t 
 
 TimestampIndex::~TimestampIndex() = default;
 
-bool TimestampIndex::WriteBlock(const CBlock& block, const CBlockIndex* pindex)
+bool TimestampIndex::CustomAppend(const interfaces::BlockInfo& block)
 {
+    const CBlockIndex* pindex = m_chainstate->m_blockman.LookupBlockIndex(block.hash);
+    assert(pindex);
     // Skip genesis block
     if (pindex->nHeight == 0) return true;
 
