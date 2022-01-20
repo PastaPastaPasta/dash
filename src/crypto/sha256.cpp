@@ -38,6 +38,11 @@ namespace sha256_x86_shani
 void Transform(uint32_t* s, const unsigned char* chunk, size_t blocks);
 }
 
+namespace sha256_arm_shani
+{
+void Transform(uint32_t* s, const unsigned char* chunk, size_t blocks);
+}
+
 // Internal implementation code.
 namespace
 {
@@ -610,6 +615,15 @@ std::string SHA256AutoDetect()
         ret = "x86_shani(1way,2way)";
         have_sse4 = false; // Disable SSE4/AVX2;
         have_avx2 = false;
+    }
+#endif
+
+#if defined(ENABLE_ARM_SHANI) && !defined(BUILD_BITCOIN_INTERNAL)
+    bool have_arm_shani = false;
+    if (have_arm_shani) {
+        Transform = sha256_arm_shani::Transform;
+        TransformD64 = TransformD64Wrapper<sha256_arm_shani::Transform>;
+        ret = "arm_shani(1way)";
     }
 #endif
 
