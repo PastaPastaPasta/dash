@@ -71,6 +71,16 @@ bool CFinalCommitment::Verify(const CBlockIndex* pQuorumBaseBlockIndex, bool che
     }
 
     auto members = CLLMQUtils::GetAllQuorumMembers(llmqType, pQuorumBaseBlockIndex);
+    auto allMns = deterministicMNManager->GetListForBlock(pQuorumBaseBlockIndex);
+    std::stringstream ss;
+    for (size_t i = 0; i < llmq_params.size; i++) {
+        ss << "v[" << i << "]=" << validMembers[i];
+    }
+    std::stringstream ss2;
+    for (size_t i = 0; i < llmq_params.size; i++) {
+        ss2 << "s[" << i << "]=" << signers[i];
+    }
+    LogPrintf("[PASTA] mns[%d] allMns[%d] validMembers[%s] signers[%s]\n", members.size(), allMns.GetValidMNsCount(), ss.str(), ss2.str());
     for (size_t i = members.size(); i < llmq_params.size; i++) {
         if (validMembers[i]) {
             LogPrintfFinalCommitment("q[%s] invalid validMembers bitset. bit %d should not be set\n", quorumHash.ToString(), i);
@@ -144,6 +154,13 @@ bool CheckLLMQCommitment(const CTransaction& tx, const CBlockIndex* pindexPrev, 
         LogPrintfFinalCommitment("h[%d] GetTxPayload failed\n", pindexPrev->nHeight);
         return state.DoS(100, false, REJECT_INVALID, "bad-qc-payload");
     }
+    LogPrintf("[WISDOM] h[%d]\n", pindexPrev->nHeight);
+    const auto& llmq_params = GetLLMQParams(qcTx.commitment.llmqType);
+    std::stringstream ss;
+    for (size_t i = 0; i < llmq_params.size; i++) {
+        ss << "v[" << i << "]=" << qcTx.commitment.validMembers[i];
+    }
+    LogPrintf("[VIRGILE] llmqType[%d] validMembers[%s] signers[]\n", static_cast<int>(qcTx.commitment.llmqType), ss.str());
 
     if (qcTx.nVersion == 0 || qcTx.nVersion > CFinalCommitmentTxPayload::CURRENT_VERSION) {
         LogPrintfFinalCommitment("h[%d] invalid qcTx.nVersion[%d]\n", pindexPrev->nHeight, qcTx.nVersion);
