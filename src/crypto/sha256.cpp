@@ -8,6 +8,11 @@
 #include <assert.h>
 #include <string.h>
 
+#if defined(__linux__) && defined(ENABLE_ARM_SHANI) && !defined(BUILD_BITCOIN_INTERNAL)
+#include <sys/auxv.h>
+#include <asm/hwcap.h>
+#endif
+
 #if defined(__x86_64__) || defined(__amd64__) || defined(__i386__)
 #if defined(USE_ASM)
 #include <cpuid.h>
@@ -618,15 +623,6 @@ std::string SHA256AutoDetect()
     }
 #endif
 
-#if defined(ENABLE_ARM_SHANI) && !defined(BUILD_BITCOIN_INTERNAL)
-    bool have_arm_shani = false;
-    if (have_arm_shani) {
-        Transform = sha256_arm_shani::Transform;
-        TransformD64 = TransformD64Wrapper<sha256_arm_shani::Transform>;
-        ret = "arm_shani(1way)";
-    }
-#endif
-
     if (have_sse4) {
 #if defined(__x86_64__) || defined(__amd64__)
         Transform = sha256_sse4::Transform;
@@ -645,6 +641,24 @@ std::string SHA256AutoDetect()
         ret += ",avx2(8way)";
     }
 #endif
+#endif
+
+#if defined(ENABLE_ARM_SHANI) && !defined(BUILD_BITCOIN_INTERNAL)
+    bool have_arm_shani = false;
+    #ifdef __linux__
+    if (getauxval(AT_HWCAP) & HWCAP_SHA2) {
+        have_arm_shani = true;
+    }
+    #endif
+    #if defined(__APPLE__)
+        // let's assume this is always available on Apple Silicon
+        have_arm_shani = true;
+    #endif
+    if (have_arm_shani) {
+        Transform = sha256_arm_shani::Transform;
+        TransformD64 = TransformD64Wrapper<sha256_arm_shani::Transform>;
+        ret = "arm_shani(1way)";
+    }
 #endif
 
     assert(SelfTest());
