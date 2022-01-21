@@ -53,6 +53,7 @@ void CMNAuth::PushMNAUTH(CNode* pnode, CConnman& connman)
     connman.PushMessage(pnode, CNetMsgMaker(pnode->GetSendVersion()).Make(NetMsgType::MNAUTH, mnauth));
 }
 
+// TODO refactor to return a maybe_error
 void CMNAuth::ProcessMessage(CNode* pnode, const std::string& strCommand, CDataStream& vRecv, CConnman& connman)
 {
     if (strCommand != NetMsgType::MNAUTH || !masternodeSync.IsBlockchainSynced()) {

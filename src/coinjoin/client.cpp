@@ -30,6 +30,7 @@ std::map<const std::string, std::shared_ptr<CCoinJoinClientManager>> coinJoinCli
 CCoinJoinClientQueueManager coinJoinClientQueueManager;
 
 
+// TODO return maybe error
 void CCoinJoinClientQueueManager::ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, CConnman& connman, bool enable_bip61)
 {
     if (fMasternodeMode) return;

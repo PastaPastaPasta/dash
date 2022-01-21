@@ -121,6 +121,7 @@ void CCoinJoinServer::ProcessDSACCEPT(CNode* pfrom, const std::string& strComman
     }
 }
 
+// TODO refactor to return a maybe error
 void CCoinJoinServer::ProcessDSQUEUE(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, CConnman& connman, bool enable_bip61)
 {
     if (pfrom->nVersion < MIN_COINJOIN_PEER_PROTO_VERSION) {
