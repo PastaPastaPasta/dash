@@ -171,6 +171,7 @@ BITCOIN_CORE_H = \
   cxxtimer.hpp \
   evo/cbtx.h \
   evo/deterministicmns.h \
+  evo/deterministicmnsprimitive.h \
   evo/evodb.h \
   evo/mnauth.h \
   evo/mnhftx.h \

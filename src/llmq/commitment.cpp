@@ -4,7 +4,7 @@
 
 #include <llmq/commitment.h>
 
-#include <evo/deterministicmns.h>
+#include <evo/deterministicmnprimitive.h>
 #include <evo/specialtx.h>
 
 #include <chainparams.h>

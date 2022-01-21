@@ -8,7 +8,7 @@
 #include <llmq/debug.h>
 #include <llmq/dkgsessionmgr.h>
 
-#include <evo/deterministicmns.h>
+#include <evo/deterministicmnprimitive.h>
 #include <evo/specialtx.h>
 
 #include <masternode/node.h>

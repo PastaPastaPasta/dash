@@ -11,7 +11,7 @@
 
 #include <bls/bls_batchverifier.h>
 #include <chainparams.h>
-#include <evo/deterministicmns.h>
+#include <evo/deterministicmnprimitive.h>
 #include <masternode/node.h>
 #include <net_processing.h>
 #include <netmessagemaker.h>

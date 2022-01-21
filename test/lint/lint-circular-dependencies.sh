@@ -32,7 +32,6 @@ EXPECTED_CIRCULAR_DEPENDENCIES=(
     "evo/cbtx -> evo/simplifiedmns -> evo/cbtx"
     "evo/deterministicmns -> evo/providertx -> evo/deterministicmns"
     "evo/deterministicmns -> evo/simplifiedmns -> evo/deterministicmns"
-    "evo/deterministicmns -> llmq/commitment -> evo/deterministicmns"
     "evo/deterministicmns -> llmq/utils -> evo/deterministicmns"
     "evo/mnauth -> net_processing -> evo/mnauth"
     "governance/classes -> governance/governance -> governance/classes"
