@@ -6,17 +6,6 @@
 
 #include <consensus/params.h>
 
-const std::array<VBDeploymentInfo, Consensus::MAX_VERSION_BITS_DEPLOYMENTS> VersionBitsDeploymentInfo{{
-    {
-        /*.name =*/ "testdummy",
-        /*.gbt_force =*/ true,
-    },
-    {
-        /*.name =*/ "taproot",
-        /*.gbt_force =*/ true,
-    },
-}};
-
 std::string DeploymentName(Consensus::BuriedDeployment dep)
 {
     assert(ValidDeployment(dep));

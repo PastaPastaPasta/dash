@@ -65,7 +65,7 @@ static constexpr util::NamedArgument<int64_t, struct timeout_arg> _timeout;
 static constexpr util::NamedArgument<int, struct minactheight_arg> _minactheight;
 
 template<size_t Offset>
-static inline util::ArrayInitElement<Offset, Consensus::BIP9Deployment> DepSettings(decltype(_bit)::Arg bit, decltype(_start_time)::Arg start_time, decltype(_timeout)::Arg timeout, decltype(_minactheight)::Arg minactheight)
+static constexpr util::ArrayInitElement<Offset, Consensus::BIP9Deployment> DepSettings(decltype(_bit)::Arg bit, decltype(_start_time)::Arg start_time, decltype(_timeout)::Arg timeout, decltype(_minactheight)::Arg minactheight)
 {
     Consensus::BIP9Deployment dep;
     dep.bit = bit.v;

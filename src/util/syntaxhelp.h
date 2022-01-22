@@ -34,18 +34,18 @@ struct NamedArgument
     struct Arg {
         using Tag = TAG;
         const T v;
-        explicit Arg(T&& v) : v{std::move(v)} { }
-        explicit Arg(const T& v) : v{v} { }
-        Arg(const Arg&) = delete;
-        Arg(Arg&&) = delete;
-        Arg() = delete;
+        constexpr explicit Arg(T&& v) : v{std::move(v)} { }
+        constexpr explicit Arg(const T& v) : v{v} { }
+        constexpr Arg(const Arg&) = delete;
+        constexpr Arg(Arg&&) = delete;
+        constexpr Arg() = delete;
     };
 
-    Arg operator=(T&& v) const
+    constexpr Arg operator=(T&& v) const
     {
         return Arg(std::move(v));
     }
-    Arg operator=(const T& v) const
+    constexpr Arg operator=(const T& v) const
     {
         return Arg(v);
     }
@@ -65,7 +65,7 @@ struct ArrayInitElement
     const T v;
 
     template<typename... Init>
-    explicit ArrayInitElement(Init&&... i) : v{std::forward<Init>(i)...} { }
+    constexpr explicit ArrayInitElement(Init&&... i) : v{std::forward<Init>(i)...} { }
 };
 
 template<typename T, size_t N>
@@ -75,13 +75,13 @@ private:
     using Arr = std::array<T, N>;
 
     template<size_t E>
-    static inline void step(Arr& a)
+    static constexpr void step(Arr& a)
     {
         static_assert(E == N, "too few initializers for array");
     }
 
     template<size_t E, size_t Offset, typename... Init>
-    static inline void step(Arr& a, const ArrayInitElement<Offset, T>& aie, const Init&... i)
+    static constexpr void step(Arr& a, const ArrayInitElement<Offset, T>& aie, const Init&... i)
     {
         static_assert(E < N, "too many initializers for array");
         static_assert(E == Offset, "array initializer element is out of order");
@@ -93,14 +93,14 @@ private:
 
 public:
     template<typename... Init>
-    static inline void init(Arr& a, const Init&... i)
+    static constexpr void init(Arr& a, const Init&... i)
     {
         step<0>(a, i...);
     }
 };
 
 template<typename T, size_t N, size_t... Offset>
-inline void ArrayInit(std::array<T,N>& a, const ArrayInitElement<Offset, T>&... i)
+constexpr void ArrayInit(std::array<T,N>& a, const ArrayInitElement<Offset, T>&... i)
 {
     ArrayInitHelper<T,N>::init(a, i...);
 }
