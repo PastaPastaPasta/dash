@@ -42,7 +42,7 @@ bool CheckSpecialTx(const CTransaction& tx, const CBlockIndex* pindexPrev, CVali
         case TRANSACTION_QUORUM_COMMITMENT:
             return llmq::CheckLLMQCommitment(tx, pindexPrev, state);
         case TRANSACTION_MNHF_SIGNAL:
-            return VersionBitsTipState(Params().GetConsensus(), Consensus::DEPLOYMENT_GOV_FEE) == ThresholdState::ACTIVE && CheckMNHFTx(tx, pindexPrev, state);
+            return VersionBitsTipState(Params().GetConsensus(), Consensus::DEPLOYMENT_DIP0024) == ThresholdState::ACTIVE && CheckMNHFTx(tx, pindexPrev, state);
         }
     } catch (const std::exception& e) {
         LogPrintf("%s -- failed: %s\n", __func__, e.what());
@@ -125,6 +125,11 @@ bool ProcessSpecialTxsInBlock(const CBlock& block, const CBlockIndex* pindex, CV
         nTimeLoop += nTime2 - nTime1;
         LogPrint(BCLog::BENCHMARK, "        - Loop: %.2fms [%.2fs]\n", 0.001 * (nTime2 - nTime1), nTimeLoop * 0.000001);
 
+        if (!deterministicMNManager->ProcessBlock(block, pindex, state, view, fJustCheck)) {
+            // pass the state returned by the function above
+            return false;
+        }
+
         if (!llmq::quorumBlockProcessor->ProcessBlock(block, pindex, state, fJustCheck)) {
             // pass the state returned by the function above
             return false;
@@ -134,10 +139,10 @@ bool ProcessSpecialTxsInBlock(const CBlock& block, const CBlockIndex* pindex, CV
         nTimeQuorum += nTime3 - nTime2;
         LogPrint(BCLog::BENCHMARK, "        - quorumBlockProcessor: %.2fms [%.2fs]\n", 0.001 * (nTime3 - nTime2), nTimeQuorum * 0.000001);
 
-        if (!deterministicMNManager->ProcessBlock(block, pindex, state, view, fJustCheck)) {
+        /*if (!deterministicMNManager->ProcessBlock(block, pindex, state, view, fJustCheck)) {
             // pass the state returned by the function above
             return false;
-        }
+        }*/
 
         int64_t nTime4 = GetTimeMicros();
         nTimeDMN += nTime4 - nTime3;
