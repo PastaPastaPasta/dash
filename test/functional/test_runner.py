@@ -199,6 +199,7 @@ BASE_SCRIPTS = [
     'wallet_keypool_hd.py',
     'wallet_keypool_hd.py --descriptors',
     'wallet_descriptor.py --descriptors',
+    'feature_maxtipage.py',
     'p2p_nobloomfilter_messages.py',
     'p2p_filter.py',
     'p2p_blocksonly.py',
