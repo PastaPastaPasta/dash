@@ -98,11 +98,15 @@ class LLMQQuorumRotationTest(DashTestFramework):
         self.log.info("mine a quorum to invalidate")
         (quorum_info_3_0, quorum_info_3_1) = self.mine_cycle_quorum()
 
-        assert self.nodes[0].quorum("list", 100) != quorum_list
+        new_quorum_list = self.nodes[0].quorum("list", 100)
+        assert new_quorum_list != quorum_list
 
         self.log.info("invalidate the quorum")
         self.nodes[0].invalidateblock(fallback_blockhash)
         assert self.nodes[0].quorum("list", 100) == quorum_list
+        # self.nodes[0].reconsiderblock(fallback_blockhash)
+        # time.sleep(5)
+        # assert self.nodes[0].quorum("list", 100) == new_quorum_list
 
 
 
