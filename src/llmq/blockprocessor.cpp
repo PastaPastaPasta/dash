@@ -45,7 +45,6 @@ void CQuorumBlockProcessor::ProcessMessage(CNode* pfrom, const std::string& strC
     if (strCommand == NetMsgType::QFCOMMITMENT) {
         CFinalCommitment qc;
         vRecv >> qc;
-
         {
             LOCK(cs_main);
             EraseObjectRequest(pfrom->GetId(), CInv(MSG_QUORUM_FINAL_COMMITMENT, ::SerializeHash(qc)));
@@ -109,10 +108,11 @@ void CQuorumBlockProcessor::ProcessMessage(CNode* pfrom, const std::string& strC
         }
 
         if (!qc.Verify(pQuorumBaseBlockIndex, true)) {
-            LogPrint(BCLog::LLMQ, "CQuorumBlockProcessor::%s -- commitment for quorum %s:%d is not valid, peer=%d\n", __func__,
-                     qc.quorumHash.ToString(), static_cast<uint8_t>(qc.llmqType), pfrom->GetId());
-            LOCK(cs_main);
-            Misbehaving(pfrom->GetId(), 100);
+            LogPrint(BCLog::LLMQ, "[KRABI] -- commitment for quorum %s:%d is not valid quorumIndex[%d] nversion[%d], peer=%d\n",
+                     qc.quorumHash.ToString(),
+                     static_cast<uint8_t>(qc.llmqType), qc.quorumIndex, qc.nVersion, pfrom->GetId());
+            //LOCK(cs_main);
+            //Misbehaving(pfrom->GetId(), 100);
             return;
         }
 
