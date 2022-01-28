@@ -67,6 +67,7 @@ class TestSecurityChecks(unittest.TestCase):
         executable = 'test1'
         cc = 'clang'
         write_testcode(source)
+        arch = get_arch(cc, source, executable)
 
         self.assertEqual(call_security_check(cc, source, executable, ['-Wl,-no_pie','-Wl,-flat_namespace','-Wl,-allow_stack_execute','-fno-stack-protector']),
             (1, executable+': failed PIE NOUNDEFS NX LAZY_BINDINGS Canary'))
