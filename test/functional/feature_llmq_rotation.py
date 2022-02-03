@@ -109,7 +109,8 @@ class LLMQQuorumRotationTest(DashTestFramework):
         # time.sleep(5)
         # assert self.nodes[0].quorum("list", 100) == new_quorum_list
 
-        while True:
+        for i in range(10000):
+            print(f"index {i}")
             (quorum_info_3_0, quorum_info_3_1) = self.mine_cycle_quorum()
             assert "POSE_BANNED" not in str(self.nodes[0].masternodelist("status"))
 
