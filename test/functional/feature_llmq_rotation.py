@@ -45,7 +45,7 @@ class LLMQQuorumRotationTest(DashTestFramework):
         self.wait_for_sporks_same()
 
         # for (key, value) in self.nodes[0].masternodelist("status"):
-        assert "ENABLED" in str(self.nodes[0].masternodelist("status"))
+        assert "POSE_BANNED" in str(self.nodes[0].masternodelist("status"))
         # for (key, value) in obj:
         #     print(f"{key}, {value}")
         #     assert "ENABLED" in value
