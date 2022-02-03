@@ -108,7 +108,9 @@ class LLMQQuorumRotationTest(DashTestFramework):
         # time.sleep(5)
         # assert self.nodes[0].quorum("list", 100) == new_quorum_list
 
-
+        while True:
+            (quorum_info_3_0, quorum_info_3_1) = self.mine_cycle_quorum()
+            assert "POSE_BANNED" in self.masternodelist("status")
 
     def move_to_next_cycle(self, cycle_length):
         mninfos_online = self.mninfo.copy()
