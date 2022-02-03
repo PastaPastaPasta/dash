@@ -44,12 +44,6 @@ class LLMQQuorumRotationTest(DashTestFramework):
         self.nodes[0].spork("SPORK_17_QUORUM_DKG_ENABLED", 0)
         self.wait_for_sporks_same()
 
-        # for (key, value) in self.nodes[0].masternodelist("status"):
-        assert "POSE_BANNED" in str(self.nodes[0].masternodelist("status"))
-        # for (key, value) in obj:
-        #     print(f"{key}, {value}")
-        #     assert "ENABLED" in value
-
 
         self.activate_dip24(expected_activation_height=902)
         self.log.info("Activated DIP24 at height:" + str(self.nodes[0].getblockcount()))
@@ -117,7 +111,7 @@ class LLMQQuorumRotationTest(DashTestFramework):
 
         while True:
             (quorum_info_3_0, quorum_info_3_1) = self.mine_cycle_quorum()
-            assert "POSE_BANNED" in self.masternodelist("status")
+            assert "POSE_BANNED" not in str(self.nodes[0].masternodelist("status"))
 
     def move_to_next_cycle(self, cycle_length):
         mninfos_online = self.mninfo.copy()
