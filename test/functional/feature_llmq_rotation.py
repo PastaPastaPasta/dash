@@ -44,6 +44,13 @@ class LLMQQuorumRotationTest(DashTestFramework):
         self.nodes[0].spork("SPORK_17_QUORUM_DKG_ENABLED", 0)
         self.wait_for_sporks_same()
 
+        # for (key, value) in self.nodes[0].masternodelist("status"):
+        assert "ENABLED" in str(self.nodes[0].masternodelist("status"))
+        # for (key, value) in obj:
+        #     print(f"{key}, {value}")
+        #     assert "ENABLED" in value
+
+
         self.activate_dip24(expected_activation_height=902)
         self.log.info("Activated DIP24 at height:" + str(self.nodes[0].getblockcount()))
 
