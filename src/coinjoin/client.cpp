@@ -18,6 +18,7 @@
 #include <util/moneystr.h>
 #include <util/ranges.h>
 #include <util/system.h>
+#include <util/maybe_error.h>
 #include <validation.h>
 #include <version.h>
 #include <wallet/coincontrol.h>
@@ -908,17 +909,16 @@ bool CCoinJoinClientSession::DoAutomaticDenominating(CConnman& connman, bool fDr
         }
 
         //check our collateral and create new if needed
-        std::string strReason;
         if (CTransaction(txMyCollateral).IsNull()) {
-            if (!CreateCollateralTransaction(txMyCollateral, strReason)) {
-                LogPrint(BCLog::COINJOIN, "CCoinJoinClientSession::DoAutomaticDenominating -- create collateral error:%s\n", strReason);
+            if (const auto maybe_err = CreateCollateralTransaction(txMyCollateral); maybe_err.did_err) {
+                LogPrint(BCLog::COINJOIN, "CCoinJoinClientSession::DoAutomaticDenominating -- create collateral error:%s\n", maybe_err.err_str);
                 return false;
             }
         } else {
             if (!CCoinJoin::IsCollateralValid(CTransaction(txMyCollateral))) {
                 LogPrint(BCLog::COINJOIN, "CCoinJoinClientSession::DoAutomaticDenominating -- invalid collateral, recreating...\n");
-                if (!CreateCollateralTransaction(txMyCollateral, strReason)) {
-                    LogPrint(BCLog::COINJOIN, "CCoinJoinClientSession::DoAutomaticDenominating -- create collateral error: %s\n", strReason);
+                if (const auto maybe_err = CreateCollateralTransaction(txMyCollateral); maybe_err.did_err) {
+                    LogPrint(BCLog::COINJOIN, "CCoinJoinClientSession::DoAutomaticDenominating -- create collateral error: %s\n", maybe_err.err_str);
                     return false;
                 }
             }
@@ -1510,7 +1510,7 @@ bool CCoinJoinClientSession::MakeCollateralAmounts(const CompactTallyItem& tally
     return true;
 }
 
-bool CCoinJoinClientSession::CreateCollateralTransaction(CMutableTransaction& txCollateral, std::string& strReason)
+maybe_error_str CCoinJoinClientSession::CreateCollateralTransaction(CMutableTransaction& txCollateral)
 {
     auto locked_chain = mixingWallet.chain().lock();
     LOCK(mixingWallet.cs_wallet);
@@ -1522,8 +1522,7 @@ bool CCoinJoinClientSession::CreateCollateralTransaction(CMutableTransaction& tx
     mixingWallet.AvailableCoins(*locked_chain, vCoins, true, &coin_control);
 
     if (vCoins.empty()) {
-        strReason = strprintf("%s requires a collateral transaction and could not locate an acceptable input!", gCoinJoinName);
-        return false;
+        return maybe_error_str(strprintf("%s requires a collateral transaction and could not locate an acceptable input!", gCoinJoinName));
     }
 
     const auto& output = vCoins.at(GetRandInt(vCoins.size()));
@@ -1553,11 +1552,10 @@ bool CCoinJoinClientSession::CreateCollateralTransaction(CMutableTransaction& tx
     }
 
     if (!SignSignature(mixingWallet, txout.scriptPubKey, txCollateral, 0, txout.nValue, SIGHASH_ALL)) {
-        strReason = "Unable to sign collateral transaction!";
-        return false;
+        return maybe_error_str("Unable to sign collateral transaction!");
     }
 
-    return true;
+    return {};
 }
 
 // Create denominations by looping through inputs grouped by addresses

@@ -7,6 +7,7 @@
 
 #include <coinjoin/util.h>
 #include <coinjoin/coinjoin.h>
+#include <util/maybe_error.h>
 
 #include <utility>
 #include <atomic>
@@ -90,7 +91,7 @@ private:
     bool MakeCollateralAmounts();
     bool MakeCollateralAmounts(const CompactTallyItem& tallyItem, bool fTryDenominated);
 
-    bool CreateCollateralTransaction(CMutableTransaction& txCollateral, std::string& strReason);
+    maybe_error_str CreateCollateralTransaction(CMutableTransaction& txCollateral);
 
     bool JoinExistingQueue(CAmount nBalanceNeedsAnonymized, CConnman& connman);
     bool StartNewQueue(CAmount nBalanceNeedsAnonymized, CConnman& connman);
