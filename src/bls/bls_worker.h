@@ -49,7 +49,7 @@ private:
     std::vector<SigVerifyJob> sigVerifyQueue;
 
 public:
-    CBLSWorker();
+    CBLSWorker() = default;
     ~CBLSWorker();
 
     void Start();

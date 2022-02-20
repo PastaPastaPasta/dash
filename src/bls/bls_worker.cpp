@@ -53,8 +53,6 @@ std::pair<std::function<void(T)>, std::future<T> > BuildFutureDoneCallback2()
 
 /////
 
-CBLSWorker::CBLSWorker() = default;
-
 CBLSWorker::~CBLSWorker()
 {
     Stop();
