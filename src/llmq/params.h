@@ -169,7 +169,7 @@ static constexpr std::array<LLMQParams, 7> available_llmqs = {
         .recoveryMembers = 6,
     },
 
-/**
+    /**
      * llmq_50_60
      * This quorum is deployed on mainnet and requires
      * 40 - 50 participants
