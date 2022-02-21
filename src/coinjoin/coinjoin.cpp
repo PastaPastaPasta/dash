@@ -50,18 +50,18 @@ bool CCoinJoinQueue::Sign()
 
 
     uint256 hash = GetSignatureHash();
-    CBLSSignature sig = WITH_LOCK(activeMasternodeInfoCs, return activeMasternodeInfo.blsKeyOperator->Sign(hash));
-    if (!sig.IsValid()) {
+    CBLSSignature _sig = WITH_LOCK(activeMasternodeInfoCs, return activeMasternodeInfo.blsKeyOperator->Sign(hash));
+    if (!_sig.IsValid()) {
         return false;
     }
-    vchSig = sig.ToByteVector();
+    sig = std::move(_sig);
 
     return true;
 }
 
 bool CCoinJoinQueue::CheckSignature(const CBLSPublicKey& blsPubKey) const
 {
-    if (!CBLSSignature(vchSig).VerifyInsecure(blsPubKey, GetSignatureHash())) {
+    if (!sig.VerifyInsecure(blsPubKey, GetSignatureHash())) {
         LogPrint(BCLog::COINJOIN, "CCoinJoinQueue::CheckSignature -- VerifyInsecure() failed\n");
         return false;
     }
@@ -97,18 +97,18 @@ bool CCoinJoinBroadcastTx::Sign()
 
     uint256 hash = GetSignatureHash();
 
-    CBLSSignature sig = WITH_LOCK(activeMasternodeInfoCs, return activeMasternodeInfo.blsKeyOperator->Sign(hash));
-    if (!sig.IsValid()) {
+    CBLSSignature _sig = WITH_LOCK(activeMasternodeInfoCs, return activeMasternodeInfo.blsKeyOperator->Sign(hash));
+    if (!_sig.IsValid()) {
         return false;
     }
-    vchSig = sig.ToByteVector();
+    sig = std::move(_sig);
 
     return true;
 }
 
 bool CCoinJoinBroadcastTx::CheckSignature(const CBLSPublicKey& blsPubKey) const
 {
-    if (!CBLSSignature(vchSig).VerifyInsecure(blsPubKey, GetSignatureHash())) {
+    if (!sig.VerifyInsecure(blsPubKey, GetSignatureHash())) {
         LogPrint(BCLog::COINJOIN, "CCoinJoinBroadcastTx::CheckSignature -- VerifyInsecure() failed\n");
         return false;
     }

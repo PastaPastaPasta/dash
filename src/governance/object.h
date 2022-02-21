@@ -12,6 +12,7 @@
 #include <sync.h>
 
 #include <univalue.h>
+#include "bls/bls.h"
 
 class CBLSSecretKey;
 class CBLSPublicKey;
@@ -121,7 +122,8 @@ private:
 
     /// Masternode info for signed objects
     COutPoint masternodeOutpoint;
-    std::vector<unsigned char> vchSig;
+    CBLSSignature sig;
+//    std::vector<unsigned char> vchSig;
 
     /// is valid by blockchain
     bool fCachedLocalValidity;
@@ -299,7 +301,7 @@ public:
                 obj.masternodeOutpoint
                 );
         if (!(s.GetType() & SER_GETHASH)) {
-            READWRITE(obj.vchSig);
+            READWRITE(obj.sig);
         }
         if (s.GetType() & SER_DISK) {
             // Only include these for the disk file format

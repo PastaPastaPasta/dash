@@ -29,7 +29,6 @@ CGovernanceObject::CGovernanceObject() :
     nCollateralHash(),
     vchData(),
     masternodeOutpoint(),
-    vchSig(),
     fCachedLocalValidity(false),
     strLocalValidityError(),
     fCachedFunding(false),
@@ -56,7 +55,6 @@ CGovernanceObject::CGovernanceObject(const uint256& nHashParentIn, int nRevision
     nCollateralHash(nCollateralHashIn),
     vchData(ParseHex(strDataHexIn)),
     masternodeOutpoint(),
-    vchSig(),
     fCachedLocalValidity(false),
     strLocalValidityError(),
     fCachedFunding(false),
@@ -83,7 +81,7 @@ CGovernanceObject::CGovernanceObject(const CGovernanceObject& other) :
     nCollateralHash(other.nCollateralHash),
     vchData(other.vchData),
     masternodeOutpoint(other.masternodeOutpoint),
-    vchSig(other.vchSig),
+    sig(other.sig),
     fCachedLocalValidity(other.fCachedLocalValidity),
     strLocalValidityError(other.strLocalValidityError),
     fCachedFunding(other.fCachedFunding),
@@ -285,7 +283,7 @@ uint256 CGovernanceObject::GetHash() const
     ss << nTime;
     ss << GetDataAsHexString();
     ss << masternodeOutpoint << uint8_t{} << 0xffffffff; // adding dummy values here to match old hashing
-    ss << vchSig;
+    ss << sig;
     // fee_tx is left out on purpose
 
     return ss.GetHash();
@@ -303,17 +301,17 @@ void CGovernanceObject::SetMasternodeOutpoint(const COutPoint& outpoint)
 
 bool CGovernanceObject::Sign(const CBLSSecretKey& key)
 {
-    CBLSSignature sig = key.Sign(GetSignatureHash());
-    if (!sig.IsValid()) {
+    CBLSSignature _sig = key.Sign(GetSignatureHash());
+    if (!_sig.IsValid()) {
         return false;
     }
-    vchSig = sig.ToByteVector();
+    sig = std::move(_sig);
     return true;
 }
 
 bool CGovernanceObject::CheckSignature(const CBLSPublicKey& pubKey) const
 {
-    if (!CBLSSignature(vchSig).VerifyInsecure(pubKey, GetSignatureHash())) {
+    if (!sig.VerifyInsecure(pubKey, GetSignatureHash())) {
         LogPrintf("CGovernanceObject::CheckSignature -- VerifyInsecure() failed\n");
         return false;
     }

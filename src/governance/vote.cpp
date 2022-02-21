@@ -229,7 +229,8 @@ bool CGovernanceVote::Sign(const CBLSSecretKey& key)
     if (!sig.IsValid()) {
         return false;
     }
-    vchSig = sig.ToByteVector();
+    auto arr = sig.ToByteVector();
+    std::copy(arr.begin(), arr.end(), vchSig.begin());
     return true;
 }
 

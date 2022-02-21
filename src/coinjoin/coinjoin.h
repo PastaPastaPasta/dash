@@ -16,6 +16,7 @@
 #include <util/ranges.h>
 
 #include <utility>
+#include "bls/bls.h"
 
 class CCoinJoin;
 class CConnman;
@@ -193,7 +194,8 @@ public:
     COutPoint masternodeOutpoint;
     int64_t nTime{0};
     bool fReady{false}; //ready for submit
-    std::vector<unsigned char> vchSig;
+    CBLSSignature sig;
+//    std::array<uint8_t, CBLSSignature::SerSize> vchSig;
     // memory only
     bool fTried{false};
 
@@ -211,7 +213,7 @@ public:
     {
         READWRITE(obj.nDenom, obj.masternodeOutpoint, obj.nTime, obj.fReady);
         if (!(s.GetType() & SER_GETHASH)) {
-            READWRITE(obj.vchSig);
+            READWRITE(obj.sig);
         }
     }
 
@@ -256,7 +258,8 @@ private:
 public:
     CTransactionRef tx;
     COutPoint masternodeOutpoint;
-    std::vector<unsigned char> vchSig;
+    CBLSSignature sig;
+//    std::vector<unsigned char> vchSig;
     int64_t sigTime{0};
 
     CCoinJoinBroadcastTx() :
@@ -275,7 +278,7 @@ public:
     {
         READWRITE(obj.tx, obj.masternodeOutpoint);
         if (!(s.GetType() & SER_GETHASH)) {
-            READWRITE(obj.vchSig);
+            READWRITE(obj.sig);
         }
         READWRITE(obj.sigTime);
     }

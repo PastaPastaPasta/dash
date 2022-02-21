@@ -61,9 +61,13 @@ public:
     explicit CBLSWrapper(const bool fLegacyIn = fLegacyDefault) : fLegacy(fLegacyIn)
     {
     }
-    explicit CBLSWrapper(const std::vector<unsigned char>& vecBytes, const bool fLegacyIn = fLegacyDefault) : CBLSWrapper<ImplType, _SerSize, C>(fLegacyIn)
+    explicit CBLSWrapper(Span<uint8_t> vecBytes, const bool fLegacyIn = fLegacyDefault) : CBLSWrapper<ImplType, _SerSize, C>(fLegacyIn)
     {
         SetByteVector(vecBytes);
+    }
+    explicit CBLSWrapper(std::vector<uint8_t> vecBytes, const bool fLegacyIn = fLegacyDefault) : CBLSWrapper<ImplType, _SerSize, C>(fLegacyIn)
+    {
+        CBLSWrapper(vecBytes, fLegacyIn);
     }
 
     CBLSWrapper(const CBLSWrapper& ref) = default;
@@ -105,18 +109,18 @@ public:
         *(static_cast<C*>(this)) = C(fLegacy);
     }
 
-    void SetByteVector(const std::vector<uint8_t>& vecBytes)
+    void SetByteVector(Span<uint8_t> vecBytes)
     {
         if (vecBytes.size() != SerSize) {
             Reset();
             return;
         }
 
-        if (ranges::all_of(vecBytes, [](uint8_t c) { return c == 0; })) {
+        if (std::all_of(vecBytes.begin(), vecBytes.end(), [](uint8_t c) { return c == 0; })) {
             Reset();
         } else {
             try {
-                impl = ImplType::FromBytes(bls::Bytes(vecBytes), fLegacy);
+                impl = ImplType::FromBytes(bls::Bytes(vecBytes.begin(), vecBytes.size()), fLegacy);
                 fValid = true;
             } catch (...) {
                 Reset();
@@ -125,12 +129,21 @@ public:
         cachedHash.SetNull();
     }
 
-    std::vector<uint8_t> ToByteVector() const
+    template <typename Type, size_t Size>
+    static constexpr std::array<Type, Size> vector_to_array(std::vector<Type>&& vec) {
+        assert(vec.size() == Size);
+        std::array<Type, Size> ret;
+        std::copy(vec.begin(), vec.end(), ret.begin());
+        return ret;
+    }
+
+    std::array<uint8_t, SerSize> ToByteVector() const
     {
         if (!fValid) {
-            return std::vector<uint8_t>(SerSize, 0);
+            return std::array<uint8_t, SerSize>{};
         }
-        return impl.Serialize(fLegacy);
+
+        return CBLSWrapper::vector_to_array<uint8_t, SerSize>(impl.Serialize(fLegacy));
     }
 
     const uint256& GetHash() const
@@ -179,7 +192,7 @@ public:
         }
     }
 
-    inline bool CheckMalleable(const std::vector<uint8_t>& vecBytes) const
+    inline bool CheckMalleable(Span<uint8_t> vecBytes) const
     {
         if (memcmp(vecBytes.data(), ToByteVector().data(), SerSize)) {
             // TODO not sure if this is actually possible with the BLS libs. I'm assuming here that somewhere deep inside
@@ -192,7 +205,7 @@ public:
 
     inline std::string ToString() const
     {
-        std::vector<uint8_t> buf = ToByteVector();
+        auto buf = ToByteVector();
         return HexStr(buf);
     }
 };
@@ -308,7 +321,7 @@ class CBLSLazyWrapper
 private:
     mutable Mutex mutex;
 
-    mutable std::vector<uint8_t> vecBytes GUARDED_BY(mutex);
+    mutable std::array<uint8_t, BLSObject::SerSize> vecBytes GUARDED_BY(mutex);
     mutable bool bufValid GUARDED_BY(mutex) {false};
 
     mutable BLSObject obj GUARDED_BY(mutex);
@@ -317,9 +330,9 @@ private:
     mutable uint256 hash GUARDED_BY(mutex);
 
 public:
-    CBLSLazyWrapper() :
-        vecBytes(BLSObject::SerSize, 0)
+    CBLSLazyWrapper()
     {
+        vecBytes.fill(0);
         // the all-zero buf is considered a valid buf, but the resulting object will return false for IsValid
         bufValid = true;
     }
@@ -366,7 +379,7 @@ public:
             bufValid = true;
             hash.SetNull();
         }
-        s.write((const char*)vecBytes.data(), vecBytes.size());
+        s.write(reinterpret_cast<const char*>(vecBytes.data()), vecBytes.size());
     }
 
     template<typename Stream>
