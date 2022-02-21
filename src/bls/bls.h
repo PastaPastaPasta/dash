@@ -11,6 +11,9 @@
 #include <util/strencodings.h>
 #include <util/ranges.h>
 
+#include <threadsafety.h>
+#include <sync.h>
+
 // bls-dash uses relic, which may define DEBUG and ERROR, which leads to many warnings in some build setups
 #undef ERROR
 #undef DEBUG
@@ -302,15 +305,15 @@ template<typename BLSObject>
 class CBLSLazyWrapper
 {
 private:
-    mutable std::mutex mutex;
+    mutable Mutex mutex;
 
-    mutable std::vector<uint8_t> vecBytes;
-    mutable bool bufValid{false};
+    mutable std::vector<uint8_t> vecBytes GUARDED_BY(mutex);
+    mutable bool bufValid GUARDED_BY(mutex) {false};
 
-    mutable BLSObject obj;
-    mutable bool objInitialized{false};
+    mutable BLSObject obj GUARDED_BY(mutex);
+    mutable bool objInitialized GUARDED_BY(mutex) {false};
 
-    mutable uint256 hash;
+    mutable uint256 hash GUARDED_BY(mutex);
 
 public:
     CBLSLazyWrapper() :
@@ -328,7 +331,7 @@ public:
 
     CBLSLazyWrapper& operator=(const CBLSLazyWrapper& r)
     {
-        std::unique_lock<std::mutex> l(r.mutex);
+        LOCK2(mutex, r.mutex);
         bufValid = r.bufValid;
         if (r.bufValid) {
             vecBytes = r.vecBytes;
@@ -353,7 +356,7 @@ public:
     template<typename Stream>
     inline void Serialize(Stream& s) const
     {
-        std::unique_lock<std::mutex> l(mutex);
+        LOCK(mutex);
         if (!objInitialized && !bufValid) {
             throw std::ios_base::failure("obj and buf not initialized");
         }
@@ -368,7 +371,7 @@ public:
     template<typename Stream>
     inline void Unserialize(Stream& s)
     {
-        std::unique_lock<std::mutex> l(mutex);
+        LOCK(mutex);
         s.read((char*)vecBytes.data(), BLSObject::SerSize);
         bufValid = true;
         objInitialized = false;
@@ -377,7 +380,7 @@ public:
 
     void Set(const BLSObject& _obj)
     {
-        std::unique_lock<std::mutex> l(mutex);
+        LOCK(mutex);
         bufValid = false;
         objInitialized = true;
         obj = _obj;
@@ -385,7 +388,7 @@ public:
     }
     const BLSObject& Get() const
     {
-        std::unique_lock<std::mutex> l(mutex);
+        LOCK(mutex);
         static BLSObject invalidObj;
         if (!bufValid && !objInitialized) {
             return invalidObj;
@@ -405,6 +408,7 @@ public:
 
     bool operator==(const CBLSLazyWrapper& r) const
     {
+        LOCK2(mutex, r.mutex);
         if (bufValid && r.bufValid) {
             return vecBytes == r.vecBytes;
         }
@@ -421,7 +425,7 @@ public:
 
     uint256 GetHash() const
     {
-        std::unique_lock<std::mutex> l(mutex);
+        LOCK(mutex);
         if (!bufValid) {
             vecBytes = obj.ToByteVector();
             bufValid = true;
