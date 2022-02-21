@@ -7,10 +7,10 @@
 
 #include <string>
 
-#include "db/dbformat.h"
-#include "db/skiplist.h"
+#include <leveldb/db/dbformat.h>
+#include <leveldb/db/skiplist.h>
 #include "leveldb/db.h"
-#include "util/arena.h"
+#include <leveldb/util/arena.h>
 
 namespace leveldb {
 

@@ -19,10 +19,10 @@
 #include <set>
 #include <vector>
 
-#include "db/dbformat.h"
-#include "db/version_edit.h"
-#include "port/port.h"
-#include "port/thread_annotations.h"
+#include <leveldb/db/dbformat.h>
+#include <leveldb/db/version_edit.h>
+#include <leveldb/port/port.h>
+#include <leveldb/port/thread_annotations.h>
 
 namespace leveldb {
 

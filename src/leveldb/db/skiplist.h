@@ -31,8 +31,8 @@
 #include <cassert>
 #include <cstdlib>
 
-#include "util/arena.h"
-#include "util/random.h"
+#include <leveldb/util/arena.h>
+#include <leveldb/util/random.h>
 
 namespace leveldb {
 

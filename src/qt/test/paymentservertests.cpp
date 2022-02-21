@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#if ENABLE_OPENSSL
+
 #include <qt/test/paymentservertests.h>
 
 #include <qt/optionsmodel.h>
@@ -214,3 +216,5 @@ void RecipientCatcher::getRecipient(const SendCoinsRecipient& r)
 {
     recipient = r;
 }
+
+#endif

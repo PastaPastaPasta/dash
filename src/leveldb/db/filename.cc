@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
-#include "db/filename.h"
+#include <leveldb/db/filename.h>
 
 #include <ctype.h>
 #include <stdio.h>
 
-#include "db/dbformat.h"
+#include <leveldb/db/dbformat.h>
 #include "leveldb/env.h"
-#include "util/logging.h"
+#include <leveldb/util/logging.h>
 
 namespace leveldb {
 

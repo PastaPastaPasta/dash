@@ -7,21 +7,21 @@
 #include <atomic>
 #include <string>
 
-#include "db/db_impl.h"
-#include "db/filename.h"
-#include "db/version_set.h"
-#include "db/write_batch_internal.h"
+#include <leveldb/db/db_impl.h>
+#include <leveldb/db/filename.h>
+#include <leveldb/db/version_set.h>
+#include <leveldb/db/write_batch_internal.h>
 #include "leveldb/cache.h"
 #include "leveldb/env.h"
 #include "leveldb/filter_policy.h"
 #include "leveldb/table.h"
-#include "port/port.h"
-#include "port/thread_annotations.h"
-#include "util/hash.h"
-#include "util/logging.h"
-#include "util/mutexlock.h"
-#include "util/testharness.h"
-#include "util/testutil.h"
+#include <leveldb/port/port.h>
+#include <leveldb/port/thread_annotations.h>
+#include <leveldb/util/hash.h>
+#include <leveldb/util/logging.h>
+#include <leveldb/util/mutexlock.h>
+#include <leveldb/util/testharness.h>
+#include <leveldb/util/testutil.h>
 
 namespace leveldb {
 

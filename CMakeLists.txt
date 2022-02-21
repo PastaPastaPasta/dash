@@ -14,7 +14,10 @@ include_directories(
         src
         src/qt/forms
         src/leveldb/include
+        src/leveldb/db
+        src/leveldb/helpers/memenv/
         src/univalue/include
+        src/secp256k1/include
 )
 
 if(UNIX AND NOT APPLE)
@@ -22,7 +25,7 @@ if(UNIX AND NOT APPLE)
 elseif(APPLE)
     EXECUTE_PROCESS( COMMAND uname -m COMMAND tr -d '\n' OUTPUT_VARIABLE ARCHITECTURE )
     if( ${ARCHITECTURE} STREQUAL "arm64" )
-        set(DEPENDS_PREFIX depends/aarch64-apple-darwin21.2.0)
+        set(DEPENDS_PREFIX depends/aarch64-apple-darwin21.3.0)
     else()
         set(DEPENDS_PREFIX depends/x86_64-apple-darwin19)
     endif()
@@ -35,12 +38,32 @@ message(STATUS "DEPENDS_PREFIX: ${DEPENDS_PREFIX}")
 if(DEFINED DEPENDS_PREFIX)
     include_directories(${DEPENDS_PREFIX}/include)
     include_directories(${DEPENDS_PREFIX}/include/QtWidgets)
+    include_directories(${DEPENDS_PREFIX}/include/QtCore)
+    include_directories(${DEPENDS_PREFIX}/include/QtTest)
+    include_directories(${DEPENDS_PREFIX}/include/QtGui)
+    include_directories(${DEPENDS_PREFIX}/include/QtNetwork)
+    include_directories(${DEPENDS_PREFIX}/include/*/)
 endif()
 
 add_definitions(
         -DENABLE_CRASH_HOOKS=1
         -DENABLE_STACKTRACES=1
         -DENABLE_WALLET=1
+        -DCLIENT_VERSION_MAJOR=1
+        -DCLIENT_VERSION_MINOR=1
+        -DCLIENT_VERSION_REVISION=1
+        -DCLIENT_VERSION_BUILD=1
+        -DCLIENT_VERSION_IS_RELEASE=false
+        -DCOPYRIGHT_YEAR=2022
+        -DPACKAGE_NAME="NAME"
+        -DHAVE_DECL_STRNLEN=1
+        -DFDELT_TYPE=int
+        -DENABLE_OPENSSL=0
+        -DENABLE_PROTOBUF=0
+        -DHAVE_GMTIME_R=1
+        -DFD_SETSIZE=1024
+        -DLEVELDB_PLATFORM_POSIX=1
+        -DLEVELDB_IS_BIG_ENDIAN=1
 )
 
 file(GLOB SOURCE_FILES

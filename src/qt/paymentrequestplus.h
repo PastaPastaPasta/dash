@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#if ENABLE_PROTOBUF
+
 #ifndef BITCOIN_QT_PAYMENTREQUESTPLUS_H
 #define BITCOIN_QT_PAYMENTREQUESTPLUS_H
 
@@ -50,3 +52,5 @@ private:
 };
 
 #endif // BITCOIN_QT_PAYMENTREQUESTPLUS_H
+
+#endif

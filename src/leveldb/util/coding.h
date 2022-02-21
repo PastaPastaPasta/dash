@@ -15,7 +15,7 @@
 #include <string>
 
 #include "leveldb/slice.h"
-#include "port/port.h"
+#include <leveldb/port/port.h>
 
 namespace leveldb {
 

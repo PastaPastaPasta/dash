@@ -7,6 +7,8 @@
 // with some extra methods
 //
 
+#if ENABLE_PROTOBUF
+
 #include <qt/paymentrequestplus.h>
 
 #include <script/script.h>
@@ -215,3 +217,5 @@ QList<std::pair<CScript,CAmount> > PaymentRequestPlus::getPayTo() const
     }
     return result;
 }
+
+#endif
