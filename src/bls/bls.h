@@ -24,7 +24,6 @@
 
 #include <array>
 #include <mutex>
-#include <unistd.h>
 
 static constexpr bool fLegacyDefault{true};
 
