@@ -204,10 +204,11 @@ struct CBLSIdImplicit : public uint256
     {
         memcpy(begin(), id.begin(), sizeof(uint256));
     }
-    static CBLSIdImplicit FromBytes(const uint8_t* buffer, const bool fLegacy = false)
+    static CBLSIdImplicit FromBytes(const bls::Bytes& buffer, const bool fLegacy = false)
     {
         CBLSIdImplicit instance;
-        memcpy(instance.begin(), buffer, sizeof(CBLSIdImplicit));
+        assert(buffer.size() == sizeof(CBLSIdImplicit));
+        memcpy(instance.begin(), buffer.begin(), sizeof(CBLSIdImplicit));
         return instance;
     }
     std::vector<uint8_t> Serialize(const bool fLegacy = false) const
