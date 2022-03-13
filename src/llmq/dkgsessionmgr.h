@@ -26,7 +26,7 @@ private:
 
     std::map<Consensus::LLMQType, CDKGSessionHandler> dkgSessionHandlers;
 
-    mutable CCriticalSection contributionsCacheCs;
+    mutable RecursiveMutex contributionsCacheCs;
     struct ContributionsCacheKey {
         Consensus::LLMQType llmqType;
         uint256 quorumHash;

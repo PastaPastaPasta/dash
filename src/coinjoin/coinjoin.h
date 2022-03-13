@@ -22,7 +22,7 @@ class CConnman;
 class CBLSPublicKey;
 class CBlockIndex;
 
-extern CCriticalSection cs_main;
+extern RecursiveMutex cs_main;
 
 // timeouts
 static constexpr int COINJOIN_AUTO_TIMEOUT_MIN = 5;
@@ -307,7 +307,7 @@ public:
 class CCoinJoinBaseSession
 {
 protected:
-    mutable CCriticalSection cs_coinjoin;
+    mutable RecursiveMutex cs_coinjoin;
 
     std::vector<CCoinJoinEntry> vecEntries GUARDED_BY(cs_coinjoin); // Masternode/clients entries
 
@@ -337,7 +337,7 @@ public:
 class CCoinJoinBaseManager
 {
 protected:
-    mutable CCriticalSection cs_vecqueue;
+    mutable RecursiveMutex cs_vecqueue;
 
     // The current mixing sessions in progress on the network
     std::vector<CCoinJoinQueue> vecCoinJoinQueue GUARDED_BY(cs_vecqueue);
@@ -373,7 +373,7 @@ private:
 
     static std::map<uint256, CCoinJoinBroadcastTx> mapDSTX;
 
-    static CCriticalSection cs_mapdstx;
+    static RecursiveMutex cs_mapdstx;
 
     static void CheckDSTXes(const CBlockIndex* pindex);
 

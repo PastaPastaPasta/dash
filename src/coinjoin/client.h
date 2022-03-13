@@ -163,7 +163,7 @@ private:
     // Keep track of the used Masternodes
     std::vector<COutPoint> vecMasternodesUsed;
 
-    mutable CCriticalSection cs_deqsessions;
+    mutable RecursiveMutex cs_deqsessions;
     // TODO: or map<denom, CCoinJoinClientSession> ??
     std::deque<CCoinJoinClientSession> deqSessions GUARDED_BY(cs_deqsessions);
 

@@ -24,7 +24,7 @@ class CBlockIndex;
 class CValidationState;
 class CSimplifiedMNListDiff;
 
-extern CCriticalSection cs_main;
+extern RecursiveMutex cs_main;
 
 namespace llmq
 {
@@ -514,7 +514,7 @@ class CDeterministicMNManager
     static constexpr int LIST_DIFFS_CACHE_SIZE = DISK_SNAPSHOT_PERIOD * DISK_SNAPSHOTS;
 
 public:
-    CCriticalSection cs;
+    RecursiveMutex cs;
 
 private:
     CEvoDB& evoDb;

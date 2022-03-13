@@ -36,7 +36,7 @@ class CChainLocksHandler : public CRecoveredSigsListener
 private:
     std::unique_ptr<CScheduler> scheduler;
     std::unique_ptr<std::thread> scheduler_thread;
-    mutable CCriticalSection cs;
+    mutable RecursiveMutex cs;
     std::atomic<bool> tryLockChainTipScheduled{false};
     std::atomic<bool> isEnabled{false};
     std::atomic<bool> isEnforced{false};

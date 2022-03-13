@@ -58,7 +58,7 @@ using CInstantSendLockPtr = std::shared_ptr<CInstantSendLock>;
 class CInstantSendDb
 {
 private:
-    mutable CCriticalSection cs_db;
+    mutable RecursiveMutex cs_db;
 
     static constexpr int CURRENT_VERSION{1};
 
@@ -173,7 +173,7 @@ public:
 class CInstantSendManager : public CRecoveredSigsListener
 {
 private:
-    mutable CCriticalSection cs;
+    mutable RecursiveMutex cs;
     CInstantSendDb db;
 
     std::atomic<bool> fUpgradedDB{false};

@@ -22,7 +22,7 @@ class CGovernanceTriggerManager;
 class CGovernanceObject;
 class CGovernanceVote;
 
-extern CCriticalSection cs_main;
+extern RecursiveMutex cs_main;
 
 static constexpr double GOVERNANCE_FILTER_FP_RATE = 0.001;
 
@@ -96,7 +96,7 @@ public: // Types
 
 private:
     /// critical section to protect the inner data structures
-    mutable CCriticalSection cs;
+    mutable RecursiveMutex cs;
 
     /// Object typecode
     int nObjectType;

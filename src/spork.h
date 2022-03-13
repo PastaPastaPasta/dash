@@ -162,7 +162,7 @@ class CSporkManager
 private:
     static constexpr std::string_view SERIALIZATION_VERSION_STRING = "CSporkManager-Version-2";
 
-    mutable CCriticalSection cs;
+    mutable RecursiveMutex cs;
 
     mutable std::unordered_map<const SporkId, bool> mapSporksCachedActive GUARDED_BY(cs);
 
