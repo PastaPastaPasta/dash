@@ -297,23 +297,28 @@ bool CLLMQUtils::IsQuorumActive(Consensus::LLMQType llmqType, const uint256& quo
 
 bool CLLMQUtils::IsQuorumTypeEnabled(Consensus::LLMQType llmqType, const CBlockIndex* pindex)
 {
+    const Consensus::Params& consensusParams = Params().GetConsensus();
+
     switch (llmqType)
     {
         case Consensus::LLMQType::LLMQ_50_60:
         case Consensus::LLMQType::LLMQ_400_60:
         case Consensus::LLMQType::LLMQ_400_85:
+            break;
+        case Consensus::LLMQType::LLMQ_100_67:
+        case Consensus::LLMQType::LLMQ_TEST_V17:
+            if (LOCK(cs_llmq_vbc); VersionBitsState(pindex, consensusParams, Consensus::DEPLOYMENT_DIP0020, llmq_versionbitscache) != ThresholdState::ACTIVE) {
+                return false;
+            }
+            break;
         case Consensus::LLMQType::LLMQ_TEST:
         case Consensus::LLMQType::LLMQ_DEVNET:
-            return true;
-        case Consensus::LLMQType::LLMQ_100_67:
-        case Consensus::LLMQType::LLMQ_TEST_V17: {
-            LOCK(cs_llmq_vbc);
-            return VersionBitsState(pindex, Params().GetConsensus(), Consensus::DEPLOYMENT_DIP0020, llmq_versionbitscache) !=
-                   ThresholdState::ACTIVE;
-        }
+            break;
         default:
             throw std::runtime_error(strprintf("%s: Unknown LLMQ type %d", __func__, static_cast<uint8_t>(llmqType)));
     }
+
+    return true;
 }
 
 std::vector<Consensus::LLMQType> CLLMQUtils::GetEnabledQuorumTypes(const CBlockIndex* pindex)
