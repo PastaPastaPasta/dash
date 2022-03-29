@@ -635,7 +635,7 @@ bool CDeterministicMNManager::UndoBlock(const CBlock& block, const CBlockIndex* 
 
 void CDeterministicMNManager::UpdatedBlockTip(const CBlockIndex* pindex)
 {
-    LOCK(cs);
+    LOCK(cs_tipIndex);
 
     tipIndex = pindex;
 }
@@ -961,16 +961,17 @@ CDeterministicMNList CDeterministicMNManager::GetListForBlock(const CBlockIndex*
         }
     }
 
-    if (tipIndex) {
+    auto tip = WITH_LOCK(cs_tipIndex, return tipIndex);
+    if (tip) {
         // always keep a snapshot for the tip
-        if (snapshot.GetBlockHash() == tipIndex->GetBlockHash()) {
+        if (snapshot.GetBlockHash() == tip->GetBlockHash()) {
             mnListsCache.emplace(snapshot.GetBlockHash(), snapshot);
         } else {
             // keep snapshots for yet alive quorums
-            if (ranges::any_of(Params().GetConsensus().llmqs, [&snapshot, this](const auto& params){
+            if (ranges::any_of(Params().GetConsensus().llmqs, [&snapshot, &tip, this](const auto& params){
                 LOCK(cs);
                 return (snapshot.GetHeight() % params.dkgInterval == 0) &&
-                (snapshot.GetHeight() + params.dkgInterval * (params.keepOldConnections + 1) >= tipIndex->nHeight);
+                (snapshot.GetHeight() + params.dkgInterval * (params.keepOldConnections + 1) >= tip->nHeight);
             })) {
                 mnListsCache.emplace(snapshot.GetBlockHash(), snapshot);
             }
@@ -982,11 +983,11 @@ CDeterministicMNList CDeterministicMNManager::GetListForBlock(const CBlockIndex*
 
 CDeterministicMNList CDeterministicMNManager::GetListAtChainTip()
 {
-    LOCK(cs);
-    if (!tipIndex) {
+    auto tip = WITH_LOCK(cs_tipIndex, return tipIndex);
+    if (!tip) {
         return {};
     }
-    return GetListForBlock(tipIndex);
+    return GetListForBlock(tip);
 }
 
 bool CDeterministicMNManager::IsProTxWithCollateral(const CTransactionRef& tx, uint32_t n)
@@ -1014,7 +1015,7 @@ bool CDeterministicMNManager::IsProTxWithCollateral(const CTransactionRef& tx, u
 bool CDeterministicMNManager::IsDIP3Enforced(int nHeight)
 {
     if (nHeight == -1) {
-        LOCK(cs);
+        LOCK(cs_tipIndex);
         if (tipIndex == nullptr) {
             // Since EnforcementHeight can be set to block 1, we shouldn't just return false here
             nHeight = 1;
@@ -1046,7 +1047,8 @@ void CDeterministicMNManager::CleanupCache(int nHeight)
             continue;
         }
         // no alive quorums using it, see if it was a cache for the tip or for a now outdated quorum
-        if (tipIndex && tipIndex->pprev && (p.first == tipIndex->pprev->GetBlockHash())) {
+        if (WITH_LOCK(cs_tipIndex,
+                      return tipIndex && tipIndex->pprev && (p.first == tipIndex->pprev->GetBlockHash()))) {
             toDeleteLists.emplace_back(p.first);
         } else if (ranges::any_of(Params().GetConsensus().llmqs,
                                   [&p](const auto& llmqParams){ return p.second.GetHeight() % llmqParams.dkgInterval == 0; })) {
@@ -1523,7 +1525,6 @@ void CDeterministicMNManager::Cleanup() {
     LOCK(cs_cleanup);
     int loc_to_cleanup = to_cleanup.load();
     if (loc_to_cleanup <= did_cleanup) return;
-    const auto& params = Params().GetConsensus();
     LOCK(cs);
     CleanupCache(loc_to_cleanup);
     did_cleanup = loc_to_cleanup;

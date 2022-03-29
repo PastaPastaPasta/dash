@@ -26,6 +26,8 @@
 #include <mutex>
 #include <unistd.h>
 
+#include <span.h>
+
 static constexpr bool fLegacyDefault{true};
 
 // reversed BLS12-381
@@ -103,18 +105,18 @@ public:
         *(static_cast<C*>(this)) = C(fLegacy);
     }
 
-    void SetByteVector(const std::vector<uint8_t>& vecBytes)
+    void SetByteVector(Span<const uint8_t> spanBytes)
     {
-        if (vecBytes.size() != SerSize) {
+        if (spanBytes.size() != SerSize) {
             Reset();
             return;
         }
 
-        if (ranges::all_of(vecBytes, [](uint8_t c) { return c == 0; })) {
+        if (std::all_of(spanBytes.begin(), spanBytes.end(), [](uint8_t c) { return c == 0; })) {
             Reset();
         } else {
             try {
-                impl = ImplType::FromBytes(bls::Bytes(vecBytes), fLegacy);
+                impl = ImplType::FromBytes(bls::Bytes(spanBytes.begin(), spanBytes.size()), fLegacy);
                 fValid = true;
             } catch (...) {
                 Reset();
@@ -168,7 +170,9 @@ public:
     template <typename Stream>
     inline void Unserialize(Stream& s, bool checkMalleable = true)
     {
-        std::vector<uint8_t> vecBytes(SerSize, 0);
+        std::array<uint8_t, SerSize> vecBytes;
+        vecBytes.fill(0);
+//        std::vector<uint8_t> vecBytes(SerSize, 0);
         s.read((char*)vecBytes.data(), SerSize);
         SetByteVector(vecBytes);
 
@@ -177,9 +181,9 @@ public:
         }
     }
 
-    inline bool CheckMalleable(const std::vector<uint8_t>& vecBytes) const
+    inline bool CheckMalleable(Span<uint8_t> spanBytes) const
     {
-        if (memcmp(vecBytes.data(), ToByteVector().data(), SerSize)) {
+        if (memcmp(spanBytes.data(), ToByteVector().data(), SerSize)) {
             // TODO not sure if this is actually possible with the BLS libs. I'm assuming here that somewhere deep inside
             // these libs masking might happen, so that 2 different binary representations could result in the same object
             // representation

@@ -103,12 +103,12 @@ bool ProcessSpecialTxsInBlock(const CBlock& block, const CBlockIndex* pindex, CV
     AssertLockHeld(cs_main);
 
     try {
-        static int64_t nTimeLoop = 0;
-        static int64_t nTimeQuorum = 0;
-        static int64_t nTimeDMN = 0;
-        static int64_t nTimeMerkle = 0;
 
-        int64_t nTime1 = GetTimeMicros();
+        int64_t nTime1{0}, nTime2{0}, nTime3{0}, nTime4{0};
+        const bool do_log_benchmark = LogAcceptCategory(BCLog::BENCHMARK);
+        if (do_log_benchmark) {
+            nTime1 = GetTimeMicros();
+        }
 
         for (const auto& ptr_tx : block.vtx) {
             if (!CheckSpecialTx(*ptr_tx, pindex->pprev, state, view, fCheckCbTxMerleRoots)) {
@@ -121,36 +121,53 @@ bool ProcessSpecialTxsInBlock(const CBlock& block, const CBlockIndex* pindex, CV
             }
         }
 
-        int64_t nTime2 = GetTimeMicros();
-        nTimeLoop += nTime2 - nTime1;
-        LogPrint(BCLog::BENCHMARK, "        - Loop: %.2fms [%.2fs]\n", 0.001 * (nTime2 - nTime1), nTimeLoop * 0.000001);
+        if (do_log_benchmark) {
+            nTime2 = GetTimeMicros();
+            static int64_t nTimeLoop = 0;
+            nTimeLoop += nTime2 - nTime1;
+            LogPrint(BCLog::BENCHMARK, "        - Loop: %.2fms [%.2fs]\n", 0.001 * (nTime2 - nTime1),
+                     nTimeLoop * 0.000001);
+        }
 
         if (!llmq::quorumBlockProcessor->ProcessBlock(block, pindex, state, fJustCheck, fCheckCbTxMerleRoots)) {
             // pass the state returned by the function above
             return false;
         }
 
-        int64_t nTime3 = GetTimeMicros();
-        nTimeQuorum += nTime3 - nTime2;
-        LogPrint(BCLog::BENCHMARK, "        - quorumBlockProcessor: %.2fms [%.2fs]\n", 0.001 * (nTime3 - nTime2), nTimeQuorum * 0.000001);
+        if (do_log_benchmark) {
+            nTime3 = GetTimeMicros();
+            static int64_t nTimeQuorum = 0;
+            nTimeQuorum += nTime3 - nTime2;
+            LogPrint(BCLog::BENCHMARK, "        - quorumBlockProcessor: %.2fms [%.2fs]\n", 0.001 * (nTime3 - nTime2),
+                     nTimeQuorum * 0.000001);
+        }
 
         if (!deterministicMNManager->ProcessBlock(block, pindex, state, view, fJustCheck)) {
             // pass the state returned by the function above
             return false;
         }
 
-        int64_t nTime4 = GetTimeMicros();
-        nTimeDMN += nTime4 - nTime3;
-        LogPrint(BCLog::BENCHMARK, "        - deterministicMNManager: %.2fms [%.2fs]\n", 0.001 * (nTime4 - nTime3), nTimeDMN * 0.000001);
+        if (do_log_benchmark) {
+            nTime4 = GetTimeMicros();
+            static int64_t nTimeDMN = 0;
+            nTimeDMN += nTime4 - nTime3;
+            LogPrint(BCLog::BENCHMARK, "        - deterministicMNManager: %.2fms [%.2fs]\n", 0.001 * (nTime4 - nTime3),
+                     nTimeDMN * 0.000001);
+        }
 
         if (fCheckCbTxMerleRoots && !CheckCbTxMerkleRoots(block, pindex, state, view)) {
             // pass the state returned by the function above
             return false;
         }
 
-        int64_t nTime5 = GetTimeMicros();
-        nTimeMerkle += nTime5 - nTime4;
-        LogPrint(BCLog::BENCHMARK, "        - CheckCbTxMerkleRoots: %.2fms [%.2fs]\n", 0.001 * (nTime5 - nTime4), nTimeMerkle * 0.000001);
+
+        if (do_log_benchmark) {
+            int64_t nTime5 = GetTimeMicros();
+            static int64_t nTimeMerkle = 0;
+            nTimeMerkle += nTime5 - nTime4;
+            LogPrint(BCLog::BENCHMARK, "        - CheckCbTxMerkleRoots: %.2fms [%.2fs]\n", 0.001 * (nTime5 - nTime4),
+                     nTimeMerkle * 0.000001);
+        }
     } catch (const std::exception& e) {
         LogPrintf("%s -- failed: %s\n", __func__, e.what());
         return state.DoS(100, false, REJECT_INVALID, "failed-procspectxsinblock");

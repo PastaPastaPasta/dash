@@ -533,7 +533,9 @@ private:
 
     std::unordered_map<uint256, CDeterministicMNList, StaticSaltedHasher> mnListsCache GUARDED_BY(cs);
     std::unordered_map<uint256, CDeterministicMNListDiff, StaticSaltedHasher> mnListDiffsCache GUARDED_BY(cs);
-    const CBlockIndex* tipIndex GUARDED_BY(cs) {nullptr};
+
+    Mutex cs_tipIndex;
+    const CBlockIndex* tipIndex GUARDED_BY(cs_tipIndex) {nullptr};
 
 public:
     explicit CDeterministicMNManager(CEvoDB& _evoDb);
