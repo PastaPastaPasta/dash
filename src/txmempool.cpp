@@ -994,6 +994,7 @@ void CTxMemPool::removeExpiredAssetUnlock(int nBlockHeight)
 
 void CTxMemPool::_clear()
 {
+    vTxHashes.clear();
     mapTx.clear();
     mapNextTx.clear();
     mapProTxAddresses.clear();
