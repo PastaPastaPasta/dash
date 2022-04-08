@@ -732,6 +732,10 @@ bool CLLMQUtils::IsQuorumTypeEnabled(Consensus::LLMQType llmqType, const CBlockI
     switch (llmqType)
     {
         case Consensus::LLMQType::LLMQ_50_60:
+            if (CLLMQUtils::IsDIP0024Active(pindex)) {
+                return false;
+            }
+            break;
         case Consensus::LLMQType::LLMQ_400_60:
         case Consensus::LLMQType::LLMQ_400_85:
             break;
