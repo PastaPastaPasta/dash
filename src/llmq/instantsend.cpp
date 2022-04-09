@@ -542,8 +542,10 @@ bool CInstantSendManager::TrySignInputLocks(const CTransaction& tx, bool fRetroa
         }
 
         // don't even try the actual signing if any input is conflicting
-        if (quorumSigningManager->IsConflicting(params.llmqTypeDIP0024InstantSend, id, tx.GetHash()) ||
-            quorumSigningManager->IsConflicting(params.llmqTypeInstantSend, id, tx.GetHash())) {
+        if (auto llmqs = {params.llmqTypeDIP0024InstantSend, params.llmqTypeInstantSend};
+            ranges::any_of(llmqs, [&id, &tx](const auto& llmqType){
+                return quorumSigningManager->IsConflicting(llmqType, id, tx.GetHash());})
+                ) {
             LogPrintf("CInstantSendManager::%s -- txid=%s: quorumSigningManager->IsConflicting returned true. id=%s\n", __func__,
                       tx.GetHash().ToString(), id.ToString());
             return false;
@@ -859,9 +861,9 @@ bool CInstantSendManager::PreVerifyInstantSendLock(const llmq::CInstantSendLock&
 bool CInstantSendManager::ProcessPendingInstantSendLocks()
 {
     const CBlockIndex* pBlockIndexTip = WITH_LOCK(cs_main, return ::ChainActive().Tip());
-    if (pBlockIndexTip && CLLMQUtils::IsDIP0024Active(pBlockIndexTip)) {
+    if (pBlockIndexTip && CLLMQUtils::GetInstantSendLLMQType(pBlockIndexTip) == Params().GetConsensus().llmqTypeDIP0024InstantSend) {
         // Don't short circuit. Try to process deterministic and not deterministic islocks
-        return ProcessPendingInstantSendLocks(true) & ProcessPendingInstantSendLocks(true);
+        return ProcessPendingInstantSendLocks(true) & ProcessPendingInstantSendLocks(false);
     } else {
         return ProcessPendingInstantSendLocks(false);
     }
@@ -901,7 +903,7 @@ bool CInstantSendManager::ProcessPendingInstantSendLocks(bool deterministic)
     }
 
     //TODO Investigate if leaving this is ok
-    auto llmqType = deterministic ? Params().GetConsensus().llmqTypeDIP0024InstantSend : Params().GetConsensus().llmqTypeInstantSend;
+    auto llmqType = CLLMQUtils::GetInstantSendLLMQType(deterministic);
     auto dkgInterval = GetLLMQParams(llmqType).dkgInterval;
 
     // First check against the current active set and don't ban
@@ -1304,12 +1306,10 @@ void CInstantSendManager::RemoveConflictedTx(const CTransaction& tx)
 void CInstantSendManager::TruncateRecoveredSigsForInputs(const llmq::CInstantSendLock& islock)
 {
     AssertLockHeld(cs);
-    auto& consensusParams = Params().GetConsensus();
-
     for (auto& in : islock.inputs) {
         auto inputRequestId = ::SerializeHash(std::make_pair(INPUTLOCK_REQUESTID_PREFIX, in));
         inputRequestIds.erase(inputRequestId);
-        quorumSigningManager->TruncateRecoveredSig(islock.IsDeterministic() ? consensusParams.llmqTypeDIP0024InstantSend : consensusParams.llmqTypeInstantSend, inputRequestId);
+        quorumSigningManager->TruncateRecoveredSig(CLLMQUtils::GetInstantSendLLMQType(islock.IsDeterministic()), inputRequestId);
     }
 }
 
@@ -1348,7 +1348,6 @@ void CInstantSendManager::HandleFullyConfirmedBlock(const CBlockIndex* pindex)
         return;
     }
 
-    auto& consensusParams = Params().GetConsensus();
     auto removeISLocks = db.RemoveConfirmedInstantSendLocks(pindex->nHeight);
 
     LOCK(cs);
@@ -1364,7 +1363,7 @@ void CInstantSendManager::HandleFullyConfirmedBlock(const CBlockIndex* pindex)
 
         // And we don't need the recovered sig for the ISLOCK anymore, as the block in which it got mined is considered
         // fully confirmed now
-        quorumSigningManager->TruncateRecoveredSig(islock->IsDeterministic() ? consensusParams.llmqTypeDIP0024InstantSend : consensusParams.llmqTypeInstantSend, islock->GetRequestId());
+        quorumSigningManager->TruncateRecoveredSig(CLLMQUtils::GetInstantSendLLMQType(islock->IsDeterministic()), islock->GetRequestId());
     }
 
     db.RemoveArchivedInstantSendLocks(pindex->nHeight - 100);

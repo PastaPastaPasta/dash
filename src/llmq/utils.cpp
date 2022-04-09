@@ -513,8 +513,17 @@ bool CLLMQUtils::IsQuorumRotationEnabled(Consensus::LLMQType llmqType, const CBl
 
 Consensus::LLMQType CLLMQUtils::GetInstantSendLLMQType(const CBlockIndex* pindex)
 {
-    return IsDIP0024Active(pindex) ? Params().GetConsensus().llmqTypeDIP0024InstantSend : Params().GetConsensus().llmqTypeInstantSend;
+    if (IsDIP0024Active(pindex) && !quorumManager->ScanQuorums(Params().GetConsensus().llmqTypeDIP0024InstantSend, pindex, 1).empty()) {
+        return Params().GetConsensus().llmqTypeDIP0024InstantSend;
+    }
+    return Params().GetConsensus().llmqTypeInstantSend;
 }
+
+Consensus::LLMQType CLLMQUtils::GetInstantSendLLMQType(bool deterministic)
+{
+    return deterministic ? Params().GetConsensus().llmqTypeDIP0024InstantSend : Params().GetConsensus().llmqTypeInstantSend;
+}
+
 
 bool CLLMQUtils::IsDIP0024Active(const CBlockIndex* pindex)
 {
@@ -731,7 +740,7 @@ bool CLLMQUtils::IsQuorumTypeEnabled(Consensus::LLMQType llmqType, const CBlockI
     switch (llmqType)
     {
         case Consensus::LLMQType::LLMQ_50_60:
-            if (CLLMQUtils::IsDIP0024Active(pindex)) {
+            if (CLLMQUtils::IsDIP0024Active(pindex) && !quorumManager->ScanQuorums(consensusParams.llmqTypeDIP0024InstantSend, pindex, 1).empty()) {
                 return false;
             }
             break;

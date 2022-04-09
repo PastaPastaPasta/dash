@@ -65,22 +65,33 @@ class LLMQISMigrationTest(DashTestFramework):
         # assert len(q_list['llmq_test_v17']) == 0
         # assert len(q_list['llmq_test_dip0024']) == 0
 
-        self.mine_quorum()
-        q_list = self.nodes[0].quorum("list")
-        self.log.info(q_list)
+        txid1 = node.sendtoaddress(node.getnewaddress(), 1)
+        self.wait_for_instantlock(txid1, node)
+
+        # self.mine_quorum()
+        # q_list = self.nodes[0].quorum("list")
+        # self.log.info(q_list)
 
 
         # at this point, DIP0024 is active, but we have old quorums!
 
         txid3 = node.sendtoaddress(node.getnewaddress(), 1)
-        self.wait_for_instantlock(txid3, node, expected=False)
+        self.wait_for_instantlock(txid3, node, expected=True)
 
         request_id = self.get_request_id(self.nodes[0].getrawtransaction(txid3))
         time.sleep(10)
         for n in self.nodes:
             assert not n.quorum("hasrecsig", 100, request_id, txid3)
 
-        #At this point, we need to move forward 3 cycles (3 x 24 blocks) so the first 3 quarters can be created (without DKG sessions)
+
+        request_id = self.get_request_id(self.nodes[0].getrawtransaction(txid1))
+        wait_until(lambda: node.quorum("hasrecsig", 100, request_id, txid1))
+
+        rec_sig = node.quorum("getrecsig", 100, request_id, txid1)['sig']
+        assert node.verifyislock(request_id, txid1, rec_sig)
+
+
+    #At this point, we need to move forward 3 cycles (3 x 24 blocks) so the first 3 quarters can be created (without DKG sessions)
         #self.log.info("Start at H height:" + str(self.nodes[0].getblockcount()))
         self.move_to_next_cycle()
         self.log.info("Cycle H height:" + str(self.nodes[0].getblockcount()))
