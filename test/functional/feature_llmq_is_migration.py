@@ -73,7 +73,7 @@ class LLMQISMigrationTest(DashTestFramework):
         # self.log.info(q_list)
 
 
-        # at this point, DIP0024 is active, but we have old quorums!
+        # at this point, DIP0024 is active, but we have old quorums, and they should still create islocks!
 
         txid3 = node.sendtoaddress(node.getnewaddress(), 1)
         self.wait_for_instantlock(txid3, node)
@@ -110,6 +110,7 @@ class LLMQISMigrationTest(DashTestFramework):
         rec_sig2 = node.quorum("getrecsig", 103, request_id2, txid2)['sig']
         assert node.verifyislock(request_id2, txid2, rec_sig2)
 
+        # Check that original islock quorum type doesn't sign
         time.sleep(10)
         for n in self.nodes:
             assert not n.quorum("hasrecsig", 100, request_id2, txid2)
