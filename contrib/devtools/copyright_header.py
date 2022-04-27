@@ -11,6 +11,10 @@ import subprocess
 import datetime
 import os
 
+from functools import partial
+from multiprocessing import Pool
+
+
 ################################################################################
 # file filtering
 ################################################################################
@@ -378,25 +382,35 @@ def create_updated_copyright_line(line, last_git_change_year):
             year_range_to_str(start_year, last_git_change_year) + ' ' +
             ' '.join(space_split[1:]))
 
-def update_updatable_copyright(filename):
+def update_updatable_copyright(filename, check):
     file_lines = read_file_lines(filename)
     index, line = get_updatable_copyright_line(file_lines)
     if not line:
-        print_file_action_message(filename, "No updatable copyright.")
-        return
+        if not check:
+            print_file_action_message(filename, "No updatable copyright.")
+        return False
     last_git_change_year = get_most_recent_git_change_year(filename)
     new_line = create_updated_copyright_line(line, last_git_change_year)
     if line == new_line:
-        print_file_action_message(filename, "Copyright up-to-date.")
-        return
+        if not check:
+            print_file_action_message(filename, "Copyright up-to-date.")
+        return False
     file_lines[index] = new_line
-    write_file_lines(filename, file_lines)
+    if not check:
+        write_file_lines(filename, file_lines)
     print_file_action_message(filename,
-                              "Copyright updated! -> %s" % last_git_change_year)
+                              "Copyright %s! -> %s" % ("updatable" if check else "updated", last_git_change_year))
+    return True
 
-def exec_update_header_year(base_directory):
-    for filename in get_filenames_to_examine(base_directory):
-        update_updatable_copyright(filename)
+def exec_update_header_year(base_directory, check):
+    with Pool(8) as pool:
+        result = pool.map(partial(update_updatable_copyright, check=check), get_filenames_to_examine(base_directory))
+
+    if check:
+        sys.exit(sum(result))
+
+    # for filename in get_filenames_to_examine(base_directory):
+    #     update_updatable_copyright(filename)
 
 ################################################################################
 # update cmd
@@ -434,14 +448,14 @@ Arguments:
 def print_file_action_message(filename, action):
     print("%-52s %s" % (filename, action))
 
-def update_cmd(argv):
+def update_cmd(argv, check=False):
     if len(argv) != 3:
         sys.exit(UPDATE_USAGE)
 
     base_directory = argv[2]
     if not os.path.exists(base_directory):
         sys.exit("*** bad base_directory: %s" % base_directory)
-    exec_update_header_year(base_directory)
+    exec_update_header_year(base_directory, check)
 
 ################################################################################
 # inserted copyright header format
@@ -592,7 +606,7 @@ Subcommands:
 To see subcommand usage, run them without arguments.
 """
 
-SUBCOMMANDS = ['report', 'update', 'insert']
+SUBCOMMANDS = ['report', 'update', 'insert', 'check']
 
 if __name__ == "__main__":
     if len(sys.argv) == 1:
@@ -606,3 +620,5 @@ if __name__ == "__main__":
         update_cmd(sys.argv)
     elif subcommand == 'insert':
         insert_cmd(sys.argv)
+    elif subcommand == 'check':
+        update_cmd(sys.argv, check=True)
