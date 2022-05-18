@@ -374,9 +374,7 @@ public:
         InitHardwareRand();
     }
 
-    ~RNGState()
-    {
-    }
+    ~RNGState() = default;
 
     void AddEvent(uint32_t event_info) noexcept
     {

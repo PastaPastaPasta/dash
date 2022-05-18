@@ -90,10 +90,7 @@ BanTableModel::BanTableModel(interfaces::Node& node, QObject* parent) :
     refresh();
 }
 
-BanTableModel::~BanTableModel()
-{
-    // Intentionally left empty
-}
+BanTableModel::~BanTableModel() = default;
 
 int BanTableModel::rowCount(const QModelIndex &parent) const
 {

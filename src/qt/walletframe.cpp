@@ -58,9 +58,7 @@ WalletFrame::WalletFrame(BitcoinGUI* _gui) :
     walletStack->addWidget(governanceListPage);
 }
 
-WalletFrame::~WalletFrame()
-{
-}
+WalletFrame::~WalletFrame() = default;
 
 void WalletFrame::setClientModel(ClientModel *_clientModel)
 {

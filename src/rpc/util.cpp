@@ -238,7 +238,7 @@ class DescribeAddressVisitor : public boost::static_visitor<UniValue>
 {
 public:
 
-    explicit DescribeAddressVisitor() {}
+    explicit DescribeAddressVisitor() = default;
 
     UniValue operator()(const CNoDestination &dest) const { return UniValue(UniValue::VOBJ); }
 

@@ -10,5 +10,5 @@
 #include <net_processing.h>
 #include <scheduler.h>
 
-NodeContext::NodeContext() {}
-NodeContext::~NodeContext() {}
+NodeContext::NodeContext() = default;
+NodeContext::~NodeContext() = default;

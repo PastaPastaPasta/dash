@@ -218,8 +218,7 @@ public:
     bool fAnyUnordered{false};
     std::vector<uint256> vWalletUpgrade;
 
-    CWalletScanState() {
-    }
+    CWalletScanState() = default;
 };
 
 static bool

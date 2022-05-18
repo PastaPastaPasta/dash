@@ -34,7 +34,7 @@ class TxViewDelegate : public QAbstractItemDelegate
     Q_OBJECT
 public:
     explicit TxViewDelegate(QObject* parent = nullptr) :
-        QAbstractItemDelegate(), unit(BitcoinUnits::DASH)
+        QAbstractItemDelegate()
     {
 
     }
@@ -103,7 +103,7 @@ public:
         return QSize(ITEM_HEIGHT, ITEM_HEIGHT);
     }
 
-    int unit;
+    int unit{BitcoinUnit::DASH};
 
 };
 #include <qt/overviewpage.moc>

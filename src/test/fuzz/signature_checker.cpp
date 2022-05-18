@@ -43,7 +43,7 @@ public:
         return m_fuzzed_data_provider.ConsumeBool();
     }
 
-    virtual ~FuzzedSignatureChecker() {}
+    virtual ~FuzzedSignatureChecker() = default;
 };
 } // namespace
 
