@@ -32,19 +32,19 @@ VersionBitsCache llmq_versionbitscache;
 void CLLMQUtils::PreComputeQuorumMembers(const CBlockIndex* pQuorumBaseBlockIndex)
 {
     for (const Consensus::LLMQParams& params : CLLMQUtils::GetEnabledQuorumParams(pQuorumBaseBlockIndex->pprev)) {
-        if (llmq::CLLMQUtils::IsQuorumRotationEnabled(params.type, pQuorumBaseBlockIndex) && (pQuorumBaseBlockIndex->nHeight % params.dkgInterval == 0)) {
-            CLLMQUtils::GetAllQuorumMembers(params.type, pQuorumBaseBlockIndex);
+        if (llmq::CLLMQUtils::IsQuorumRotationEnabled(params, pQuorumBaseBlockIndex) && (pQuorumBaseBlockIndex->nHeight % params.dkgInterval == 0)) {
+            CLLMQUtils::GetAllQuorumMembers(params, pQuorumBaseBlockIndex);
         }
     }
 }
 
-std::vector<CDeterministicMNCPtr> CLLMQUtils::GetAllQuorumMembers(Consensus::LLMQType llmqType, const CBlockIndex* pQuorumBaseBlockIndex)
+std::vector<CDeterministicMNCPtr> CLLMQUtils::GetAllQuorumMembers(const Consensus::LLMQParams& llmqParams, const CBlockIndex* pQuorumBaseBlockIndex)
 {
     static CCriticalSection cs_members;
     static std::map<Consensus::LLMQType, unordered_lru_cache<uint256, std::vector<CDeterministicMNCPtr>, StaticSaltedHasher>> mapQuorumMembers GUARDED_BY(cs_members);
     static CCriticalSection cs_indexed_members;
     static std::map<Consensus::LLMQType, unordered_lru_cache<std::pair<uint256, int>, std::vector<CDeterministicMNCPtr>, StaticSaltedHasher>> mapIndexedQuorumMembers GUARDED_BY(cs_indexed_members);
-    if (!IsQuorumTypeEnabled(llmqType, pQuorumBaseBlockIndex->pprev)) {
+    if (!IsQuorumTypeEnabled(llmqParams.type, pQuorumBaseBlockIndex->pprev)) {
         return {};
     }
     std::vector<CDeterministicMNCPtr> quorumMembers;
@@ -53,12 +53,12 @@ std::vector<CDeterministicMNCPtr> CLLMQUtils::GetAllQuorumMembers(Consensus::LLM
         if (mapQuorumMembers.empty()) {
             InitQuorumsCache(mapQuorumMembers);
         }
-        if (mapQuorumMembers[llmqType].get(pQuorumBaseBlockIndex->GetBlockHash(), quorumMembers)) {
+        if (mapQuorumMembers[llmqParams.type].get(pQuorumBaseBlockIndex->GetBlockHash(), quorumMembers)) {
             return quorumMembers;
         }
     }
 
-    if (CLLMQUtils::IsQuorumRotationEnabled(llmqType, pQuorumBaseBlockIndex)) {
+    if (CLLMQUtils::IsQuorumRotationEnabled(llmqParams, pQuorumBaseBlockIndex)) {
         if (LOCK(cs_indexed_members); mapIndexedQuorumMembers.empty()) {
             InitQuorumsCache(mapIndexedQuorumMembers);
         }
@@ -71,7 +71,6 @@ std::vector<CDeterministicMNCPtr> CLLMQUtils::GetAllQuorumMembers(Consensus::LLM
          * Quorum Q with quorumIndex is created at height CycleQuorumBaseBlock + quorumIndex
          */
 
-        const Consensus::LLMQParams& llmqParams = GetLLMQParams(llmqType);
         int quorumIndex = pQuorumBaseBlockIndex->nHeight % llmqParams.dkgInterval;
         if (quorumIndex >= llmqParams.signingActiveQuorumCount) {
             return {};
@@ -83,25 +82,25 @@ std::vector<CDeterministicMNCPtr> CLLMQUtils::GetAllQuorumMembers(Consensus::LLM
          * Since mapQuorumMembers stores Quorum members per block hash, and we don't know yet the block hashes of blocks for all quorumIndexes (since these blocks are not created yet)
          * We store them in a second cache mapIndexedQuorumMembers which stores them by {CycleQuorumBaseBlockHash, quorumIndex}
          */
-        if (LOCK(cs_indexed_members); mapIndexedQuorumMembers[llmqType].get(std::pair(pCycleQuorumBaseBlockIndex->GetBlockHash(), quorumIndex), quorumMembers)) {
+        if (LOCK(cs_indexed_members); mapIndexedQuorumMembers[llmqParams.type].get(std::pair(pCycleQuorumBaseBlockIndex->GetBlockHash(), quorumIndex), quorumMembers)) {
             LOCK(cs_members);
-            mapQuorumMembers[llmqType].insert(pQuorumBaseBlockIndex->GetBlockHash(), quorumMembers);
+            mapQuorumMembers[llmqParams.type].insert(pQuorumBaseBlockIndex->GetBlockHash(), quorumMembers);
             return quorumMembers;
         }
 
-        auto q = ComputeQuorumMembersByQuarterRotation(llmqType, pCycleQuorumBaseBlockIndex);
+        auto q = ComputeQuorumMembersByQuarterRotation(llmqParams.type, pCycleQuorumBaseBlockIndex);
         LOCK(cs_indexed_members);
         for (int i = 0; i < static_cast<int>(q.size()); ++i) {
-            mapIndexedQuorumMembers[llmqType].insert(std::make_pair(pCycleQuorumBaseBlockIndex->GetBlockHash(), i), q[i]);
+            mapIndexedQuorumMembers[llmqParams.type].insert(std::make_pair(pCycleQuorumBaseBlockIndex->GetBlockHash(), i), q[i]);
         }
 
         quorumMembers = q[quorumIndex];
     } else {
-        quorumMembers = ComputeQuorumMembers(llmqType, pQuorumBaseBlockIndex);
+        quorumMembers = ComputeQuorumMembers(llmqParams.type, pQuorumBaseBlockIndex);
     }
 
     LOCK(cs_members);
-    mapQuorumMembers[llmqType].insert(pQuorumBaseBlockIndex->GetBlockHash(), quorumMembers);
+    mapQuorumMembers[llmqParams.type].insert(pQuorumBaseBlockIndex->GetBlockHash(), quorumMembers);
     return quorumMembers;
 }
 
@@ -549,16 +548,16 @@ bool CLLMQUtils::IsQuorumPoseEnabled(Consensus::LLMQType llmqType)
     return EvalSpork(llmqType, sporkManager.GetSporkValue(SPORK_23_QUORUM_POSE));
 }
 
-bool CLLMQUtils::IsQuorumRotationEnabled(Consensus::LLMQType llmqType, const CBlockIndex* pindex)
+bool CLLMQUtils::IsQuorumRotationEnabled(const Consensus::LLMQParams& llmqParams, const CBlockIndex* pindex)
 {
     assert(pindex);
 
-    if (!GetLLMQParams(llmqType).useRotation) {
+    if (!llmqParams.useRotation) {
         return false;
     }
 
     LOCK(cs_llmq_vbc);
-    int cycleQuorumBaseHeight = pindex->nHeight - (pindex->nHeight % GetLLMQParams(llmqType).dkgInterval);
+    int cycleQuorumBaseHeight = pindex->nHeight - (pindex->nHeight % llmqParams.dkgInterval);
     if (cycleQuorumBaseHeight < 1) {
         return false;
     }
@@ -624,7 +623,7 @@ std::set<uint256> CLLMQUtils::GetQuorumConnections(const Consensus::LLMQParams& 
                                                    const uint256& forMember, bool onlyOutbound)
 {
     if (IsAllMembersConnectedEnabled(llmqParams.type)) {
-        auto mns = GetAllQuorumMembers(llmqParams.type, pQuorumBaseBlockIndex);
+        auto mns = GetAllQuorumMembers(llmqParams, pQuorumBaseBlockIndex);
         std::set<uint256> result;
 
         for (const auto& dmn : mns) {
@@ -647,7 +646,7 @@ std::set<uint256> CLLMQUtils::GetQuorumConnections(const Consensus::LLMQParams& 
 std::set<uint256> CLLMQUtils::GetQuorumRelayMembers(const Consensus::LLMQParams& llmqParams, const CBlockIndex* pQuorumBaseBlockIndex,
                                                     const uint256& forMember, bool onlyOutbound)
 {
-    auto mns = GetAllQuorumMembers(llmqParams.type, pQuorumBaseBlockIndex);
+    auto mns = GetAllQuorumMembers(llmqParams, pQuorumBaseBlockIndex);
     std::set<uint256> result;
 
     auto calcOutbound = [&](size_t i, const uint256& proTxHash) {
@@ -723,7 +722,7 @@ std::set<size_t> CLLMQUtils::CalcDeterministicWatchConnections(Consensus::LLMQTy
 bool CLLMQUtils::EnsureQuorumConnections(const Consensus::LLMQParams& llmqParams, const CBlockIndex* pQuorumBaseBlockIndex,
                                          CConnman& connman, const uint256& myProTxHash)
 {
-    auto members = GetAllQuorumMembers(llmqParams.type, pQuorumBaseBlockIndex);
+    auto members = GetAllQuorumMembers(llmqParams, pQuorumBaseBlockIndex);
     bool isMember = ranges::find_if(members, [&](const auto& dmn) { return dmn->proTxHash == myProTxHash; }) != members.end();
 
     if (!isMember && !CLLMQUtils::IsWatchQuorumsEnabled()) {
@@ -771,7 +770,7 @@ void CLLMQUtils::AddQuorumProbeConnections(const Consensus::LLMQParams& llmqPara
         return;
     }
 
-    auto members = GetAllQuorumMembers(llmqParams.type, pQuorumBaseBlockIndex);
+    auto members = GetAllQuorumMembers(llmqParams, pQuorumBaseBlockIndex);
     auto curTime = GetAdjustedTime();
 
     std::set<uint256> probeConnections;

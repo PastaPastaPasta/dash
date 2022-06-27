@@ -232,7 +232,7 @@ void CDKGSessionManager::ProcessMessage(CNode* pfrom, const std::string& msg_typ
 
         const Consensus::LLMQParams& llmqParams = GetLLMQParams(llmqType);
         quorumIndex = pQuorumBaseBlockIndex->nHeight % llmqParams.dkgInterval;
-        int quorumIndexMax = CLLMQUtils::IsQuorumRotationEnabled(llmqType, pQuorumBaseBlockIndex) ?
+        int quorumIndexMax = CLLMQUtils::IsQuorumRotationEnabled(llmq::GetLLMQParams(llmqType), pQuorumBaseBlockIndex) ?
                 llmqParams.signingActiveQuorumCount - 1 : 0;
 
         if (quorumIndex > quorumIndexMax) {
@@ -374,7 +374,7 @@ void CDKGSessionManager::WriteEncryptedContributions(Consensus::LLMQType llmqTyp
 bool CDKGSessionManager::GetVerifiedContributions(Consensus::LLMQType llmqType, const CBlockIndex* pQuorumBaseBlockIndex, const std::vector<bool>& validMembers, std::vector<uint16_t>& memberIndexesRet, std::vector<BLSVerificationVectorPtr>& vvecsRet, BLSSecretKeyVector& skContributionsRet) const
 {
     LOCK(contributionsCacheCs);
-    auto members = CLLMQUtils::GetAllQuorumMembers(llmqType, pQuorumBaseBlockIndex);
+    auto members = CLLMQUtils::GetAllQuorumMembers(llmq::GetLLMQParams(llmqType), pQuorumBaseBlockIndex);
 
     memberIndexesRet.clear();
     vvecsRet.clear();
@@ -408,7 +408,7 @@ bool CDKGSessionManager::GetVerifiedContributions(Consensus::LLMQType llmqType, 
 
 bool CDKGSessionManager::GetEncryptedContributions(Consensus::LLMQType llmqType, const CBlockIndex* pQuorumBaseBlockIndex, const std::vector<bool>& validMembers, const uint256& nProTxHash, std::vector<CBLSIESEncryptedObject<CBLSSecretKey>>& vecRet) const
 {
-    auto members = CLLMQUtils::GetAllQuorumMembers(llmqType, pQuorumBaseBlockIndex);
+    auto members = CLLMQUtils::GetAllQuorumMembers(llmq::GetLLMQParams(llmqType), pQuorumBaseBlockIndex);
 
     vecRet.clear();
     vecRet.reserve(members.size());

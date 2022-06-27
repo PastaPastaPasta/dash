@@ -196,7 +196,7 @@ static UniValue quorum_dkgstatus(const JSONRPCRequest& request)
     UniValue quorumArrConnections(UniValue::VARR);
     for (const auto& type : llmq::CLLMQUtils::GetEnabledQuorumTypes(pindexTip)) {
         const auto& llmq_params = llmq::GetLLMQParams(type);
-        bool rotation_enabled = llmq::CLLMQUtils::IsQuorumRotationEnabled(type, pindexTip);
+        bool rotation_enabled = llmq::CLLMQUtils::IsQuorumRotationEnabled(llmq_params, pindexTip);
         size_t quorums_num = rotation_enabled ? llmq_params.signingActiveQuorumCount : 1;
 
         for (int quorumIndex = 0; quorumIndex < quorums_num; ++quorumIndex) {

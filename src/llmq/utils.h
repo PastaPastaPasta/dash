@@ -54,7 +54,7 @@ class CLLMQUtils
 {
 public:
     // includes members which failed DKG
-    static std::vector<CDeterministicMNCPtr> GetAllQuorumMembers(Consensus::LLMQType llmqType, const CBlockIndex* pQuorumBaseBlockIndex);
+    static std::vector<CDeterministicMNCPtr> GetAllQuorumMembers(const Consensus::LLMQParams& llmqParams, const CBlockIndex* pQuorumBaseBlockIndex);
 
     static void PreComputeQuorumMembers(const CBlockIndex* pQuorumBaseBlockIndex);
     static std::vector<CDeterministicMNCPtr> ComputeQuorumMembers(Consensus::LLMQType llmqType, const CBlockIndex* pQuorumBaseBlockIndex);
@@ -88,7 +88,7 @@ public:
     static std::vector<Consensus::LLMQType> GetEnabledQuorumTypes(const CBlockIndex* pindex);
     static std::vector<std::reference_wrapper<const Consensus::LLMQParams>> GetEnabledQuorumParams(const CBlockIndex* pindex);
 
-    static bool IsQuorumRotationEnabled(Consensus::LLMQType llmqType, const CBlockIndex* pindex);
+    static bool IsQuorumRotationEnabled(const Consensus::LLMQParams& llmqParams, const CBlockIndex* pindex);
     static Consensus::LLMQType GetInstantSendLLMQType(const CBlockIndex* pindex);
     static Consensus::LLMQType GetInstantSendLLMQType(bool deterministic);
     static bool IsDIP0024Active(const CBlockIndex* pindex);

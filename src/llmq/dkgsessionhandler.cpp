@@ -84,7 +84,7 @@ void CDKGSessionHandler::UpdatedBlockTip(const CBlockIndex* pindexNew)
 {
     //AssertLockNotHeld(cs_main);
     //Indexed quorums (greater than 0) are enabled with Quorum Rotation
-    if (quorumIndex > 0 && !CLLMQUtils::IsQuorumRotationEnabled(params.type, pindexNew)) {
+    if (quorumIndex > 0 && !CLLMQUtils::IsQuorumRotationEnabled(params, pindexNew)) {
         return;
     }
     LOCK(cs);
@@ -147,7 +147,7 @@ bool CDKGSessionHandler::InitNewQuorum(const CBlockIndex* pQuorumBaseBlockIndex)
         return false;
     }
 
-    auto mns = CLLMQUtils::GetAllQuorumMembers(params.type, pQuorumBaseBlockIndex);
+    auto mns = CLLMQUtils::GetAllQuorumMembers(params, pQuorumBaseBlockIndex);
     if (!curSession->Init(pQuorumBaseBlockIndex, mns, WITH_LOCK(activeMasternodeInfoCs, return activeMasternodeInfo.proTxHash), quorumIndex)) {
         LogPrintf("CDKGSessionManager::%s -- height[%d] quorum initialization failed for %s qi[%d] mns[%d]\n", __func__, pQuorumBaseBlockIndex->nHeight, curSession->params.name, quorumIndex, mns.size());
         return false;

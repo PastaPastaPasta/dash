@@ -999,7 +999,7 @@ CQuorumCPtr CSigningManager::SelectQuorumForSigning(Consensus::LLMQType llmqType
         pindexStart = ::ChainActive()[startBlockHeight];
     }
 
-    if (CLLMQUtils::IsQuorumRotationEnabled(llmqType, pindexStart)) {
+    if (CLLMQUtils::IsQuorumRotationEnabled(llmq::GetLLMQParams(llmqType), pindexStart)) {
         auto quorums = quorumManager->ScanQuorums(llmqType, pindexStart, poolSize);
         if (quorums.empty()) {
             return nullptr;

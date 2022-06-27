@@ -183,7 +183,7 @@ bool CalcCbTxMerkleRootQuorums(const CBlock& block, const CBlockIndex* pindexPre
             uint256 minedBlockHash;
             llmq::CFinalCommitmentPtr qc = llmq::quorumBlockProcessor->GetMinedCommitment(p.first, p2->GetBlockHash(), minedBlockHash);
             if (qc == nullptr) return state.Invalid(ValidationInvalidReason::CONSENSUS, false, REJECT_INVALID, "commitment-not-found");
-            if (llmq::CLLMQUtils::IsQuorumRotationEnabled(qc->llmqType, pindexPrev)) {
+            if (llmq::CLLMQUtils::IsQuorumRotationEnabled(llmq::GetLLMQParams(qc->llmqType), pindexPrev)) {
                 auto& qi = qcIndexedHashes[p.first];
                 qi.insert(std::make_pair(qc->quorumIndex, ::SerializeHash(*qc)));
                 continue;
@@ -213,7 +213,7 @@ bool CalcCbTxMerkleRootQuorums(const CBlock& block, const CBlockIndex* pindexPre
             auto qcHash = ::SerializeHash(qc.commitment);
             const auto& llmq_params = llmq::GetLLMQParams(qc.commitment.llmqType);
             auto& v = qcHashes[llmq_params.type];
-            if (llmq::CLLMQUtils::IsQuorumRotationEnabled(qc.commitment.llmqType, pindexPrev)) {
+            if (llmq::CLLMQUtils::IsQuorumRotationEnabled(llmq::GetLLMQParams(qc.commitment.llmqType), pindexPrev)) {
                 auto& qi = qcIndexedHashes[qc.commitment.llmqType];
                 qi[qc.commitment.quorumIndex] = qcHash;
                 continue;

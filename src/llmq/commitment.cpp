@@ -30,7 +30,7 @@ CFinalCommitment::CFinalCommitment(const Consensus::LLMQParams& params, const ui
 
 bool CFinalCommitment::Verify(const CBlockIndex* pQuorumBaseBlockIndex, bool checkSigs) const
 {
-    if (nVersion == 0 || nVersion != (CLLMQUtils::IsQuorumRotationEnabled(llmqType, pQuorumBaseBlockIndex) ? INDEXED_QUORUM_VERSION : CURRENT_VERSION)) {
+    if (nVersion == 0 || nVersion != (CLLMQUtils::IsQuorumRotationEnabled(llmq::GetLLMQParams(llmqType), pQuorumBaseBlockIndex) ? INDEXED_QUORUM_VERSION : CURRENT_VERSION)) {
         LogPrintfFinalCommitment("q[%s] invalid nVersion=%d\n", quorumHash.ToString(), nVersion);
         return false;
     }
@@ -79,7 +79,7 @@ bool CFinalCommitment::Verify(const CBlockIndex* pQuorumBaseBlockIndex, bool che
         LogPrintfFinalCommitment("q[%s] invalid vvecSig\n");
         return false;
     }
-    auto members = CLLMQUtils::GetAllQuorumMembers(llmqType, pQuorumBaseBlockIndex);
+    auto members = CLLMQUtils::GetAllQuorumMembers(llmq::GetLLMQParams(llmqType), pQuorumBaseBlockIndex);
     std::stringstream ss;
     for (const auto i : irange::range(llmq_params.size)) {
         ss << "v[" << i << "]=" << validMembers[i];

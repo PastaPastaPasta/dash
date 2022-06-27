@@ -273,7 +273,7 @@ void CQuorumManager::EnsureQuorumConnections(const Consensus::LLMQParams& llmqPa
     auto connmanQuorumsToDelete = connman.GetMasternodeQuorums(llmqParams.type);
 
     // don't remove connections for the currently in-progress DKG round
-    if (CLLMQUtils::IsQuorumRotationEnabled(llmqParams.type, pindexNew)) {
+    if (CLLMQUtils::IsQuorumRotationEnabled(llmqParams, pindexNew)) {
         int cycleIndexTipHeight = pindexNew->nHeight % llmqParams.dkgInterval;
         int cycleQuorumBaseHeight = pindexNew->nHeight - cycleIndexTipHeight;
         std::stringstream ss;
@@ -321,7 +321,7 @@ CQuorumPtr CQuorumManager::BuildQuorumFromCommitment(const Consensus::LLMQType l
     assert(qc->quorumHash == pQuorumBaseBlockIndex->GetBlockHash());
 
     auto quorum = std::make_shared<CQuorum>(llmq::GetLLMQParams(llmqType), blsWorker);
-    auto members = CLLMQUtils::GetAllQuorumMembers(qc->llmqType, pQuorumBaseBlockIndex);
+    auto members = CLLMQUtils::GetAllQuorumMembers(llmq::GetLLMQParams(qc->llmqType), pQuorumBaseBlockIndex);
 
     quorum->Init(std::move(qc), pQuorumBaseBlockIndex, minedBlockHash, members);
 
