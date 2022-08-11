@@ -13,8 +13,9 @@ CEvoDBScopedCommitter::CEvoDBScopedCommitter(CEvoDB &_evoDB) :
 
 CEvoDBScopedCommitter::~CEvoDBScopedCommitter()
 {
-    if (!didCommitOrRollback)
+    if (!didCommitOrRollback) {
         Rollback();
+    }
 }
 
 void CEvoDBScopedCommitter::Commit()
