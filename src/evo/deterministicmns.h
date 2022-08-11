@@ -88,9 +88,9 @@ public:
         SerializationOp(s, CSerActionUnserialize(), oldFormat);
     }
 
-    uint64_t GetInternalId() const;
+    [[nodiscard]] uint64_t GetInternalId() const;
 
-    std::string ToString() const;
+    [[nodiscard]] std::string ToString() const;
     void ToJson(UniValue& obj) const;
 };
 using CDeterministicMNCPtr = std::shared_ptr<const CDeterministicMN>;
@@ -198,12 +198,12 @@ public:
         }
     }
 
-    size_t GetAllMNsCount() const
+    [[nodiscard]] size_t GetAllMNsCount() const
     {
         return mnMap.size();
     }
 
-    size_t GetValidMNsCount() const
+    [[nodiscard]] size_t GetValidMNsCount() const
     {
         return ranges::count_if(mnMap, [](const auto& p){ return IsMNValid(*p.second); });
     }
@@ -241,7 +241,7 @@ public:
         }
     }
 
-    const uint256& GetBlockHash() const
+    [[nodiscard]] const uint256& GetBlockHash() const
     {
         return blockHash;
     }
@@ -249,7 +249,7 @@ public:
     {
         blockHash = _blockHash;
     }
-    int GetHeight() const
+    [[nodiscard]] int GetHeight() const
     {
         return nHeight;
     }
@@ -257,36 +257,36 @@ public:
     {
         nHeight = _height;
     }
-    uint32_t GetTotalRegisteredCount() const
+    [[nodiscard]] uint32_t GetTotalRegisteredCount() const
     {
         return nTotalRegisteredCount;
     }
 
-    bool IsMNValid(const uint256& proTxHash) const;
-    bool IsMNPoSeBanned(const uint256& proTxHash) const;
+    [[nodiscard]] bool IsMNValid(const uint256& proTxHash) const;
+    [[nodiscard]] bool IsMNPoSeBanned(const uint256& proTxHash) const;
     static bool IsMNValid(const CDeterministicMN& dmn);
     static bool IsMNPoSeBanned(const CDeterministicMN& dmn);
 
-    bool HasMN(const uint256& proTxHash) const
+    [[nodiscard]] bool HasMN(const uint256& proTxHash) const
     {
         return GetMN(proTxHash) != nullptr;
     }
-    bool HasMNByCollateral(const COutPoint& collateralOutpoint) const
+    [[nodiscard]] bool HasMNByCollateral(const COutPoint& collateralOutpoint) const
     {
         return GetMNByCollateral(collateralOutpoint) != nullptr;
     }
-    bool HasValidMNByCollateral(const COutPoint& collateralOutpoint) const
+    [[nodiscard]] bool HasValidMNByCollateral(const COutPoint& collateralOutpoint) const
     {
         return GetValidMNByCollateral(collateralOutpoint) != nullptr;
     }
-    CDeterministicMNCPtr GetMN(const uint256& proTxHash) const;
-    CDeterministicMNCPtr GetValidMN(const uint256& proTxHash) const;
-    CDeterministicMNCPtr GetMNByOperatorKey(const CBLSPublicKey& pubKey) const;
-    CDeterministicMNCPtr GetMNByCollateral(const COutPoint& collateralOutpoint) const;
-    CDeterministicMNCPtr GetValidMNByCollateral(const COutPoint& collateralOutpoint) const;
-    CDeterministicMNCPtr GetMNByService(const CService& service) const;
-    CDeterministicMNCPtr GetMNByInternalId(uint64_t internalId) const;
-    CDeterministicMNCPtr GetMNPayee() const;
+    [[nodiscard]] CDeterministicMNCPtr GetMN(const uint256& proTxHash) const;
+    [[nodiscard]] CDeterministicMNCPtr GetValidMN(const uint256& proTxHash) const;
+    [[nodiscard]] CDeterministicMNCPtr GetMNByOperatorKey(const CBLSPublicKey& pubKey) const;
+    [[nodiscard]] CDeterministicMNCPtr GetMNByCollateral(const COutPoint& collateralOutpoint) const;
+    [[nodiscard]] CDeterministicMNCPtr GetValidMNByCollateral(const COutPoint& collateralOutpoint) const;
+    [[nodiscard]] CDeterministicMNCPtr GetMNByService(const CService& service) const;
+    [[nodiscard]] CDeterministicMNCPtr GetMNByInternalId(uint64_t internalId) const;
+    [[nodiscard]] CDeterministicMNCPtr GetMNPayee() const;
 
     /**
      * Calculates the projected MN payees for the next *count* blocks. The result is not guaranteed to be correct
@@ -294,7 +294,7 @@ public:
      * @param count
      * @return
      */
-    std::vector<CDeterministicMNCPtr> GetProjectedMNPayees(int nCount) const;
+    [[nodiscard]] std::vector<CDeterministicMNCPtr> GetProjectedMNPayees(int nCount) const;
 
     /**
      * Calculate a quorum based on the modifier. The resulting list is deterministically sorted by score
@@ -302,15 +302,15 @@ public:
      * @param modifier
      * @return
      */
-    std::vector<CDeterministicMNCPtr> CalculateQuorum(size_t maxSize, const uint256& modifier) const;
-    std::vector<std::pair<arith_uint256, CDeterministicMNCPtr>> CalculateScores(const uint256& modifier) const;
+    [[nodiscard]] std::vector<CDeterministicMNCPtr> CalculateQuorum(size_t maxSize, const uint256& modifier) const;
+    [[nodiscard]] std::vector<std::pair<arith_uint256, CDeterministicMNCPtr>> CalculateScores(const uint256& modifier) const;
 
     /**
      * Calculates the maximum penalty which is allowed at the height of this MN list. It is dynamic and might change
      * for every block.
      * @return
      */
-    int CalcMaxPoSePenalty() const;
+    [[nodiscard]] int CalcMaxPoSePenalty() const;
 
     /**
      * Returns a the given percentage from the max penalty for this MN list. Always use this method to calculate the
@@ -320,7 +320,7 @@ public:
      * @param percent
      * @return
      */
-    int CalcPenalty(int percent) const;
+    [[nodiscard]] int CalcPenalty(int percent) const;
 
     /**
      * Punishes a MN for misbehavior. If the resulting penalty score of the MN reaches the max penalty, it is banned.
@@ -338,8 +338,8 @@ public:
      */
     void PoSeDecrease(const uint256& proTxHash);
 
-    CDeterministicMNListDiff BuildDiff(const CDeterministicMNList& to) const;
-    CSimplifiedMNListDiff BuildSimplifiedDiff(const CDeterministicMNList& to, bool extended) const;
+    [[nodiscard]] CDeterministicMNListDiff BuildDiff(const CDeterministicMNList& to) const;
+    [[nodiscard]] CSimplifiedMNListDiff BuildSimplifiedDiff(const CDeterministicMNList& to, bool extended) const;
     CDeterministicMNList ApplyDiff(const CBlockIndex* pindex, const CDeterministicMNListDiff& diff) const;
 
     void AddMN(const CDeterministicMNCPtr& dmn, bool fBumpTotalCount = true);
@@ -471,7 +471,7 @@ public:
         }
     }
 
-    bool HasChanges() const
+    [[nodiscard]] bool HasChanges() const
     {
         return !addedMNs.empty() || !updatedMNs.empty() || !removedMns.empty();
     }
@@ -572,6 +572,8 @@ bool CheckProRegTx(const CTransaction& tx, const CBlockIndex* pindexPrev, CValid
 bool CheckProUpServTx(const CTransaction& tx, const CBlockIndex* pindexPrev, CValidationState& state, bool check_sigs);
 bool CheckProUpRegTx(const CTransaction& tx, const CBlockIndex* pindexPrev, CValidationState& state, const CCoinsViewCache& view, bool check_sigs);
 bool CheckProUpRevTx(const CTransaction& tx, const CBlockIndex* pindexPrev, CValidationState& state, bool check_sigs);
+
+constexpr CAmount MASTERNODE_COIN_AMOUNT = 1000 * COIN;
 
 extern std::unique_ptr<CDeterministicMNManager> deterministicMNManager;
 

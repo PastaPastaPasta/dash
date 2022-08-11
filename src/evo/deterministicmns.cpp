@@ -24,8 +24,8 @@
 
 #include <memory>
 
-static const std::string DB_LIST_SNAPSHOT = "dmn_S";
-static const std::string DB_LIST_DIFF = "dmn_D";
+static constexpr std::string_view DB_LIST_SNAPSHOT = "dmn_S";
+static constexpr std::string_view DB_LIST_DIFF = "dmn_D";
 
 std::unique_ptr<CDeterministicMNManager> deterministicMNManager;
 
@@ -36,9 +36,24 @@ uint64_t CDeterministicMN::GetInternalId() const
     return internalId;
 }
 
+/**
+ * Converts an integer which is representing a percentage with 2 decimals of precision, into a double of that percentage
+ * Ex: for 1%; in = int 100 -> double 1. for 5.50%; in = int 550 -> double 5.50
+ * @param in the int percentage being converted
+ * @return the converted percentage value as a double
+ */
+double int_percentage_to_double(int in)
+{
+    // Since the
+    constexpr int INT_TO_PERCENTAGE_FACTOR = 100; // Calculatable as 10 ^ 2 (decimal precision of int percentage)
+    return (double)in / INT_TO_PERCENTAGE_FACTOR;
+}
+
 std::string CDeterministicMN::ToString() const
 {
-    return strprintf("CDeterministicMN(proTxHash=%s, collateralOutpoint=%s, nOperatorReward=%f, state=%s", proTxHash.ToString(), collateralOutpoint.ToStringShort(), (double)nOperatorReward / 100, pdmnState->ToString());
+    return strprintf("CDeterministicMN(proTxHash=%s, collateralOutpoint=%s, nOperatorReward=%f, state=%s",
+                     proTxHash.ToString(), collateralOutpoint.ToStringShort(),
+                     int_percentage_to_double(nOperatorReward), pdmnState->ToString());
 }
 
 void CDeterministicMN::ToJson(UniValue& obj) const
@@ -61,7 +76,7 @@ void CDeterministicMN::ToJson(UniValue& obj) const
         }
     }
 
-    obj.pushKV("operatorReward", (double)nOperatorReward / 100);
+    obj.pushKV("operatorReward", int_percentage_to_double(nOperatorReward));
     obj.pushKV("state", stateObj);
 }
 
@@ -166,9 +181,8 @@ static bool CompareByLastPaid(const CDeterministicMN& _a, const CDeterministicMN
     int bh = CompareByLastPaid_GetHeight(_b);
     if (ah == bh) {
         return _a.proTxHash < _b.proTxHash;
-    } else {
-        return ah < bh;
     }
+    return ah < bh;
 }
 static bool CompareByLastPaid(const CDeterministicMN* _a, const CDeterministicMN* _b)
 {
@@ -266,7 +280,8 @@ int CDeterministicMNList::CalcMaxPoSePenalty() const
     // Maximum PoSe penalty is dynamic and equals the number of registered MNs
     // It's however at least 100.
     // This means that the max penalty is usually equal to a full payment cycle
-    return std::max(100, (int)GetAllMNsCount());
+    constexpr int MIN_POSE_PENALTY = 100;
+    return std::max(MIN_POSE_PENALTY, int(GetAllMNsCount()));
 }
 
 int CDeterministicMNList::CalcPenalty(int percent) const
@@ -328,7 +343,7 @@ CDeterministicMNListDiff CDeterministicMNList::BuildDiff(const CDeterministicMNL
             diffRet.addedMNs.emplace_back(toPtr);
         } else if (fromPtr != toPtr || fromPtr->pdmnState != toPtr->pdmnState) {
             CDeterministicMNStateDiff stateDiff(*fromPtr->pdmnState, *toPtr->pdmnState);
-            if (stateDiff.fields) {
+            if (stateDiff.fields != 0) {
                 diffRet.updatedMNs.emplace(toPtr->GetInternalId(), std::move(stateDiff));
             }
         }
@@ -701,7 +716,7 @@ bool CDeterministicMNManager::BuildNewListFromBlock(const CBlock& block, const C
             }
 
             Coin coin;
-            if (!proTx.collateralOutpoint.hash.IsNull() && (!view.GetCoin(dmn->collateralOutpoint, coin) || coin.IsSpent() || coin.out.nValue != 1000 * COIN)) {
+            if (!proTx.collateralOutpoint.hash.IsNull() && (!view.GetCoin(dmn->collateralOutpoint, coin) || coin.IsSpent() || coin.out.nValue != MASTERNODE_COIN_AMOUNT)) {
                 // should actually never get to this point as CheckProRegTx should have handled this case.
                 // We do this additional check nevertheless to be 100% sure
                 return _state.Invalid(ValidationInvalidReason::CONSENSUS, false, REJECT_INVALID, "bad-protx-collateral");
@@ -832,8 +847,8 @@ bool CDeterministicMNManager::BuildNewListFromBlock(const CBlock& block, const C
                 const auto& llmq_params = llmq::GetLLMQParams(qc.commitment.llmqType);
                 int qcnHeight = int(qc.nHeight);
                 int quorumHeight = qcnHeight - (qcnHeight % llmq_params.dkgInterval) + int(qc.commitment.quorumIndex);
-                auto pQuorumBaseBlockIndex = pindexPrev->GetAncestor(quorumHeight);
-                if (!pQuorumBaseBlockIndex || pQuorumBaseBlockIndex->GetBlockHash() != qc.commitment.quorumHash) {
+                const auto* pQuorumBaseBlockIndex = pindexPrev->GetAncestor(quorumHeight);
+                if (pQuorumBaseBlockIndex == nullptr || pQuorumBaseBlockIndex->GetBlockHash() != qc.commitment.quorumHash) {
                     // we should actually never get into this case as validation should have caught it...but let's be sure
                     return _state.Invalid(ValidationInvalidReason::CONSENSUS, false, REJECT_INVALID, "bad-qc-quorum-hash");
                 }
@@ -964,7 +979,7 @@ CDeterministicMNList CDeterministicMNManager::GetListForBlock(const CBlockIndex*
         }
     }
 
-    if (tipIndex) {
+    if (tipIndex != nullptr) {
         // always keep a snapshot for the tip
         if (snapshot.GetBlockHash() == tipIndex->GetBlockHash()) {
             mnListsCache.emplace(snapshot.GetBlockHash(), snapshot);
@@ -986,7 +1001,7 @@ CDeterministicMNList CDeterministicMNManager::GetListForBlock(const CBlockIndex*
 CDeterministicMNList CDeterministicMNManager::GetListAtChainTip()
 {
     LOCK(cs);
-    if (!tipIndex) {
+    if (tipIndex == nullptr) {
         return {};
     }
     return GetListForBlock(tipIndex);
@@ -1008,7 +1023,7 @@ bool CDeterministicMNManager::IsProTxWithCollateral(const CTransactionRef& tx, u
     if (proTx.collateralOutpoint.n >= tx->vout.size() || proTx.collateralOutpoint.n != n) {
         return false;
     }
-    if (tx->vout[n].nValue != 1000 * COIN) {
+    if (tx->vout[n].nValue != MASTERNODE_COIN_AMOUNT) {
         return false;
     }
     return true;
@@ -1049,7 +1064,7 @@ void CDeterministicMNManager::CleanupCache(int nHeight)
             continue;
         }
         // no alive quorums using it, see if it was a cache for the tip or for a now outdated quorum
-        if (tipIndex && tipIndex->pprev && (p.first == tipIndex->pprev->GetBlockHash())) {
+        if (tipIndex != nullptr && tipIndex->pprev != nullptr && (p.first == tipIndex->pprev->GetBlockHash())) {
             toDeleteLists.emplace_back(p.first);
         } else if (ranges::any_of(Params().GetConsensus().llmqs,
                                   [&p](const auto& llmqParams){ return p.second.GetHeight() % llmqParams.dkgInterval == 0; })) {
@@ -1157,7 +1172,7 @@ bool CDeterministicMNManager::UpgradeDBIfNeeded()
     curMNList.SetBlockHash(::ChainActive()[Params().GetConsensus().DIP0003Height - 1]->GetBlockHash());
 
     for (int nHeight = Params().GetConsensus().DIP0003Height; nHeight <= ::ChainActive().Height(); nHeight++) {
-        auto pindex = ::ChainActive()[nHeight];
+        auto* pindex = ::ChainActive()[nHeight];
 
         CDeterministicMNList newMNList;
         UpgradeDiff(batch, pindex, curMNList, newMNList);
@@ -1268,7 +1283,7 @@ bool CheckProRegTx(const CTransaction& tx, const CBlockIndex* pindexPrev, CValid
 
     if (!ptx.collateralOutpoint.hash.IsNull()) {
         Coin coin;
-        if (!view.GetCoin(ptx.collateralOutpoint, coin) || coin.IsSpent() || coin.out.nValue != 1000 * COIN) {
+        if (!view.GetCoin(ptx.collateralOutpoint, coin) || coin.IsSpent() || coin.out.nValue != MASTERNODE_COIN_AMOUNT) {
             return state.Invalid(ValidationInvalidReason::TX_BAD_SPECIAL, false, REJECT_INVALID, "bad-protx-collateral");
         }
 
@@ -1279,7 +1294,7 @@ bool CheckProRegTx(const CTransaction& tx, const CBlockIndex* pindexPrev, CValid
         // Extract key from collateral. This only works for P2PK and P2PKH collaterals and will fail for P2SH.
         // Issuer of this ProRegTx must prove ownership with this key by signing the ProRegTx
         keyForPayloadSig = boost::get<CKeyID>(&collateralTxDest);
-        if (!keyForPayloadSig) {
+        if (keyForPayloadSig == nullptr) {
             return state.Invalid(ValidationInvalidReason::TX_BAD_SPECIAL, false, REJECT_INVALID, "bad-protx-collateral-pkh");
         }
 
@@ -1288,7 +1303,7 @@ bool CheckProRegTx(const CTransaction& tx, const CBlockIndex* pindexPrev, CValid
         if (ptx.collateralOutpoint.n >= tx.vout.size()) {
             return state.Invalid(ValidationInvalidReason::TX_BAD_SPECIAL, false, REJECT_INVALID, "bad-protx-collateral-index");
         }
-        if (tx.vout[ptx.collateralOutpoint.n].nValue != 1000 * COIN) {
+        if (tx.vout[ptx.collateralOutpoint.n].nValue != MASTERNODE_COIN_AMOUNT) {
             return state.Invalid(ValidationInvalidReason::TX_BAD_SPECIAL, false, REJECT_INVALID, "bad-protx-collateral");
         }
 
@@ -1305,7 +1320,7 @@ bool CheckProRegTx(const CTransaction& tx, const CBlockIndex* pindexPrev, CValid
         return state.Invalid(ValidationInvalidReason::TX_BAD_SPECIAL, false, REJECT_INVALID, "bad-protx-collateral-reuse");
     }
 
-    if (pindexPrev) {
+    if (pindexPrev != nullptr) {
         auto mnList = deterministicMNManager->GetListForBlock(pindexPrev);
 
         // only allow reusing of addresses when it's for the same collateral (which replaces the old MN)
@@ -1329,7 +1344,7 @@ bool CheckProRegTx(const CTransaction& tx, const CBlockIndex* pindexPrev, CValid
         return state.Invalid(maybe_err.reason, false, REJECT_INVALID, std::string(maybe_err.error_str));
     }
 
-    if (keyForPayloadSig) {
+    if (keyForPayloadSig != nullptr) {
         // collateral is not part of this ProRegTx, so we must verify ownership of the collateral
         if (check_sigs && !CheckStringSig(ptx, *keyForPayloadSig, state)) {
             // pass the state returned by the function above
@@ -1365,7 +1380,7 @@ bool CheckProUpServTx(const CTransaction& tx, const CBlockIndex* pindexPrev, CVa
         return false;
     }
 
-    if (pindexPrev) {
+    if (pindexPrev != nullptr) {
         auto mnList = deterministicMNManager->GetListForBlock(pindexPrev);
         auto mn = mnList.GetMN(ptx.proTxHash);
         if (!mn) {
@@ -1421,7 +1436,7 @@ bool CheckProUpRegTx(const CTransaction& tx, const CBlockIndex* pindexPrev, CVal
         return state.Invalid(ValidationInvalidReason::TX_BAD_SPECIAL, false, REJECT_INVALID, "bad-protx-payee-dest");
     }
 
-    if (pindexPrev) {
+    if (pindexPrev != nullptr) {
         auto mnList = deterministicMNManager->GetListForBlock(pindexPrev);
         auto dmn = mnList.GetMN(ptx.proTxHash);
         if (!dmn) {
@@ -1488,12 +1503,12 @@ bool CheckProUpRevTx(const CTransaction& tx, const CBlockIndex* pindexPrev, CVal
         return state.Invalid(maybe_err.reason, false, REJECT_INVALID, std::string(maybe_err.error_str));
     }
 
-    if (pindexPrev) {
+    if (pindexPrev != nullptr) {
         auto mnList = deterministicMNManager->GetListForBlock(pindexPrev);
         auto dmn = mnList.GetMN(ptx.proTxHash);
-        if (!dmn)
+        if (!dmn) {
             return state.Invalid(ValidationInvalidReason::CONSENSUS, false, REJECT_INVALID, "bad-protx-hash");
-
+        }
         if (auto maybe_err = CheckInputsHash(tx, ptx); maybe_err.did_err) {
             return state.Invalid(maybe_err.reason, false, REJECT_INVALID, std::string(maybe_err.error_str));
         }
@@ -1510,7 +1525,9 @@ bool CheckProUpRevTx(const CTransaction& tx, const CBlockIndex* pindexPrev, CVal
 void CDeterministicMNManager::DoMaintenance() {
     LOCK(cs_cleanup);
     int loc_to_cleanup = to_cleanup.load();
-    if (loc_to_cleanup <= did_cleanup) return;
+    if (loc_to_cleanup <= did_cleanup) {
+        return;
+    }
     LOCK(cs);
     CleanupCache(loc_to_cleanup);
     did_cleanup = loc_to_cleanup;
