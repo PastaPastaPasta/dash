@@ -69,9 +69,9 @@ public:
 
     // When signing with the collateral key, we don't sign the hash but a generated message instead
     // This is needed for HW wallet support which can only sign text messages as of now
-    std::string MakeSignString() const;
+    [[nodiscard]] std::string MakeSignString() const;
 
-    std::string ToString() const;
+    [[nodiscard]] std::string ToString() const;
 
     void ToJson(UniValue& obj) const
     {
@@ -94,7 +94,7 @@ public:
         obj.pushKV("inputsHash", inputsHash.ToString());
     }
 
-    maybe_error IsTriviallyValid() const;
+    [[nodiscard]] maybe_error IsTriviallyValid() const;
 };
 
 class CProUpServTx
@@ -118,7 +118,7 @@ public:
         }
     }
 
-    std::string ToString() const;
+    [[nodiscard]] std::string ToString() const;
 
     void ToJson(UniValue& obj) const
     {
@@ -134,7 +134,7 @@ public:
         obj.pushKV("inputsHash", inputsHash.ToString());
     }
 
-    maybe_error IsTriviallyValid() const;
+    [[nodiscard]] maybe_error IsTriviallyValid() const;
 };
 
 class CProUpRegTx
@@ -168,7 +168,7 @@ public:
         }
     }
 
-    std::string ToString() const;
+    [[nodiscard]] std::string ToString() const;
 
     void ToJson(UniValue& obj) const
     {
@@ -185,7 +185,7 @@ public:
         obj.pushKV("inputsHash", inputsHash.ToString());
     }
 
-    maybe_error IsTriviallyValid() const;
+    [[nodiscard]] maybe_error IsTriviallyValid() const;
 };
 
 class CProUpRevTx
@@ -217,7 +217,7 @@ public:
         }
     }
 
-    std::string ToString() const;
+    [[nodiscard]] std::string ToString() const;
 
     void ToJson(UniValue& obj) const
     {
@@ -229,7 +229,7 @@ public:
         obj.pushKV("inputsHash", inputsHash.ToString());
     }
 
-    maybe_error IsTriviallyValid() const;
+    [[nodiscard]] maybe_error IsTriviallyValid() const;
 };
 
 template <typename ProTx>

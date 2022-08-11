@@ -38,7 +38,9 @@ maybe_error CProRegTx::IsTriviallyValid() const
         return {ValidationInvalidReason::TX_BAD_SPECIAL, "bad-protx-payee-reuse"};
     }
 
-    if (nOperatorReward > 10000) {
+    // This represents 100%, it shouldn't be possible to set operator reward above 100%
+    constexpr int MAX_OPERATOR_REWARD = 10000;
+    if (nOperatorReward > MAX_OPERATOR_REWARD) {
         return {ValidationInvalidReason::TX_BAD_SPECIAL, "bad-protx-operator-reward"};
     }
 
