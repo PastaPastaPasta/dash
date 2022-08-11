@@ -101,11 +101,11 @@ public:
             nPoSeBanHeight = height;
         }
     }
-    int GetBannedHeight() const
+    [[nodiscard]] int GetBannedHeight() const
     {
         return nPoSeBanHeight;
     }
-    bool IsBanned() const
+    [[nodiscard]] bool IsBanned() const
     {
         return nPoSeBanHeight != -1;
     }
@@ -125,7 +125,7 @@ public:
     }
 
 public:
-    std::string ToString() const;
+    [[nodiscard]] std::string ToString() const;
     void ToJson(UniValue& obj) const;
 };
 
