@@ -62,9 +62,9 @@ public:
                 );
     }
 
-    uint256 CalcHash() const;
+    [[nodiscard]] uint256 CalcHash() const;
 
-    std::string ToString() const;
+    [[nodiscard]] std::string ToString() const;
     void ToJson(UniValue& obj, bool extended = false) const;
 };
 

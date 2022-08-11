@@ -68,7 +68,9 @@ void CSimplifiedMNListEntry::ToJson(UniValue& obj, bool extended) const
     obj.pushKV("votingAddress", EncodeDestination(keyIDVoting));
     obj.pushKV("isValid", isValid);
 
-    if (!extended) return;
+    if (!extended) {
+        return;
+    }
 
     CTxDestination dest;
     if (ExtractDestination(scriptPayout, dest)) {
@@ -216,14 +218,14 @@ bool BuildSimplifiedMNListDiff(const uint256& baseBlockHash, const uint256& bloc
     const CBlockIndex* baseBlockIndex = ::ChainActive().Genesis();
     if (!baseBlockHash.IsNull()) {
         baseBlockIndex = LookupBlockIndex(baseBlockHash);
-        if (!baseBlockIndex) {
+        if (baseBlockIndex == nullptr) {
             errorRet = strprintf("block %s not found", baseBlockHash.ToString());
             return false;
         }
     }
 
     const CBlockIndex* blockIndex = LookupBlockIndex(blockHash);
-    if (!blockIndex) {
+    if (blockIndex == nullptr) {
         errorRet = strprintf("block %s not found", blockHash.ToString());
         return false;
     }
