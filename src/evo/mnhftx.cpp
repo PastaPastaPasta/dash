@@ -42,7 +42,7 @@ bool CheckMNHFTx(const CTransaction& tx, const CBlockIndex* pindexPrev, CValidat
     }
 
     const CBlockIndex* pindexQuorum = LookupBlockIndex(mnhfTx.signal.quorumHash);
-    if (!pindexQuorum) {
+    if (pindexQuorum == nullptr) {
         return state.Invalid(ValidationInvalidReason::CONSENSUS, false, REJECT_INVALID, "bad-mnhf-quorum-hash");
     }
 

@@ -33,7 +33,7 @@ public:
         READWRITE(obj.nVersion, obj.quorumHash, obj.sig);
     }
 
-    std::string ToString() const;
+    [[nodiscard]] std::string ToString() const;
 
     void ToJson(UniValue& obj) const
     {
