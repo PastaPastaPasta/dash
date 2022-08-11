@@ -2,15 +2,13 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <evo/specialtx.h>
+#include <evo/specialtxman.h>
 
 #include <chainparams.h>
 #include <consensus/validation.h>
 #include <evo/cbtx.h>
 #include <evo/deterministicmns.h>
 #include <evo/mnhftx.h>
-#include <evo/providertx.h>
-#include <hash.h>
 #include <llmq/blockprocessor.h>
 #include <llmq/commitment.h>
 #include <primitives/block.h>
@@ -20,10 +18,11 @@ bool CheckSpecialTx(const CTransaction& tx, const CBlockIndex* pindexPrev, CVali
 {
     AssertLockHeld(cs_main);
 
-    if (tx.nVersion != 3 || tx.nType == TRANSACTION_NORMAL)
+    if (tx.nVersion != 3 || tx.nType == TRANSACTION_NORMAL) {
         return true;
+    }
 
-    if (pindexPrev && pindexPrev->nHeight + 1 < Params().GetConsensus().DIP0003Height) {
+    if (pindexPrev != nullptr && pindexPrev->nHeight + 1 < Params().GetConsensus().DIP0003Height) {
         return state.Invalid(ValidationInvalidReason::TX_BAD_SPECIAL, false, REJECT_INVALID, "bad-tx-type");
     }
 
@@ -103,16 +102,16 @@ bool ProcessSpecialTxsInBlock(const CBlock& block, const CBlockIndex* pindex, CV
     AssertLockHeld(cs_main);
 
     try {
-        static int64_t nTimeLoop = 0;
-        static int64_t nTimeQuorum = 0;
-        static int64_t nTimeDMN = 0;
-        static int64_t nTimeMerkle = 0;
+        static auto nTimeLoop = std::chrono::microseconds(0);
+        static auto nTimeQuorum = std::chrono::microseconds(0);
+        static auto nTimeDMN = std::chrono::microseconds(0);
+        static auto nTimeMerkle = std::chrono::microseconds(0);
 
-        int64_t nTime1 = GetTimeMicros();
+        const auto nTime1 = std::chrono::microseconds(GetTimeMicros());
 
         for (const auto& ptr_tx : block.vtx) {
             if (!CheckSpecialTx(*ptr_tx, pindex->pprev, state, view, fCheckCbTxMerleRoots)) {
-                // pass the state returned by the function above
+                // pass the state retconst autourned by tstd::chrono::microseconds(he function )above
                 return false;
             }
             if (!ProcessSpecialTx(*ptr_tx, pindex, state)) {
@@ -121,36 +120,44 @@ bool ProcessSpecialTxsInBlock(const CBlock& block, const CBlockIndex* pindex, CV
             }
         }
 
-        int64_t nTime2 = GetTimeMicros();
+        const auto nTime2 = std::chrono::microseconds(GetTimeMicros());
         nTimeLoop += nTime2 - nTime1;
-        LogPrint(BCLog::BENCHMARK, "        - Loop: %.2fms [%.2fs]\n", 0.001 * (nTime2 - nTime1), nTimeLoop * 0.000001);
+        LogPrint(BCLog::BENCHMARK, "        - Loop: %.2fms [%.2fs]\n",
+                    std::chrono::duration_cast<std::chrono::milliseconds>(nTime2 - nTime1).count(),
+                    std::chrono::duration_cast<std::chrono::seconds>(nTimeLoop).count());
 
         if (!llmq::quorumBlockProcessor->ProcessBlock(block, pindex, state, fJustCheck, fCheckCbTxMerleRoots)) {
             // pass the state returned by the function above
             return false;
         }
 
-        int64_t nTime3 = GetTimeMicros();
+        const auto nTime3 = std::chrono::microseconds(GetTimeMicros());
         nTimeQuorum += nTime3 - nTime2;
-        LogPrint(BCLog::BENCHMARK, "        - quorumBlockProcessor: %.2fms [%.2fs]\n", 0.001 * (nTime3 - nTime2), nTimeQuorum * 0.000001);
+        LogPrint(BCLog::BENCHMARK, "        - quorumBlockProcessor: %.2fms [%.2fs]\n",
+                    std::chrono::duration_cast<std::chrono::milliseconds>(nTime3 - nTime2).count(),
+                    std::chrono::duration_cast<std::chrono::seconds>(nTimeQuorum).count());
 
         if (!deterministicMNManager->ProcessBlock(block, pindex, state, view, fJustCheck)) {
             // pass the state returned by the function above
             return false;
         }
 
-        int64_t nTime4 = GetTimeMicros();
+        const auto nTime4 = std::chrono::microseconds(GetTimeMicros());
         nTimeDMN += nTime4 - nTime3;
-        LogPrint(BCLog::BENCHMARK, "        - deterministicMNManager: %.2fms [%.2fs]\n", 0.001 * (nTime4 - nTime3), nTimeDMN * 0.000001);
+        LogPrint(BCLog::BENCHMARK, "        - deterministicMNManager: %.2fms [%.2fs]\n",
+                    std::chrono::duration_cast<std::chrono::milliseconds>(nTime4 - nTime3).count(),
+                    std::chrono::duration_cast<std::chrono::seconds>(nTimeDMN).count());
 
         if (fCheckCbTxMerleRoots && !CheckCbTxMerkleRoots(block, pindex, state, view)) {
             // pass the state returned by the function above
             return false;
         }
 
-        int64_t nTime5 = GetTimeMicros();
+        const auto nTime5 = std::chrono::microseconds(GetTimeMicros());
         nTimeMerkle += nTime5 - nTime4;
-        LogPrint(BCLog::BENCHMARK, "        - CheckCbTxMerkleRoots: %.2fms [%.2fs]\n", 0.001 * (nTime5 - nTime4), nTimeMerkle * 0.000001);
+        LogPrint(BCLog::BENCHMARK, "        - CheckCbTxMerkleRoots: %.2fms [%.2fs]\n",
+                    std::chrono::duration_cast<std::chrono::milliseconds>(nTime5 - nTime4).count(),
+                    std::chrono::duration_cast<std::chrono::seconds>(nTimeMerkle).count());
     } catch (const std::exception& e) {
         LogPrintf("%s -- failed: %s\n", __func__, e.what());
         return state.Invalid(ValidationInvalidReason::CONSENSUS, false, REJECT_INVALID, "failed-procspectxsinblock");
