@@ -718,7 +718,7 @@ static UniValue getblocktemplate(const JSONRPCRequest& request)
         if (lpval.isStr())
         {
             // Format: <hashBestChain><nTransactionsUpdatedLast>
-            std::string lpstr = lpval.get_str();
+            const std::string& lpstr = lpval.get_str();
 
             hashWatchedChain.SetHex(lpstr.substr(0, 64));
             nTransactionsUpdatedLastLP = atoi64(lpstr.substr(64));

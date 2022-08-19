@@ -101,7 +101,7 @@ BOOST_AUTO_TEST_CASE(tx_valid)
 
     ScriptError err;
     for (unsigned int idx = 0; idx < tests.size(); idx++) {
-        UniValue test = tests[idx];
+        const UniValue& test = tests[idx];
         std::string strTest = test.write();
         if (test[0].isArray())
         {
@@ -120,7 +120,7 @@ BOOST_AUTO_TEST_CASE(tx_valid)
                     fValid = false;
                     break;
                 }
-                UniValue vinput = input.get_array();
+                const UniValue& vinput = input.get_array();
                 if (vinput.size() != 3)
                 {
                     fValid = false;
@@ -178,7 +178,7 @@ BOOST_AUTO_TEST_CASE(tx_invalid)
     // value other than SCRIPT_ERR_OK.
     ScriptError err = SCRIPT_ERR_OK;
     for (unsigned int idx = 0; idx < tests.size(); idx++) {
-        UniValue test = tests[idx];
+        const UniValue& test = tests[idx];
         std::string strTest = test.write();
         if (test[0].isArray())
         {
@@ -197,7 +197,7 @@ BOOST_AUTO_TEST_CASE(tx_invalid)
                     fValid = false;
                     break;
                 }
-                UniValue vinput = input.get_array();
+                const UniValue& vinput = input.get_array();
                 if (vinput.size() != 3)
                 {
                     fValid = false;
