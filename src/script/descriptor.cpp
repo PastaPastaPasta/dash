@@ -461,7 +461,7 @@ public:
             } else {
                 tmp = pubkey->ToString();
             }
-            ret += std::move(tmp);
+            ret += tmp;
         }
         if (m_subdescriptor_arg) {
             if (pos++) ret += ",";

@@ -7,7 +7,6 @@
 
 #include <attributes.h>
 
-#include <algorithm>
 #include <array>
 #include <cstring>
 #include <locale>
