@@ -181,11 +181,7 @@ static void masternode_outputs_help(const JSONRPCRequest& request)
     RPCHelpMan{"masternode outputs",
         "Print masternode compatible outputs\n",
         {},
-        RPCResult {
-            RPCResult::Type::ARR, "", "A list of outpoints that can be/are used as masternode collaterals",
-            {
-                {RPCResult::Type::STR, "", "A (potential) masternode collateral"},
-            }},
+        RPCResults{},
         RPCExamples{""}
     }.Check(request);
 }
@@ -206,12 +202,12 @@ static UniValue masternode_outputs(const JSONRPCRequest& request)
         LOCK(pwallet->cs_wallet);
         pwallet->AvailableCoins(vPossibleCoins, true, &coin_control);
     }
-    UniValue outputsArr(UniValue::VARR);
+    UniValue obj(UniValue::VOBJ);
     for (const auto& out : vPossibleCoins) {
-        outputsArr.push_back(out.GetInputCoin().outpoint.ToStringShort());
+        obj.pushKV(out.tx->GetHash().ToString(), strprintf("%d", out.i));
     }
 
-    return outputsArr;
+    return obj;
 }
 
 #endif // ENABLE_WALLET
