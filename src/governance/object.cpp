@@ -168,7 +168,7 @@ bool CGovernanceObject::ProcessVote(const CGovernanceVote& vote, CGovernanceExce
 
     int64_t nNow = GetAdjustedTime();
     int64_t nVoteTimeUpdate = voteInstanceRef.nTime;
-    if (governance.AreRateChecksEnabled()) {
+    if (governance->AreRateChecksEnabled()) {
         int64_t nTimeDelta = nNow - voteInstanceRef.nTime;
         if (nTimeDelta < GOVERNANCE_UPDATE_MIN) {
             std::ostringstream ostr;
@@ -194,7 +194,7 @@ bool CGovernanceObject::ProcessVote(const CGovernanceVote& vote, CGovernanceExce
              << ", vote hash = " << vote.GetHash().ToString();
         LogPrintf("%s\n", ostr.str());
         exception = CGovernanceException(ostr.str(), GOVERNANCE_EXCEPTION_PERMANENT_ERROR, 20);
-        governance.AddInvalidVote(vote);
+        governance->AddInvalidVote(vote);
         return false;
     }
 
@@ -465,8 +465,7 @@ bool CGovernanceObject::IsValidLocally(std::string& strError, bool& fMissingConf
     switch (nObjectType) {
     case GOVERNANCE_OBJECT_PROPOSAL: {
         bool fAllowScript = (VersionBitsTipState(Params().GetConsensus(), Consensus::DEPLOYMENT_DIP0024) == ThresholdState::ACTIVE);
-        bool fAllowLegacyFormat = !fAllowScript; // reusing the same bit to stop accepting proposals in legacy format
-        CProposalValidator validator(GetDataAsHexString(), fAllowLegacyFormat, fAllowScript);
+        CProposalValidator validator(GetDataAsHexString(), fAllowScript);
         // Note: It's ok to have expired proposals
         // they are going to be cleared by CGovernanceManager::UpdateCachesAndClean()
         // TODO: should they be tagged as "expired" to skip vote downloading?
@@ -533,12 +532,10 @@ bool CGovernanceObject::IsCollateralValid(std::string& strError, bool& fMissingC
     fMissingConfirmations = false;
     uint256 nExpectedHash = GetHash();
 
-    CTransactionRef txCollateral;
-    uint256 nBlockHash;
-
     // RETRIEVE TRANSACTION IN QUESTION
-
-    if (!GetTransaction(nCollateralHash, txCollateral, Params().GetConsensus(), nBlockHash)) {
+    uint256 nBlockHash;
+    CTransactionRef txCollateral = GetTransaction(/* block_index */ nullptr, /* mempool */ nullptr, nCollateralHash, Params().GetConsensus(), nBlockHash);
+    if (!txCollateral) {
         strError = strprintf("Can't find collateral tx %s", nCollateralHash.ToString());
         LogPrintf("CGovernanceObject::IsCollateralValid -- %s\n", strError);
         return false;
@@ -675,7 +672,7 @@ bool CGovernanceObject::GetCurrentMNVotes(const COutPoint& mnCollateralOutpoint,
 void CGovernanceObject::Relay(CConnman& connman) const
 {
     // Do not relay until fully synced
-    if (!masternodeSync.IsSynced()) {
+    if (!masternodeSync->IsSynced()) {
         LogPrint(BCLog::GOBJECT, "CGovernanceObject::Relay -- won't relay until fully synced\n");
         return;
     }
@@ -688,7 +685,7 @@ void CGovernanceObject::Relay(CConnman& connman) const
         LOCK(cs_main);
         bool fAllowScript = (VersionBitsTipState(Params().GetConsensus(), Consensus::DEPLOYMENT_DIP0024) == ThresholdState::ACTIVE);
         if (fAllowScript) {
-            CProposalValidator validator(GetDataAsHexString(), false /* no legacy format */, false /* but also no script */);
+            CProposalValidator validator(GetDataAsHexString(), false /* no script */);
             if (!validator.Validate(false /* ignore expiration */)) {
                 // The only way we could get here is when proposal is valid but payment_address is actually p2sh.
                 LogPrint(BCLog::GOBJECT, "CGovernanceObject::Relay -- won't relay %s to older peers\n", GetHash().ToString());
