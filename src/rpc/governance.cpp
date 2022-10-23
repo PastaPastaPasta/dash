@@ -314,7 +314,9 @@ static UniValue gobject_submit(const JSONRPCRequest& request)
 {
     gobject_submit_help(request);
 
-    if(!g_masternodeSync->IsBlockchainSynced()) {
+    const NodeContext& node = EnsureNodeContext(request.context);
+
+    if(!node.masternodeSync->IsBlockchainSynced()) {
         throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD, "Must wait for client to sync with masternode network. Try again in a minute or so.");
     }
 
@@ -399,7 +401,6 @@ static UniValue gobject_submit(const JSONRPCRequest& request)
 
     LogPrintf("gobject(submit) -- Adding locally created governance object - %s\n", strHash);
 
-    const NodeContext& node = EnsureNodeContext(request.context);
     if (fMissingConfirmations) {
         governance->AddPostponedObject(govobj);
         govobj.Relay(*node.connman);

@@ -24,6 +24,7 @@ class CBlockIndex;
 class CScheduler;
 class CTxMemPool;
 class CSporkManager;
+class CMasternodeSync;
 
 namespace llmq
 {
@@ -45,6 +46,7 @@ private:
     CSporkManager& spork_manager;
     CSigningManager& sigman;
     CSigSharesManager& shareman;
+    std::shared_ptr<CMasternodeSync> m_masternode_sync;
     std::unique_ptr<CScheduler> scheduler;
     std::unique_ptr<std::thread> scheduler_thread;
     mutable CCriticalSection cs;

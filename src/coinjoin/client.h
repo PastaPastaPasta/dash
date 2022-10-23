@@ -7,7 +7,9 @@
 
 #include <coinjoin/util.h>
 #include <coinjoin/coinjoin.h>
+#include <coinjoin/options.h>
 #include <util/translation.h>
+#include <masternode/sync.h>
 
 #include <utility>
 #include <atomic>
@@ -20,6 +22,7 @@ class CCoinJoinClientQueueManager;
 
 class CConnman;
 class CNode;
+class CMasternodeSync;
 
 class UniValue;
 
@@ -152,10 +155,11 @@ class CCoinJoinClientQueueManager : public CCoinJoinBaseManager
 {
 private:
     CConnman& connman;
+    std::shared_ptr<CMasternodeSync> m_masternode_sync;
 
 public:
-    explicit CCoinJoinClientQueueManager(CConnman& _connman) :
-        connman(_connman) {};
+    explicit CCoinJoinClientQueueManager(CConnman& _connman, std::shared_ptr<CMasternodeSync> masternode_sync) :
+        connman(_connman), m_masternode_sync(std::move(masternode_sync)) {};
 
     void ProcessMessage(CNode* pfrom, const std::string& msg_type, CDataStream& vRecv, bool enable_bip61) LOCKS_EXCLUDED(cs_vecqueue);
     void ProcessDSQueue(CNode* pfrom, const std::string& msg_type, CDataStream& vRecv, bool enable_bip61);
@@ -185,15 +189,16 @@ private:
     // Keep track of current block height
     int nCachedBlockHeight{0};
 
-    bool WaitForAnotherBlock() const;
-
-    // Make sure we have enough keys since last backup
-    bool CheckAutomaticBackup();
-
 public:
     int nCachedNumBlocks{std::numeric_limits<int>::max()};    // used for the overview screen
     bool fCreateAutoBackups{true}; // builtin support for automatic backups
 
+private:
+    bool WaitForAnotherBlock() const;
+    // Make sure we have enough keys since last backup
+    bool CheckAutomaticBackup();
+
+public:
     CCoinJoinClientManager() = delete;
     CCoinJoinClientManager(CCoinJoinClientManager const&) = delete;
     CCoinJoinClientManager& operator=(CCoinJoinClientManager const&) = delete;

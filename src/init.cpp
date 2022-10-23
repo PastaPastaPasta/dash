@@ -92,6 +92,7 @@
 #include <llmq/snapshot.h>
 #include <llmq/utils.h>
 #include <llmq/signing_shares.h>
+#include <coinjoin/options.h>
 
 #include <statsd_client.h>
 
@@ -284,6 +285,7 @@ void PrepareShutdown(NodeContext& node)
 
     // After related databases and caches have been flushed, destroy pointers
     // and reset all to nullptr.
+    node.masternodeSync.reset();
     ::g_masternodeSync.reset();
     ::governance.reset();
     ::sporkManager.reset();
@@ -1942,7 +1944,7 @@ bool AppInitMain(const CoreContext& context, NodeContext& node, interfaces::Bloc
 #endif
 
     pdsNotificationInterface = new CDSNotificationInterface(
-        *node.connman, ::g_masternodeSync, ::deterministicMNManager, ::governance, llmq::chainLocksHandler,
+        *node.connman, node.masternodeSync, ::deterministicMNManager, ::governance, llmq::chainLocksHandler,
         llmq::quorumInstantSendManager, llmq::quorumManager, llmq::quorumDKGSessionManager
     );
     RegisterValidationInterface(pdsNotificationInterface);
@@ -2016,7 +2018,7 @@ bool AppInitMain(const CoreContext& context, NodeContext& node, interfaces::Bloc
 
             try {
                 LOCK(cs_main);
-                chainman.InitializeChainstate(llmq::chainLocksHandler, llmq::quorumInstantSendManager, llmq::quorumBlockProcessor);
+                chainman.InitializeChainstate(llmq::chainLocksHandler, llmq::quorumInstantSendManager, llmq::quorumBlockProcessor, node.masternodeSync);
                 chainman.m_total_coinstip_cache = nCoinCacheUsage;
                 chainman.m_total_coinsdb_cache = nCoinDBCache;
 
@@ -2316,12 +2318,12 @@ bool AppInitMain(const CoreContext& context, NodeContext& node, interfaces::Bloc
 
     // ********************************************************* Step 10a: Setup CoinJoin
 
-    ::g_masternodeSync = std::make_unique<CMasternodeSync>(*node.connman);
-    ::coinJoinServer = std::make_unique<CCoinJoinServer>(*node.connman);
+    ::g_masternodeSync = std::make_shared<CMasternodeSync>(*node.connman);
+    node.masternodeSync = g_masternodeSync;
+    ::coinJoinServer = std::make_unique<CCoinJoinServer>(*node.connman, node.masternodeSync);
 #ifdef ENABLE_WALLET
-    ::coinJoinClientQueueManager = std::make_unique<CCoinJoinClientQueueManager>(*node.connman);
+    ::coinJoinClientQueueManager = std::make_unique<CCoinJoinClientQueueManager>(*node.connman, node.masternodeSync);
 #endif // ENABLE_WALLET
-
     g_wallet_init_interface.InitCoinJoinSettings();
 
     // ********************************************************* Step 10b: Load cache data
@@ -2378,7 +2380,7 @@ bool AppInitMain(const CoreContext& context, NodeContext& node, interfaces::Bloc
     // ********************************************************* Step 10b: schedule Dash-specific tasks
 
     node.scheduler->scheduleEvery(std::bind(&CNetFulfilledRequestManager::DoMaintenance, std::ref(netfulfilledman)), 60 * 1000);
-    node.scheduler->scheduleEvery(std::bind(&CMasternodeSync::DoMaintenance, std::ref(*::g_masternodeSync)), 1 * 1000);
+    node.scheduler->scheduleEvery(std::bind(&CMasternodeSync::DoMaintenance, std::ref(*node.masternodeSync)), 1 * 1000);
     node.scheduler->scheduleEvery(std::bind(&CMasternodeUtils::DoMaintenance, std::ref(*node.connman)), 60 * 1000);
     node.scheduler->scheduleEvery(std::bind(&CDeterministicMNManager::DoMaintenance, std::ref(*deterministicMNManager)), 10 * 1000);
 

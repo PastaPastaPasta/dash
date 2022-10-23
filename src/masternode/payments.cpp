@@ -24,7 +24,7 @@
 
 CMasternodePayments mnpayments;
 
-bool IsOldBudgetBlockValueValid(const CBlock& block, int nBlockHeight, CAmount blockReward, std::string& strErrorRet) {
+bool IsOldBudgetBlockValueValid(const CBlock& block, int nBlockHeight, CAmount blockReward, bool nodeIsSynced, std::string& strErrorRet) {
     const Consensus::Params& consensusParams = Params().GetConsensus();
     bool isBlockRewardValueMet = (block.vtx[0]->GetValueOut() <= blockReward);
 
@@ -45,7 +45,7 @@ bool IsOldBudgetBlockValueValid(const CBlock& block, int nBlockHeight, CAmount b
     if(nBlockHeight >= consensusParams.nBudgetPaymentsStartBlock &&
        nOffset < consensusParams.nBudgetPaymentsWindowBlocks) {
         // NOTE: old budget system is disabled since 12.1
-        if(g_masternodeSync->IsSynced()) {
+        if (nodeIsSynced) {
             // no old budget blocks should be accepted here on mainnet,
             // testnet/devnet/regtest should produce regular blocks only
             LogPrint(BCLog::GOBJECT, "%s -- WARNING: Client synced but old budget system is disabled, checking block value against block reward\n", __func__);
@@ -77,7 +77,7 @@ bool IsOldBudgetBlockValueValid(const CBlock& block, int nBlockHeight, CAmount b
 *   - When non-superblocks are detected, the normal schedule should be maintained
 */
 
-bool IsBlockValueValid(const CSporkManager& sporkManager, CGovernanceManager& governanceManager,
+bool IsBlockValueValid(const CSporkManager& sporkManager, CGovernanceManager& governanceManager, bool nodeIsSynced,
                        const CBlock& block, int nBlockHeight, CAmount blockReward, std::string& strErrorRet)
 {
     const Consensus::Params& consensusParams = Params().GetConsensus();
@@ -94,7 +94,7 @@ bool IsBlockValueValid(const CSporkManager& sporkManager, CGovernanceManager& go
         return isBlockRewardValueMet;
     } else if (nBlockHeight < consensusParams.nSuperblockStartBlock) {
         // superblocks are not enabled yet, check if we can pass old budget rules
-        return IsOldBudgetBlockValueValid(block, nBlockHeight, blockReward, strErrorRet);
+        return IsOldBudgetBlockValueValid(block, nBlockHeight, blockReward, nodeIsSynced, strErrorRet);
     }
 
     LogPrint(BCLog::MNPAYMENTS, "block.vtx[0]->GetValueOut() %lld <= blockReward %lld\n", block.vtx[0]->GetValueOut(), blockReward);

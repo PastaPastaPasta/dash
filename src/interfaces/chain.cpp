@@ -30,6 +30,7 @@
 #include <util/system.h>
 #include <validation.h>
 #include <validationinterface.h>
+#include <masternode/sync.h>
 
 #include <memory>
 #include <utility>
@@ -329,6 +330,7 @@ public:
     }
     bool p2pEnabled() override { return m_node.connman != nullptr; }
     bool isReadyToBroadcast() override { return !::fImporting && !::fReindex && !::ChainstateActive().IsInitialBlockDownload(); }
+    bool isBlockchainSynced() override { return m_node.masternodeSync->IsBlockchainSynced(); }
     bool isInitialBlockDownload() override { return ::ChainstateActive().IsInitialBlockDownload(); }
     bool shutdownRequested() override { return ShutdownRequested(); }
     int64_t getAdjustedTime() override { return GetAdjustedTime(); }

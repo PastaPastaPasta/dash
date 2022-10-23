@@ -7,6 +7,7 @@
 #include <walletinitinterface.h>
 
 class CWallet;
+class CMasternodeSync;
 
 namespace interfaces {
 class Chain;

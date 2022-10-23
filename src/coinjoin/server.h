@@ -10,6 +10,7 @@
 
 class CCoinJoinServer;
 class UniValue;
+class CMasternodeSync;
 
 // The main object for accessing mixing
 extern std::unique_ptr<CCoinJoinServer> coinJoinServer;
@@ -20,6 +21,7 @@ class CCoinJoinServer : public CCoinJoinBaseSession, public CCoinJoinBaseManager
 {
 private:
     CConnman& connman;
+    std::shared_ptr<CMasternodeSync> m_masternode_sync;
 
     // Mixing uses collateral transactions to trust parties entering the pool
     // to behave honestly. If they don't it takes their money.
@@ -74,10 +76,11 @@ private:
     void SetNull() EXCLUSIVE_LOCKS_REQUIRED(cs_coinjoin);
 
 public:
-    explicit CCoinJoinServer(CConnman& _connman) :
+    explicit CCoinJoinServer(CConnman& _connman, std::shared_ptr<CMasternodeSync> mn_sync) :
         vecSessionCollaterals(),
         fUnitTest(false),
-        connman(_connman) {};
+        connman(_connman),
+        m_masternode_sync(mn_sync) {};
 
     void ProcessMessage(CNode* pfrom, const std::string& msg_type, CDataStream& vRecv, bool enable_bip61);
 

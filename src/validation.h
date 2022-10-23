@@ -39,6 +39,7 @@ class CChainLocksHandler;
 class CInstantSendManager;
 class CQuorumBlockProcessor;
 } // namespace llmq
+class CMasternodeSync;
 
 class CChainState;
 class CBlockIndex;
@@ -540,12 +541,14 @@ private:
     std::unique_ptr<llmq::CChainLocksHandler>& m_clhandler;
     std::unique_ptr<llmq::CInstantSendManager>& m_isman;
     std::unique_ptr<llmq::CQuorumBlockProcessor>& m_quorum_block_processor;
+    std::shared_ptr<CMasternodeSync> m_masternode_sync;
 
 public:
     explicit CChainState(BlockManager& blockman,
                          std::unique_ptr<llmq::CChainLocksHandler>& clhandler,
                          std::unique_ptr<llmq::CInstantSendManager>& isman,
                          std::unique_ptr<llmq::CQuorumBlockProcessor>& quorum_block_processor,
+                         std::shared_ptr<CMasternodeSync> masternode_sync,
                          uint256 from_snapshot_blockhash = uint256());
 
     /**
@@ -861,6 +864,7 @@ public:
     CChainState& InitializeChainstate(std::unique_ptr<llmq::CChainLocksHandler>& clhandler,
                                       std::unique_ptr<llmq::CInstantSendManager>& isman,
                                       std::unique_ptr<llmq::CQuorumBlockProcessor>& quorum_block_processor,
+                                      const std::shared_ptr<CMasternodeSync>& masternode_sync,
                                       const uint256& snapshot_blockhash = uint256()) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     //! Get all chainstates currently being used.

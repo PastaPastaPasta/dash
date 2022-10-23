@@ -171,7 +171,9 @@ TestingSetup::TestingSetup(const std::string& chainName, const std::vector<const
     pblocktree.reset(new CBlockTreeDB(1 << 20, true));
 
     m_node.chainman = &::g_chainman;
-    m_node.chainman->InitializeChainstate(llmq::chainLocksHandler, llmq::quorumInstantSendManager, llmq::quorumBlockProcessor);
+    m_node.masternodeSync = std::make_shared<CMasternodeSync>(*m_node.connman);
+    ::g_masternodeSync = m_node.masternodeSync;
+    m_node.chainman->InitializeChainstate(llmq::chainLocksHandler, llmq::quorumInstantSendManager, llmq::quorumBlockProcessor, m_node.masternodeSync);
     ::ChainstateActive().InitCoinsDB(
         /* cache_size_bytes */ 1 << 23, /* in_memory */ true, /* should_wipe */ false);
     assert(!::ChainstateActive().CanFlushToDisk());
@@ -199,10 +201,9 @@ TestingSetup::TestingSetup(const std::string& chainName, const std::vector<const
 
     ::sporkManager = std::make_unique<CSporkManager>();
     ::governance = std::make_unique<CGovernanceManager>();
-    ::g_masternodeSync = std::make_unique<CMasternodeSync>(*m_node.connman);
-    ::coinJoinServer = std::make_unique<CCoinJoinServer>(*m_node.connman);
+    ::coinJoinServer = std::make_unique<CCoinJoinServer>(*m_node.connman, m_node.masternodeSync);
 #ifdef ENABLE_WALLET
-    ::coinJoinClientQueueManager = std::make_unique<CCoinJoinClientQueueManager>(*m_node.connman);
+    ::coinJoinClientQueueManager = std::make_unique<CCoinJoinClientQueueManager>(*m_node.connman, m_node.masternodeSync);
 #endif // ENABLE_WALLET
 
     deterministicMNManager.reset(new CDeterministicMNManager(*evoDb, *m_node.connman));
@@ -234,6 +235,7 @@ TestingSetup::~TestingSetup()
     ::coinJoinClientQueueManager.reset();
 #endif // ENABLE_WALLET
     ::coinJoinServer.reset();
+    m_node.masternodeSync.reset();
     ::g_masternodeSync.reset();
     ::governance.reset();
     ::sporkManager.reset();

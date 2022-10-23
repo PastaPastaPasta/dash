@@ -19,7 +19,7 @@ class CSporkManager;
 class CTxOut;
 
 /// TODO: all 4 functions do not belong here really, they should be refactored/moved somewhere (main.cpp ?)
-bool IsBlockValueValid(const CSporkManager& sporkManager, CGovernanceManager& governanceManager,
+bool IsBlockValueValid(const CSporkManager& sporkManager, CGovernanceManager& governanceManager, bool nodeIsSynced,
                        const CBlock& block, int nBlockHeight, CAmount blockReward, std::string& strErrorRet);
 bool IsBlockPayeeValid(const CSporkManager& sporkManager, CGovernanceManager& governanceManager,
                        const CTransaction& txNew, int nBlockHeight, CAmount blockReward);

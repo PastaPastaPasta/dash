@@ -182,6 +182,7 @@ void WalletInit::AutoLockMasternodeCollaterals() const
 
 void WalletInit::InitCoinJoinSettings() const
 {
+//    CCoinJoinClientOptions::SetMasternodeSync(masternodeSync);
     CCoinJoinClientOptions::SetEnabled(!GetWallets().empty() ? gArgs.GetBoolArg("-enablecoinjoin", true) : false);
     if (!CCoinJoinClientOptions::IsEnabled()) {
         return;

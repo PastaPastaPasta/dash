@@ -88,26 +88,28 @@ static UniValue mnsync(const JSONRPCRequest& request)
 
     std::string strMode = request.params[0].get_str();
 
+    NodeContext& node = EnsureNodeContext(request.context);
+
     if(strMode == "status") {
         UniValue objStatus(UniValue::VOBJ);
-        objStatus.pushKV("AssetID", g_masternodeSync->GetAssetID());
-        objStatus.pushKV("AssetName", g_masternodeSync->GetAssetName());
-        objStatus.pushKV("AssetStartTime", g_masternodeSync->GetAssetStartTime());
-        objStatus.pushKV("Attempt", g_masternodeSync->GetAttempt());
-        objStatus.pushKV("IsBlockchainSynced", g_masternodeSync->IsBlockchainSynced());
-        objStatus.pushKV("IsSynced", g_masternodeSync->IsSynced());
+        objStatus.pushKV("AssetID", node.masternodeSync->GetAssetID());
+        objStatus.pushKV("AssetName", node.masternodeSync->GetAssetName());
+        objStatus.pushKV("AssetStartTime", node.masternodeSync->GetAssetStartTime());
+        objStatus.pushKV("Attempt", node.masternodeSync->GetAttempt());
+        objStatus.pushKV("IsBlockchainSynced", node.masternodeSync->IsBlockchainSynced());
+        objStatus.pushKV("IsSynced", node.masternodeSync->IsSynced());
         return objStatus;
     }
 
     if(strMode == "next")
     {
-        g_masternodeSync->SwitchToNextAsset();
-        return "sync updated to " + g_masternodeSync->GetAssetName();
+        node.masternodeSync->SwitchToNextAsset();
+        return "sync updated to " + node.masternodeSync->GetAssetName();
     }
 
     if(strMode == "reset")
     {
-        g_masternodeSync->Reset(true);
+        node.masternodeSync->Reset(true);
         return "success";
     }
     return "failure";

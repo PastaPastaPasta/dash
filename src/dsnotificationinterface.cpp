@@ -21,7 +21,7 @@
 #include <llmq/dkgsessionmgr.h>
 
 CDSNotificationInterface::CDSNotificationInterface(CConnman& _connman,
-    std::unique_ptr<CMasternodeSync>& _mnsync, std::unique_ptr<CDeterministicMNManager>& _dmnman,
+    std::shared_ptr<CMasternodeSync>& _mnsync, std::unique_ptr<CDeterministicMNManager>& _dmnman,
     std::unique_ptr<CGovernanceManager>& _govman, std::unique_ptr<llmq::CChainLocksHandler>& _clhandler,
     std::unique_ptr<llmq::CInstantSendManager>& _isman, std::unique_ptr<llmq::CQuorumManager>& _qman,
     std::unique_ptr<llmq::CDKGSessionManager>& _qdkgsman
