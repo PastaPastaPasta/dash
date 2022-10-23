@@ -284,7 +284,7 @@ void PrepareShutdown(NodeContext& node)
 
     // After related databases and caches have been flushed, destroy pointers
     // and reset all to nullptr.
-    ::masternodeSync.reset();
+    ::g_masternodeSync.reset();
     ::governance.reset();
     ::sporkManager.reset();
 
@@ -1942,7 +1942,7 @@ bool AppInitMain(const CoreContext& context, NodeContext& node, interfaces::Bloc
 #endif
 
     pdsNotificationInterface = new CDSNotificationInterface(
-        *node.connman, ::masternodeSync, ::deterministicMNManager, ::governance, llmq::chainLocksHandler,
+        *node.connman, ::g_masternodeSync, ::deterministicMNManager, ::governance, llmq::chainLocksHandler,
         llmq::quorumInstantSendManager, llmq::quorumManager, llmq::quorumDKGSessionManager
     );
     RegisterValidationInterface(pdsNotificationInterface);
@@ -2316,7 +2316,7 @@ bool AppInitMain(const CoreContext& context, NodeContext& node, interfaces::Bloc
 
     // ********************************************************* Step 10a: Setup CoinJoin
 
-    ::masternodeSync = std::make_unique<CMasternodeSync>(*node.connman);
+    ::g_masternodeSync = std::make_unique<CMasternodeSync>(*node.connman);
     ::coinJoinServer = std::make_unique<CCoinJoinServer>(*node.connman);
 #ifdef ENABLE_WALLET
     ::coinJoinClientQueueManager = std::make_unique<CCoinJoinClientQueueManager>(*node.connman);
@@ -2378,7 +2378,7 @@ bool AppInitMain(const CoreContext& context, NodeContext& node, interfaces::Bloc
     // ********************************************************* Step 10b: schedule Dash-specific tasks
 
     node.scheduler->scheduleEvery(std::bind(&CNetFulfilledRequestManager::DoMaintenance, std::ref(netfulfilledman)), 60 * 1000);
-    node.scheduler->scheduleEvery(std::bind(&CMasternodeSync::DoMaintenance, std::ref(*::masternodeSync)), 1 * 1000);
+    node.scheduler->scheduleEvery(std::bind(&CMasternodeSync::DoMaintenance, std::ref(*::g_masternodeSync)), 1 * 1000);
     node.scheduler->scheduleEvery(std::bind(&CMasternodeUtils::DoMaintenance, std::ref(*node.connman)), 60 * 1000);
     node.scheduler->scheduleEvery(std::bind(&CDeterministicMNManager::DoMaintenance, std::ref(*deterministicMNManager)), 10 * 1000);
 

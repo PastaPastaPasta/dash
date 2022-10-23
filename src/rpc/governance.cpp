@@ -314,7 +314,7 @@ static UniValue gobject_submit(const JSONRPCRequest& request)
 {
     gobject_submit_help(request);
 
-    if(!masternodeSync->IsBlockchainSynced()) {
+    if(!g_masternodeSync->IsBlockchainSynced()) {
         throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD, "Must wait for client to sync with masternode network. Try again in a minute or so.");
     }
 

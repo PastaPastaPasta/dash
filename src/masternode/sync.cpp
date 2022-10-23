@@ -14,7 +14,7 @@
 #include <util/translation.h>
 
 class CMasternodeSync;
-std::unique_ptr<CMasternodeSync> masternodeSync;
+std::unique_ptr<CMasternodeSync> g_masternodeSync;
 
 CMasternodeSync::CMasternodeSync(CConnman& _connman) :
     nTimeAssetSyncStarted(GetTime()),

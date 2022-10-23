@@ -90,24 +90,24 @@ static UniValue mnsync(const JSONRPCRequest& request)
 
     if(strMode == "status") {
         UniValue objStatus(UniValue::VOBJ);
-        objStatus.pushKV("AssetID", masternodeSync->GetAssetID());
-        objStatus.pushKV("AssetName", masternodeSync->GetAssetName());
-        objStatus.pushKV("AssetStartTime", masternodeSync->GetAssetStartTime());
-        objStatus.pushKV("Attempt", masternodeSync->GetAttempt());
-        objStatus.pushKV("IsBlockchainSynced", masternodeSync->IsBlockchainSynced());
-        objStatus.pushKV("IsSynced", masternodeSync->IsSynced());
+        objStatus.pushKV("AssetID", g_masternodeSync->GetAssetID());
+        objStatus.pushKV("AssetName", g_masternodeSync->GetAssetName());
+        objStatus.pushKV("AssetStartTime", g_masternodeSync->GetAssetStartTime());
+        objStatus.pushKV("Attempt", g_masternodeSync->GetAttempt());
+        objStatus.pushKV("IsBlockchainSynced", g_masternodeSync->IsBlockchainSynced());
+        objStatus.pushKV("IsSynced", g_masternodeSync->IsSynced());
         return objStatus;
     }
 
     if(strMode == "next")
     {
-        masternodeSync->SwitchToNextAsset();
-        return "sync updated to " + masternodeSync->GetAssetName();
+        g_masternodeSync->SwitchToNextAsset();
+        return "sync updated to " + g_masternodeSync->GetAssetName();
     }
 
     if(strMode == "reset")
     {
-        masternodeSync->Reset(true);
+        g_masternodeSync->Reset(true);
         return "success";
     }
     return "failure";

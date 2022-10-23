@@ -268,7 +268,7 @@ void CQuorumManager::TriggerQuorumDataRecoveryThreads(const CBlockIndex* pIndex)
 
 void CQuorumManager::UpdatedBlockTip(const CBlockIndex* pindexNew, bool fInitialDownload) const
 {
-    if (!masternodeSync->IsBlockchainSynced()) {
+    if (!g_masternodeSync->IsBlockchainSynced()) {
         return;
     }
 
@@ -844,7 +844,7 @@ void CQuorumManager::StartQuorumDataRecoveryThread(const CQuorumCPtr pQuorum, co
         };
         printLog("Start");
 
-        while (!masternodeSync->IsBlockchainSynced() && !quorumThreadInterrupt) {
+        while (!g_masternodeSync->IsBlockchainSynced() && !quorumThreadInterrupt) {
             quorumThreadInterrupt.sleep_for(std::chrono::seconds(nRequestTimeout));
         }
 

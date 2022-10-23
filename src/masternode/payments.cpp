@@ -45,7 +45,7 @@ bool IsOldBudgetBlockValueValid(const CBlock& block, int nBlockHeight, CAmount b
     if(nBlockHeight >= consensusParams.nBudgetPaymentsStartBlock &&
        nOffset < consensusParams.nBudgetPaymentsWindowBlocks) {
         // NOTE: old budget system is disabled since 12.1
-        if(masternodeSync->IsSynced()) {
+        if(g_masternodeSync->IsSynced()) {
             // no old budget blocks should be accepted here on mainnet,
             // testnet/devnet/regtest should produce regular blocks only
             LogPrint(BCLog::GOBJECT, "%s -- WARNING: Client synced but old budget system is disabled, checking block value against block reward\n", __func__);
@@ -120,7 +120,7 @@ bool IsBlockValueValid(const CSporkManager& sporkManager, CGovernanceManager& go
         return false;
     }
 
-    if(!masternodeSync->IsSynced() || fDisableGovernance) {
+    if(!g_masternodeSync->IsSynced() || fDisableGovernance) {
         LogPrint(BCLog::MNPAYMENTS, "%s -- WARNING: Not enough data, checked superblock max bounds only\n", __func__);
         // not enough data for full checks but at least we know that the superblock limits were honored.
         // We rely on the network to have followed the correct chain in this case

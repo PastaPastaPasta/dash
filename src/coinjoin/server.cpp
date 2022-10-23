@@ -29,7 +29,7 @@ constexpr static CAmount DEFAULT_MAX_RAW_TX_FEE{COIN / 10};
 void CCoinJoinServer::ProcessMessage(CNode* pfrom, const std::string& msg_type, CDataStream& vRecv, bool enable_bip61)
 {
     if (!fMasternodeMode) return;
-    if (!masternodeSync->IsBlockchainSynced()) return;
+    if (!g_masternodeSync->IsBlockchainSynced()) return;
 
     if (msg_type == NetMsgType::DSACCEPT) {
         ProcessDSACCEPT(pfrom, msg_type, vRecv, enable_bip61);
@@ -866,7 +866,7 @@ void CCoinJoinServer::SetState(PoolState nStateNew)
 void CCoinJoinServer::DoMaintenance() const
 {
     if (!fMasternodeMode) return; // only run on masternodes
-    if (masternodeSync == nullptr || !masternodeSync->IsBlockchainSynced()) return;
+    if (g_masternodeSync == nullptr || !g_masternodeSync->IsBlockchainSynced()) return;
     if (ShutdownRequested()) return;
 
     if (!coinJoinServer) return;

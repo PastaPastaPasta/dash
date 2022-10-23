@@ -1183,7 +1183,7 @@ void CConnman::AcceptConnection(const ListenSocket& hListenSocket) {
     }
 
     // don't accept incoming connections until blockchain is synced
-    if(fMasternodeMode && !masternodeSync->IsBlockchainSynced()) {
+    if(fMasternodeMode && !g_masternodeSync->IsBlockchainSynced()) {
         LogPrint(BCLog::NET, "AcceptConnection -- blockchain is not synced yet, skipping inbound connection attempt\n");
         CloseSocket(hSocket);
         return;
@@ -1340,7 +1340,7 @@ void CConnman::NotifyNumConnectionsChanged()
     // If we had zero connections before and new connections now or if we just dropped
     // to zero connections reset the sync process if its outdated.
     if ((vNodesSize > 0 && nPrevNodeCount == 0) || (vNodesSize == 0 && nPrevNodeCount > 0)) {
-        masternodeSync->Reset();
+        g_masternodeSync->Reset();
     }
 
     if(vNodesSize != nPrevNodeCount) {
@@ -2496,7 +2496,7 @@ void CConnman::ThreadOpenMasternodeConnections()
 
         didConnect = false;
 
-        if (!fNetworkActive || !masternodeSync->IsBlockchainSynced())
+        if (!fNetworkActive || !g_masternodeSync->IsBlockchainSynced())
             continue;
 
         std::set<CService> connectedNodes;
@@ -2947,7 +2947,7 @@ void CConnman::SetNetworkActive(bool active)
 
     // Always call the Reset() if the network gets enabled/disabled to make sure the sync process
     // gets a reset if its outdated..
-    masternodeSync->Reset();
+    g_masternodeSync->Reset();
 
     uiInterface.NotifyNetworkActiveChanged(fNetworkActive);
 }

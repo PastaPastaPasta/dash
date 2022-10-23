@@ -457,14 +457,14 @@ void CCoinJoin::CheckDSTXes(const CBlockIndex* pindex, const llmq::CChainLocksHa
 
 void CCoinJoin::UpdatedBlockTip(const CBlockIndex* pindex, const llmq::CChainLocksHandler& clhandler)
 {
-    if (pindex && masternodeSync->IsBlockchainSynced()) {
+    if (pindex && g_masternodeSync->IsBlockchainSynced()) {
         CheckDSTXes(pindex, clhandler);
     }
 }
 
 void CCoinJoin::NotifyChainLock(const CBlockIndex* pindex, const llmq::CChainLocksHandler& clhandler)
 {
-    if (pindex && masternodeSync->IsBlockchainSynced()) {
+    if (pindex && g_masternodeSync->IsBlockchainSynced()) {
         CheckDSTXes(pindex, clhandler);
     }
 }

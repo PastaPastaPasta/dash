@@ -199,7 +199,7 @@ TestingSetup::TestingSetup(const std::string& chainName, const std::vector<const
 
     ::sporkManager = std::make_unique<CSporkManager>();
     ::governance = std::make_unique<CGovernanceManager>();
-    ::masternodeSync = std::make_unique<CMasternodeSync>(*m_node.connman);
+    ::g_masternodeSync = std::make_unique<CMasternodeSync>(*m_node.connman);
     ::coinJoinServer = std::make_unique<CCoinJoinServer>(*m_node.connman);
 #ifdef ENABLE_WALLET
     ::coinJoinClientQueueManager = std::make_unique<CCoinJoinClientQueueManager>(*m_node.connman);
@@ -234,7 +234,7 @@ TestingSetup::~TestingSetup()
     ::coinJoinClientQueueManager.reset();
 #endif // ENABLE_WALLET
     ::coinJoinServer.reset();
-    ::masternodeSync.reset();
+    ::g_masternodeSync.reset();
     ::governance.reset();
     ::sporkManager.reset();
     m_node.connman.reset();
