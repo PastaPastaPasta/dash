@@ -5,8 +5,8 @@ distro: "ubuntu"
 suites:
 - "focal"
 architectures:
-- "amd64"
 - "aarch64"
+- "amd64"
 packages:
 - "ca-certificates"
 - "curl"
