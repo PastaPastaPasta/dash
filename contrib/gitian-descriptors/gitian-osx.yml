@@ -172,8 +172,8 @@ script: |
     find ${DISTNAME} -path '*.dSYM*' | sort | tar --mtime="$REFERENCE_DATETIME" --no-recursion --mode='u+rw,go+r-w,a+X' --owner=0 --group=0 -c -T - | gzip -9n > ${OUTDIR}/${DISTNAME}-${i}-debug.tar.gz
     cd ../../
   done
-  mv ${OUTDIR}/${DISTNAME}-x86_64-apple-darwin19.tar.gz ${OUTDIR}/${DISTNAME}-osx64.tar.gz
-  mv ${OUTDIR}/${DISTNAME}-x86_64-apple-darwin19-debug.tar.gz ${OUTDIR}/${DISTNAME}-osx64-debug.tar.gz
+  mv ${OUTDIR}/${DISTNAME}-aarch64-apple-darwin19.tar.gz ${OUTDIR}/${DISTNAME}-osx64.tar.gz
+  mv ${OUTDIR}/${DISTNAME}-aarch64-apple-darwin19-debug.tar.gz ${OUTDIR}/${DISTNAME}-osx64-debug.tar.gz
 
   # Compress ccache (otherwise the assert file will get too huge)
   if [ "$CCACHE_DIR" != "" ]; then
