@@ -35,12 +35,12 @@ remotes:
 - "url": "https://github.com/dashpay/dash.git"
   "dir": "dash"
 files:
-- "Xcode-12.1-12A7403-extracted-SDK-with-libcxx-headers.tar.gz"
+- "Xcode-12.2-12B45b-extracted-SDK-with-libcxx-headers.tar.gz"
 script: |
   set -e -o pipefail
 
   WRAP_DIR=$HOME/wrapped
-  HOSTS="aarch64-apple-darwin19"
+  HOSTS="arm64-apple-darwin"
   CONFIGFLAGS="--enable-reduce-exports --disable-miner --disable-bench --disable-gui-tests XORRISOFS=${WRAP_DIR}/xorrisofs DMG=${WRAP_DIR}/dmg --enable-crash-hooks"
   FAKETIME_HOST_PROGS=""
   FAKETIME_PROGS="ar ranlib date dmg xorrisofs"
