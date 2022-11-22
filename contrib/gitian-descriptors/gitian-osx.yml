@@ -5,7 +5,6 @@ distro: "ubuntu"
 suites:
 - "focal"
 architectures:
-- "aarch64"
 - "amd64"
 packages:
 - "ca-certificates"
@@ -41,7 +40,7 @@ script: |
   set -e -o pipefail
 
   WRAP_DIR=$HOME/wrapped
-  HOSTS="x86_64-apple-darwin19"
+  HOSTS="aarch64-apple-darwin19 x86_64-apple-darwin19"
   CONFIGFLAGS="--enable-reduce-exports --disable-miner --disable-bench --disable-gui-tests XORRISOFS=${WRAP_DIR}/xorrisofs DMG=${WRAP_DIR}/dmg --enable-crash-hooks"
   FAKETIME_HOST_PROGS=""
   FAKETIME_PROGS="ar ranlib date dmg xorrisofs"
