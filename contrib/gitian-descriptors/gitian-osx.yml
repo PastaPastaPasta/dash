@@ -6,6 +6,7 @@ suites:
 - "focal"
 architectures:
 - "amd64"
+- "aarch64"
 packages:
 - "ca-certificates"
 - "curl"
