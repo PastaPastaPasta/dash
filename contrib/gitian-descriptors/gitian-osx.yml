@@ -3,7 +3,7 @@ name: "dash-osx-18"
 enable_cache: true
 distro: "ubuntu"
 suites:
-- "focal"
+- "jammy"
 architectures:
 - "amd64"
 packages:
