@@ -9,10 +9,10 @@
 #include <hash.h>
 #include <script/standard.h>
 
-maybe_error CProRegTx::IsTriviallyValid() const
+tl::expected<void, std::pair<ValidationInvalidReason, std::string_view>> CProRegTx::IsTriviallyValid() const
 {
     if (nVersion == 0 || nVersion > CProRegTx::CURRENT_VERSION) {
-        return {ValidationInvalidReason::CONSENSUS, "bad-protx-version"};
+        return tl::make_unexpected(ValidationInvalidReason::CONSENSUS, "bad-protx-version");
     }
     if (nType != 0) {
         return {ValidationInvalidReason::CONSENSUS, "bad-protx-type"};

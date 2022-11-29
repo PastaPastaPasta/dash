@@ -19,13 +19,24 @@ class CBlockIndex;
 class CCoinsViewCache;
 class CValidationState;
 
-struct maybe_error{
-    bool did_err{false};
-    ValidationInvalidReason reason{ValidationInvalidReason::CONSENSUS};
-    std::string_view error_str;
+#include <util/expected.h>
 
-    constexpr maybe_error() = default;
-    constexpr maybe_error(ValidationInvalidReason reasonIn, std::string_view err): did_err(true), reason(reasonIn), error_str(err) {};
+//struct maybe_error{
+//    bool did_err{false};
+//    ValidationInvalidReason reason{ValidationInvalidReason::CONSENSUS};
+//    std::string_view error_str;
+//
+//    constexpr maybe_error() = default;
+//    constexpr maybe_error(ValidationInvalidReason reasonIn, std::string_view err): did_err(true), reason(reasonIn), error_str(err) {};
+//};
+
+//using Unexpected = std::pair<ValidationInvalidReason, std::string_view>;
+
+class CProTx {
+public:
+    virtual std::string ToString() const = 0;
+    virtual uint256& getInputsHash() const = 0;
+
 };
 
 class CProRegTx
@@ -72,6 +83,9 @@ public:
     std::string MakeSignString() const;
 
     std::string ToString() const;
+    uint256& getInputsHash() {
+        return inputsHash;
+    }
 
     void ToJson(UniValue& obj) const
     {
@@ -94,7 +108,7 @@ public:
         obj.pushKV("inputsHash", inputsHash.ToString());
     }
 
-    maybe_error IsTriviallyValid() const;
+     tl::expected<void, std::pair<ValidationInvalidReason, std::string_view>> IsTriviallyValid() const;
 };
 
 class CProUpServTx
@@ -119,6 +133,9 @@ public:
     }
 
     std::string ToString() const;
+    uint256& getInputsHash() {
+        return inputsHash;
+    }
 
     void ToJson(UniValue& obj) const
     {
@@ -134,7 +151,7 @@ public:
         obj.pushKV("inputsHash", inputsHash.ToString());
     }
 
-    maybe_error IsTriviallyValid() const;
+    tl::expected<void, std::pair<ValidationInvalidReason, std::string_view>> IsTriviallyValid() const;
 };
 
 class CProUpRegTx
@@ -169,6 +186,9 @@ public:
     }
 
     std::string ToString() const;
+    uint256& getInputsHash() {
+        return inputsHash;
+    }
 
     void ToJson(UniValue& obj) const
     {
@@ -185,7 +205,7 @@ public:
         obj.pushKV("inputsHash", inputsHash.ToString());
     }
 
-    maybe_error IsTriviallyValid() const;
+    tl::expected<void, std::pair<ValidationInvalidReason, std::string_view>> IsTriviallyValid() const;
 };
 
 class CProUpRevTx
@@ -218,6 +238,9 @@ public:
     }
 
     std::string ToString() const;
+    uint256& getInputsHash() {
+        return inputsHash;
+    }
 
     void ToJson(UniValue& obj) const
     {
@@ -229,18 +252,17 @@ public:
         obj.pushKV("inputsHash", inputsHash.ToString());
     }
 
-    maybe_error IsTriviallyValid() const;
+    tl::expected<void, std::pair<ValidationInvalidReason, std::string_view>> IsTriviallyValid() const;
 };
 
-template <typename ProTx>
-static maybe_error CheckInputsHash(const CTransaction& tx, const ProTx& proTx)
+//template <typename ProTx>
+static tl::expected<void, std::pair<ValidationInvalidReason, std::string_view>> CheckInputsHash(const CTransaction& tx, const CProTx& proTx)
 {
-    if (uint256 inputsHash = CalcTxInputsHash(tx); inputsHash != proTx.inputsHash) {
-        return {ValidationInvalidReason::CONSENSUS, "bad-protx-inputs-hash"};
+    if (uint256 inputsHash = CalcTxInputsHash(tx); inputsHash != proTx.getInputsHash()) {
+        return tl::make_unexpected(std::make_pair(ValidationInvalidReason::CONSENSUS, "bad-protx-inputs-hash"));
     }
 
     return {};
 }
-
-
+ 
 #endif // BITCOIN_EVO_PROVIDERTX_H
