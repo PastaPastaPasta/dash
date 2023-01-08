@@ -691,6 +691,12 @@ void CQuorumBlockProcessor::AddMineableCommitment(const CFinalCommitment& fqc)
 
     // We only relay the new commitment if it's new or better then the old one
     if (relay) {
+        LOCK(cs_main);
+        const auto* pQuorumBaseBlockIndex = LookupBlockIndex(fqc.quorumHash);
+        const auto* tip = ::ChainActive().Tip();
+        if (pQuorumBaseBlockIndex->nHeight < tip->nHeight) {
+            LogPrint(BCLog::ALL, "ERROR HAPPENED, OLD MESSAGE");
+        }
         CInv inv(MSG_QUORUM_FINAL_COMMITMENT, commitmentHash);
         connman.RelayInv(inv);
     }
