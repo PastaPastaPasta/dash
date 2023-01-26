@@ -57,6 +57,7 @@ private:
     BitcoinUnit m_display_bitcoin_unit;
     bool fShowAdvancedCJUI;
     int cachedNumISLocks{-1};
+    int m_transaction_row_limit{NUM_ITEMS};
 
     TxViewDelegate *txdelegate;
     std::unique_ptr<TransactionFilterProxy> filter;
@@ -66,6 +67,7 @@ private:
 
 private Q_SLOTS:
     void toggleCoinJoin();
+    void LimitTransactionRows();
     void updateDisplayUnit();
     void updateCoinJoinProgress();
     void updateAdvancedCJUI(bool fShowAdvancedCJUI);
