@@ -585,6 +585,7 @@ void TransactionView::showDetails()
             idx.data(TransactionTableModel::LongDescriptionRole).toString(),
             /*parent=*/this);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
+        m_opened_dialogs.append(dlg);
         dlg->show();
     }
 }
@@ -770,6 +771,11 @@ bool TransactionView::eventFilter(QObject *obj, QEvent *event)
             fGotFirstFocus = true;
         }
     }
+    if (event->type() == QEvent::EnabledChange) {
+        if (!isEnabled()) {
+            closeOpenedDialogs();
+        }
+    }
     return QWidget::eventFilter(obj, event);
 }
 
@@ -796,4 +802,13 @@ void TransactionView::updateCoinJoinVisibility()
     for (auto nRow : vecRows) {
         typeList->setRowHidden(nRow, !fEnabled);
     }
+}
+
+void TransactionView::closeOpenedDialogs()
+{
+    // close all dialogs opened from this view
+    for (QDialog* dlg : m_opened_dialogs) {
+        dlg->close();
+    }
+    m_opened_dialogs.clear();
 }

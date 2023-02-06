@@ -9,6 +9,7 @@
 
 #include <uint256.h>
 
+#include <QList>
 #include <QWidget>
 
 class TransactionFilterProxy;
@@ -17,6 +18,7 @@ class WalletModel;
 QT_BEGIN_NAMESPACE
 class QComboBox;
 class QDateTimeEdit;
+class QDialog;
 class QFrame;
 class QItemSelectionModel;
 class QLineEdit;
@@ -86,6 +88,8 @@ private:
 
     bool eventFilter(QObject *obj, QEvent *event) override;
 
+    QList<QDialog*> m_opened_dialogs;
+
 private Q_SLOTS:
     void contextualMenu(const QPoint &);
     void dateRangeChanged();
@@ -121,6 +125,7 @@ public Q_SLOTS:
     void changedAmount();
     void changedSearch();
     void exportClicked();
+    void closeOpenedDialogs();
     void focusTransaction(const QModelIndex&);
     void focusTransaction(const uint256& txid);
     void computeSum();
