@@ -10,6 +10,7 @@
 #include <merkleblock.h>
 #include <netaddress.h>
 #include <pubkey.h>
+#include <evo/dmn_types.h>
 
 class UniValue;
 class CBlockIndex;
@@ -33,7 +34,7 @@ public:
     CBLSLazyPublicKey pubKeyOperator;
     CKeyID keyIDVoting;
     bool isValid{false};
-    uint16_t nType{CDeterministicMN::MasternodeType::Regular};
+    uint16_t nType{MnType::Regular.index};
     uint16_t platformHTTPPort{0};
     CScript scriptPayout; // mem-only
     CScript scriptOperatorPayout; // mem-only
@@ -72,7 +73,7 @@ public:
                 );
         if (obj.nVersion == BASIC_BLS_VERSION) {
             READWRITE(obj.nType);
-            if (obj.nType == CDeterministicMN::MasternodeType::HighPerformance) {
+            if (obj.nType == MnType::HighPerformance.index) {
                 READWRITE(obj.platformHTTPPort);
             }
         }
