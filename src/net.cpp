@@ -2591,7 +2591,7 @@ void CConnman::ThreadOpenMasternodeConnections()
             return ret;
         };
 
-        auto getConnectToDmn = [&]() -> CDeterministicMNCPtr {
+        CDeterministicMNCPtr connectToDmn = [&]() -> CDeterministicMNCPtr {
             // don't hold lock while calling OpenMasternodeConnection as cs_main is locked deep inside
             LOCK2(cs_vNodes, cs_vPendingMasternodes);
 
@@ -2622,9 +2622,8 @@ void CConnman::ThreadOpenMasternodeConnections()
                 return dmn;
             }
             return nullptr;
-        };
+        }();
 
-        CDeterministicMNCPtr connectToDmn = getConnectToDmn();
 
         if (connectToDmn == nullptr) {
             continue;
