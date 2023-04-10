@@ -51,6 +51,14 @@ either reindex or re-sync the whole chain.
 Notable changes
 ===============
 
+High-Performance Masternodes
+----------------------------
+In preparation for the release of Dash Platform to mainnet, a new masternode type has been added. High-performance masternodes will be responsible for hosting Dash Platform services (once they are on mainnet) in addition to the existing responsibilities like ChainLocks and InstantSend.
+
+Activation of the DashCore v19.0 hard fork will enable registration of the new 4000 DASH collateral masternodes. Until Dash Platform is released to mainnet, high-performance masternodes will provide the same services as regular masternodes with one small exception. Regular masternodes will no longer participate in the Platform-specific LLMQ after the hard fork since they will not be responsible for hosting Dash Platform.
+
+Note: In DashCore v19.0 the relative rewards and voting power are equivalent between regular and high-performance masternodes. Masternodes effectively receive one payout and one governance vote per 1000 DASH collateral. So, there is no difference in reward amount for running four regular masternodes or one high-performance masternode. In v19.0, high-performance masternodes simply receive payments in four consecutive blocks when they are selected for payout. Some frequently asked questions may be found at https://www.dash.org/hpmn-faq/.
+
 BLS Scheme Upgrade
 ------------------
 Once the v19 hard fork is activated, all remaining messages containing BLS public keys or signatures will serialise them using the new basic BLS scheme.
