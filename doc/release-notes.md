@@ -1,5 +1,4 @@
-Dash Core version v19.0.0
-=========================
+# Dash Core version v19.0.0
 
 Release is now available from:
 
@@ -35,8 +34,7 @@ from a few minutes to thirty minutes to finish. After the migration, a
 downgrade to an older version is only possible with a reindex
 (or reindex-chainstate).
 
-Downgrade warning
------------------
+## Downgrade warning
 
 ### Downgrade to a version < v19.0.0
 
@@ -48,8 +46,7 @@ Downgrading to a version older than v18.0.1 is not supported due to changes in
 the indexes database folder. If you need to use an older version, you must
 either reindex or re-sync the whole chain.
 
-Notable changes
-===============
+# Notable changes
 
 High-Performance Masternodes
 ----------------------------
@@ -59,16 +56,14 @@ Activation of the DashCore v19.0 hard fork will enable registration of the new 4
 
 Note: In DashCore v19.0 the relative rewards and voting power are equivalent between regular and high-performance masternodes. Masternodes effectively receive one payout and one governance vote per 1000 DASH collateral. So, there is no difference in reward amount for running four regular masternodes or one high-performance masternode. In v19.0, high-performance masternodes simply receive payments in four consecutive blocks when they are selected for payout. Some frequently asked questions may be found at https://www.dash.org/hpmn-faq/.
 
-BLS Scheme Upgrade
-------------------
+## BLS Scheme Upgrade
 Once the v19 hard fork is activated, all remaining messages containing BLS public keys or signatures will serialise them using the new basic BLS scheme.
 The motivation behind this change is the need to be aligned with IETF standards.
 
 List of affected messages:
 `dsq`, `dstx`, `mnauth`, `govobj`, `govobjvote`, `qrinfo`, `qsigshare`, `qsigrec`, `isdlock`, `clsig`, and all DKG messages (`qfcommit`, `qcontrib`, `qcomplaint`, `qjustify`, `qpcommit`).
 
-`qfcommit`
---------
+## `qfcommit`
 
 Once the v19 hard fork is activated, `quorumPublicKey` will be serialised using the basic BLS scheme.
 To support syncing of older blocks containing the transactions using the legacy BLS scheme, the `version` field indicates which scheme to use for serialisation of `quorumPublicKey`.
@@ -80,8 +75,7 @@ To support syncing of older blocks containing the transactions using the legacy 
 | 3       | Non-rotated qfcommit serialised using basic BLS scheme  | No                           |
 | 4       | Rotated qfcommit serialised using basic BLS scheme      | Yes                          |
 
-`MNLISTDIFF` P2P message
---------
+## `MNLISTDIFF` P2P message
 
 Starting with protocol version 70225, the following field is added to the `MNLISTDIFF` message between `cbTx` and `deletedQuorumsCount`.
 
@@ -96,8 +90,7 @@ The `version` field indicates which BLS scheme is used to serialise the `pubKeyO
 | 1       | Serialisation of `pubKeyOperator` using legacy BLS scheme |
 | 2       | Serialisation of `pubKeyOperator` using basic BLS scheme  |
 
-`ProTx` txs family
---------
+## `ProTx` txs family
 
 `proregtx` and `proupregtx` will support a new `version` value:
 
@@ -113,8 +106,7 @@ The `version` field indicates which BLS scheme is used to serialise the `pubKeyO
 | 1       | Serialisation of `sig` using legacy BLS scheme |
 | 2       | Serialisation of `sig` using basic BLS scheme  |
 
-`MNHFTx`
---------
+## `MNHFTx`
 
 `MNHFTx` will support a new `version` value:
 
@@ -125,10 +117,10 @@ The `version` field indicates which BLS scheme is used to serialise the `pubKeyO
 
 
 
-Wallet
-------
-Automatic wallet creation removed
----------------------------------
+## Wallet
+
+## Automatic wallet creation removed
+
 Dash Core will no longer automatically create new wallets on startup. It will
 load existing wallets specified by -wallet options on the command line or in
 dash.conf or settings.json files. And by default it will also load a
@@ -139,10 +131,10 @@ new keys and addresses like previous releases did.
 New wallets can be created through the GUI (which has a more prominent create
 wallet option), through the dash-cli createwallet or dash-wallet create commands, or the createwallet RPC.
 
-P2P and Network Changes
------------------------
-Removal of reject network messages from Dash Core (BIP61)
----------------------------------------------------------
+## P2P and Network Changes
+
+## Removal of reject network messages from Dash Core (BIP61)
+
 The command line option to enable BIP61 (-enablebip61) has been removed.
 
 Nodes on the network can not generally be trusted to send valid ("reject")
@@ -164,8 +156,7 @@ version of Dash Core. Dash Core logs debug messages
       - testmempoolaccept
 
 
-Remote Procedure Call (RPC) Changes
------------------------------------
+## Remote Procedure Call (RPC) Changes
 
 ### The new RPCs are:
 - Once the v19 hard fork is activated, `protx register`, `protx register_fund`, and `protx register_prepare` RPCs will decode BLS operator public keys using the new basic BLS scheme. In order to support BLS public keys encoded in the legacy BLS scheme, `protx register_legacy`, `protx register_fund_legacy`, and `protx register_prepare_legacy` were added.
@@ -200,25 +191,25 @@ when known. See the RPC help text for full details.
 
 Please check `help <command>` for more detailed information on specific RPCs.
 
-Command-line options
---------------------
+## Command-line options
+
 - Passing an invalid `-rpcauth` argument now cause dashd to fail to start.
 
 
 Please check `Help -> Command-line options` in Qt wallet or `dashd --help` for
 more information.
 
-Backports from Bitcoin Core
----------------------------
+## Backports from Bitcoin Core
+
 This release introduces many updates from Bitcoin v0.18-v0.21 as well as numerous updates from Bitcoin v22 and more recent versions. Bitcoin changes that do not align with Dash’s product needs, such as SegWit and RBF, are excluded from our backporting. For additional detail on what’s included in Bitcoin, please refer to their release notes.
 
-v19.0.0 Change log
-==================
+# v19.0.0 Change log
+
 
 See detailed [set of changes](https://github.com/dashpay/dash/compare/v18.2.2...dashpay:v19.0.0).
 
-Credits
-=======
+# Credits
+
 
 Thanks to everyone who directly contributed to this release:
 
