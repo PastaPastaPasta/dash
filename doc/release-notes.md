@@ -181,13 +181,13 @@ when known. See the RPC help text for full details.
 
 ### Dash-specific changes in existing RPCs:
 
-- `masternodelist` New mode `recent` was added in order to hide banned masternodes for more than one `SuperblockCycle`. If the mode `recent` is used, then the reply mode is JSON (can be additionally filtered)
+- `masternodelist`: New mode `recent` was added in order to hide banned masternodes for more than one `SuperblockCycle`. If the mode `recent` is used, then the reply mode is JSON (can be additionally filtered)
 - `quorum info`: The new `previousConsecutiveDKGFailures` field will be returned for rotated LLMQs. This field will hold the number of previous consecutive DKG failures for the corresponding quorumIndex before the currently active one. Note: If no previous commitments were found then 0 will be returned for `previousConsecutiveDKGFailures`.
 - `bls generate` and `bls fromsecret`: The new `scheme` field will be returned indicating which scheme was used to serialise the public key. Valid returned values are `legacy` and`basic`.
 - `bls generate` and `bls fromsecret`: Both RPCs accept an incoming optional boolean argument `legacy` that enforces the use of legacy BLS scheme for the serialisation of the reply even if v19 is active.
-- `masternode` mode `status` now returns the type of the masternode.
-- `masternode` mode `count` now returns a detailed summary of total and enabled masternodes per type.
-- `gobject getcurrentvotes` reply is enriched by adding the vote weight at the end of each line. Possible values are 1 or 4. Example: "7cb20c883c6093b8489f795b3ec0aad0d9c2c2821610ae9ed938baaf42fec66d": "277e6345359071410ab691c21a3a16f8f46c9229c2f8ec8f028c9a95c0f1c0e7-1:1670019339:yes:funding:4"
+- `masternode status` now returns the type of the masternode.
+- `masternode count` now returns a detailed summary of total and enabled masternodes per type.
+- `gobject getcurrentvotes`: reply is enriched by adding the vote weight at the end of each line. Possible values are 1 or 4. Example: "7cb20c883c6093b8489f795b3ec0aad0d9c2c2821610ae9ed938baaf42fec66d": "277e6345359071410ab691c21a3a16f8f46c9229c2f8ec8f028c9a95c0f1c0e7-1:1670019339:yes:funding:4"
 - Once the v19 hard fork is activated, `protx register`, `protx register_fund`, and `protx register_prepare` RPCs will decode BLS operator public keys using the new basic BLS scheme.
 
 Please check `help <command>` for more detailed information on specific RPCs.
