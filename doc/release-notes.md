@@ -114,8 +114,6 @@ The `version` field indicates which BLS scheme is used to serialise the `pubKeyO
 | 1       | Serialisation of `sig` using legacy BLS scheme |
 | 2       | Serialisation of `sig` using basic BLS scheme  |
 
-
-
 ## Wallet
 
 ## Automatic wallet creation removed
@@ -154,6 +152,12 @@ version of Dash Core. Dash Core logs debug messages
       - sendrawtransaction
       - testmempoolaccept
 
+## CoinJoin update
+
+A minor update in several CoinJoin-related network messages improves support
+for mixing from SPV clients. These changes make it easier for SPV clients to
+participate in the CoinJoin process by using masternode information they can
+readily obtain and verify via [DIP-0004](https://github.com/dashpay/dips/blob/master/dip-0004.md).
 
 ## Remote Procedure Call (RPC) Changes
 
