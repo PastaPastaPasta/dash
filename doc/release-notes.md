@@ -1,15 +1,14 @@
-Dash Core version v18.2.2
+Dash Core version v19.0.0
 =========================
 
 Release is now available from:
 
   <https://www.dash.org/downloads/#wallets>
 
-This is a new hotfix version release.
+This is a new major version release, bringing new features, various bugfixes
+and other improvements.
 
-This release is optional for all nodes; however, v18.2.2 or higher is required
-to be able to use testnet right until v19 hard fork activation. Earlier
-versions will not be able to sync past block 847000 on testnet.
+This release is mandatory for all nodes.
 
 Please report bugs using the issue tracker at GitHub:
 
@@ -39,9 +38,9 @@ downgrade to an older version is only possible with a reindex
 Downgrade warning
 -----------------
 
-### Downgrade to a version < v18.2.2
+### Downgrade to a version < v19.0.0
 
-Downgrading to a version older than v18.2.2 is supported.
+Downgrading to a version older than v19.0.0 is supported.
 
 ### Downgrade to a version < v18.0.1
 
@@ -51,6 +50,113 @@ either reindex or re-sync the whole chain.
 
 Notable changes
 ===============
+
+BLS Scheme Upgrade
+------------------
+Once the v19 hard fork is activated, all remaining messages containing BLS public keys or signatures will serialise them using the new basic BLS scheme.
+The motivation behind this change is the need to be aligned with IETF standards.
+
+List of affected messages:
+`dsq`, `dstx`, `mnauth`, `govobj`, `govobjvote`, `qrinfo`, `qsigshare`, `qsigrec`, `isdlock`, `clsig`, and all DKG messages (`qfcommit`, `qcontrib`, `qcomplaint`, `qjustify`, `qpcommit`).
+
+`qfcommit`
+--------
+
+Once the v19 hard fork is activated, `quorumPublicKey` will be serialised using the basic BLS scheme.
+To support syncing of older blocks containing the transactions using the legacy BLS scheme, the `version` field indicates which scheme to use for serialisation of `quorumPublicKey`.
+
+| Version | Version Description                                    | Includes `quorumIndex` field |
+|---------|--------------------------------------------------------|------------------------------|
+| 1       | Non-rotated qfcommit serialised using legacy BLS scheme | No                           |
+| 2       | Rotated qfcommit serialised using legacy BLS scheme     | Yes                          |
+| 3       | Non-rotated qfcommit serialised using basic BLS scheme  | No                           |
+| 4       | Rotated qfcommit serialised using basic BLS scheme      | Yes                          |
+
+`MNLISTDIFF` P2P message
+--------
+
+Starting with protocol version 70225, the following field is added to the `MNLISTDIFF` message between `cbTx` and `deletedQuorumsCount`.
+
+| Field               | Type | Size | Description                       |
+|---------------------| ---- | ---- |-----------------------------------|
+| version             | uint16_t | 2 | Version of the `MNLISTDIFF` reply |
+
+The `version` field indicates which BLS scheme is used to serialise the `pubKeyOperator` field for all SML entries of `mnList`.
+
+| Version | Version Description                                       |
+|---------|-----------------------------------------------------------|
+| 1       | Serialisation of `pubKeyOperator` using legacy BLS scheme |
+| 2       | Serialisation of `pubKeyOperator` using basic BLS scheme  |
+
+`ProTx` txs family
+--------
+
+`proregtx` and `proupregtx` will support a new `version` value:
+
+| Version | Version Description                                       |
+|---------|-----------------------------------------------------------|
+| 1       | Serialisation of `pubKeyOperator` using legacy BLS scheme |
+| 2       | Serialisation of `pubKeyOperator` using basic BLS scheme  |
+
+`proupservtx` and `prouprevtx` will support a new `version` value:
+
+| Version | Version Description                            |
+|---------|------------------------------------------------|
+| 1       | Serialisation of `sig` using legacy BLS scheme |
+| 2       | Serialisation of `sig` using basic BLS scheme  |
+
+`MNHFTx`
+--------
+
+`MNHFTx` will support a new `version` value:
+
+| Version | Version Description                            |
+|---------|------------------------------------------------|
+| 1       | Serialisation of `sig` using legacy BLS scheme |
+| 2       | Serialisation of `sig` using basic BLS scheme  |
+
+
+
+Wallet
+------
+Automatic wallet creation removed
+---------------------------------
+Dash Core will no longer automatically create new wallets on startup. It will
+load existing wallets specified by -wallet options on the command line or in
+dash.conf or settings.json files. And by default it will also load a
+top-level unnamed ("") wallet. However, if specified wallets don't exist,
+Dash Core will now just log warnings instead of creating new wallets with
+new keys and addresses like previous releases did.
+
+New wallets can be created through the GUI (which has a more prominent create
+wallet option), through the dash-cli createwallet or dash-wallet create commands, or the createwallet RPC.
+
+P2P and Network Changes
+-----------------------
+Removal of reject network messages from Dash Core (BIP61)
+---------------------------------------------------------
+The command line option to enable BIP61 (-enablebip61) has been removed.
+
+This feature has been disabled by default since Dash Core version 0.19.0.
+Nodes on the network can not generally be trusted to send valid ("reject")
+messages, so this should only ever be used when connected to a trusted node.
+Please use the recommended alternatives if you rely on this deprecated feature:
+
+- Testing or debugging of implementations of the Dash P2P network protocol
+should be done by inspecting the log messages that are produced by a recent
+version of Dash Core. Dash Core logs debug messages
+(-debug=<category>) to a stream (-printtoconsole) or to a file
+(-debuglogfile=<debug.log>).
+
+- Testing the validity of a block can be achieved by specific RPCs:
+
+    - submitblock
+    - getblocktemplate with 'mode' set to 'proposal' for blocks with
+    - potentially invalid POW
+    - Testing the validity of a transaction can be achieved by specific RPCs:
+      - sendrawtransaction
+      - testmempoolaccept
+
 
 Testnet Breaking Changes
 ------------------------
@@ -67,22 +173,42 @@ Remote Procedure Call (RPC) Changes
 -----------------------------------
 
 ### The new RPCs are:
-None
+- Once the v19 hard fork is activated, `protx register`, `protx register_fund`, and `protx register_prepare` RPCs will decode BLS operator public keys using the new basic BLS scheme. In order to support BLS public keys encoded in the legacy BLS scheme, `protx register_legacy`, `protx register_fund_legacy`, and `protx register_prepare_legacy` were added.
+- `cleardiscouraged` clears all the already discouraged peers.
+  The following RPCs were added: `protx register_hpmn`, `protx register_fund_hpmn`, `protx register_prepare_hpmn` and `protx update_service_hpmn`.
+  These HPMN RPCs correspond to the standard masternode RPCs but have the following additional mandatory arguments: `platformNodeID`, `platformP2PPort` and `platformHTTPPort`.
+- `platformNodeID`: Platform P2P node ID, derived from P2P public key.
+- `platformP2PPort`: TCP port of Dash Platform peer-to-peer communication between nodes (network byte order).
+- `platformHTTPPort`: TCP port of Platform HTTP/API interface (network byte order).
+  Notes:
+- `platformNodeID` must be unique across the network.
+- `platformP2PPort`, `platformHTTPPort` and the Core port must be distinct.
+
 
 ### The removed RPCs are:
 None
 
 ### Changes in existing RPCs introduced through bitcoin backports:
-None
+- The utxoupdatepsbt RPC method has been updated to take a descriptors
+argument. When provided, input and output scripts and keys will be filled in
+when known. See the RPC help text for full details.
+
 
 ### Dash-specific changes in existing RPCs:
-None
+- `masternodelist` New mode `recent` was added in order to hide banned masternodes for more than one `SuperblockCycle`. If the mode `recent` is used, then the reply mode is JSON (can be additionally filtered)
+- `quorum info`: The new `previousConsecutiveDKGFailures` field will be returned for rotated LLMQs. This field will hold the number of previous consecutive DKG failures for the corresponding quorumIndex before the currently active one. Note: If no previous commitments were found then 0 will be returned for `previousConsecutiveDKGFailures`.
+- `bls generate` and `bls fromsecret`: The new `scheme` field will be returned indicating which scheme was used to serialise the public key. Valid returned values are `legacy` and`basic`.
+- `bls generate` and `bls fromsecret`: Both RPCs accept an incoming optional boolean argument `legacy` that enforces the use of legacy BLS scheme for the serialisation of the reply even if v19 is active.
+- `masternode` mode `status` now returns the type of the masternode.
+- `masternode` mode `count` now returns a detailed summary of total and enabled masternodes per type.
+- gobject getcurrentvotes reply is enriched by adding the vote weight at the end of each line. Possible values are 1 or 4. Example: "7cb20c883c6093b8489f795b3ec0aad0d9c2c2821610ae9ed938baaf42fec66d": "277e6345359071410ab691c21a3a16f8f46c9229c2f8ec8f028c9a95c0f1c0e7-1:1670019339:yes:funding:4"
 
 Please check `help <command>` for more detailed information on specific RPCs.
 
 Command-line options
 --------------------
-None
+- Passing an invalid `-rpcauth` argument now cause dashd to fail to start.
+
 
 Please check `Help -> Command-line options` in Qt wallet or `dashd --help` for
 more information.
