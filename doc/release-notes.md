@@ -194,8 +194,20 @@ Please check `help <command>` for more detailed information on specific RPCs.
 
 ## Command-line options
 
-- Passing an invalid `-rpcauth` argument now cause dashd to fail to start.
+A number of command-line option changes were made related to testing and
+removal of BIP61 support.
 
+New cmd-line options:
+- `llmqplatform` (devnet only)
+- `unsafesqlitesync`
+
+Removed cmd-line options:
+- `enablebip61`
+- `upgradewallet`
+
+Changes in existing cmd-line options:
+- `llmqinstantsend` and `llmqinstantsenddip0024` can be used in regtest now
+- Passing an invalid `-rpcauth` argument now cause dashd to fail to start.
 
 Please check `Help -> Command-line options` in Qt wallet or `dashd --help` for
 more information.
