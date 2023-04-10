@@ -14,11 +14,9 @@ Please report bugs using the issue tracker at GitHub:
   <https://github.com/dashpay/dash/issues>
 
 
-Upgrading and downgrading
-=========================
+# Upgrading and downgrading
 
-How to Upgrade
---------------
+## How to Upgrade
 
 If you are running an older version, shut it down. Wait until it has completely
 shut down (which might take a few minutes for older versions), then run the
@@ -57,6 +55,7 @@ Activation of the DashCore v19.0 hard fork will enable registration of the new 4
 Note: In DashCore v19.0 the relative rewards and voting power are equivalent between regular and high-performance masternodes. Masternodes effectively receive one payout and one governance vote per 1000 DASH collateral. So, there is no difference in reward amount for running four regular masternodes or one high-performance masternode. In v19.0, high-performance masternodes simply receive payments in four consecutive blocks when they are selected for payout. Some frequently asked questions may be found at https://www.dash.org/hpmn-faq/.
 
 ## BLS Scheme Upgrade
+
 Once the v19 hard fork is activated, all remaining messages containing BLS public keys or signatures will serialise them using the new basic BLS scheme.
 The motivation behind this change is the need to be aligned with IETF standards.
 
@@ -172,15 +171,18 @@ version of Dash Core. Dash Core logs debug messages
 
 
 ### The removed RPCs are:
+
 None
 
 ### Changes in existing RPCs introduced through bitcoin backports:
+
 - The utxoupdatepsbt RPC method has been updated to take a descriptors
 argument. When provided, input and output scripts and keys will be filled in
 when known. See the RPC help text for full details.
 
 
 ### Dash-specific changes in existing RPCs:
+
 - `masternodelist` New mode `recent` was added in order to hide banned masternodes for more than one `SuperblockCycle`. If the mode `recent` is used, then the reply mode is JSON (can be additionally filtered)
 - `quorum info`: The new `previousConsecutiveDKGFailures` field will be returned for rotated LLMQs. This field will hold the number of previous consecutive DKG failures for the corresponding quorumIndex before the currently active one. Note: If no previous commitments were found then 0 will be returned for `previousConsecutiveDKGFailures`.
 - `bls generate` and `bls fromsecret`: The new `scheme` field will be returned indicating which scheme was used to serialise the public key. Valid returned values are `legacy` and`basic`.
@@ -205,11 +207,9 @@ This release introduces many updates from Bitcoin v0.18-v0.21 as well as numerou
 
 # v19.0.0 Change log
 
-
 See detailed [set of changes](https://github.com/dashpay/dash/compare/v18.2.2...dashpay:v19.0.0).
 
 # Credits
-
 
 Thanks to everyone who directly contributed to this release:
 
@@ -227,8 +227,7 @@ Thanks to everyone who directly contributed to this release:
 
 As well as everyone that submitted issues, reviewed pull requests, helped debug the release candidates, and write DIPs that were implemented in this release.
 
-Older releases
-==============
+# Older releases
 
 Dash was previously known as Darkcoin.
 
