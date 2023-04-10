@@ -158,7 +158,7 @@ version of Dash Core. Dash Core logs debug messages
 ## Remote Procedure Call (RPC) Changes
 
 ### The new RPCs are:
-- Once the v19 hard fork is activated, `protx register`, `protx register_fund`, and `protx register_prepare` RPCs will decode BLS operator public keys using the new basic BLS scheme. In order to support BLS public keys encoded in the legacy BLS scheme, `protx register_legacy`, `protx register_fund_legacy`, and `protx register_prepare_legacy` were added.
+- In order to support BLS public keys encoded in the legacy BLS scheme, `protx register_legacy`, `protx register_fund_legacy`, and `protx register_prepare_legacy` were added.
 - `cleardiscouraged` clears all the already discouraged peers.
 - The following RPCs were added: `protx register_hpmn`, `protx register_fund_hpmn`, `protx register_prepare_hpmn` and `protx update_service_hpmn`.
   These HPMN RPCs correspond to the standard masternode RPCs but have the following additional mandatory arguments: `platformNodeID`, `platformP2PPort` and `platformHTTPPort`.
@@ -183,7 +183,8 @@ when known. See the RPC help text for full details.
 - `bls generate` and `bls fromsecret`: Both RPCs accept an incoming optional boolean argument `legacy` that enforces the use of legacy BLS scheme for the serialisation of the reply even if v19 is active.
 - `masternode` mode `status` now returns the type of the masternode.
 - `masternode` mode `count` now returns a detailed summary of total and enabled masternodes per type.
-- gobject getcurrentvotes reply is enriched by adding the vote weight at the end of each line. Possible values are 1 or 4. Example: "7cb20c883c6093b8489f795b3ec0aad0d9c2c2821610ae9ed938baaf42fec66d": "277e6345359071410ab691c21a3a16f8f46c9229c2f8ec8f028c9a95c0f1c0e7-1:1670019339:yes:funding:4"
+- `gobject getcurrentvotes` reply is enriched by adding the vote weight at the end of each line. Possible values are 1 or 4. Example: "7cb20c883c6093b8489f795b3ec0aad0d9c2c2821610ae9ed938baaf42fec66d": "277e6345359071410ab691c21a3a16f8f46c9229c2f8ec8f028c9a95c0f1c0e7-1:1670019339:yes:funding:4"
+- Once the v19 hard fork is activated, `protx register`, `protx register_fund`, and `protx register_prepare` RPCs will decode BLS operator public keys using the new basic BLS scheme.
 
 Please check `help <command>` for more detailed information on specific RPCs.
 
