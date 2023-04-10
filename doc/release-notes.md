@@ -129,7 +129,7 @@ Dash Core will now just log warnings instead of creating new wallets with
 new keys and addresses like previous releases did.
 
 New wallets can be created through the GUI (which has a more prominent create
-wallet option), through the dash-cli createwallet or dash-wallet create commands, or the createwallet RPC.
+wallet option), through the dash-wallet create command or the createwallet RPC.
 
 ## P2P and Network Changes
 
