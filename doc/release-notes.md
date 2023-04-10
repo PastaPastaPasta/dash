@@ -214,8 +214,17 @@ Credits
 
 Thanks to everyone who directly contributed to this release:
 
+- Kittywhiskers Van Gogh
+- Konstantin Akimov
+- Munkybooty
+- Nathan Marley
 - Odysseas Gabrielides
+- Oleg Girko
+- pasta
+- strophy
+- thephez
 - UdjinM6
+- Vijay
 
 As well as everyone that submitted issues, reviewed pull requests, helped debug the release candidates, and write DIPs that were implemented in this release.
 
