@@ -28,7 +28,7 @@ constexpr static CAmount DEFAULT_MAX_RAW_TX_FEE{COIN / 10};
 bool CCoinJoinEntry::AddScriptSig(const CTxIn& txin)
 {
     for (auto& txdsin : vecTxDSIn) {
-        if (txdsin.prevout == txin.prevout && txdsin.nSequence == txin.nSequence) {
+        if(txdsin.prevout == txin.prevout && txdsin.nSequence == txin.nSequence) {
             if (txdsin.fHasSig) return false;
 
             txdsin.scriptSig = txin.scriptSig;
