@@ -53,7 +53,7 @@ RUN for i in $(seq -w 1 ${builder_count}); do    \
 CMD ["/root/.config/guix/current/bin/guix-daemon","--build-users-group=guixbuild"]
 
 # RUN git clone https://github.com/dashpay/dash.git /dash
-# COPY ./../../dash /dash
+COPY ./../../dash /dash
 
 RUN mkdir base_cache sources SDKs
 
