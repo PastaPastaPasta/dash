@@ -52,7 +52,7 @@ static const int DMN_TYPE_PROTO_VERSION = 70227;
 //! Versioned Simplified Masternode List Entries were introduced in this version
 static const int SMNLE_VERSIONED_PROTO_VERSION = 70228;
 
-//! Masternode type was introduced in this version
+//! ChainLock sigs for quorums in MNLISTDIFF was introduced in this version
 static const int MNLISTDIFF_CHAINLOCKS_PROTO_VERSION = 70229;
 
 // Make sure that none of the values above collide with `ADDRV2_FORMAT`.
