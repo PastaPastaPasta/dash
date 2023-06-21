@@ -203,7 +203,7 @@ bool CSimplifiedMNListDiff::BuildQuorumChainlockInfo(const CBlockIndex* blockInd
 
     for(auto it = workBaseBlockIndexMap.begin(); it != workBaseBlockIndexMap.end(); ) {
         // Process each key (CBlockIndex containing the expected CL signature in CbTx) of the std::multimap once
-        const CBlockIndex* pWorkBaseBlockIndex = it->first;
+        const CBlockIndex* pWorkBaseBlockIndex = it->first->pprev->pprev;
         const auto cbcl = GetNonNullCoinbaseChainlock(pWorkBaseBlockIndex);
         CBLSSignature sig;
         if (cbcl.has_value()) {
