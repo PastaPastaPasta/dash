@@ -218,7 +218,7 @@ bool CSimplifiedMNListDiff::BuildQuorumChainlockInfo(const CBlockIndex* blockInd
 
         // Different CBlockIndex can contain the same CL sig in CbTx (both non-null or null during the first blocks after v20 activation)
         // Hence, we need to merge the std::set if another std::set already exists for the same sig.
-        if (auto [it_sig, inserted] = quorumsCLSigs.insert({sig, idx_set}); !inserted) {
+        if (auto [it_sig, inserted] = quorumsCLSigs.insert({sig, idx_set}); inserted) {
             it_sig->second.insert(idx_set.begin(), idx_set.end());
         }
     }
