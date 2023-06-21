@@ -196,7 +196,7 @@ bool CSimplifiedMNListDiff::BuildQuorumChainlockInfo(const CBlockIndex* blockInd
         // In case of rotation, all rotated quorums rely on the CL sig expected in the cycleBlock (the block of the first DKG) - 8
         // In case of non-rotation, quorums rely on the CL sig expected in the block of the DKG - 8
         const CBlockIndex* pWorkBaseBlockIndex =
-                blockIndex->GetAncestor(quorum->m_quorum_base_block_index->nHeight - quorum->qc->quorumIndex - 8);
+                blockIndex->GetAncestor(quorum->m_quorum_base_block_index->nHeight - quorum->qc->quorumIndex - 8 - 1);
 
         workBaseBlockIndexMap.insert(std::make_pair(pWorkBaseBlockIndex, idx));
     }
