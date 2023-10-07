@@ -33,15 +33,15 @@ BOOST_AUTO_TEST_CASE(test_assumeutxo)
 
     const auto out110 = *params->AssumeutxoForHeight(110);
     BOOST_CHECK_EQUAL(out110.hash_serialized.ToString(), "9b2a277a3e3b979f1a539d57e949495d7f8247312dbc32bce6619128c192b44b");
-    BOOST_CHECK_EQUAL(out110.nChainTx, 110U);
+    BOOST_CHECK_EQUAL(out110.nChainTx, 111U);
 
     const auto out110_2 = *params->AssumeutxoForBlockhash(uint256S("0x729bcb1479ff9f4968439f0276bd76bcb2de0f0720b7a16f383321f6a41cb238"));
     BOOST_CHECK_EQUAL(out110_2.hash_serialized.ToString(), "9b2a277a3e3b979f1a539d57e949495d7f8247312dbc32bce6619128c192b44b");
-    BOOST_CHECK_EQUAL(out110_2.nChainTx, 110U);
+    BOOST_CHECK_EQUAL(out110_2.nChainTx, 111U);
 
     const auto out210 = *params->AssumeutxoForHeight(200);
     BOOST_CHECK_EQUAL(out210.hash_serialized.ToString(), "8a5bdd92252fc6b24663244bbe958c947bb036dc1f94ccd15439f48d8d1cb4e3");
-    BOOST_CHECK_EQUAL(out210.nChainTx, 200U);
+    BOOST_CHECK_EQUAL(out210.nChainTx, 201U);
 }
 
 //! Test the Dash (non-witness) IsBlockMutated() predicate directly.
