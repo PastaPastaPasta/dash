@@ -886,14 +886,14 @@ public:
                 // Unit-test chains at this height may have different empty evo
                 // state encodings, so retain the regtest-only M4 wildcard.
                 .evo_hash = EvoSnapshotHash{uint256{}},
-                .nChainTx = 110,
+                .nChainTx = 111,
                 .blockhash = uint256S("0x729bcb1479ff9f4968439f0276bd76bcb2de0f0720b7a16f383321f6a41cb238"),
             },
             {
                 .height = 200,
                 .hash_serialized = AssumeutxoHash{uint256S("0x8a5bdd92252fc6b24663244bbe958c947bb036dc1f94ccd15439f48d8d1cb4e3")},
                 .evo_hash = EvoSnapshotHash{uint256{}},
-                .nChainTx = 200,
+                .nChainTx = 201,
                 .blockhash = uint256S("0x19c1b203b5a960c7f3619e0e805b24c94e684b1aa261f3a79c84d291638a6e1f"),
             },
             {

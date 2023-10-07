@@ -1852,7 +1852,7 @@ static RPCHelpMan getchaintips()
         } else if (block->nStatus & BLOCK_CONFLICT_CHAINLOCK) {
             // This block or one of its ancestors is conflicting with ChainLocks.
             status = "conflicting";
-        } else if (!block->HaveTxsDownloaded()) {
+        } else if (!block->HaveNumChainTxs()) {
             // This block cannot be connected because full block data for it or one of its parents is missing.
             status = "headers-only";
         } else if (block->IsValid(BLOCK_VALID_SCRIPTS)) {
@@ -3309,8 +3309,7 @@ return RPCHelpMan{
     LOCK(cs_main);
     UniValue obj(UniValue::VOBJ);
 
-    NodeContext& node = EnsureAnyNodeContext(request.context);
-    ChainstateManager& chainman = *node.chainman;
+    ChainstateManager& chainman = EnsureAnyChainman(request.context);
 
     auto make_chain_data = [&](const Chainstate& cs) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
         AssertLockHeld(::cs_main);
