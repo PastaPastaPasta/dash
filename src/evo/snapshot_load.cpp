@@ -110,7 +110,7 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
     // the active chainstate. ActivateSnapshot repeats this check before the swap
     // in case the active tip advances while the snapshot is being loaded.
     if (WITH_LOCK(::cs_main, return !node::CBlockIndexWorkComparator()(ActiveTip(), snapshot_start_block))) {
-        LogPrintf("[snapshot] activation failed - height does not exceed active chainstate\n");
+        LogPrintf("[snapshot] activation failed - work does not exceed active chainstate\n");
         return false;
     }
 
