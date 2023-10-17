@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2021 The Bitcoin Core developers
+# Copyright (c) 2021-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test for assumeutxo, a means of quickly bootstrapping a node using
@@ -17,8 +17,7 @@ The assumeutxo value generated and used here is committed to in
 
 Interesting test cases could be loading an assumeutxo snapshot file with:
 
-- TODO: An invalid hash
-- TODO: Valid hash but invalid snapshot file (bad coin height or truncated file or
+- TODO: Valid hash but invalid snapshot file (bad coin height or
       bad other serialization)
 - TODO: Valid snapshot file, but referencing an unknown block
 - TODO: Valid snapshot file, but referencing a snapshot block that turns out to be
@@ -82,6 +81,26 @@ class AssumeutxoTest(BitcoinTestFramework):
             f.write(bytes.fromhex(bad_snapshot_block_hash)[::-1] + valid_snapshot_contents[32:])
 
         expected_log = f"assumeutxo height in snapshot metadata not recognized ({bad_snapshot_height}) - refusing to load snapshot"
+        with self.nodes[1].assert_debug_log([expected_log]):
+            assert_raises_rpc_error(-32603, "Unable to load UTXO snapshot", self.nodes[1].loadtxoutset, bad_snapshot_path)
+
+        self.log.info("  - snapshot file with wrong number of coins")
+        valid_num_coins = int.from_bytes(valid_snapshot_contents[32:32 + 8], "little")
+        for off in [-1, +1]:
+            with open(bad_snapshot_path, 'wb') as f:
+                f.write(valid_snapshot_contents[:32])
+                f.write((valid_num_coins + off).to_bytes(8, "little"))
+                f.write(valid_snapshot_contents[32 + 8:])
+            expected_log = f"bad evo section marker (or coins left over) after 298 coins" if off == -1 else f"bad snapshot format or truncated snapshot after deserializing 299 coins"
+            with self.nodes[1].assert_debug_log([expected_log]):
+                assert_raises_rpc_error(-32603, "Unable to load UTXO snapshot", self.nodes[1].loadtxoutset, bad_snapshot_path)
+
+        self.log.info("  - snapshot file with wrong outpoint hash")
+        with open(bad_snapshot_path, "wb") as f:
+            f.write(valid_snapshot_contents[:(32 + 8)])
+            f.write(b"\xff" * 32)
+            f.write(valid_snapshot_contents[(32 + 8 + 32):])
+        expected_log = "[snapshot] bad snapshot content hash: expected 2618646eb7f9b17a1982e206f94e8feec3efb3b7e7e97ade16b658eef7636519, got "
         with self.nodes[1].assert_debug_log([expected_log]):
             assert_raises_rpc_error(-32603, "Unable to load UTXO snapshot", self.nodes[1].loadtxoutset, bad_snapshot_path)
 
