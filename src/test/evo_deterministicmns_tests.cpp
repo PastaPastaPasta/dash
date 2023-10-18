@@ -305,7 +305,9 @@ void FuncV19Activation(TestChainSetup& setup)
     ++nHeight;
     BOOST_CHECK_EQUAL(::ChainActive().Height(), nHeight);
     deterministicMNManager->UpdatedBlockTip(::ChainActive().Tip());
+    BOOST_CHECK(true);
     deterministicMNManager->DoMaintenance();
+    BOOST_CHECK(true);
     tip_list = deterministicMNManager->GetListAtChainTip();
     BOOST_ASSERT(tip_list.HasMN(tx_reg_hash));
     diffs.push_back(base_list.BuildDiff(tip_list));
@@ -497,7 +499,7 @@ void FuncDIP3Protx(TestChainSetup& setup)
     nHeight++;
 
     auto dmn = deterministicMNManager->GetListAtChainTip().GetMN(dmnHashes[0]);
-    BOOST_ASSERT(dmn != nullptr && dmn->pdmnState->addr.GetPort() == 1000);
+    BOOST_ASSERT(dmn && dmn->pdmnState->addr.GetPort() == 1000);
 
     // test ProUpRevTx
     tx = CreateProUpRevTx(*(setup.m_node.mempool), utxos, dmnHashes[0], operatorKeys[dmnHashes[0]], setup.coinbaseKey);
@@ -507,7 +509,7 @@ void FuncDIP3Protx(TestChainSetup& setup)
     nHeight++;
 
     dmn = deterministicMNManager->GetListAtChainTip().GetMN(dmnHashes[0]);
-    BOOST_ASSERT(dmn != nullptr && dmn->pdmnState->GetBannedHeight() == nHeight);
+    BOOST_ASSERT(dmn && dmn->pdmnState->GetBannedHeight() == nHeight);
 
     // test that the revoked MN does not get paid anymore
     for (size_t i = 0; i < 20; i++) {
@@ -553,8 +555,8 @@ void FuncDIP3Protx(TestChainSetup& setup)
     nHeight++;
 
     dmn = deterministicMNManager->GetListAtChainTip().GetMN(dmnHashes[0]);
-    BOOST_ASSERT(dmn != nullptr && dmn->pdmnState->addr.GetPort() == 100);
-    BOOST_ASSERT(dmn != nullptr && !dmn->pdmnState->IsBanned());
+    BOOST_ASSERT(dmn && dmn->pdmnState->addr.GetPort() == 100);
+    BOOST_ASSERT(dmn && !dmn->pdmnState->IsBanned());
 
     // test that the revived MN gets payments again
     bool foundRevived = false;

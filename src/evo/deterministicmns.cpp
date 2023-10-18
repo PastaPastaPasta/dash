@@ -96,32 +96,32 @@ bool CDeterministicMNList::IsMNPoSeBanned(const CDeterministicMN& dmn)
     return dmn.pdmnState->IsBanned();
 }
 
-CDeterministicMNCPtr CDeterministicMNList::GetMN(const uint256& proTxHash) const
+std::optional<CDeterministicMN> CDeterministicMNList::GetMN(const uint256& proTxHash) const
 {
     auto p = mnMap.find(proTxHash);
     if (p == nullptr) {
-        return nullptr;
+        return std::nullopt;
     }
-    return *p;
+    return **p;
 }
 
-CDeterministicMNCPtr CDeterministicMNList::GetValidMN(const uint256& proTxHash) const
+std::optional<CDeterministicMN> CDeterministicMNList::GetValidMN(const uint256& proTxHash) const
 {
     auto dmn = GetMN(proTxHash);
     if (dmn && !IsMNValid(*dmn)) {
-        return nullptr;
+        return std::nullopt;
     }
     return dmn;
 }
 
-CDeterministicMNCPtr CDeterministicMNList::GetMNByOperatorKey(const CBLSPublicKey& pubKey) const
+std::optional<CDeterministicMN> CDeterministicMNList::GetMNByOperatorKey(const CBLSPublicKey& pubKey) const
 {
     const auto it = ranges::find_if(mnMap,
                               [&pubKey](const auto& p){return p.second->pdmnState->pubKeyOperator.Get() == pubKey;});
     if (it == mnMap.end()) {
-        return nullptr;
+        return std::nullopt;
     }
-    return it->second;
+    return *it->second;
 }
 
 CDeterministicMNCPtr CDeterministicMNList::GetMNByCollateral(const COutPoint& collateralOutpoint) const
@@ -143,13 +143,13 @@ CDeterministicMNCPtr CDeterministicMNList::GetMNByService(const CService& servic
     return GetUniquePropertyMN(service);
 }
 
-CDeterministicMNCPtr CDeterministicMNList::GetMNByInternalId(uint64_t internalId) const
+std::optional<CDeterministicMN> CDeterministicMNList::GetMNByInternalId(uint64_t internalId) const
 {
     auto proTxHash = mnInternalIdMap.find(internalId);
     if (!proTxHash) {
-        return nullptr;
+        return std::nullopt;
     }
-    return GetMN(*proTxHash);
+    return *GetMN(*proTxHash);
 }
 
 static int CompareByLastPaid_GetHeight(const CDeterministicMN& dmn)
@@ -178,10 +178,10 @@ static bool CompareByLastPaid(const CDeterministicMN* _a, const CDeterministicMN
     return CompareByLastPaid(*_a, *_b);
 }
 
-CDeterministicMNCPtr CDeterministicMNList::GetMNPayee(const CBlockIndex* pIndex) const
+std::optional<CDeterministicMN> CDeterministicMNList::GetMNPayee(const CBlockIndex* pIndex) const
 {
     if (mnMap.size() == 0) {
-        return nullptr;
+        return std::nullopt;
     }
 
     bool isv19Active = llmq::utils::IsV19Active(pIndex);
@@ -199,7 +199,7 @@ CDeterministicMNCPtr CDeterministicMNList::GetMNPayee(const CBlockIndex* pIndex)
             }
         });
 
-        if (best != nullptr) return best;
+        if (best != nullptr) return *best;
 
         // Note: If the last payee was a regular MN or if the payee is an EvoNode that was removed from the mnList then that's fine.
         // We can proceed with classic MN payee selection
@@ -211,7 +211,7 @@ CDeterministicMNCPtr CDeterministicMNList::GetMNPayee(const CBlockIndex* pIndex)
         }
     });
 
-    return best;
+    return *best;
 }
 
 std::vector<CDeterministicMNCPtr> CDeterministicMNList::GetProjectedMNPayeesAtChainTip(int nCount) const
@@ -385,7 +385,7 @@ CDeterministicMNListDiff CDeterministicMNList::BuildDiff(const CDeterministicMNL
 
     to.ForEachMNShared(false, [this, &diffRet](const CDeterministicMNCPtr& toPtr) {
         auto fromPtr = GetMN(toPtr->proTxHash);
-        if (fromPtr == nullptr) {
+        if (!fromPtr) {
             diffRet.addedMNs.emplace_back(toPtr);
         } else if (fromPtr != toPtr || fromPtr->pdmnState != toPtr->pdmnState) {
             CDeterministicMNStateDiff stateDiff(*fromPtr->pdmnState, *toPtr->pdmnState);
@@ -396,7 +396,7 @@ CDeterministicMNListDiff CDeterministicMNList::BuildDiff(const CDeterministicMNL
     });
     ForEachMN(false, [&](auto& fromPtr) {
         auto toPtr = to.GetMN(fromPtr.proTxHash);
-        if (toPtr == nullptr) {
+        if (toPtr == std::nullopt) {
             diffRet.removedMns.emplace(fromPtr.GetInternalId());
         }
     });
@@ -813,7 +813,7 @@ bool CDeterministicMNManager::BuildNewListFromBlock(const CBlock& block, const C
                 return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-protx-dup-addr");
             }
 
-            CDeterministicMNCPtr dmn = newList.GetMN(proTx.proTxHash);
+            auto dmn = newList.GetMN(proTx.proTxHash);
             if (!dmn) {
                 return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-protx-hash");
             }
@@ -854,7 +854,7 @@ bool CDeterministicMNManager::BuildNewListFromBlock(const CBlock& block, const C
                 return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-protx-payload");
             }
 
-            CDeterministicMNCPtr dmn = newList.GetMN(proTx.proTxHash);
+            auto dmn = newList.GetMN(proTx.proTxHash);
             if (!dmn) {
                 return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-protx-hash");
             }
@@ -882,7 +882,7 @@ bool CDeterministicMNManager::BuildNewListFromBlock(const CBlock& block, const C
                 return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-protx-payload");
             }
 
-            CDeterministicMNCPtr dmn = newList.GetMN(proTx.proTxHash);
+            auto dmn = newList.GetMN(proTx.proTxHash);
             if (!dmn) {
                 return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-protx-hash");
             }
@@ -966,7 +966,7 @@ bool CDeterministicMNManager::BuildNewListFromBlock(const CBlock& block, const C
     auto newList2 = newList;
     newList2.ForEachMN(false, [&](auto& dmn) {
         if (dmn.nType != MnType::Evo) return;
-        if (payee != nullptr && dmn.proTxHash == payee->proTxHash && !isMNRewardReallocation) return;
+        if (payee.has_value() && dmn.proTxHash == payee->proTxHash && !isMNRewardReallocation) return;
         if (dmn.pdmnState->nConsecutivePayments == 0) return;
         if (debugLogs) {
             LogPrint(BCLog::MNPAYMENTS, "CDeterministicMNManager::%s -- MN %s, reset nConsecutivePayments %d->0\n",

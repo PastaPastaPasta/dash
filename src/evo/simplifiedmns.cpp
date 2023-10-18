@@ -299,7 +299,7 @@ CSimplifiedMNListDiff BuildSimplifiedDiff(const CDeterministicMNList& from, cons
 
     to.ForEachMN(false, [&](const auto& toPtr) {
         auto fromPtr = from.GetMN(toPtr.proTxHash);
-        if (fromPtr == nullptr) {
+        if (!fromPtr.has_value()) {
             CSimplifiedMNListEntry sme(toPtr);
             diffRet.mnList.push_back(std::move(sme));
         } else {
@@ -314,7 +314,7 @@ CSimplifiedMNListDiff BuildSimplifiedDiff(const CDeterministicMNList& from, cons
 
     from.ForEachMN(false, [&](auto& fromPtr) {
         auto toPtr = to.GetMN(fromPtr.proTxHash);
-        if (toPtr == nullptr) {
+        if (!toPtr.has_value()) {
             diffRet.deletedMNs.emplace_back(fromPtr.proTxHash);
         }
     });

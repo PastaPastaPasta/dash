@@ -276,7 +276,8 @@ static UniValue masternode_status(const JSONRPCRequest& request)
     return mnObj;
 }
 
-static std::string GetRequiredPaymentsString(int nBlockHeight, const CDeterministicMNCPtr &payee)
+template <typename OptionalOrPointer>
+static std::string GetRequiredPaymentsString(int nBlockHeight, const OptionalOrPointer& payee)
 {
     std::string strPayments = "Unknown";
     if (payee) {
@@ -481,7 +482,7 @@ static UniValue masternode_payments(const JSONRPCRequest& request, const Chainst
 
         // NOTE: we use _previous_ block to find a payee for the current one
         const auto dmnPayee = deterministicMNManager->GetListForBlock(pindex->pprev).GetMNPayee(pindex->pprev);
-        protxObj.pushKV("proTxHash", dmnPayee == nullptr ? "" : dmnPayee->proTxHash.ToString());
+        protxObj.pushKV("proTxHash", dmnPayee.has_value() ? dmnPayee->proTxHash.ToString() : "");
         protxObj.pushKV("amount", payedPerMasternode);
         protxObj.pushKV("payees", payeesArr);
         payedPerBlock += payedPerMasternode;

@@ -77,7 +77,7 @@ private:
 
     bool mnListChanged{true};
 
-    CDeterministicMNCPtr GetSelectedDIP3MN();
+    std::optional<CDeterministicMN> GetSelectedDIP3MN();
 
     void updateDIP3List();
 

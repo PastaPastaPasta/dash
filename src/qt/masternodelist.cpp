@@ -327,10 +327,10 @@ void MasternodeList::on_checkBoxMyMasternodesOnly_stateChanged(int state)
     fFilterUpdatedDIP3 = true;
 }
 
-CDeterministicMNCPtr MasternodeList::GetSelectedDIP3MN()
+std::optional<CDeterministicMN> MasternodeList::GetSelectedDIP3MN()
 {
     if (!clientModel) {
-        return nullptr;
+        return std::nullopt;
     }
 
     std::string strProTxHash;
@@ -340,7 +340,7 @@ CDeterministicMNCPtr MasternodeList::GetSelectedDIP3MN()
         QItemSelectionModel* selectionModel = ui->tableWidgetMasternodesDIP3->selectionModel();
         QModelIndexList selected = selectionModel->selectedRows();
 
-        if (selected.count() == 0) return nullptr;
+        if (selected.count() == 0) return std::nullopt;
 
         QModelIndex index = selected.at(0);
         int nSelectedRow = index.row();
