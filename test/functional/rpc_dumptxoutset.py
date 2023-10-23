@@ -49,7 +49,7 @@ class DumptxoutsetTest(BitcoinTestFramework):
         assert b'DASHEVO\x00' in expected_path.read_bytes()
 
         assert_equal(
-            out['txoutset_hash'], 'b2d7429106c96f5ab831843d5c96ba131ca8793111d0a0e30e7d7d8b4841e6cc')
+            out['txoutset_hash'], '3baec1b74f1f02749a2b519655f84326aa903ed00bca049950efffb927ac2b1d')
         assert_equal(out['nchaintx'], 101)
         assert_equal(out['evo_mn_count'], 0)
         assert_equal(len(out['evo_hash']), 64)

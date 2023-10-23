@@ -882,7 +882,7 @@ public:
         m_assumeutxo_data = {
             {
                 .height = 110,
-                .hash_serialized = AssumeutxoHash{uint256S("0x9b2a277a3e3b979f1a539d57e949495d7f8247312dbc32bce6619128c192b44b")},
+                .hash_serialized = AssumeutxoHash{uint256S("0xffb210087e1ed14526c0c08a3ec3a7c8e288079eaa68acb87d3d4d9fd746079f")},
                 // Unit-test chains at this height may have different empty evo
                 // state encodings, so retain the regtest-only M4 wildcard.
                 .evo_hash = EvoSnapshotHash{uint256{}},
@@ -891,7 +891,7 @@ public:
             },
             {
                 .height = 200,
-                .hash_serialized = AssumeutxoHash{uint256S("0x8a5bdd92252fc6b24663244bbe958c947bb036dc1f94ccd15439f48d8d1cb4e3")},
+                .hash_serialized = AssumeutxoHash{uint256S("0x16e00a64db4fa48dd989dce86d8677f41797d52044e5fc86021aa88cc22b665b")},
                 .evo_hash = EvoSnapshotHash{uint256{}},
                 .nChainTx = 201,
                 .blockhash = uint256S("0x19c1b203b5a960c7f3619e0e805b24c94e684b1aa261f3a79c84d291638a6e1f"),
@@ -900,7 +900,7 @@ public:
                 // For use by test/functional/feature_assumeutxo.py. Dash-specific
                 // pre-DIP3 snapshot has an empty, but canonically serialized, evo section.
                 .height = 299,
-                .hash_serialized = AssumeutxoHash{uint256S("0x2618646eb7f9b17a1982e206f94e8feec3efb3b7e7e97ade16b658eef7636519")},
+                .hash_serialized = AssumeutxoHash{uint256S("0xd7f46f9830ea11f1bfc565b08f63b66f09e1403b54c988ede40461cf0846fcba")},
                 .evo_hash = EvoSnapshotHash{uint256S("0xf2ccd3fef604df58a0c174489821e16912c9332969a267650cd040e85fb2adde")},
                 .nChainTx = 300,
                 .blockhash = uint256S("0x64ce3ab60754c7974ea472221fa9c7a04f2d193ba480d1ef61b5d12216b14760"),
