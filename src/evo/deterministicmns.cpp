@@ -178,7 +178,7 @@ static bool CompareByLastPaid(const CDeterministicMN* _a, const CDeterministicMN
     return CompareByLastPaid(*_a, *_b);
 }
 
-CDeterministicMNCPtr CDeterministicMNList::GetMNPayee(const CBlockIndex* pIndex) const
+CDeterministicMNCPtr CDeterministicMNList::GetMNPayee(gsl::not_null<const CBlockIndex*> pIndex) const
 {
     if (mnMap.size() == 0) {
         return nullptr;
@@ -1014,7 +1014,7 @@ void CDeterministicMNManager::HandleQuorumCommitment(const llmq::CFinalCommitmen
     }
 }
 
-CDeterministicMNList CDeterministicMNManager::GetListForBlockInternal(const CBlockIndex* pindex)
+CDeterministicMNList CDeterministicMNManager::GetListForBlockInternal(gsl::not_null<const CBlockIndex*> pindex)
 {
     AssertLockHeld(cs);
     CDeterministicMNList snapshot;
@@ -1518,7 +1518,7 @@ static bool CheckHashSig(const ProTx& proTx, const CBLSPublicKey& pubKey, TxVali
     return true;
 }
 
-bool CheckProRegTx(const CTransaction& tx, const CBlockIndex* pindexPrev, TxValidationState& state, const CCoinsViewCache& view, bool check_sigs)
+bool CheckProRegTx(const CTransaction& tx, gsl::not_null<const CBlockIndex*> pindexPrev, TxValidationState& state, const CCoinsViewCache& view, bool check_sigs)
 {
     if (tx.nType != TRANSACTION_PROVIDER_REGISTER) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-type");
@@ -1592,30 +1592,28 @@ bool CheckProRegTx(const CTransaction& tx, const CBlockIndex* pindexPrev, TxVali
         return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-collateral-reuse");
     }
 
-    if (pindexPrev) {
-        auto mnList = deterministicMNManager->GetListForBlock(pindexPrev);
+    auto mnList = deterministicMNManager->GetListForBlock(pindexPrev);
 
-        // only allow reusing of addresses when it's for the same collateral (which replaces the old MN)
-        if (mnList.HasUniqueProperty(ptx.addr) && mnList.GetUniquePropertyMN(ptx.addr)->collateralOutpoint != collateralOutpoint) {
-            return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-dup-addr");
+    // only allow reusing of addresses when it's for the same collateral (which replaces the old MN)
+    if (mnList.HasUniqueProperty(ptx.addr) && mnList.GetUniquePropertyMN(ptx.addr)->collateralOutpoint != collateralOutpoint) {
+        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-dup-addr");
+    }
+
+    // never allow duplicate keys, even if this ProTx would replace an existing MN
+    if (mnList.HasUniqueProperty(ptx.keyIDOwner) || mnList.HasUniqueProperty(ptx.pubKeyOperator)) {
+        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-dup-key");
+    }
+
+    // never allow duplicate platformNodeIds for EvoNodes
+    if (ptx.nType == MnType::Evo) {
+        if (mnList.HasUniqueProperty(ptx.platformNodeID)) {
+            return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-dup-platformnodeid");
         }
+    }
 
-        // never allow duplicate keys, even if this ProTx would replace an existing MN
-        if (mnList.HasUniqueProperty(ptx.keyIDOwner) || mnList.HasUniqueProperty(ptx.pubKeyOperator)) {
-            return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-dup-key");
-        }
-
-        // never allow duplicate platformNodeIds for EvoNodes
-        if (ptx.nType == MnType::Evo) {
-            if (mnList.HasUniqueProperty(ptx.platformNodeID)) {
-                return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-dup-platformnodeid");
-            }
-        }
-
-        if (!deterministicMNManager->IsDIP3Enforced(pindexPrev->nHeight)) {
-            if (ptx.keyIDOwner != ptx.keyIDVoting) {
-                return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-key-not-same");
-            }
+    if (!deterministicMNManager->IsDIP3Enforced(pindexPrev->nHeight)) {
+        if (ptx.keyIDOwner != ptx.keyIDVoting) {
+            return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-key-not-same");
         }
     }
 
@@ -1640,7 +1638,7 @@ bool CheckProRegTx(const CTransaction& tx, const CBlockIndex* pindexPrev, TxVali
     return true;
 }
 
-bool CheckProUpServTx(const CTransaction& tx, const CBlockIndex* pindexPrev, TxValidationState& state, bool check_sigs)
+bool CheckProUpServTx(const CTransaction& tx, gsl::not_null<const CBlockIndex*> pindexPrev, TxValidationState& state, bool check_sigs)
 {
     if (tx.nType != TRANSACTION_PROVIDER_UPDATE_SERVICE) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-type");
@@ -1667,50 +1665,48 @@ bool CheckProUpServTx(const CTransaction& tx, const CBlockIndex* pindexPrev, TxV
         }
     }
 
-    if (pindexPrev) {
-        auto mnList = deterministicMNManager->GetListForBlock(pindexPrev);
-        auto mn = mnList.GetMN(ptx.proTxHash);
-        if (!mn) {
-            return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-hash");
-        }
+    auto mnList = deterministicMNManager->GetListForBlock(pindexPrev);
+    auto mn = mnList.GetMN(ptx.proTxHash);
+    if (!mn) {
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-hash");
+    }
 
-        // don't allow updating to addresses already used by other MNs
-        if (mnList.HasUniqueProperty(ptx.addr) && mnList.GetUniquePropertyMN(ptx.addr)->proTxHash != ptx.proTxHash) {
-            return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-dup-addr");
-        }
+    // don't allow updating to addresses already used by other MNs
+    if (mnList.HasUniqueProperty(ptx.addr) && mnList.GetUniquePropertyMN(ptx.addr)->proTxHash != ptx.proTxHash) {
+        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-dup-addr");
+    }
 
-        // don't allow updating to platformNodeIds already used by other EvoNodes
-        if (ptx.nType == MnType::Evo) {
-            if (mnList.HasUniqueProperty(ptx.platformNodeID)  && mnList.GetUniquePropertyMN(ptx.platformNodeID)->proTxHash != ptx.proTxHash) {
-                return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-dup-platformnodeid");
-            }
+    // don't allow updating to platformNodeIds already used by other EvoNodes
+    if (ptx.nType == MnType::Evo) {
+        if (mnList.HasUniqueProperty(ptx.platformNodeID)  && mnList.GetUniquePropertyMN(ptx.platformNodeID)->proTxHash != ptx.proTxHash) {
+            return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-dup-platformnodeid");
         }
+    }
 
-        if (ptx.scriptOperatorPayout != CScript()) {
-            if (mn->nOperatorReward == 0) {
-                // don't allow setting operator reward payee in case no operatorReward was set
-                return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-operator-payee");
-            }
-            if (!ptx.scriptOperatorPayout.IsPayToPublicKeyHash() && !ptx.scriptOperatorPayout.IsPayToScriptHash()) {
-                return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-operator-payee");
-            }
+    if (ptx.scriptOperatorPayout != CScript()) {
+        if (mn->nOperatorReward == 0) {
+            // don't allow setting operator reward payee in case no operatorReward was set
+            return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-operator-payee");
         }
+        if (!ptx.scriptOperatorPayout.IsPayToPublicKeyHash() && !ptx.scriptOperatorPayout.IsPayToScriptHash()) {
+            return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-operator-payee");
+        }
+    }
 
-        // we can only check the signature if pindexPrev != nullptr and the MN is known
-        if (!CheckInputsHash(tx, ptx, state)) {
-            // pass the state returned by the function above
-            return false;
-        }
-        if (check_sigs && !CheckHashSig(ptx, mn->pdmnState->pubKeyOperator.Get(), state)) {
-            // pass the state returned by the function above
-            return false;
-        }
+    // we can only check the signature if pindexPrev != nullptr and the MN is known
+    if (!CheckInputsHash(tx, ptx, state)) {
+        // pass the state returned by the function above
+        return false;
+    }
+    if (check_sigs && !CheckHashSig(ptx, mn->pdmnState->pubKeyOperator.Get(), state)) {
+        // pass the state returned by the function above
+        return false;
     }
 
     return true;
 }
 
-bool CheckProUpRegTx(const CTransaction& tx, const CBlockIndex* pindexPrev, TxValidationState& state, const CCoinsViewCache& view, bool check_sigs)
+bool CheckProUpRegTx(const CTransaction& tx, gsl::not_null<const CBlockIndex*> pindexPrev, TxValidationState& state, const CCoinsViewCache& view, bool check_sigs)
 {
     if (tx.nType != TRANSACTION_PROVIDER_UPDATE_REGISTRAR) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-type");
@@ -1732,60 +1728,58 @@ bool CheckProUpRegTx(const CTransaction& tx, const CBlockIndex* pindexPrev, TxVa
         return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-payee-dest");
     }
 
-    if (pindexPrev) {
-        auto mnList = deterministicMNManager->GetListForBlock(pindexPrev);
-        auto dmn = mnList.GetMN(ptx.proTxHash);
-        if (!dmn) {
-            return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-hash");
-        }
+    auto mnList = deterministicMNManager->GetListForBlock(pindexPrev);
+    auto dmn = mnList.GetMN(ptx.proTxHash);
+    if (!dmn) {
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-hash");
+    }
 
-        // don't allow reuse of payee key for other keys (don't allow people to put the payee key onto an online server)
-        if (payoutDest == CTxDestination(PKHash(dmn->pdmnState->keyIDOwner)) || payoutDest == CTxDestination(PKHash(ptx.keyIDVoting))) {
-            return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-payee-reuse");
-        }
+    // don't allow reuse of payee key for other keys (don't allow people to put the payee key onto an online server)
+    if (payoutDest == CTxDestination(PKHash(dmn->pdmnState->keyIDOwner)) || payoutDest == CTxDestination(PKHash(ptx.keyIDVoting))) {
+        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-payee-reuse");
+    }
 
-        Coin coin;
-        if (!view.GetCoin(dmn->collateralOutpoint, coin) || coin.IsSpent()) {
-            // this should never happen (there would be no dmn otherwise)
-            return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-collateral");
-        }
+    Coin coin;
+    if (!view.GetCoin(dmn->collateralOutpoint, coin) || coin.IsSpent()) {
+        // this should never happen (there would be no dmn otherwise)
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-collateral");
+    }
 
-        // don't allow reuse of collateral key for other keys (don't allow people to put the collateral key onto an online server)
-        CTxDestination collateralTxDest;
-        if (!ExtractDestination(coin.out.scriptPubKey, collateralTxDest)) {
-            return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-collateral-dest");
-        }
-        if (collateralTxDest == CTxDestination(PKHash(dmn->pdmnState->keyIDOwner)) || collateralTxDest == CTxDestination(PKHash(ptx.keyIDVoting))) {
-            return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-collateral-reuse");
-        }
+    // don't allow reuse of collateral key for other keys (don't allow people to put the collateral key onto an online server)
+    CTxDestination collateralTxDest;
+    if (!ExtractDestination(coin.out.scriptPubKey, collateralTxDest)) {
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-collateral-dest");
+    }
+    if (collateralTxDest == CTxDestination(PKHash(dmn->pdmnState->keyIDOwner)) || collateralTxDest == CTxDestination(PKHash(ptx.keyIDVoting))) {
+        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-collateral-reuse");
+    }
 
-        if (mnList.HasUniqueProperty(ptx.pubKeyOperator)) {
-            auto otherDmn = mnList.GetUniquePropertyMN(ptx.pubKeyOperator);
-            if (ptx.proTxHash != otherDmn->proTxHash) {
-                return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-dup-key");
-            }
+    if (mnList.HasUniqueProperty(ptx.pubKeyOperator)) {
+        auto otherDmn = mnList.GetUniquePropertyMN(ptx.pubKeyOperator);
+        if (ptx.proTxHash != otherDmn->proTxHash) {
+            return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-dup-key");
         }
+    }
 
-        if (!deterministicMNManager->IsDIP3Enforced(pindexPrev->nHeight)) {
-            if (dmn->pdmnState->keyIDOwner != ptx.keyIDVoting) {
-                return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-key-not-same");
-            }
+    if (!deterministicMNManager->IsDIP3Enforced(pindexPrev->nHeight)) {
+        if (dmn->pdmnState->keyIDOwner != ptx.keyIDVoting) {
+            return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-key-not-same");
         }
+    }
 
-        if (!CheckInputsHash(tx, ptx, state)) {
-            // pass the state returned by the function above
-            return false;
-        }
-        if (check_sigs && !CheckHashSig(ptx, PKHash(dmn->pdmnState->keyIDOwner), state)) {
-            // pass the state returned by the function above
-            return false;
-        }
+    if (!CheckInputsHash(tx, ptx, state)) {
+        // pass the state returned by the function above
+        return false;
+    }
+    if (check_sigs && !CheckHashSig(ptx, PKHash(dmn->pdmnState->keyIDOwner), state)) {
+        // pass the state returned by the function above
+        return false;
     }
 
     return true;
 }
 
-bool CheckProUpRevTx(const CTransaction& tx, const CBlockIndex* pindexPrev, TxValidationState& state, bool check_sigs)
+bool CheckProUpRevTx(const CTransaction& tx, gsl::not_null<const CBlockIndex*> pindexPrev, TxValidationState& state, bool check_sigs)
 {
     if (tx.nType != TRANSACTION_PROVIDER_UPDATE_REVOKE) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-type");
@@ -1801,25 +1795,22 @@ bool CheckProUpRevTx(const CTransaction& tx, const CBlockIndex* pindexPrev, TxVa
         return false;
     }
 
-    if (pindexPrev) {
-        auto mnList = deterministicMNManager->GetListForBlock(pindexPrev);
-        auto dmn = mnList.GetMN(ptx.proTxHash);
-        if (!dmn)
-            return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-hash");
+    auto mnList = deterministicMNManager->GetListForBlock(pindexPrev);
+    auto dmn = mnList.GetMN(ptx.proTxHash);
+    if (!dmn)
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-hash");
 
-        if (!CheckInputsHash(tx, ptx, state)) {
-            // pass the state returned by the function above
-            return false;
-        }
-        if (check_sigs && !CheckHashSig(ptx, dmn->pdmnState->pubKeyOperator.Get(), state)) {
-            // pass the state returned by the function above
-            return false;
-        }
+    if (!CheckInputsHash(tx, ptx, state)) {
+        // pass the state returned by the function above
+        return false;
+    }
+    if (check_sigs && !CheckHashSig(ptx, dmn->pdmnState->pubKeyOperator.Get(), state)) {
+        // pass the state returned by the function above
+        return false;
     }
 
     return true;
 }
-//end
 
 void CDeterministicMNManager::DoMaintenance() {
     LOCK(cs_cleanup);
