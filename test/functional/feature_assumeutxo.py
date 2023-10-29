@@ -108,6 +108,25 @@ class AssumeutxoTest(BitcoinTestFramework):
                 f.write(valid_snapshot_contents[(32 + 8 + offset + len(content)):])
             expected_error(log_msg=f"[snapshot] bad snapshot content hash: expected d7f46f9830ea11f1bfc565b08f63b66f09e1403b54c988ede40461cf0846fcba, got {wrong_hash}")
 
+    def test_invalid_chainstate_scenarios(self, node_index):
+        self.log.info("Test different scenarios of invalid snapshot chainstate in datadir")
+
+        self.log.info("  - snapshot chainstate refering to a block that is not in the assumeutxo parameters")
+        node = self.nodes[node_index]
+        self.stop_node(node_index)
+        base_blockhash_path = node.chain_path / "chainstate_snapshot" / "base_blockhash"
+        valid_base_blockhash = base_blockhash_path.read_bytes()
+        with open(base_blockhash_path, 'wb') as f:
+            f.write(b'z' * 32)
+        expected_error = f"Error: A fatal internal error occurred, see debug.log for details"
+        node.assert_start_raises_init_error(expected_msg=expected_error)
+
+        # Restore the valid base hash and resume the real Dash snapshot. Using
+        # an activated snapshot preserves the required EvoDB SNAPSHOT marker,
+        # so the corrupt-hash startup reaches BlockManager::LoadBlockIndex.
+        base_blockhash_path.write_bytes(valid_base_blockhash)
+        self.start_node(node_index, extra_args=self.extra_args[node_index])
+
     def run_test(self):
         """
         Bring up two (disconnected) nodes, mine some new blocks on the first,
@@ -262,6 +281,8 @@ class AssumeutxoTest(BitcoinTestFramework):
         assert_equal(snapshot['blocks'], SNAPSHOT_BASE_HEIGHT)
         assert_equal(snapshot['snapshot_blockhash'], dump_output['base_hash'])
         assert_equal(snapshot['validated'], False)
+
+        self.test_invalid_chainstate_scenarios(2)
 
         self.connect_nodes(0, 2)
         self.wait_until(lambda: n2.getchainstates()['chainstates'][-1]['blocks'] == FINAL_HEIGHT)
