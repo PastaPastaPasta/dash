@@ -118,8 +118,14 @@ class AssumeutxoTest(BitcoinTestFramework):
         valid_base_blockhash = base_blockhash_path.read_bytes()
         with open(base_blockhash_path, 'wb') as f:
             f.write(b'z' * 32)
-        expected_error = f"Error: A fatal internal error occurred, see debug.log for details"
-        node.assert_start_raises_init_error(expected_msg=expected_error)
+
+        def expected_error(log_msg="", error_msg=""):
+            with node.assert_debug_log([log_msg]):
+                node.assert_start_raises_init_error(expected_msg=error_msg)
+
+        expected_error_msg = f"Error: A fatal internal error occurred, see debug.log for details"
+        error_details = f"Assumeutxo data not found for the given blockhash"
+        expected_error(log_msg=error_details, error_msg=expected_error_msg)
 
         # Restore the valid base hash and resume the real Dash snapshot. Using
         # an activated snapshot preserves the required EvoDB SNAPSHOT marker,
