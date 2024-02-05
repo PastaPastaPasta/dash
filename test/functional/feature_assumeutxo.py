@@ -33,6 +33,7 @@ Interesting starting states could be loading a snapshot when the current chain t
 
 """
 from dataclasses import dataclass
+from decimal import Decimal
 
 from test_framework.messages import tx_from_hex
 from test_framework.test_framework import BitcoinTestFramework
@@ -41,8 +42,10 @@ from test_framework.util import (
     assert_equal,
     assert_raises_rpc_error,
 )
-from test_framework.wallet import getnewdestination
-
+from test_framework.wallet import (
+    getnewdestination,
+    MiniWallet,
+)
 
 START_HEIGHT = 199
 SNAPSHOT_BASE_HEIGHT = 299
@@ -99,10 +102,10 @@ class AssumeutxoTest(BitcoinTestFramework):
 
         self.log.info("  - snapshot file with alternated UTXO data")
         cases = [
-            [b"\xff" * 32, 0, "91dbd69333f61346aa0d711f37f4d1801a9932572c8671d1f2367ba3e62688d0"], # wrong outpoint hash
-            [(1).to_bytes(4, "little"), 32, "fd2cfc6c6acecf6f3e8d2cc22ed853defcc369dea35f02a3472beffa2a5945a9"], # wrong outpoint index
-            [b"\x82", 36, "16c0fc9c9c9a2814513dd2fdcd81b48692ea5684365f56a5e76e8394d6439c16"], # wrong coin code VARINT((coinbase ? 1 : 0) | (height << 1))
-            [b"\x83", 36, "6f0c228f8ceae88a7bac7c1384897d67f8b6f9d55b12f9f2da50f0446c549986"], # another wrong coin code
+            [b"\xff" * 32, 0, "f7fcf56f2db4e9d1584d7fced850ec5afe26b5c2e01dc62be3dc22c10705f030"], # wrong outpoint hash
+            [(1).to_bytes(4, "little"), 32, "611366963fd1fe4cfcf3e590502e2436f28f8080c5b9e28b93867028ae8d8eb2"], # wrong outpoint index
+            [b"\x82", 36, "4a761d666cd80fdb8855946310f249edc702e7c3ab338c0b2305e4d4f033057f"], # wrong coin code VARINT((coinbase ? 1 : 0) | (height << 1))
+            [b"\x83", 36, "f81e8792f2e6f6da5843f9250dc39809a1294847e9a371c7c4471f110f260c74"], # another wrong coin code
         ]
 
         for content, offset, wrong_hash in cases:
@@ -110,7 +113,7 @@ class AssumeutxoTest(BitcoinTestFramework):
                 f.write(valid_snapshot_contents[:(32 + 8 + offset)])
                 f.write(content)
                 f.write(valid_snapshot_contents[(32 + 8 + offset + len(content)):])
-            expected_error(log_msg=f"[snapshot] bad snapshot content hash: expected d7f46f9830ea11f1bfc565b08f63b66f09e1403b54c988ede40461cf0846fcba, got {wrong_hash}")
+            expected_error(log_msg=f"[snapshot] bad snapshot content hash: expected f6571ed786c40dcbb835b38090eaca87762cf421874461caa779738c7ff602fa, got {wrong_hash}")
 
     def test_invalid_chainstate_scenarios(self, node_index):
         self.log.info("Test different scenarios of invalid snapshot chainstate in datadir")
@@ -149,11 +152,36 @@ class AssumeutxoTest(BitcoinTestFramework):
         n1 = self.nodes[1]
         n2 = self.nodes[2]
 
+        self.mini_wallet = MiniWallet(n0)
+
         # Mock time for a deterministic chain
         for n in self.nodes:
             n.setmocktime(n.getblockheader(n.getbestblockhash())['time'])
 
         self.sync_blocks()
+
+        # Dash's cached regtest chain does not pay to MiniWallet's descriptor.
+        # Fund it from a mature deterministic coinbase so the snapshot still
+        # contains non-coinbase transactions without changing which coin
+        # bitcoin#29215 spends at height START_HEIGHT + 1.
+        funding_block = n0.getblock(n0.getblockhash(1), 3)
+        funding_prev = funding_block["tx"][0]
+        funding_prevout = {
+            "txid": funding_prev["txid"],
+            "vout": 0,
+            "scriptPubKey": funding_prev["vout"][0]["scriptPubKey"]["hex"],
+        }
+        funding_raw = n0.createrawtransaction(
+            [funding_prevout],
+            {self.mini_wallet.get_address(): funding_prev["vout"][0]["value"] - Decimal("0.001")},
+        )
+        funding_signed = n0.signrawtransactionwithkey(
+            funding_raw,
+            [n0.get_deterministic_priv_key().key],
+            [funding_prevout],
+        )["hex"]
+        n0.sendrawtransaction(funding_signed)
+        self.mini_wallet.rescan_utxos()
 
         # Generate a series of blocks that `n0` will have in the snapshot,
         # but that n1 doesn't yet see. In order for the snapshot to activate,
@@ -163,10 +191,13 @@ class AssumeutxoTest(BitcoinTestFramework):
         assert n0.getblockcount() == START_HEIGHT
         blocks = {START_HEIGHT: Block(n0.getbestblockhash(), 1, START_HEIGHT + 1)}
         for i in range(100):
+            if i != 0 and i % 3 == 0:
+                self.mini_wallet.send_self_transfer(from_node=n0)
             self.generate(n0, nblocks=1, sync_fun=self.no_op)
             newblock = n0.getblock(n0.getbestblockhash(), 0)
             height = n0.getblockcount()
-            blocks[height] = Block(n0.getbestblockhash(), 1, blocks[height - 1].chain_tx + 1)
+            block_tx = n0.getblockheader(n0.getbestblockhash())["nTx"]
+            blocks[height] = Block(n0.getbestblockhash(), block_tx, blocks[height - 1].chain_tx + block_tx)
             if i == 4:
                 # Create a stale block that forks off the main chain before the snapshot.
                 temp_invalid = n0.getbestblockhash()
@@ -194,8 +225,8 @@ class AssumeutxoTest(BitcoinTestFramework):
 
         assert_equal(
             dump_output['txoutset_hash'],
-            'd7f46f9830ea11f1bfc565b08f63b66f09e1403b54c988ede40461cf0846fcba')
-        assert_equal(dump_output['evo_hash'], 'f2ccd3fef604df58a0c174489821e16912c9332969a267650cd040e85fb2adde')
+            'f6571ed786c40dcbb835b38090eaca87762cf421874461caa779738c7ff602fa')
+        assert_equal(dump_output['evo_hash'], 'c3cc873878e8d1714ac14149eaae0ccf88b10f2a691ca9256fb4326ff5ec4001')
         assert_equal(dump_output['nchaintx'], blocks[SNAPSHOT_BASE_HEIGHT].chain_tx)
         assert_equal(n0.getblockchaininfo()["blocks"], SNAPSHOT_BASE_HEIGHT)
 
@@ -264,7 +295,10 @@ class AssumeutxoTest(BitcoinTestFramework):
         prev_tx = n0.getblock(spend_coin_blockhash, 3)['tx'][0]
         prevout = {"txid": prev_tx['txid'], "vout": 0, "scriptPubKey": prev_tx['vout'][0]['scriptPubKey']['hex']}
         privkey = n0.get_deterministic_priv_key().key
-        raw_tx = n1.createrawtransaction([prevout], {getnewdestination()[2]: 24.99})
+        raw_tx = n1.createrawtransaction(
+            [prevout],
+            {getnewdestination()[2]: prev_tx['vout'][0]['value'] - Decimal("0.001")},
+        )
         signed_tx = n1.signrawtransactionwithkey(raw_tx, [privkey], [prevout])['hex']
         signed_txid = tx_from_hex(signed_tx).rehash()
 
