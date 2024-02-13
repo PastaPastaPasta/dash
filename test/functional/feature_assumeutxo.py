@@ -62,7 +62,7 @@ class AssumeutxoTest(BitcoinTestFramework):
         self.extra_args = [
             [],
             ["-fastprune", "-prune=1", "-blockfilterindex=1", "-coinstatsindex=1"],
-            ["-txindex=1", "-blockfilterindex=1", "-coinstatsindex=1"],
+            ["-persistmempool=0","-txindex=1", "-blockfilterindex=1", "-coinstatsindex=1"],
         ]
 
     def setup_network(self):
@@ -139,6 +139,19 @@ class AssumeutxoTest(BitcoinTestFramework):
         # so the corrupt-hash startup reaches BlockManager::LoadBlockIndex.
         base_blockhash_path.write_bytes(valid_base_blockhash)
         self.start_node(node_index, extra_args=self.extra_args[node_index])
+
+    def test_invalid_mempool_state(self, dump_output_path):
+        self.log.info("Test bitcoind should fail when mempool not empty.")
+        node=self.nodes[2]
+        tx = MiniWallet(node).send_self_transfer(from_node=node)
+
+        assert tx['txid'] in node.getrawmempool()
+
+        # Attempt to load the snapshot on Node 2 and expect it to fail
+        with node.assert_debug_log(expected_msgs=["[snapshot] can't activate a snapshot when mempool not empty"]):
+            assert_raises_rpc_error(-32603, "Unable to load UTXO snapshot", node.loadtxoutset, dump_output_path)
+
+        self.restart_node(2, extra_args=self.extra_args[2])
 
     def run_test(self):
         """
@@ -239,6 +252,7 @@ class AssumeutxoTest(BitcoinTestFramework):
 
         assert_equal(n0.getblockchaininfo()["blocks"], FINAL_HEIGHT)
 
+        self.test_invalid_mempool_state(dump_output['path'])
         self.test_invalid_snapshot_scenarios(dump_output['path'])
 
         self.log.info(f"Loading snapshot into second node from {dump_output['path']}")
