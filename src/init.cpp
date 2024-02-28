@@ -308,8 +308,6 @@ void PrepareShutdown(NodeContext& node)
     ::netfulfilledman.reset();
     node.mn_metaman = nullptr;
     ::mmetaman.reset();
-    node.dstxman = nullptr;
-    ::dstxManager.reset();
     node.mn_sync = nullptr;
     ::masternodeSync.reset();
     node.sporkman = nullptr;
@@ -2239,10 +2237,6 @@ bool AppInitMain(const CoreContext& context, NodeContext& node, interfaces::Bloc
             return InitError(strprintf(_("Failed to clear governance cache at %s"), file_path));
         }
     }
-
-    assert(!::dstxManager);
-    ::dstxManager = std::make_unique<CDSTXManager>();
-    node.dstxman = ::dstxManager.get();
 
     assert(!::mmetaman);
     ::mmetaman = std::make_unique<CMasternodeMetaMan>(fLoadCacheFiles);

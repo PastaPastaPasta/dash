@@ -18,7 +18,6 @@ class CConnman;
 class CCreditPoolManager;
 class CDeterministicMNManager;
 class ChainstateManager;
-class CDSTXManager;
 class CEvoDB;
 class CGovernanceManager;
 class CMasternodeMetaMan;
@@ -76,7 +75,6 @@ struct NodeContext {
     std::unique_ptr<LLMQContext> llmq_ctx;
     CCreditPoolManager* cpoolman{nullptr};
     CDeterministicMNManager* dmnman{nullptr};
-    CDSTXManager* dstxman{nullptr};
     CGovernanceManager* govman{nullptr};
     CMasternodeMetaMan* mn_metaman{nullptr};
     CMasternodeSync* mn_sync{nullptr};

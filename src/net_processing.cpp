@@ -1867,7 +1867,7 @@ bool PeerManagerImpl::AlreadyHave(const CInv& inv)
                                         m_llmq_ctx->isman->IsLocked(inv.hash);
 
             return (!fIgnoreRecentRejects && m_recent_rejects.contains(inv.hash)) ||
-                   (inv.IsMsgDstx() && static_cast<bool>(::dstxManager->GetDSTX(inv.hash))) ||
+                   (inv.IsMsgDstx() && static_cast<bool>(m_cj_ctx->dstxman->GetDSTX(inv.hash))) ||
                    m_mempool.exists(inv.hash) ||
                    (g_txindex != nullptr && g_txindex->HasTx(inv.hash));
         }
@@ -1917,7 +1917,7 @@ bool PeerManagerImpl::AlreadyHaveBlock(const uint256& block_hash)
 
 void PeerManagerImpl::RelayTransaction(const uint256& txid)
 {
-    CInv inv(::dstxManager->GetDSTX(txid) ? MSG_DSTX : MSG_TX, txid);
+    CInv inv(m_cj_ctx->dstxman->GetDSTX(txid) ? MSG_DSTX : MSG_TX, txid);
     m_connman.ForEachNode([&inv](CNode* pnode)
     {
         pnode->PushInventory(inv);
@@ -2183,7 +2183,7 @@ void PeerManagerImpl::ProcessGetData(CNode& pfrom, Peer& peer, const std::atomic
             if (tx) {
                 CCoinJoinBroadcastTx dstx;
                 if (inv.IsMsgDstx()) {
-                    dstx = ::dstxManager->GetDSTX(inv.hash);
+                    dstx = m_cj_ctx->dstxman->GetDSTX(inv.hash);
                 }
                 if (dstx) {
                     m_connman.PushMessage(&pfrom, msgMaker.Make(NetMsgType::DSTX, dstx));
@@ -2771,7 +2771,8 @@ void PeerManagerImpl::ProcessGetCFCheckPt(CNode& peer, CDataStream& vRecv, const
     connman.PushMessage(&peer, std::move(msg));
 }
 
-std::pair<bool /*ret*/, bool /*do_return*/> static ValidateDSTX(CTxMemPool& mempool, ChainstateManager& chainman, CCoinJoinBroadcastTx& dstx, uint256 hashTx)
+std::pair<bool /*ret*/, bool /*do_return*/> static ValidateDSTX(CDSTXManager& dstxman, ChainstateManager& chainman, CTxMemPool& mempool,
+                                                                CCoinJoinBroadcastTx& dstx, uint256 hashTx)
 {
     assert(::mmetaman != nullptr);
 
@@ -2779,7 +2780,7 @@ std::pair<bool /*ret*/, bool /*do_return*/> static ValidateDSTX(CTxMemPool& memp
         LogPrint(BCLog::COINJOIN, "DSTX -- Invalid DSTX structure: %s\n", hashTx.ToString());
         return {false, true};
     }
-    if (::dstxManager->GetDSTX(hashTx)) {
+    if (dstxman.GetDSTX(hashTx)) {
         LogPrint(BCLog::COINJOIN, "DSTX -- Already have %s, skipping...\n", hashTx.ToString());
         return {true, true}; // not an error
     }
@@ -3628,7 +3629,7 @@ void PeerManagerImpl::ProcessMessage(
         if (nInvType == MSG_DSTX) {
            // Validate DSTX and return bRet if we need to return from here
            uint256 hashTx = tx.GetHash();
-           const auto& [bRet, bDoReturn] = ValidateDSTX(m_mempool, m_chainman, dstx, hashTx);
+           const auto& [bRet, bDoReturn] = ValidateDSTX(*(m_cj_ctx->dstxman), m_chainman, m_mempool, dstx, hashTx);
            if (bDoReturn) {
                return;
            }
@@ -3660,7 +3661,7 @@ void PeerManagerImpl::ProcessMessage(
             if (nInvType == MSG_DSTX) {
                 LogPrint(BCLog::COINJOIN, "DSTX -- Masternode transaction accepted, txid=%s, peer=%d\n",
                          tx.GetHash().ToString(), pfrom.GetId());
-                ::dstxManager->AddDSTX(dstx);
+                m_cj_ctx->dstxman->AddDSTX(dstx);
             }
 
             m_mempool.check(m_chainman.ActiveChainstate());
@@ -5117,7 +5118,7 @@ bool PeerManagerImpl::SendMessages(CNode* pto)
                         pto->m_tx_relay->setInventoryTxToSend.erase(hash);
                         if (pto->m_tx_relay->pfilter && !pto->m_tx_relay->pfilter->IsRelevantAndUpdate(*txinfo.tx)) continue;
 
-                        int nInvType = ::dstxManager->GetDSTX(hash) ? MSG_DSTX : MSG_TX;
+                        int nInvType = m_cj_ctx->dstxman->GetDSTX(hash) ? MSG_DSTX : MSG_TX;
                         queueAndMaybePushInv(CInv(nInvType, hash));
 
                         const auto islock = m_llmq_ctx->isman->GetInstantSendLockByTxid(hash);
@@ -5187,7 +5188,7 @@ bool PeerManagerImpl::SendMessages(CNode* pto)
                                 vRelayExpiration.emplace_back(count_microseconds(current_time + std::chrono::microseconds{RELAY_TX_CACHE_TIME}), ret.first);
                             }
                         }
-                        int nInvType = ::dstxManager->GetDSTX(hash) ? MSG_DSTX : MSG_TX;
+                        int nInvType = m_cj_ctx->dstxman->GetDSTX(hash) ? MSG_DSTX : MSG_TX;
                         queueAndMaybePushInv(CInv(nInvType, hash));
                     }
                 }
