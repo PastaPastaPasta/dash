@@ -297,7 +297,7 @@ static UniValue quorum_dkgstatus(const JSONRPCRequest& request, const Chainstate
 
     uint256 proTxHash;
     if (fMasternodeMode) {
-        proTxHash = WITH_LOCK(::activeMasternodeManager->cs, return ::activeMasternodeManager->m_info.proTxHash);
+        proTxHash = WITH_LOCK(::activeMasternodeManager->cs, return ::activeMasternodeManager->GetProTxHash());
     }
 
     UniValue minableCommitments(UniValue::VARR);
