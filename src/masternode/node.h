@@ -12,6 +12,7 @@
 
 class CBLSPublicKey;
 class CBLSSecretKey;
+class CBLSSignature;
 
 struct CActiveMasternodeInfo {
     // Keys for the active Masternode
@@ -59,6 +60,9 @@ public:
     std::string GetStatus() const;
 
     static bool IsValidNetAddr(const CService& addrIn);
+
+    [[nodiscard]] CBLSSignature Sign(const uint256& hash) const LOCKS_EXCLUDED(cs);
+    [[nodiscard]] CBLSSignature Sign(const uint256& hash, const bool is_legacy) const LOCKS_EXCLUDED(cs);
 
 private:
     bool GetLocalAddress(CService& addrRet);
