@@ -9,6 +9,7 @@
 
 #include <net_types.h>
 
+class CActiveMasternodeManager;
 class CChainState;
 class CCoinJoinServer;
 class CDataStream;
@@ -27,6 +28,7 @@ private:
     CConnman& connman;
     CDSTXManager& m_dstxman;
     CTxMemPool& mempool;
+    const CActiveMasternodeManager* m_mn_activeman;
     const CMasternodeSync& m_mn_sync;
 
     // Mixing uses collateral transactions to trust parties entering the pool
@@ -82,11 +84,13 @@ private:
     void SetNull() override EXCLUSIVE_LOCKS_REQUIRED(cs_coinjoin);
 
 public:
-    explicit CCoinJoinServer(CChainState& chainstate, CConnman& _connman, CDSTXManager& dstxman, CTxMemPool& mempool, const CMasternodeSync& mn_sync) :
+    explicit CCoinJoinServer(CChainState& chainstate, CConnman& _connman, CDSTXManager& dstxman, CTxMemPool& mempool,
+                             const CActiveMasternodeManager* mn_activeman, const CMasternodeSync& mn_sync) :
         m_chainstate(chainstate),
         connman(_connman),
         m_dstxman(dstxman),
         mempool(mempool),
+        m_mn_activeman(mn_activeman),
         m_mn_sync(mn_sync),
         vecSessionCollaterals(),
         fUnitTest(false)

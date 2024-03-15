@@ -109,7 +109,7 @@ void DashTestSetup(NodeContext& node, const CChainParams& chainparams)
 {
     CChainState& chainstate = Assert(node.chainman)->ActiveChainstate();
 
-    node.cj_ctx = std::make_unique<CJContext>(chainstate, *node.connman, *node.mempool, *node.mn_sync, /* relay_txes */ true);
+    node.cj_ctx = std::make_unique<CJContext>(chainstate, *node.connman, *node.mempool, /* mn_activeman = */ nullptr, *node.mn_sync, /* relay_txes */ true);
     ::deterministicMNManager = std::make_unique<CDeterministicMNManager>(chainstate, *node.connman, *node.evodb);
     node.dmnman = ::deterministicMNManager.get();
 #ifdef ENABLE_WALLET
