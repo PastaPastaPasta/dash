@@ -275,7 +275,8 @@ static void quorum_dkgstatus_help(const JSONRPCRequest& request)
     }.Check(request);
 }
 
-static UniValue quorum_dkgstatus(const JSONRPCRequest& request, const ChainstateManager& chainman, const CSporkManager& sporkman, const LLMQContext& llmq_ctx)
+static UniValue quorum_dkgstatus(const JSONRPCRequest& request, const CActiveMasternodeManager* mn_activeman,
+                                 const ChainstateManager& chainman, const CSporkManager& sporkman, const LLMQContext& llmq_ctx)
 {
     quorum_dkgstatus_help(request);
 
@@ -297,7 +298,8 @@ static UniValue quorum_dkgstatus(const JSONRPCRequest& request, const Chainstate
 
     uint256 proTxHash;
     if (fMasternodeMode) {
-        proTxHash = WITH_LOCK(::activeMasternodeManager->cs, return ::activeMasternodeManager->GetProTxHash());
+        CHECK_NONFATAL(mn_activeman);
+        proTxHash = WITH_LOCK(mn_activeman->cs, return mn_activeman->GetProTxHash());
     }
 
     UniValue minableCommitments(UniValue::VARR);
@@ -882,7 +884,7 @@ static UniValue _quorum(const JSONRPCRequest& request)
     } else if (command == "quorumdkginfo") {
         return quorum_dkginfo(new_request, llmq_ctx, chainman);
     } else if (command == "quorumdkgstatus") {
-        return quorum_dkgstatus(new_request, chainman, *node.sporkman, llmq_ctx);
+        return quorum_dkgstatus(new_request, node.mn_activeman, chainman, *node.sporkman, llmq_ctx);
     } else if (command == "quorummemberof") {
         return quorum_memberof(new_request, chainman, node, llmq_ctx);
     } else if (command == "quorumsign" || command == "quorumverify" || command == "quorumhasrecsig" || command == "quorumgetrecsig" || command == "quorumisconflicting") {
