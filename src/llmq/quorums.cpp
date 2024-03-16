@@ -103,7 +103,7 @@ bool CQuorum::SetVerificationVector(const std::vector<CBLSPublicKey>& quorumVecI
 
 bool CQuorum::SetSecretKeyShare(const CBLSSecretKey& secretKeyShare)
 {
-    if (!secretKeyShare.IsValid() || (secretKeyShare.GetPublicKey() != GetPubKeyShare(WITH_LOCK(activeMasternodeInfoCs, return GetMemberIndex(activeMasternodeInfo.proTxHash))))) {
+    if (!secretKeyShare.IsValid() || (secretKeyShare.GetPublicKey() != GetPubKeyShare(WITH_LOCK(::activeMasternodeManager->cs, return GetMemberIndex(::activeMasternodeManager->m_info.proTxHash))))) {
         return false;
     }
     LOCK(cs);
@@ -251,7 +251,7 @@ void CQuorumManager::TriggerQuorumDataRecoveryThreads(const CBlockIndex* pIndex)
         // First check if we are member of any quorum of this type
         uint256 proTxHash;
         if (fMasternodeMode) {
-            proTxHash = WITH_LOCK(activeMasternodeInfoCs, return activeMasternodeInfo.proTxHash);
+            proTxHash = WITH_LOCK(::activeMasternodeManager->cs, return ::activeMasternodeManager->m_info.proTxHash);
         }
         bool fWeAreQuorumTypeMember = ranges::any_of(vecQuorums, [&proTxHash](const auto& pQuorum) {
             return pQuorum->IsValidMember(proTxHash);
@@ -345,7 +345,7 @@ void CQuorumManager::CheckQuorumConnections(const Consensus::LLMQParams& llmqPar
 
     uint256 myProTxHash;
     if (fMasternodeMode) {
-        myProTxHash = WITH_LOCK(activeMasternodeInfoCs, return activeMasternodeInfo.proTxHash);
+        myProTxHash = WITH_LOCK(::activeMasternodeManager->cs, return ::activeMasternodeManager->m_info.proTxHash);
     }
     bool isISType = llmqParams.type == Params().GetConsensus().llmqTypeDIP0024InstantSend;
 
@@ -654,10 +654,10 @@ size_t CQuorumManager::GetQuorumRecoveryStartOffset(const CQuorumCPtr pQuorum, c
     std::sort(vecProTxHashes.begin(), vecProTxHashes.end());
     size_t nIndex{0};
     {
-        LOCK(activeMasternodeInfoCs);
+        LOCK(::activeMasternodeManager->cs);
         for (const auto i : irange::range(vecProTxHashes.size())) {
             // cppcheck-suppress useStlAlgorithm
-            if (activeMasternodeInfo.proTxHash == vecProTxHashes[i]) {
+            if (::activeMasternodeManager->m_info.proTxHash == vecProTxHashes[i]) {
                 nIndex = i;
                 break;
             }
@@ -833,7 +833,7 @@ PeerMsgRet CQuorumManager::ProcessMessage(CNode& pfrom, const std::string& msg_t
 
             std::vector<CBLSSecretKey> vecSecretKeys;
             vecSecretKeys.resize(vecEncrypted.size());
-            auto secret = WITH_LOCK(activeMasternodeInfoCs, return *activeMasternodeInfo.blsKeyOperator);
+            auto secret = WITH_LOCK(::activeMasternodeManager->cs, return *::activeMasternodeManager->m_info.blsKeyOperator);
             for (const auto i : irange::range(vecEncrypted.size())) {
                 if (!vecEncrypted[i].Decrypt(memberIdx, secret, vecSecretKeys[i], PROTOCOL_VERSION)) {
                     return errorHandler("Failed to decrypt");
@@ -916,7 +916,7 @@ void CQuorumManager::StartQuorumDataRecoveryThread(const CQuorumCPtr pQuorum, co
 
         vecMemberHashes.reserve(pQuorum->qc->validMembers.size());
         for (auto& member : pQuorum->members) {
-            if (pQuorum->IsValidMember(member->proTxHash) && member->proTxHash != WITH_LOCK(activeMasternodeInfoCs, return activeMasternodeInfo.proTxHash)) {
+            if (pQuorum->IsValidMember(member->proTxHash) && member->proTxHash != WITH_LOCK(::activeMasternodeManager->cs, return ::activeMasternodeManager->m_info.proTxHash)) {
                 vecMemberHashes.push_back(member->proTxHash);
             }
         }
@@ -965,7 +965,7 @@ void CQuorumManager::StartQuorumDataRecoveryThread(const CQuorumCPtr pQuorum, co
                 printLog("Connect");
             }
 
-            auto proTxHash = WITH_LOCK(activeMasternodeInfoCs, return activeMasternodeInfo.proTxHash);
+            auto proTxHash = WITH_LOCK(::activeMasternodeManager->cs, return ::activeMasternodeManager->m_info.proTxHash);
             connman.ForEachNode([&](CNode* pNode) {
                 auto verifiedProRegTxHash = pNode->GetVerifiedProRegTxHash();
                 if (pCurrentMemberHash == nullptr || verifiedProRegTxHash != *pCurrentMemberHash) {
