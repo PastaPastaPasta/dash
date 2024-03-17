@@ -13,7 +13,7 @@
 
 #include <univalue.h>
 
-class CBLSSecretKey;
+class CActiveMasternodeManager;
 class CBLSPublicKey;
 class CGovernanceManager;
 class CGovernanceObject;
@@ -216,7 +216,7 @@ public:
     // Signature related functions
 
     void SetMasternodeOutpoint(const COutPoint& outpoint);
-    bool Sign(const CBLSSecretKey& key);
+    bool Sign(const CActiveMasternodeManager& mn_activeman);
     bool CheckSignature(const CBLSPublicKey& pubKey) const;
 
     uint256 GetSignatureHash() const;
