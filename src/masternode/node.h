@@ -48,11 +48,12 @@ private:
 
 public:
     explicit CActiveMasternodeManager(CConnman& _connman) : connman(_connman) {};
-    ~CActiveMasternodeManager() = default;
+    ~CActiveMasternodeManager();
 
     void UpdatedBlockTip(const CBlockIndex* pindexNew, const CBlockIndex* pindexFork, bool fInitialDownload) override;
 
     void Init(const CBlockIndex* pindex);
+    void InitKeys(const CBLSSecretKey& sk) LOCKS_EXCLUDED(cs);
 
     std::string GetStateString() const;
     std::string GetStatus() const;
