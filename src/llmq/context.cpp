@@ -76,7 +76,9 @@ void LLMQContext::Start() {
     assert(isman == llmq::quorumInstantSendManager.get());
 
     bls_worker->Start();
-    qdkgsman->StartThreads();
+    if (fMasternodeMode) {
+        qdkgsman->StartThreads();
+    }
     qman->Start();
     shareman->RegisterAsRecoveredSigsListener();
     shareman->StartWorkerThread();
@@ -99,6 +101,8 @@ void LLMQContext::Stop() {
     shareman->UnregisterAsRecoveredSigsListener();
     sigman->StopWorkerThread();
     qman->Stop();
-    qdkgsman->StopThreads();
+    if (fMasternodeMode) {
+        qdkgsman->StopThreads();
+    }
     bls_worker->Stop();
 }
