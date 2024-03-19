@@ -101,9 +101,9 @@ bool CQuorum::SetVerificationVector(const std::vector<CBLSPublicKey>& quorumVecI
     return true;
 }
 
-bool CQuorum::SetSecretKeyShare(const CBLSSecretKey& secretKeyShare)
+bool CQuorum::SetSecretKeyShare(const CBLSSecretKey& secretKeyShare, const CActiveMasternodeManager& mn_activeman)
 {
-    if (!secretKeyShare.IsValid() || (secretKeyShare.GetPublicKey() != GetPubKeyShare(WITH_LOCK(::activeMasternodeManager->cs, return GetMemberIndex(::activeMasternodeManager->GetProTxHash()))))) {
+    if (!secretKeyShare.IsValid() || (secretKeyShare.GetPublicKey() != GetPubKeyShare(WITH_LOCK(mn_activeman.cs, return GetMemberIndex(mn_activeman.GetProTxHash()))))) {
         return false;
     }
     LOCK(cs);
@@ -206,13 +206,15 @@ bool CQuorum::ReadContributions(CEvoDB& evoDb)
 }
 
 CQuorumManager::CQuorumManager(CBLSWorker& _blsWorker, CChainState& chainstate, CConnman& _connman, CDKGSessionManager& _dkgManager,
-                               CEvoDB& _evoDb, CQuorumBlockProcessor& _quorumBlockProcessor, const CSporkManager& sporkman, const std::unique_ptr<CMasternodeSync>& mn_sync) :
+                               CEvoDB& _evoDb, CQuorumBlockProcessor& _quorumBlockProcessor, const CActiveMasternodeManager* mn_activeman,
+                               const CSporkManager& sporkman, const std::unique_ptr<CMasternodeSync>& mn_sync) :
     blsWorker(_blsWorker),
     m_chainstate(chainstate),
     connman(_connman),
     dkgManager(_dkgManager),
     m_evoDb(_evoDb),
     quorumBlockProcessor(_quorumBlockProcessor),
+    m_mn_activeman(mn_activeman),
     m_sporkman(sporkman),
     m_mn_sync(mn_sync)
 {
@@ -251,7 +253,8 @@ void CQuorumManager::TriggerQuorumDataRecoveryThreads(const CBlockIndex* pIndex)
         // First check if we are member of any quorum of this type
         uint256 proTxHash;
         if (fMasternodeMode) {
-            proTxHash = WITH_LOCK(::activeMasternodeManager->cs, return ::activeMasternodeManager->GetProTxHash());
+            assert(m_mn_activeman);
+            proTxHash = WITH_LOCK(m_mn_activeman->cs, return m_mn_activeman->GetProTxHash());
         }
         bool fWeAreQuorumTypeMember = ranges::any_of(vecQuorums, [&proTxHash](const auto& pQuorum) {
             return pQuorum->IsValidMember(proTxHash);
@@ -345,7 +348,8 @@ void CQuorumManager::CheckQuorumConnections(const Consensus::LLMQParams& llmqPar
 
     uint256 myProTxHash;
     if (fMasternodeMode) {
-        myProTxHash = WITH_LOCK(::activeMasternodeManager->cs, return ::activeMasternodeManager->GetProTxHash());
+        assert(m_mn_activeman);
+        myProTxHash = WITH_LOCK(m_mn_activeman->cs, return m_mn_activeman->GetProTxHash());
     }
     bool isISType = llmqParams.type == Params().GetConsensus().llmqTypeDIP0024InstantSend;
 
@@ -645,6 +649,8 @@ CQuorumCPtr CQuorumManager::GetQuorum(Consensus::LLMQType llmqType, gsl::not_nul
 
 size_t CQuorumManager::GetQuorumRecoveryStartOffset(const CQuorumCPtr pQuorum, const CBlockIndex* pIndex) const
 {
+    assert(m_mn_activeman);
+
     auto mns = deterministicMNManager->GetListForBlock(pIndex);
     std::vector<uint256> vecProTxHashes;
     vecProTxHashes.reserve(mns.GetValidMNsCount());
@@ -654,10 +660,10 @@ size_t CQuorumManager::GetQuorumRecoveryStartOffset(const CQuorumCPtr pQuorum, c
     std::sort(vecProTxHashes.begin(), vecProTxHashes.end());
     size_t nIndex{0};
     {
-        LOCK(::activeMasternodeManager->cs);
+        LOCK(m_mn_activeman->cs);
         for (const auto i : irange::range(vecProTxHashes.size())) {
             // cppcheck-suppress useStlAlgorithm
-            if (::activeMasternodeManager->GetProTxHash() == vecProTxHashes[i]) {
+            if (m_mn_activeman->GetProTxHash() == vecProTxHashes[i]) {
                 nIndex = i;
                 break;
             }
@@ -818,6 +824,7 @@ PeerMsgRet CQuorumManager::ProcessMessage(CNode& pfrom, const std::string& msg_t
 
         // Check if request has ENCRYPTED_CONTRIBUTIONS data
         if (request.GetDataMask() & CQuorumDataRequest::ENCRYPTED_CONTRIBUTIONS) {
+            assert(fMasternodeMode);
 
             if (WITH_LOCK(pQuorum->cs, return pQuorum->quorumVvec->size() != size_t(pQuorum->params.threshold))) {
                 return errorHandler("No valid quorum verification vector available", 0); // Don't bump score because we asked for it
@@ -834,13 +841,13 @@ PeerMsgRet CQuorumManager::ProcessMessage(CNode& pfrom, const std::string& msg_t
             std::vector<CBLSSecretKey> vecSecretKeys;
             vecSecretKeys.resize(vecEncrypted.size());
             for (const auto i : irange::range(vecEncrypted.size())) {
-                if (!::activeMasternodeManager->Decrypt(vecEncrypted[i], memberIdx, vecSecretKeys[i], PROTOCOL_VERSION)) {
+                if (!Assert(m_mn_activeman)->Decrypt(vecEncrypted[i], memberIdx, vecSecretKeys[i], PROTOCOL_VERSION)) {
                     return errorHandler("Failed to decrypt");
                 }
             }
 
             CBLSSecretKey secretKeyShare = blsWorker.AggregateSecretKeys(vecSecretKeys);
-            if (!pQuorum->SetSecretKeyShare(secretKeyShare)) {
+            if (!pQuorum->SetSecretKeyShare(secretKeyShare, *m_mn_activeman)) {
                 return errorHandler("Invalid secret key share received");
             }
         }
@@ -882,6 +889,8 @@ void CQuorumManager::StartCachePopulatorThread(const CQuorumCPtr pQuorum) const
 
 void CQuorumManager::StartQuorumDataRecoveryThread(const CQuorumCPtr pQuorum, const CBlockIndex* pIndex, uint16_t nDataMaskIn) const
 {
+    assert(m_mn_activeman);
+
     if (pQuorum->fQuorumDataRecoveryThreadRunning) {
         LogPrint(BCLog::LLMQ, "CQuorumManager::%s -- Already running\n", __func__);
         return;
@@ -915,7 +924,7 @@ void CQuorumManager::StartQuorumDataRecoveryThread(const CQuorumCPtr pQuorum, co
 
         vecMemberHashes.reserve(pQuorum->qc->validMembers.size());
         for (auto& member : pQuorum->members) {
-            if (pQuorum->IsValidMember(member->proTxHash) && member->proTxHash != WITH_LOCK(::activeMasternodeManager->cs, return ::activeMasternodeManager->GetProTxHash())) {
+            if (pQuorum->IsValidMember(member->proTxHash) && member->proTxHash != WITH_LOCK(m_mn_activeman->cs, return m_mn_activeman->GetProTxHash())) {
                 vecMemberHashes.push_back(member->proTxHash);
             }
         }
@@ -964,7 +973,7 @@ void CQuorumManager::StartQuorumDataRecoveryThread(const CQuorumCPtr pQuorum, co
                 printLog("Connect");
             }
 
-            auto proTxHash = WITH_LOCK(::activeMasternodeManager->cs, return ::activeMasternodeManager->GetProTxHash());
+            auto proTxHash = WITH_LOCK(m_mn_activeman->cs, return m_mn_activeman->GetProTxHash());
             connman.ForEachNode([&](CNode* pNode) {
                 auto verifiedProRegTxHash = pNode->GetVerifiedProRegTxHash();
                 if (pCurrentMemberHash == nullptr || verifiedProRegTxHash != *pCurrentMemberHash) {

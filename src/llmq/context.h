@@ -7,6 +7,7 @@
 
 #include <memory>
 
+class CActiveMasternodeManager;
 class CBLSWorker;
 class CChainState;
 class CConnman;
@@ -32,9 +33,9 @@ class CSigningManager;
 struct LLMQContext {
     LLMQContext() = delete;
     LLMQContext(const LLMQContext&) = delete;
-    LLMQContext(CChainState& chainstate, CConnman& connman, CEvoDB& evo_db, CMNHFManager& mnhfman,
-                CSporkManager& sporkman, CTxMemPool& mempool,
-                const std::unique_ptr<PeerManager>& peerman, bool unit_tests, bool wipe);
+    LLMQContext(CChainState& chainstate, CConnman& connman, CEvoDB& evo_db, CMNHFManager& mnhfman, CSporkManager& sporkman,
+                CTxMemPool& mempool, const CActiveMasternodeManager* mn_activeman, const std::unique_ptr<PeerManager>& peerman,
+                bool unit_tests, bool wipe);
     ~LLMQContext();
 
     void Interrupt();

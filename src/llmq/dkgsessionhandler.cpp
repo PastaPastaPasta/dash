@@ -25,18 +25,19 @@ namespace llmq
 {
 
 CDKGSessionHandler::CDKGSessionHandler(CBLSWorker& _blsWorker, CChainState& chainstate, CConnman& _connman, CDKGDebugManager& _dkgDebugManager,
-                                       CDKGSessionManager& _dkgManager, CQuorumBlockProcessor& _quorumBlockProcessor, const CSporkManager& sporkman,
-                                       const Consensus::LLMQParams& _params, int _quorumIndex) :
+                                       CDKGSessionManager& _dkgManager, CQuorumBlockProcessor& _quorumBlockProcessor, const CActiveMasternodeManager* mn_activeman,
+                                       const CSporkManager& sporkman, const Consensus::LLMQParams& _params, int _quorumIndex) :
         blsWorker(_blsWorker),
         m_chainstate(chainstate),
         connman(_connman),
         dkgDebugManager(_dkgDebugManager),
         dkgManager(_dkgManager),
         quorumBlockProcessor(_quorumBlockProcessor),
+        m_mn_activeman(mn_activeman),
         m_sporkman(sporkman),
         params(_params),
         quorumIndex(_quorumIndex),
-        curSession(std::make_unique<CDKGSession>(_params, _blsWorker, _dkgManager, _dkgDebugManager, _connman, sporkman)),
+        curSession(std::make_unique<CDKGSession>(_params, _blsWorker, _dkgManager, _dkgDebugManager, _connman, m_mn_activeman, sporkman)),
         pendingContributions((size_t)_params.size * 2, MSG_QUORUM_CONTRIB), // we allow size*2 messages as we need to make sure we see bad behavior (double messages)
         pendingComplaints((size_t)_params.size * 2, MSG_QUORUM_COMPLAINT),
         pendingJustifications((size_t)_params.size * 2, MSG_QUORUM_JUSTIFICATION),
@@ -184,14 +185,14 @@ void CDKGSessionHandler::StopThread()
 
 bool CDKGSessionHandler::InitNewQuorum(const CBlockIndex* pQuorumBaseBlockIndex)
 {
-    curSession = std::make_unique<CDKGSession>(params, blsWorker, dkgManager, dkgDebugManager, connman, m_sporkman);
+    curSession = std::make_unique<CDKGSession>(params, blsWorker, dkgManager, dkgDebugManager, connman, m_mn_activeman, m_sporkman);
 
     if (!DeploymentDIP0003Enforced(pQuorumBaseBlockIndex->nHeight, Params().GetConsensus())) {
         return false;
     }
 
     auto mns = utils::GetAllQuorumMembers(params.type, pQuorumBaseBlockIndex);
-    if (!curSession->Init(pQuorumBaseBlockIndex, mns, WITH_LOCK(::activeMasternodeManager->cs, return ::activeMasternodeManager->GetProTxHash()), quorumIndex)) {
+    if (!curSession->Init(pQuorumBaseBlockIndex, mns, WITH_LOCK(m_mn_activeman->cs, return m_mn_activeman->GetProTxHash()), quorumIndex)) {
         LogPrintf("CDKGSessionManager::%s -- height[%d] quorum initialization failed for %s qi[%d] mns[%d]\n", __func__, pQuorumBaseBlockIndex->nHeight, curSession->params.name, quorumIndex, mns.size());
         return false;
     }

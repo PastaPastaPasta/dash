@@ -14,6 +14,7 @@
 #include <map>
 #include <memory>
 
+class CActiveMasternodeManager;
 class CBlockIndex;
 class CChainState;
 class CDBWrapper;
@@ -64,7 +65,7 @@ private:
 
 public:
     CDKGSessionManager(CBLSWorker& _blsWorker, CChainState& chainstate, CConnman& _connman, CDKGDebugManager& _dkgDebugManager,
-                       CQuorumBlockProcessor& _quorumBlockProcessor, const CSporkManager& sporkman,
+                       CQuorumBlockProcessor& _quorumBlockProcessor, const CActiveMasternodeManager* mn_activeman, const CSporkManager& sporkman,
                        bool unitTests, bool fWipe);
     ~CDKGSessionManager() = default;
 

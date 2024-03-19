@@ -14,6 +14,7 @@
 #include <map>
 #include <optional>
 
+class CActiveMasternodeManager;
 class CBlockIndex;
 class CBLSWorker;
 class CChainState;
@@ -123,6 +124,7 @@ private:
     CDKGDebugManager& dkgDebugManager;
     CDKGSessionManager& dkgManager;
     CQuorumBlockProcessor& quorumBlockProcessor;
+    const CActiveMasternodeManager* m_mn_activeman;
     const CSporkManager& m_sporkman;
     const Consensus::LLMQParams params;
     const int quorumIndex;
@@ -143,8 +145,8 @@ private:
 
 public:
     CDKGSessionHandler(CBLSWorker& _blsWorker, CChainState& chainstate, CConnman& _connman, CDKGDebugManager& _dkgDebugManager,
-                       CDKGSessionManager& _dkgManager, CQuorumBlockProcessor& _quorumBlockProcessor, const CSporkManager& sporkman,
-                       const Consensus::LLMQParams& _params, int _quorumIndex);
+                       CDKGSessionManager& _dkgManager, CQuorumBlockProcessor& _quorumBlockProcessor, const CActiveMasternodeManager* mn_activeman,
+                       const CSporkManager& sporkman, const Consensus::LLMQParams& _params, int _quorumIndex);
     ~CDKGSessionHandler() = default;
 
     void UpdatedBlockTip(const CBlockIndex *pindexNew);

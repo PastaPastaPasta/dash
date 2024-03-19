@@ -20,7 +20,8 @@
 #include <masternode/sync.h>
 
 LLMQContext::LLMQContext(CChainState& chainstate, CConnman& connman, CEvoDB& evo_db, CMNHFManager& mnhfman, CSporkManager& sporkman,
-                         CTxMemPool& mempool, const std::unique_ptr<PeerManager>& peerman, bool unit_tests, bool wipe) :
+                         CTxMemPool& mempool, const CActiveMasternodeManager* mn_activeman, const std::unique_ptr<PeerManager>& peerman,
+                         bool unit_tests, bool wipe) :
     bls_worker{std::make_shared<CBLSWorker>()},
     dkg_debugman{std::make_unique<llmq::CDKGDebugManager>()},
     quorum_block_processor{[&]() -> llmq::CQuorumBlockProcessor* const {
@@ -28,14 +29,14 @@ LLMQContext::LLMQContext(CChainState& chainstate, CConnman& connman, CEvoDB& evo
         llmq::quorumBlockProcessor = std::make_unique<llmq::CQuorumBlockProcessor>(chainstate, connman, evo_db);
         return llmq::quorumBlockProcessor.get();
     }()},
-    qdkgsman{std::make_unique<llmq::CDKGSessionManager>(*bls_worker, chainstate, connman, *dkg_debugman, *quorum_block_processor, sporkman, unit_tests, wipe)},
+    qdkgsman{std::make_unique<llmq::CDKGSessionManager>(*bls_worker, chainstate, connman, *dkg_debugman, *quorum_block_processor, mn_activeman, sporkman, unit_tests, wipe)},
     qman{[&]() -> llmq::CQuorumManager* const {
         assert(llmq::quorumManager == nullptr);
-        llmq::quorumManager = std::make_unique<llmq::CQuorumManager>(*bls_worker, chainstate, connman, *qdkgsman, evo_db, *quorum_block_processor, sporkman, ::masternodeSync);
+        llmq::quorumManager = std::make_unique<llmq::CQuorumManager>(*bls_worker, chainstate, connman, *qdkgsman, evo_db, *quorum_block_processor, mn_activeman, sporkman, ::masternodeSync);
         return llmq::quorumManager.get();
     }()},
-    sigman{std::make_unique<llmq::CSigningManager>(connman, *llmq::quorumManager, unit_tests, wipe)},
-    shareman{std::make_unique<llmq::CSigSharesManager>(connman, *sigman, *llmq::quorumManager, sporkman, peerman)},
+    sigman{std::make_unique<llmq::CSigningManager>(connman, mn_activeman, *llmq::quorumManager, unit_tests, wipe)},
+    shareman{std::make_unique<llmq::CSigSharesManager>(connman, *sigman, mn_activeman, *llmq::quorumManager, sporkman, peerman)},
     clhandler{[&]() -> llmq::CChainLocksHandler* const {
         assert(llmq::chainLocksHandler == nullptr);
         llmq::chainLocksHandler = std::make_unique<llmq::CChainLocksHandler>(chainstate, connman, *::masternodeSync, *llmq::quorumManager, *sigman, *shareman, sporkman, mempool);
