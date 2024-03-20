@@ -17,7 +17,7 @@ class CDeterministicMNManager;
 struct CActiveMasternodeInfo;
 
 extern CActiveMasternodeInfo activeMasternodeInfo;
-extern RecursiveMutex activeMasternodeInfoCs;
+extern SharedMutex activeMasternodeInfoCs;
 extern std::unique_ptr<CActiveMasternodeManager> activeMasternodeManager;
 
 struct CActiveMasternodeInfo {

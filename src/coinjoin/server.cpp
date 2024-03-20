@@ -331,8 +331,8 @@ void CCoinJoinServer::CommitFinalTransaction()
     // create and sign masternode dstx transaction
     if (!m_dstxman.GetDSTX(hashTx)) {
         CCoinJoinBroadcastTx dstxNew(finalTransaction,
-                                    WITH_LOCK(activeMasternodeInfoCs, return activeMasternodeInfo.outpoint),
-                                    WITH_LOCK(activeMasternodeInfoCs, return activeMasternodeInfo.proTxHash),
+                                    WITH_READ_LOCK(activeMasternodeInfoCs, return activeMasternodeInfo.outpoint),
+                                    WITH_READ_LOCK(activeMasternodeInfoCs, return activeMasternodeInfo.proTxHash),
                                     GetAdjustedTime());
         dstxNew.Sign();
         m_dstxman.AddDSTX(dstxNew);

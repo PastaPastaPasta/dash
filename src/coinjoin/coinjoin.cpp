@@ -52,7 +52,7 @@ bool CCoinJoinQueue::Sign()
     if (!fMasternodeMode) return false;
 
     uint256 hash = GetSignatureHash();
-    CBLSSignature sig = WITH_LOCK(activeMasternodeInfoCs, return activeMasternodeInfo.blsKeyOperator->Sign(hash, false));
+    CBLSSignature sig = WITH_READ_LOCK(activeMasternodeInfoCs, return activeMasternodeInfo.blsKeyOperator->Sign(hash, false));
     if (!sig.IsValid()) {
         return false;
     }
