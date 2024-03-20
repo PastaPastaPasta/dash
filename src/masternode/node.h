@@ -42,9 +42,9 @@ public:
     mutable RecursiveMutex cs;
 
 private:
-    masternode_state_t m_state{MASTERNODE_WAITING_FOR_PROTX};
+    masternode_state_t m_state GUARDED_BY(cs) {MASTERNODE_WAITING_FOR_PROTX};
     CActiveMasternodeInfo m_info GUARDED_BY(cs);
-    std::string m_error;
+    std::string m_error GUARDED_BY(cs);
 
     CConnman& m_connman;
 
@@ -83,7 +83,7 @@ public:
         return m_info.service;
     }
 
-    [[nodiscard]] const bool IsLegacy() const EXCLUSIVE_LOCKS_REQUIRED(cs)
+    [[nodiscard]] bool IsLegacy() const EXCLUSIVE_LOCKS_REQUIRED(cs)
     {
         return m_info.legacy;
     }
