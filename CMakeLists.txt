@@ -1,122 +1,75 @@
-# This CMakeLists.txt is not meant to actually work!
-# It only serves as a dummy project to make CLion work properly when it comes to symbol resolution and all the nice
-# features dependent on that. Building must still be done on the command line using the automake build chain
-# If you load this project in CLion and would like to run/debug executables, make sure to remove the "Build" entry from
-# the run/debug configuration as otherwise CLion will try to build this project with cmake, failing horribly.
-# You'll also have to manually change the executable in the configuration to the correct path of the already built executable
+# Copyright (c) 2023-present The Bitcoin Core developers
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or https://opensource.org/license/mit/.
 
-cmake_minimum_required(VERSION 3.7)
-project(dash)
-
-set(CMAKE_CXX_STANDARD 17)
-
-include_directories(
-        src
-        src/qt/forms
-        src/leveldb/include
-        src/univalue/include
-)
-
-if(UNIX AND NOT APPLE)
-    set(DEPENDS_PREFIX depends/x86_64-pc-linux-gnu)
-elseif(APPLE)
-    EXECUTE_PROCESS( COMMAND uname -m COMMAND tr -d '\n' OUTPUT_VARIABLE ARCHITECTURE )
-    EXECUTE_PROCESS( COMMAND system_profiler -detailLevel mini -json SPSoftwareDataType
-            COMMAND jq .SPSoftwareDataType
-            COMMAND jq .[]
-            COMMAND jq .kernel_version
-            COMMAND tr -d "Dawrin\" "
-            OUTPUT_VARIABLE DARWIN_KERNEL_VERSION)
-    if( ${ARCHITECTURE} STREQUAL "arm64" )
-        set(DEPENDS_PREFIX depends/aarch64-apple-darwin${DARWIN_KERNEL_VERSION})
-    else()
-        set(DEPENDS_PREFIX depends/x86_64-apple-darwin${DARWIN_KERNEL_VERSION})
-    endif()
-elseif(WIN32)
-    set(DEPENDS_PREFIX depends/x86_64-w64-mingw32)
+# Ubuntu 22.04 LTS Jammy Jellyfish, https://wiki.ubuntu.com/Releases, EOSS in June 2027:
+#  - CMake 3.22.1, https://packages.ubuntu.com/jammy/cmake
+#
+# Centos Stream 9, EOL in May 2027:
+#  - CMake 3.26.5, https://mirror.stream.centos.org/9-stream/AppStream/x86_64/os/Packages/
+cmake_minimum_required(VERSION 3.22)
+if(POLICY CMP0141)
+  # MSVC debug information format flags are selected by an abstraction.
+  # We want to use the CMAKE_MSVC_DEBUG_INFORMATION_FORMAT variable
+  # to select the MSVC debug information format.
+  cmake_policy(SET CMP0141 NEW)
 endif()
 
-message(STATUS "DEPENDS_PREFIX: ${DEPENDS_PREFIX}")
-
-if(DEFINED DEPENDS_PREFIX)
-    include_directories(${DEPENDS_PREFIX}/include)
-    include_directories(${DEPENDS_PREFIX}/include/QtWidgets)
+if (${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
+  message(FATAL_ERROR "In-source builds are not allowed.")
 endif()
 
-add_definitions(
-        -DENABLE_CRASH_HOOKS=1
-        -DENABLE_STACKTRACES=1
-        -DENABLE_WALLET=1
+#=============================
+# Project / Package metadata
+#=============================
+set(PACKAGE_NAME "Bitcoin Core")
+set(CLIENT_VERSION_MAJOR 27)
+set(CLIENT_VERSION_MINOR 99)
+set(CLIENT_VERSION_BUILD 0)
+set(CLIENT_VERSION_RC 0)
+set(CLIENT_VERSION_IS_RELEASE "false")
+set(COPYRIGHT_YEAR "2024")
+
+project(BitcoinCore
+  VERSION ${CLIENT_VERSION_MAJOR}.${CLIENT_VERSION_MINOR}.${CLIENT_VERSION_BUILD}
+  DESCRIPTION "Bitcoin client software"
+  HOMEPAGE_URL "https://bitcoincore.org/"
+  LANGUAGES NONE
 )
 
-# find src/ -name '*.h' -or -name '*.cpp' | sed -r 's/[^/]*.(h|cpp)$/*.\1/' | sort | uniq | grep -Ev "/(bench/data|obj)/" > list.txt
+set(PACKAGE_VERSION ${PROJECT_VERSION})
+if(CLIENT_VERSION_RC GREATER 0)
+  string(APPEND PACKAGE_VERSION "rc${CLIENT_VERSION_RC}")
+endif()
 
-file(GLOB SOURCE_FILES
-        src/*.cpp
-        src/*.h
-        src/bench/*.cpp
-        src/bench/*.h
-        src/bls/*.cpp
-        src/bls/*.h
-        src/coinjoin/*.cpp
-        src/coinjoin/*.h
-        src/compat/*.cpp
-        src/compat/*.h
-        src/consensus/*.cpp
-        src/consensus/*.h
-        src/crypto/*.c
-        src/crypto/*.cpp
-        src/crypto/*.h
-        src/evo/*.cpp
-        src/evo/*.h
-        src/governance/*.cpp
-        src/governance/*.h
-        src/index/*.cpp
-        src/index/*.h
-        src/interfaces/*.cpp
-        src/interfaces/*.h
-        src/leveldb/db/*.cc
-        src/leveldb/db/*.h
-        src/leveldb/include/*.h
-        src/llmq/*.cpp
-        src/llmq/*.h
-        src/logging/*.h
-        src/masternode/*.cpp
-        src/masternode/*.h
-        src/node/*.cpp
-        src/node/*.h
-        src/policy/*.cpp
-        src/policy/*.h
-        src/primitives/*.cpp
-        src/primitives/*.h
-        src/qt/*.cpp
-        src/qt/*.h
-        src/qt/test/*.cpp
-        src/qt/test/*.h
-        src/rpc/*.cpp
-        src/rpc/*.h
-        src/script/*.cpp
-        src/script/*.h
-        src/secp256k1/include/*.h
-        src/support/allocators/*.h
-        src/support/*.cpp
-        src/support/*.h
-        src/test/*.cpp
-        src/test/*.h
-        src/test/fuzz/*.cpp
-        src/test/fuzz/*.h
-        src/test/util/*.cpp
-        src/test/util/*.h
-        src/univalue/include/*.h
-        src/univalue/lib/*.cpp
-        src/univalue/lib/*.h
-        src/util/*.h
-        src/util/*.cpp
-        src/wallet/*.cpp
-        src/wallet/*.h
-        src/wallet/test/*.cpp
-        src/zmq/*.cpp
-        src/zmq/*.h
-        )
+set(COPYRIGHT_HOLDERS "The %s developers")
+set(COPYRIGHT_HOLDERS_FINAL "The ${PACKAGE_NAME} developers")
+set(PACKAGE_BUGREPORT "https://github.com/bitcoin/bitcoin/issues")
 
-add_executable(dash ${SOURCE_FILES})
+#=============================
+# Language setup
+#=============================
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND NOT CMAKE_HOST_APPLE)
+  # We do not use the install_name_tool when cross-compiling for macOS.
+  # So disable this tool check in further enable_language() commands.
+  set(CMAKE_PLATFORM_HAS_INSTALLNAME FALSE)
+endif()
+enable_language(CXX)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+set(configure_warnings)
+
+message("\n")
+message("Configure summary")
+message("=================")
+message("C++ compiler .......................... ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}, ${CMAKE_CXX_COMPILER}")
+message("\n")
+if(configure_warnings)
+    message("  ******\n")
+    foreach(warning IN LISTS configure_warnings)
+      message(WARNING "${warning}")
+    endforeach()
+    message("  ******\n")
+endif()
