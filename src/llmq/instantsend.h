@@ -71,10 +71,14 @@ private:
     int best_confirmed_height GUARDED_BY(cs_db) {0};
 
     std::unique_ptr<CDBWrapper> db GUARDED_BY(cs_db) {nullptr};
-    mutable unordered_lru_cache<uint256, CInstantSendLockPtr, StaticSaltedHasher, 10000> islockCache GUARDED_BY(cs_db);
-    mutable unordered_lru_cache<uint256, uint256, StaticSaltedHasher, 10000> txidCache GUARDED_BY(cs_db);
 
-    mutable unordered_lru_cache<COutPoint, uint256, SaltedOutpointHasher, 10000> outpointCache GUARDED_BY(cs_db);
+    mutable Mutex cs_islockCache;
+    mutable unordered_lru_cache<uint256, CInstantSendLockPtr, StaticSaltedHasher, 10000> islockCache GUARDED_BY(cs_islockCache);
+    mutable Mutex cs_txidCache;
+    mutable unordered_lru_cache<uint256, uint256, StaticSaltedHasher, 10000> txidCache GUARDED_BY(cs_txidCache);
+    mutable Mutex cs_outpointCache;
+    mutable unordered_lru_cache<COutPoint, uint256, SaltedOutpointHasher, 10000> outpointCache GUARDED_BY(cs_outpointCache);
+
     void WriteInstantSendLockMined(CDBBatch& batch, const uint256& hash, int nHeight) EXCLUSIVE_LOCKS_REQUIRED(cs_db);
 
     void RemoveInstantSendLockMined(CDBBatch& batch, const uint256& hash, int nHeight) EXCLUSIVE_LOCKS_REQUIRED(cs_db);
@@ -101,15 +105,31 @@ private:
      */
     std::vector<uint256> GetInstantSendLocksByParent(const uint256& parent) const EXCLUSIVE_LOCKS_REQUIRED(cs_db);
 
+    CInstantSendLockPtr GetInstantSendLockByHashCache(const uint256& hash) const;
+
     /**
      * See GetInstantSendLockByHash
      */
-    CInstantSendLockPtr GetInstantSendLockByHashInternal(const uint256& hash, bool use_cache = true) const EXCLUSIVE_LOCKS_REQUIRED(cs_db);
+    template<bool already_locked>
+    CInstantSendLockPtr GetInstantSendLockByHashInternal(const uint256& hash, bool use_cache = true) const;
+    CInstantSendLockPtr GetInstantSendLockByHashInternalLocked(const uint256& hash, bool use_cache = true) const EXCLUSIVE_LOCKS_REQUIRED(cs_db) {
+        return GetInstantSendLockByHashInternal<true>(hash, use_cache);
+    };
+    CInstantSendLockPtr GetInstantSendLockByHashInternalNotLocked(const uint256& hash, bool use_cache = true) const LOCKS_EXCLUDED(cs_db) {
+        return GetInstantSendLockByHashInternal<false>(hash, use_cache);
+    }
 
     /**
      * See GetInstantSendLockHashByTxid
      */
-    uint256 GetInstantSendLockHashByTxidInternal(const uint256& txid) const EXCLUSIVE_LOCKS_REQUIRED(cs_db);
+    template<bool already_locked>
+    uint256 GetInstantSendLockHashByTxidInternal(const uint256& txid) const;
+    uint256 GetInstantSendLockHashByTxidInternalLocked(const uint256& txid) const EXCLUSIVE_LOCKS_REQUIRED(cs_db) {
+        return GetInstantSendLockHashByTxidInternal<true>(txid);
+    }
+    uint256 GetInstantSendLockHashByTxidInternalNotLocked(const uint256& txid) const LOCKS_EXCLUDED(cs_db) {
+        return GetInstantSendLockHashByTxidInternal<false>(txid);
+    }
 
 
 public:
@@ -157,8 +177,7 @@ public:
      */
     CInstantSendLockPtr GetInstantSendLockByHash(const uint256& hash, bool use_cache = true) const LOCKS_EXCLUDED(cs_db)
     {
-        LOCK(cs_db);
-        return GetInstantSendLockByHashInternal(hash, use_cache);
+        return GetInstantSendLockByHashInternalNotLocked(hash, use_cache);
     };
     /**
      * Gets an IS Lock hash based on the txid the IS Lock is for
@@ -167,8 +186,7 @@ public:
      */
     uint256 GetInstantSendLockHashByTxid(const uint256& txid) const LOCKS_EXCLUDED(cs_db)
     {
-        LOCK(cs_db);
-        return GetInstantSendLockHashByTxidInternal(txid);
+        return GetInstantSendLockHashByTxidInternalNotLocked(txid);
     };
     /**
      * Gets an IS Lock pointer from the txid given
