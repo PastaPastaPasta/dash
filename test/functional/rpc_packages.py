@@ -212,8 +212,8 @@ class RPCPackagesTest(BitcoinTestFramework):
         coin = self.wallet.get_utxo()
 
         # tx1 and tx2 share the same inputs
-        tx1 = self.wallet.create_self_transfer(utxo_to_spend=coin)
-        tx2 = self.wallet.create_self_transfer(utxo_to_spend=coin)
+        tx1 = self.wallet.create_self_transfer(utxo_to_spend=coin, fee_rate=DEFAULT_FEE)
+        tx2 = self.wallet.create_self_transfer(utxo_to_spend=coin, fee_rate=2*DEFAULT_FEE)
 
         # Ensure tx1 and tx2 are valid by themselves
         assert node.testmempoolaccept([tx1["hex"]])[0]["allowed"]
@@ -232,6 +232,34 @@ class RPCPackagesTest(BitcoinTestFramework):
             {"txid": tx1["txid"], "package-error": "conflict-in-package"},
             {"txid": tx2["txid"], "package-error": "conflict-in-package"}
         ])
+
+        # Add a child that spends both at high feerate to submit via submitpackage
+        tx_child = self.wallet.create_self_transfer_multi(
+            fee_per_output=int(DEFAULT_FEE * 5 * COIN),
+            utxos_to_spend=[tx1["new_utxo"], tx2["new_utxo"]],
+        )
+
+        testres = node.testmempoolaccept([tx1["hex"], tx2["hex"], tx_child["hex"]])
+
+        assert_equal(testres, [
+            {"txid": tx1["txid"], "package-error": "conflict-in-package"},
+            {"txid": tx2["txid"], "package-error": "conflict-in-package"},
+            {"txid": tx_child["txid"], "package-error": "conflict-in-package"}
+        ])
+
+        assert_raises_rpc_error(-25, "conflict-in-package", node.submitpackage, [tx1["hex"], tx2["hex"], tx_child["hex"]])
+
+        # Submit tx1 to mempool, then try the same package again
+        node.sendrawtransaction(tx1["hex"])
+
+        assert_raises_rpc_error(-25, "conflict-in-package", node.submitpackage, [tx1["hex"], tx2["hex"], tx_child["hex"]])
+        assert tx_child["txid"] not in node.getrawmempool()
+
+        # ... and without the in-mempool ancestor tx1 included in the call
+        assert_raises_rpc_error(-25, "package-not-child-with-unconfirmed-parents", node.submitpackage, [tx2["hex"], tx_child["hex"]])
+
+        # Regardless of error type, the child can never enter the mempool
+        assert tx_child["txid"] not in node.getrawmempool()
 
     def assert_equal_package_results(self, node, testmempoolaccept_result, submitpackage_result):
         """Assert that a successful submitpackage result is consistent with testmempoolaccept
