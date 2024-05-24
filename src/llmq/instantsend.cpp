@@ -1652,7 +1652,8 @@ void CInstantSendManager::WorkThreadMain()
 
 bool CInstantSendManager::IsInstantSendEnabled() const
 {
-    return !fReindex && !fImporting && spork_manager.IsSporkActive(SPORK_2_INSTANTSEND_ENABLED);
+    return !fReindex && !fImporting &&
+           (Params().IsMainChain() || spork_manager.IsSporkActive(SPORK_2_INSTANTSEND_ENABLED));
 }
 
 bool CInstantSendManager::IsInstantSendMempoolSigningEnabled() const
@@ -1665,7 +1666,7 @@ bool CInstantSendManager::RejectConflictingBlocks() const
     if (!m_mn_sync.IsBlockchainSynced()) {
         return false;
     }
-    if (!spork_manager.IsSporkActive(SPORK_3_INSTANTSEND_BLOCK_FILTERING)) {
+    if (Params().IsTestChain() && !spork_manager.IsSporkActive(SPORK_3_INSTANTSEND_BLOCK_FILTERING)) {
         LogPrint(BCLog::INSTANTSEND, "%s: spork3 is off, skipping transaction locking checks\n", __func__);
         return false;
     }

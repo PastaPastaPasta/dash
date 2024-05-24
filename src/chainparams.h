@@ -108,6 +108,7 @@ public:
     bool IsMockableChain() const { return m_is_mockable_chain; }
     /** If this chain is exclusively used for testing */
     bool IsTestChain() const { return m_is_test_chain; }
+    bool IsMainChain() const { return !IsTestChain(); }
     uint64_t PruneAfterHeight() const { return nPruneAfterHeight; }
     /** Minimum free space (in GB) needed for data directory */
     uint64_t AssumedBlockchainSize() const { return m_assumed_blockchain_size; }

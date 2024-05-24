@@ -673,7 +673,7 @@ void CChainLocksHandler::Cleanup()
 
 bool AreChainLocksEnabled(const CSporkManager& sporkman)
 {
-    return sporkman.IsSporkActive(SPORK_19_CHAINLOCKS_ENABLED);
+    return Params().IsMainChain() || sporkman.IsSporkActive(SPORK_19_CHAINLOCKS_ENABLED);
 }
 
 bool ChainLocksSigningEnabled(const CSporkManager& sporkman)

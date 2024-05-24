@@ -1590,5 +1590,5 @@ void CGovernanceManager::RemoveInvalidVotes()
 
 bool AreSuperblocksEnabled(const CSporkManager& sporkman)
 {
-    return sporkman.IsSporkActive(SPORK_9_SUPERBLOCKS_ENABLED);
+    return Params().IsMainChain() || sporkman.IsSporkActive(SPORK_9_SUPERBLOCKS_ENABLED);
 }
