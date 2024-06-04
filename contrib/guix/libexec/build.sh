@@ -234,7 +234,7 @@ mkdir -p "$OUTDIR"
 ###########################
 
 # CONFIGFLAGS
-CONFIGFLAGS+=" --enable-reduce-exports --disable-bench --disable-gui-tests --disable-fuzz-binary"
+CONFIGFLAGS+=" -DREDUCE_EXPORTS=ON -DBUILD_BENCH=OFF -DBUILD_GUI_TESTS=OFF -DBUILD_FUZZ_BINARY=OFF"
 case "$HOST" in
     *mingw*) CONFIGFLAGS+=" --disable-miner" ;;
 esac
@@ -243,7 +243,7 @@ esac
 HOST_CFLAGS="-O2 -g"
 HOST_CFLAGS+=$(find /gnu/store -maxdepth 1 -mindepth 1 -type d -exec echo -n " -ffile-prefix-map={}=/usr" \;)
 case "$HOST" in
-    *linux*)  HOST_CFLAGS+=" -ffile-prefix-map=${PWD}=." ;;
+    *linux*)  HOST_CFLAGS+=" -ffile-prefix-map=${DISTSRC}/src=." ;;
     *mingw*)  HOST_CFLAGS+=" -fno-ident" ;;
     *darwin*) unset HOST_CFLAGS ;;
 esac
@@ -270,25 +270,16 @@ mkdir -p "$DISTSRC"
     # Extract the source tarball
     tar --strip-components=1 -xf "${GIT_ARCHIVE}"
 
-    ./autogen.sh
-
     # Configure this DISTSRC for $HOST
     # shellcheck disable=SC2086
-    env CONFIG_SITE="${BASEPREFIX}/${HOST}/share/config.site" \
-        ./configure --prefix=/ \
-                    --disable-ccache \
-                    --disable-maintainer-mode \
-                    --disable-dependency-tracking \
-                    ${CONFIGFLAGS} \
-                    ${HOST_CFLAGS:+CFLAGS="${HOST_CFLAGS}"} \
-                    ${HOST_CXXFLAGS:+CXXFLAGS="${HOST_CXXFLAGS}"} \
-                    ${HOST_LDFLAGS:+LDFLAGS="${HOST_LDFLAGS}"}
-
-    sed -i.old 's/-lstdc++ //g' {./,src/dashbls/,src/secp256k1/}{config.status,libtool}
-
+    env CFLAGS="${HOST_CFLAGS}" CXXFLAGS="${HOST_CXXFLAGS}" LDFLAGS="${HOST_LDFLAGS}" \
+    cmake -S . -B build \
+          --toolchain "${BASEPREFIX}/${HOST}/toolchain.cmake" \
+          -DWITH_CCACHE=OFF \
+          ${CONFIGFLAGS}
 
     # Build Dash Core
-    make --jobs="$JOBS" ${V:+V=1}
+    cmake --build build -j "$JOBS" ${V:+--verbose}
 
     # Make macos-specific debug symbols
     case "$HOST" in
@@ -298,18 +289,19 @@ mkdir -p "$DISTSRC"
     esac
 
     # Check that symbol/security checks tools are sane.
-    make test-security-check ${V:+V=1}
+    cmake --build build --target test-security-check ${V:+--verbose}
     # Perform basic security checks on a series of executables.
-    make -C src --jobs=1 check-security ${V:+V=1}
+    cmake --build build -j 1 --target check-security ${V:+--verbose}
     # Check that executables only contain allowed version symbols.
-    make -C src --jobs=1 check-symbols  ${V:+V=1}
+    cmake --build build -j 1 --target check-symbols ${V:+--verbose}
 
     mkdir -p "$OUTDIR"
 
     # Make the os-specific installers
     case "$HOST" in
         *mingw*)
-            make deploy ${V:+V=1} BITCOIN_WIN_INSTALLER="${OUTDIR}/${DISTNAME}-win64-setup-unsigned.exe"
+            cmake --build build -j "$JOBS" -t deploy ${V:+--verbose}
+            mv build/bitcoin-win64-setup.exe "${OUTDIR}/${DISTNAME}-win64-setup-unsigned.exe"
             ;;
     esac
 
@@ -319,16 +311,17 @@ mkdir -p "$DISTSRC"
     INSTALLPATH="${PWD}/installed/${DISTNAME}"
     mkdir -p "${INSTALLPATH}"
     # Install built Dash Core to $INSTALLPATH
-    make install DESTDIR="${INSTALLPATH}" ${V:+V=1}
+    cmake --install build --prefix "${INSTALLPATH}" ${V:+--verbose}
 
     case "$HOST" in
         *darwin*)
-            make deploydir ${V:+V=1}
+            cmake --build build --target deploy ${V:+--verbose}
+            mv build/dist/Bitcoin-Core.zip "${OUTDIR}/${DISTNAME}-${HOST}-unsigned.dmg"
             mkdir -p "unsigned-app-${HOST}"
             cp  --target-directory="unsigned-app-${HOST}" \
                 contrib/macdeploy/detached-sig-create.sh \
                 "${BASEPREFIX}/${HOST}"/native/bin/dmg
-            mv --target-directory="unsigned-app-${HOST}" dist
+            mv --target-directory="unsigned-app-${HOST}" build/dist
             (
                 cd "unsigned-app-${HOST}"
                 find . -print0 \
@@ -337,7 +330,6 @@ mkdir -p "$DISTSRC"
                     | gzip -9n > "${OUTDIR}/${DISTNAME}-${HOST}-unsigned.tar.gz" \
                     || ( rm -f "${OUTDIR}/${DISTNAME}-${HOST}-unsigned.tar.gz" && exit 1 )
             )
-            make deploy ${V:+V=1} OSX_DMG="${OUTDIR}/${DISTNAME}-${HOST}-unsigned.dmg"
             ;;
     esac
     (
@@ -348,10 +340,6 @@ mkdir -p "$DISTSRC"
                 mv --target-directory="$DISTNAME"/lib/ "$DISTNAME"/bin/*.dll
                 ;;
         esac
-
-        # Prune libtool and object archives
-        find . -name "lib*.la" -delete
-        find . -name "lib*.a" -delete
 
         # Prune pkg-config files
         rm -rf "${DISTNAME}/lib/pkgconfig"
@@ -366,7 +354,7 @@ mkdir -p "$DISTSRC"
                 {
                     find "${DISTNAME}/bin" -type f -executable -print0
                     find "${DISTNAME}/lib" -type f -print0
-                } | xargs -0 -P"$JOBS" -I{} "${DISTSRC}/contrib/devtools/split-debug.sh" {} {} {}.dbg
+                } | xargs -0 -P"$JOBS" -I{} "${DISTSRC}/build/split-debug.sh" {} {} {}.dbg
                 ;;
         esac
 
