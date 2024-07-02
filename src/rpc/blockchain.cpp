@@ -3436,10 +3436,9 @@ static RPCHelpMan loadtxoutset()
             RPC_INTERNAL_ERROR,
             "Timed out waiting for base block header to appear in headers chain");
     }
-    std::string activation_error;
-    if (!chainman.ActivateSnapshot(afile, metadata, false, &activation_error)) {
-        const std::string detail = activation_error.empty() ? "" : ": " + activation_error;
-        throw JSONRPCError(RPC_INTERNAL_ERROR, "Unable to load UTXO snapshot " + fs::PathToString(path) + detail);
+    auto activation_result{chainman.ActivateSnapshot(afile, metadata, false)};
+    if (!activation_result) {
+        throw JSONRPCError(RPC_INTERNAL_ERROR, "Unable to load UTXO snapshot: " + util::ErrorString(activation_result).original);
     }
     CBlockIndex* new_tip{WITH_LOCK(::cs_main, return chainman.ActiveTip())};
 

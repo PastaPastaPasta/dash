@@ -5624,24 +5624,38 @@ Chainstate& ChainstateManager::InitializeChainstate(CTxMemPool* mempool,
     return destroyed && !fs::exists(db_path);
 }
 
-bool ChainstateManager::ActivateSnapshot(
+util::Result<void> ChainstateManager::ActivateSnapshot(
         AutoFile& coins_file,
         const SnapshotMetadata& metadata,
-        bool in_memory,
-        std::string* error)
+        bool in_memory)
 {
     uint256 base_blockhash = metadata.m_base_blockhash;
 
     if (this->SnapshotBlockhash()) {
-        LogPrintf("[snapshot] can't activate a snapshot-based chainstate more than once\n");
-        return false;
+        return util::Error{_("Can't activate a snapshot-based chainstate more than once")};
     }
 
     {
         LOCK(::cs_main);
+
+        if (!GetParams().AssumeutxoForBlockhash(base_blockhash).has_value()) {
+            return util::Error{strprintf(_("assumeutxo block hash in snapshot metadata not recognized (%s)"),
+                base_blockhash.ToString())};
+        }
+
+        CBlockIndex* snapshot_start_block = m_blockman.LookupBlockIndex(base_blockhash);
+        if (!snapshot_start_block) {
+            return util::Error{strprintf(_("The base block header (%s) must appear in the headers chain. Make sure all headers are syncing, and call loadtxoutset again."),
+                          base_blockhash.ToString())};
+        }
+
+        const bool start_block_invalid = snapshot_start_block->nStatus & (BLOCK_FAILED_MASK | BLOCK_CONFLICT_CHAINLOCK);
+        if (start_block_invalid) {
+            return util::Error{strprintf(_("The base block header (%s) is part of an invalid chain."), base_blockhash.ToString())};
+        }
+
         if (Assert(m_active_chainstate->GetMempool())->size() > 0) {
-            LogPrintf("[snapshot] can't activate a snapshot when mempool not empty\n");
-            return false;
+            return util::Error{_("Can't activate a snapshot when mempool not empty.")};
         }
     }
 
@@ -5694,9 +5708,8 @@ bool ChainstateManager::ActivateSnapshot(
             static_cast<size_t>(current_coinstip_cache_size * SNAPSHOT_CACHE_PERC));
     }
 
-    auto cleanup_bad_snapshot = [&](const std::string& reason) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
+    auto cleanup_bad_snapshot = [&](const std::string& reason) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) -> util::Result<void> {
         LogPrintf("[snapshot] activation failed - %s\n", reason);
-        if (error) *error = reason;
         this->ReleaseSnapshotPruneLock();
         this->MaybeRebalanceCaches();
 
@@ -5713,7 +5726,7 @@ bool ChainstateManager::ActivateSnapshot(
                     "Manually remove it before restarting.\n", fs::PathToString(*snapshot_datadir)));
             }
         }
-        return false;
+        return util::Error{Untranslated(reason)};
     };
 
     std::string population_error;
@@ -5758,7 +5771,7 @@ bool ChainstateManager::ActivateSnapshot(
         m_snapshot_chainstate->CoinsTip().DynamicMemoryUsage() / (1000 * 1000));
 
     this->MaybeRebalanceCaches();
-    return true;
+    return {};
 }
 
 
@@ -6089,7 +6102,7 @@ bool ChainstateManager::DeleteSnapshotChainstate()
     Assert(m_snapshot_chainstate);
     Assert(m_ibd_chainstate);
 
-    fs::path snapshot_datadir = Assert(node::FindSnapshotChainstateDir(m_options.datadir)).value();
+    fs::path snapshot_datadir = Assert(node::FindSnapshotChainstateDir()).value();
     if (!DeleteCoinsDBFromDisk(snapshot_datadir, /*is_snapshot=*/ true)) {
         LogPrintf("Deletion of %s failed. Please remove it manually to continue reindexing.\n",
                   fs::PathToString(snapshot_datadir));

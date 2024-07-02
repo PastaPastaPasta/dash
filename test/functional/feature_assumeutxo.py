@@ -76,10 +76,11 @@ class AssumeutxoTest(BitcoinTestFramework):
             valid_snapshot_contents = f.read()
 
         bad_snapshot_path = valid_snapshot_path + '.mod'
+        node = self.nodes[1]
 
         def expected_error(log_msg="", rpc_details=""):
-            with self.nodes[1].assert_debug_log([log_msg]):
-                assert_raises_rpc_error(-32603, f"Unable to load UTXO snapshot{rpc_details}", self.nodes[1].loadtxoutset, bad_snapshot_path)
+            with node.assert_debug_log([log_msg]):
+                assert_raises_rpc_error(-32603, f"Unable to load UTXO snapshot{rpc_details}", node.loadtxoutset, bad_snapshot_path)
         prev_block_hash = self.nodes[0].getblockhash(SNAPSHOT_BASE_HEIGHT - 1)
         bogus_block_hash = "0" * 64  # Represents any unknown block hash
         for bad_block_hash in [bogus_block_hash, prev_block_hash]:
@@ -161,8 +162,8 @@ class AssumeutxoTest(BitcoinTestFramework):
         assert txid in node.getrawmempool()
 
         # Attempt to load the snapshot on Node 2 and expect it to fail
-        with node.assert_debug_log(expected_msgs=["[snapshot] can't activate a snapshot when mempool not empty"]):
-            assert_raises_rpc_error(-32603, "Unable to load UTXO snapshot", node.loadtxoutset, dump_output_path)
+        msg = "Unable to load UTXO snapshot: Can't activate a snapshot when mempool not empty"
+        assert_raises_rpc_error(-32603, msg, node.loadtxoutset, dump_output_path)
 
         self.restart_node(2, extra_args=self.extra_args[2])
 
@@ -172,7 +173,20 @@ class AssumeutxoTest(BitcoinTestFramework):
         assert_equal(node.getblockcount(), FINAL_HEIGHT)
         with node.assert_debug_log(expected_msgs=["[snapshot] activation failed - work does not exceed active chainstate"]):
             assert_raises_rpc_error(-32603, "Unable to load UTXO snapshot", node.loadtxoutset, dump_output_path)
-        self.restart_node(0, extra_args=self.extra_args[0])
+
+    def test_snapshot_block_invalidated(self, dump_output_path):
+        self.log.info("Test snapshot is not loaded when base block is invalid.")
+        node = self.nodes[0]
+        base_hash = node.getblockhash(SNAPSHOT_BASE_HEIGHT)
+        # We are testing the case where the base block is invalidated itself
+        # and also the case where one of its parents is invalidated.
+        for height in [SNAPSHOT_BASE_HEIGHT, SNAPSHOT_BASE_HEIGHT - 1]:
+            block_hash = node.getblockhash(height)
+            node.invalidateblock(block_hash)
+            assert_equal(node.getblockcount(), height - 1)
+            msg = f"Unable to load UTXO snapshot: The base block header ({base_hash}) is part of an invalid chain."
+            assert_raises_rpc_error(-32603, msg, node.loadtxoutset, dump_output_path)
+            node.reconsiderblock(block_hash)
 
     def test_snapshot_in_a_divergent_chain(self, dump_output_path):
         n0 = self.nodes[0]
@@ -339,6 +353,7 @@ class AssumeutxoTest(BitcoinTestFramework):
         self.test_snapshot_with_less_work(dump_output['path'])
         self.test_invalid_mempool_state(dump_output['path'])
         self.test_invalid_snapshot_scenarios(dump_output['path'])
+        self.test_snapshot_block_invalidated(dump_output['path'])
 
         self.log.info(f"Loading snapshot into second node from {dump_output['path']}")
         loaded = n1.loadtxoutset(dump_output['path'])
@@ -510,8 +525,8 @@ class AssumeutxoTest(BitcoinTestFramework):
         self.test_invalid_chainstate_scenarios(2)
 
         self.log.info("Check that loading the snapshot again will fail because there is already an active snapshot.")
-        with n2.assert_debug_log(expected_msgs=["[snapshot] can't activate a snapshot-based chainstate more than once"]):
-            assert_raises_rpc_error(-32603, "Unable to load UTXO snapshot", n2.loadtxoutset, dump_output['path'])
+        msg = "Unable to load UTXO snapshot: Can't activate a snapshot-based chainstate more than once"
+        assert_raises_rpc_error(-32603, msg, n2.loadtxoutset, dump_output['path'])
 
         self.connect_nodes(0, 2)
         self.wait_until(lambda: n2.getchainstates()['chainstates'][-1]['blocks'] == FINAL_HEIGHT)
