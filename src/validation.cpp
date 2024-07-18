@@ -5654,6 +5654,10 @@ util::Result<void> ChainstateManager::ActivateSnapshot(
             return util::Error{strprintf(_("The base block header (%s) is part of an invalid chain."), base_blockhash.ToString())};
         }
 
+        if (!m_best_header || m_best_header->GetAncestor(snapshot_start_block->nHeight) != snapshot_start_block) {
+            return util::Error{_("A forked headers-chain with more work than the chain with the snapshot base block header exists. Please proceed to sync without AssumeUtxo.")};
+        }
+
         if (Assert(m_active_chainstate->GetMempool())->size() > 0) {
             return util::Error{_("Can't activate a snapshot when mempool not empty.")};
         }
