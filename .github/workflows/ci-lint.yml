@@ -47,4 +47,4 @@ jobs:
       - name: Run lint-all.sh
         run: |
           LOWERCASE_REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace ghcr.io/$LOWERCASE_REPO:builder-${{ github.ref_name }} bash -c "mkdir -p /workspace/logs && chmod -R 777 /workspace && ./test/lint/lint-all.sh"
+          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace ghcr.io/$LOWERCASE_REPO:builder-${{ github.ref_name }} bash -c "chmod -R 777 /workspace && ./test/lint/lint-all.sh"
