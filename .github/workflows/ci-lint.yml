@@ -1,0 +1,44 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    services:
+      docker:
+        image: docker:20.10.20
+        options: --privileged
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Cache Docker layers
+      uses: actions/cache@v2
+      with:
+        path: /tmp/.buildx-cache
+        key: ${{ runner.os }}-buildx-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-buildx-
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v2
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Pull and build Docker image
+      run: |
+        docker pull ghcr.io/${{ github.repository }}:builder-${{ github.ref_name }} || true
+        docker build --cache-from ghcr.io/${{ github.repository }}:builder-${{ github.ref_name }} -t ghcr.io/${{ github.repository }}:builder-${{ github.ref_name }} -f contrib/containers/ci/Dockerfile .
+        docker push ghcr.io/${{ github.repository }}:builder-${{ github.ref_name }}
+
+    - name: Run lint-all.sh
+      run: |
+        docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace ghcr.io/${{ github.repository }}:builder-${{ github.ref_name }} ./test/lint/lint-all.sh
