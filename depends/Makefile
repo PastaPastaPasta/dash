@@ -43,7 +43,6 @@ NO_NATPMP ?=
 MULTIPROCESS ?=
 FALLBACK_DOWNLOAD_PATH ?= https://bitcoincore.org/depends-sources
 FALLBACK_DOWNLOAD_PATH2 ?= https://ipfs.filebase.io/ipfs/QmbMTZftVQ9eWAirvdTbqp6A5YdbUJxEpngXUzhaqBsBRg
-
 BUILD = $(shell ./config.guess)
 HOST ?= $(BUILD)
 PATCHES_PATH = $(BASEDIR)/patches
