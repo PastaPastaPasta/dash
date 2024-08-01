@@ -82,16 +82,26 @@ jobs:
             ${{ runner.os }}-depends-${{ matrix.host }}
             ${{ runner.os }}-depends
 
-      - name: Build dependencies
-        run: make -j$(nproc) -C depends HOST=${{ matrix.host }}
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v2
+      - name: Cache build dependencies
+        uses: actions/cache@v2
         with:
-          name: depends
           path: |
             depends/${{ matrix.host }}
             depends/SDKs
+          key: depends-${{ matrix.host }}-${{ github.sha }}
+          restore-keys: |
+            depends-${{ matrix.host }}-
+
+      - name: Build dependencies
+        run: make -j$(nproc) -C depends HOST=${{ matrix.host }}
+
+#      - name: Upload build artifacts
+#        uses: actions/upload-artifact@v2
+#        with:
+#          name: depends
+#          path: |
+#            depends/${{ matrix.host }}
+#            depends/SDKs
   build:
     name: Build
     needs: [builder-image, build-depends]
@@ -110,12 +120,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v2
+#      - name: Download build artifacts
+#        uses: actions/download-artifact@v2
+#        with:
+#          name: depends
+#          path: ${{ format('depends/{0}', matrix.host) }}
+      - name: Restore cached dependencies
+        uses: actions/cache@v2
         with:
-          name: depends
-          path: ${{ format('depends/{0}', matrix.host) }}
-
+          path: |
+            depends/${{ matrix.host }}
+            depends/SDKs
+          key: depends-${{ matrix.host }}-${{ github.sha }}
+          restore-keys: |
+            depends-${{ matrix.host }}-
       - name: Setup environment
         run: |
           echo "BUILD_TARGET=${{ matrix.build_target }}"
