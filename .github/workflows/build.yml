@@ -43,7 +43,7 @@ jobs:
           context: ./contrib/containers/ci
           file: ./contrib/containers/ci/Dockerfile
           push: true
-          tags: ghcr.io/${{ github.repository }}/builder:${{ steps.prepare.outputs.image-tag }}
+          tags: ghcr.io/${{ github.repository | lower }}/builder:${{ steps.prepare.outputs.image-tag }}
 
   build-depends:
     name: Build Dependencies
