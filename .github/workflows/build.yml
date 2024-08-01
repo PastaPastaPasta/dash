@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-20.04
     outputs:
       image-tag: ${{ steps.prepare.outputs.image-tag }}
+      repo-name: ${{ steps.prepare.outputs.repo-name }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -54,19 +55,18 @@ jobs:
     runs-on: ubuntu-20.04
     strategy:
       matrix:
-        include:
-          - host: arm-linux-gnueabihf
-          - host: x86_64-w64-mingw32
-          - host: x86_64-pc-linux-gnu
-            dep_opts: DEBUG=1
+        host:
+          - arm-linux-gnueabihf
+          - x86_64-w64-mingw32
+          - x86_64-pc-linux-gnu
     container:
-      image: ghcr.io/${{ github.repository }}/builder:${{ needs.builder-image.outputs.image-tag }}
+      image: ghcr.io/${{ needs.builder-image.outputs.repo-name }}/builder:${{ needs.builder-image.outputs.image-tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
 
       - name: Build dependencies
-        run: make -j$(nproc) -C depends HOST=${{ matrix.host }} ${{ matrix.dep_opts || '' }}
+        run: make -j$(nproc) -C depends HOST=${{ matrix.host }}
 
   build:
     name: Build
@@ -80,7 +80,7 @@ jobs:
           - build_target: linux64
             dep_opts: DEBUG=1
     container:
-      image: ghcr.io/${{ github.repository }}/builder:${{ needs.builder-image.outputs.image-tag }}
+      image: ghcr.io/${{ needs.builder-image.outputs.repo-name }}/builder:${{ needs.builder-image.outputs.image-tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -100,7 +100,7 @@ jobs:
     needs: build
     runs-on: ubuntu-20.04
     container:
-      image: ghcr.io/${{ github.repository }}/builder:${{ needs.builder-image.outputs.image-tag }}
+      image: ghcr.io/${{ needs.builder-image.outputs.repo-name }}/builder:${{ needs.builder-image.outputs.image-tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
