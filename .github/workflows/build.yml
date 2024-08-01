@@ -90,7 +90,7 @@ jobs:
         with:
           name: depends
           path: |
-            depends/$HOST
+            depends/${{ matrix.host }}
             depends/SDKs
   build:
     name: Build
