@@ -57,6 +57,9 @@ jobs:
     name: Build Dependencies
     needs: builder-image
     runs-on: ubuntu-20.04
+    outputs:
+      image-tag: ${{ needs.builder-image.outputs.image-tag }}
+      repo-name: ${{ needs.builder-image.outputs.repo-name }}
     strategy:
       matrix:
         host:
@@ -77,6 +80,9 @@ jobs:
     name: Build
     needs: build-depends
     runs-on: ubuntu-20.04
+    outputs:
+      image-tag: ${{ needs.builder-image.outputs.image-tag }}
+      repo-name: ${{ needs.builder-image.outputs.repo-name }}
     strategy:
       matrix:
         include:
