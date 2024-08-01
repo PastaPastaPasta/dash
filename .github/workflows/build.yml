@@ -25,16 +25,20 @@ jobs:
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
+      - name: Set lowercase branch name
+        id: vars
+        run: echo "::set-output name=lowercase_branch::${GITHUB_REF##*/}" | tr '[:upper:]' '[:lower:]'
+
       - name: Pull builder image
         run: |
-          docker pull ghcr.io/${{ github.repository }}/builder-${{ github.ref_name }} || true
+          docker pull ghcr.io/${{ github.repository }}/builder-${{ steps.vars.outputs.lowercase_branch }} || true
           docker pull ghcr.io/${{ github.repository }}/builder-develop || true
 
       - name: Build and push builder image
         run: |
           cd contrib/containers/ci
-          docker build --cache-from ghcr.io/${{ github.repository }}/builder-${{ github.ref_name,, }} --cache-from ghcr.io/${{ github.repository }}/builder-develop -t ghcr.io/${{ github.repository }}/builder-${{ github.ref_name,, }} -f Dockerfile .
-          docker push ghcr.io/${{ github.repository }}/builder-${{ github.ref_name,, }}
+          docker build --cache-from ghcr.io/${{ github.repository }}/builder-${{ steps.vars.outputs.lowercase_branch }} --cache-from ghcr.io/${github.repository}/builder-develop -t ghcr.io/${{ github.repository }}/builder-${{ steps.vars.outputs.lowercase_branch }} -f Dockerfile .
+          docker push ghcr.io/${{ github.repository }}/builder-${{ steps.vars.outputs.lowercase_branch }}
 
   build-depends:
     name: Build Dependencies
@@ -49,18 +53,18 @@ jobs:
         run: |
           mkdir -p depends/SDKs
           mkdir -p depends/sdk-sources
-          OSX_SDK_BASENAME="Xcode-${{ env.XCODE_VERSION }}-${{ env.XCODE_BUILD_ID }}-extracted-SDK-with-libcxx-headers.tar.gz"
+          OSX_SDK_BASENAME="Xcode-${XCODE_VERSION}-${XCODE_BUILD_ID}-extracted-SDK-with-libcxx-headers.tar.gz"
           OSX_SDK_PATH="depends/sdk-sources/${OSX_SDK_BASENAME}"
           if [ ! -f "$OSX_SDK_PATH" ]; then
             echo "Downloading MacOS SDK"
-            curl --location --fail "${{ env.SDK_URL }}/${OSX_SDK_BASENAME}" -o "$OSX_SDK_PATH"
+            curl --location --fail "${SDK_URL}/${OSX_SDK_BASENAME}" -o "$OSX_SDK_PATH"
           fi
           if [ -f "$OSX_SDK_PATH" ]; then
             echo "Extracting MacOS SDK"
             tar -C depends/SDKs -xf "$OSX_SDK_PATH"
 
       - name: Build dependencies
-        run: make -j$(nproc) -C depends HOST=${{ env.HOST }} $DEP_OPTS
+        run: make -j$(nproc) -C depends HOST=${HOST} $DEP_OPTS
 
       - name: Cache dependencies
         uses: actions/cache@v2
@@ -75,7 +79,7 @@ jobs:
         with:
           name: depends
           path: |
-            depends/${{ env.HOST }}
+            depends/${HOST}
             depends/SDKs
 
   build:
