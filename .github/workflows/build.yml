@@ -17,49 +17,47 @@ jobs:
     name: Builder Image
     runs-on: ubuntu-20.04
     outputs:
-      repo: ${{ steps.set-repo.outputs.repo }}
-      branch: ${{ steps.set-branch.outputs.branch }}
+      image-tag: ${{ steps.prepare.outputs.image-tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Log in to GitHub Container Registry
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-      - name: Set lowercase branch name
-        id: set-branch
-        run: echo "::set-output name=branch::$(echo ${GITHUB_REF##*/} | tr '[:upper:]' '[:lower:]')"
-
-      - name: Set lowercase repository
-        id: set-repo
-        run: echo "::set-output name=repo::$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')"
-
-      - name: Pull builder image
+      - name: Prepare
+        id: prepare
         run: |
-          docker pull ghcr.io/${{ steps.set-repo.outputs.repo }}/builder-${{ steps.set-branch.outputs.branch }} || true
-          docker pull ghcr.io/${{ steps.set-repo.outputs.repo }}/builder-develop || true
+          echo "::set-output name=image-tag::$(echo ${GITHUB_REF##*/} | tr '[:upper:]' '[:lower:]')"
 
-      - name: Build and push builder image
-        run: |
-          cd contrib/containers/ci
-          docker build --cache-from ghcr.io/${{ steps.set-repo.outputs.repo }}/builder-${{ steps.set-branch.outputs.branch }} --cache-from ghcr.io/${{ steps.set-repo.outputs.repo }}/builder-develop -t ghcr.io/${{ steps.set-repo.outputs.repo }}/builder-${{ steps.set-branch.outputs.branch }} -f Dockerfile .
-          docker push ghcr.io/${{ steps.set-repo.outputs.repo }}/builder-${{ steps.set-branch.outputs.branch }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v2
+        with:
+          context: ./contrib/containers/ci
+          file: ./contrib/containers/ci/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository }}/builder:${{ steps.prepare.outputs.image-tag }}
 
   build-depends:
     name: Build Dependencies
-    runs-on: ubuntu-20.04
     needs: builder-image
+    runs-on: ubuntu-20.04
     strategy:
       matrix:
-        host:
-          - arm-linux-gnueabihf
-          - x86_64-w64-mingw32
-          - x86_64-pc-linux-gnu
         include:
+          - host: arm-linux-gnueabihf
+          - host: x86_64-w64-mingw32
           - host: x86_64-pc-linux-gnu
             dep_opts: DEBUG=1
     container:
-      image: ghcr.io/${{ needs.builder-image.outputs.repo }}/builder-${{ needs.builder-image.outputs.branch }}
+      image: ghcr.io/${{ github.repository }}/builder:${{ needs.builder-image.outputs.image-tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -69,50 +67,44 @@ jobs:
 
   build:
     name: Build
-    runs-on: ubuntu-20.04
     needs: build-depends
+    runs-on: ubuntu-20.04
     strategy:
       matrix:
-        build_target:
-          - arm-linux
-          - win64
-          - linux64
+        include:
+          - build_target: arm-linux
+          - build_target: win64
+          - build_target: linux64
+            dep_opts: DEBUG=1
     container:
-      image: ghcr.io/${{ needs.builder-image.outputs.repo }}/builder-${{ needs.builder-image.outputs.branch }}
+      image: ghcr.io/${{ github.repository }}/builder:${{ needs.builder-image.outputs.image-tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
 
       - name: Setup environment
         run: |
-          export CACHE_DIR=$GITHUB_WORKSPACE/cache
-          echo BUILD_TARGET=${{ matrix.build_target }}
+          echo "BUILD_TARGET=${{ matrix.build_target }}"
           source ./ci/dash/matrix.sh
 
-      - name: Build source
-        run: ./ci/dash/build_src.sh
-
-      - name: Run unit tests
-        run: ./ci/dash/test_unittests.sh
+      - name: Build source and run tests
+        run: |
+          ./ci/dash/build_src.sh
+          ./ci/dash/test_unittests.sh
 
   test:
     name: Test
-    runs-on: ubuntu-20.04
     needs: build
-    strategy:
-      matrix:
-        build_target:
-          - linux64
+    runs-on: ubuntu-20.04
     container:
-      image: ghcr.io/${{ needs.builder-image.outputs.repo }}/builder-${{ needs.builder-image.outputs.branch }}
+      image: ghcr.io/${{ github.repository }}/builder:${{ needs.builder-image.outputs.image-tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
 
       - name: Setup environment
         run: |
-          export CACHE_DIR=$GITHUB_WORKSPACE/cache
-          echo BUILD_TARGET=${{ matrix.build_target }}
+          echo "BUILD_TARGET=${{ needs.build.matrix.build_target }}"
           source ./ci/dash/matrix.sh
 
       - name: Run integration tests
