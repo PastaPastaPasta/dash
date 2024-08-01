@@ -48,9 +48,22 @@ jobs:
           docker build --cache-from ghcr.io/${{ steps.lowercase_repo.outputs.repo }}/builder-${{ steps.lowercase_branch.outputs.branch }} --cache-from ghcr.io/${{ steps.lowercase_repo.outputs.repo }}/builder-develop -t ghcr.io/${{ steps.lowercase_repo.outputs.repo }}/builder-${{ steps.lowercase_branch.outputs.branch }} -f Dockerfile .
           docker push ghcr.io/${{ steps.lowercase_repo.outputs.repo }}/builder-${{ steps.lowercase_branch.outputs.branch }}
 
-  build-depends-template:
+  build-depends:
+    name: Build Dependencies
     runs-on: ubuntu-20.04
     needs: builder-image
+    strategy:
+      matrix:
+        host:
+          - arm-linux-gnueabihf
+          - x86_64-w64-mingw32
+          - x86_64-pc-linux-gnu
+        include:
+          - host: x86_64-pc-linux-gnu
+            dep_opts: DEBUG=1
+    env:
+      HOST: ${{ matrix.host }}
+      DEP_OPTS: ${{ matrix.dep_opts || '' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -73,9 +86,22 @@ jobs:
       - name: Build dependencies
         run: make -j$(nproc) -C depends HOST=${{ env.HOST }} $DEP_OPTS
 
-  build-template:
+  build:
+    name: Build
     runs-on: ubuntu-20.04
-    needs: ${{ matrix.depends_job }}
+    needs: build-depends
+    strategy:
+      matrix:
+        build_target:
+          - arm-linux
+          - win64
+          - linux64
+        include:
+          - build_target: linux64
+            host: x86_64-pc-linux-gnu
+            dep_opts: DEBUG=1
+    env:
+      BUILD_TARGET: ${{ matrix.build_target }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -92,9 +118,17 @@ jobs:
       - name: Run unit tests
         run: ./ci/dash/test_unittests.sh
 
-  test-template:
+  test:
+    name: Test
     runs-on: ubuntu-20.04
-    needs: ${{ matrix.build_job }}
+    needs: build
+    strategy:
+      matrix:
+        build_target:
+          - linux64
+    env:
+      BUILD_TARGET: ${{ matrix.build_target }}
+      INTEGRATION_TESTS_ARGS: --extended --exclude feature_pruning,feature_dbcrash
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -107,51 +141,3 @@ jobs:
 
       - name: Run integration tests
         run: ./ci/dash/test_integrationtests.sh $INTEGRATION_TESTS_ARGS
-
-  build-depends-arm-linux:
-    name: Build Dependencies (ARM Linux)
-    extends: build-depends-template
-    env:
-      HOST: arm-linux-gnueabihf
-
-  build-depends-win64:
-    name: Build Dependencies (Win64)
-    extends: build-depends-template
-    env:
-      HOST: x86_64-w64-mingw32
-
-  build-depends-linux64-debug:
-    name: Build Dependencies (Linux64 Debug)
-    extends: build-depends-template
-    env:
-      HOST: x86_64-pc-linux-gnu
-      DEP_OPTS: DEBUG=1
-
-  build-arm-linux:
-    name: Build (ARM Linux)
-    extends: build-template
-    needs: build-depends-arm-linux
-    env:
-      BUILD_TARGET: arm-linux
-
-  build-win64:
-    name: Build (Win64)
-    extends: build-template
-    needs: build-depends-win64
-    env:
-      BUILD_TARGET: win64
-
-  build-linux64-debug:
-    name: Build (Linux64 Debug)
-    extends: build-template
-    needs: build-depends-linux64-debug
-    env:
-      BUILD_TARGET: linux64
-
-  test-linux64:
-    name: Test (Linux64)
-    extends: test-template
-    needs: build-linux64-debug
-    env:
-      BUILD_TARGET: linux64
-      INTEGRATION_TESTS_ARGS: --extended --exclude feature_pruning,feature_dbcrash
