@@ -110,14 +110,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Set Depends Path
-        run: echo "DEPENDS_PATH=depends/${{ matrix.host }}" >> $GITHUB_ENV
-
       - name: Download build artifacts
         uses: actions/download-artifact@v2
         with:
           name: depends-artifacts
-          path: ${{ env.DEPENDS_PATH }}
+          path: ${{ format('depends/{0}', matrix.host) }}
 
       - name: Setup environment
         run: |
