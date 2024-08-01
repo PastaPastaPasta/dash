@@ -21,7 +21,7 @@ jobs:
       repo-name: ${{ steps.prepare.outputs.repo-name }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Prepare
         id: prepare
@@ -68,7 +68,7 @@ jobs:
       options: --user root
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Cache dependencies
         uses: actions/cache@v2
@@ -108,7 +108,7 @@ jobs:
       options: --user root
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Download build artifacts
         uses: actions/download-artifact@v2
@@ -143,7 +143,7 @@ jobs:
       options: --user root
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Download build artifacts
         uses: actions/download-artifact@v2
