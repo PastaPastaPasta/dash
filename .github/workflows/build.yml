@@ -77,8 +77,9 @@ jobs:
             depends/built
             depends/sdk-sources
           # We don't care about no specific key as depends system will handle that for us
-          key: ${{ runner.os }}-depends
+          key: ${{ runner.os }}-depends-${{ matrix.host }}
           restore-keys: |
+            ${{ runner.os }}-depends-${{ matrix.host }}
             ${{ runner.os }}-depends
 
       - name: Build dependencies
