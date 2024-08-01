@@ -37,7 +37,7 @@ jobs:
       - name: Build and push builder image
         run: |
           cd contrib/containers/ci
-          docker build --cache-from ghcr.io/${{ github.repository }}/builder-${{ steps.vars.outputs.lowercase_branch }} --cache-from ghcr.io/${github.repository}/builder-develop -t ghcr.io/${{ github.repository }}/builder-${{ steps.vars.outputs.lowercase_branch }} -f Dockerfile .
+          docker build --cache-from ghcr.io/${{ github.repository }}/builder-${{ steps.vars.outputs.lowercase_branch }} --cache-from ghcr.io/${{ github.repository }}/builder-develop -t ghcr.io/${{ github.repository }}/builder-${{ steps.vars.outputs.lowercase_branch }} -f Dockerfile .
           docker push ghcr.io/${{ github.repository }}/builder-${{ steps.vars.outputs.lowercase_branch }}
 
   build-depends:
