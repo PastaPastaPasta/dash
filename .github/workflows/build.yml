@@ -65,6 +65,7 @@ jobs:
           - x86_64-pc-linux-gnu
     container:
       image: ghcr.io/${{ needs.builder-image.outputs.repo-name }}/builder:${{ needs.builder-image.outputs.image-tag }}
+      options: --user root
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -85,6 +86,7 @@ jobs:
             dep_opts: DEBUG=1
     container:
       image: ghcr.io/${{ needs.builder-image.outputs.repo-name }}/builder:${{ needs.builder-image.outputs.image-tag }}
+      options: --user root
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -105,6 +107,7 @@ jobs:
     runs-on: ubuntu-20.04
     container:
       image: ghcr.io/${{ needs.builder-image.outputs.repo-name }}/builder:${{ needs.builder-image.outputs.image-tag }}
+      options: --user root
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
