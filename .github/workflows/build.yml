@@ -75,7 +75,6 @@ jobs:
 
       - name: Build dependencies
         run: make -j$(nproc) -C depends HOST=${{ matrix.host }}
-        shell: bash
 
   build:
     name: Build
