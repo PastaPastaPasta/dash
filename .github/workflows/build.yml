@@ -22,6 +22,9 @@ jobs:
         options: --privileged
         ports:
           - 2375:2375
+    outputs:
+      repo: ${{ steps.set-repo.outputs.repo }}
+      branch: ${{ steps.set-branch.outputs.branch }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -30,23 +33,23 @@ jobs:
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Set lowercase branch name
-        id: lowercase_branch
-        run: echo "##[set-output name=branch;]${GITHUB_REF##*/}" | tr '[:upper:]' '[:lower:]'
+        id: set-branch
+        run: echo "::set-output name=branch::$(echo ${GITHUB_REF##*/} | tr '[:upper:]' '[:lower:]')"
 
       - name: Set lowercase repository
-        id: lowercase_repo
-        run: echo "##[set-output name=repo;]${{ github.repository }}" | tr '[:upper:]' '[:lower:]'
+        id: set-repo
+        run: echo "::set-output name=repo::$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')"
 
       - name: Pull builder image
         run: |
-          docker pull ghcr.io/${{ steps.lowercase_repo.outputs.repo }}/builder-${{ steps.lowercase_branch.outputs.branch }} || true
-          docker pull ghcr.io/${{ steps.lowercase_repo.outputs.repo }}/builder-develop || true
+          docker pull ghcr.io/${{ steps.set-repo.outputs.repo }}/builder-${{ steps.set-branch.outputs.branch }} || true
+          docker pull ghcr.io/${{ steps.set-repo.outputs.repo }}/builder-develop || true
 
       - name: Build and push builder image
         run: |
           cd contrib/containers/ci
-          docker build --cache-from ghcr.io/${{ steps.lowercase_repo.outputs.repo }}/builder-${{ steps.lowercase_branch.outputs.branch }} --cache-from ghcr.io/${{ steps.lowercase_repo.outputs.repo }}/builder-develop -t ghcr.io/${{ steps.lowercase_repo.outputs.repo }}/builder-${{ steps.lowercase_branch.outputs.branch }} -f Dockerfile .
-          docker push ghcr.io/${{ steps.lowercase_repo.outputs.repo }}/builder-${{ steps.lowercase_branch.outputs.branch }}
+          docker build --cache-from ghcr.io/${{ steps.set-repo.outputs.repo }}/builder-${{ steps.set-branch.outputs.branch }} --cache-from ghcr.io/${{ steps.set-repo.outputs.repo }}/builder-develop -t ghcr.io/${{ steps.set-repo.outputs.repo }}/builder-${{ steps.set-branch.outputs.branch }} -f Dockerfile .
+          docker push ghcr.io/${{ steps.set-repo.outputs.repo }}/builder-${{ steps.set-branch.outputs.branch }}
 
   build-depends:
     name: Build Dependencies
@@ -61,11 +64,13 @@ jobs:
         include:
           - host: x86_64-pc-linux-gnu
             dep_opts: DEBUG=1
-    container:
-      image: ghcr.io/${{ steps.lowercase_repo.outputs.repo }}/builder-${{ needs.builder-image.outputs.branch }}
     env:
       HOST: ${{ matrix.host }}
       DEP_OPTS: ${{ matrix.dep_opts || '' }}
+      REPO: ${{ needs.builder-image.outputs.repo }}
+      BRANCH: ${{ needs.builder-image.outputs.branch }}
+    container:
+      image: ghcr.io/${{ env.REPO }}/builder-${{ env.BRANCH }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -102,10 +107,12 @@ jobs:
           - build_target: linux64
             host: x86_64-pc-linux-gnu
             dep_opts: DEBUG=1
-    container:
-      image: ghcr.io/${{ needs.build-depends.outputs.repo }}/builder-${{ needs.build-depends.outputs.branch }}
     env:
       BUILD_TARGET: ${{ matrix.build_target }}
+      REPO: ${{ needs.builder-image.outputs.repo }}
+      BRANCH: ${{ needs.builder-image.outputs.branch }}
+    container:
+      image: ghcr.io/${{ env.REPO }}/builder-${{ env.BRANCH }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -130,11 +137,13 @@ jobs:
       matrix:
         build_target:
           - linux64
-    container:
-      image: ghcr.io/${{ needs.build.outputs.repo }}/builder-${{ needs.build.outputs.branch }}
     env:
       BUILD_TARGET: ${{ matrix.build_target }}
       INTEGRATION_TESTS_ARGS: --extended --exclude feature_pruning,feature_dbcrash
+      REPO: ${{ needs.builder-image.outputs.repo }}
+      BRANCH: ${{ needs.builder-image.outputs.branch }}
+    container:
+      image: ghcr.io/${{ env.REPO }}/builder-${{ env.BRANCH }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
