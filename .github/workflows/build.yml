@@ -16,12 +16,6 @@ jobs:
   builder-image:
     name: Builder Image
     runs-on: ubuntu-20.04
-    services:
-      docker:
-        image: docker:20.10.20-dind
-        options: --privileged
-        ports:
-          - 2375:2375
     outputs:
       repo: ${{ steps.set-repo.outputs.repo }}
       branch: ${{ steps.set-branch.outputs.branch }}
@@ -64,34 +58,14 @@ jobs:
         include:
           - host: x86_64-pc-linux-gnu
             dep_opts: DEBUG=1
-    env:
-      HOST: ${{ matrix.host }}
-      DEP_OPTS: ${{ matrix.dep_opts || '' }}
-      REPO: ${{ needs.builder-image.outputs.repo }}
-      BRANCH: ${{ needs.builder-image.outputs.branch }}
     container:
-      image: ghcr.io/${{ env.REPO }}/builder-${{ env.BRANCH }}
+      image: ghcr.io/${{ needs.builder-image.outputs.repo }}/builder-${{ needs.builder-image.outputs.branch }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Setup MacOS SDK
-        if: env.HOST == 'x86_64-apple-darwin'
-        run: |
-          mkdir -p depends/SDKs
-          mkdir -p depends/sdk-sources
-          OSX_SDK_BASENAME="Xcode-${XCODE_VERSION}-${XCODE_BUILD_ID}-extracted-SDK-with-libcxx-headers.tar.gz"
-          OSX_SDK_PATH="depends/sdk-sources/${OSX_SDK_BASENAME}"
-          if [ ! -f "$OSX_SDK_PATH" ]; then
-            echo "Downloading MacOS SDK"
-            curl --location --fail "${SDK_URL}/${OSX_SDK_BASENAME}" -o "$OSX_SDK_PATH"
-          fi
-          if [ -f "$OSX_SDK_PATH" ]; then
-            echo "Extracting MacOS SDK"
-            tar -C depends/SDKs -xf "$OSX_SDK_PATH"
-
       - name: Build dependencies
-        run: make -j$(nproc) -C depends HOST=${{ env.HOST }} $DEP_OPTS
+        run: make -j$(nproc) -C depends HOST=${{ matrix.host }} ${{ matrix.dep_opts || '' }}
 
   build:
     name: Build
@@ -103,16 +77,8 @@ jobs:
           - arm-linux
           - win64
           - linux64
-        include:
-          - build_target: linux64
-            host: x86_64-pc-linux-gnu
-            dep_opts: DEBUG=1
-    env:
-      BUILD_TARGET: ${{ matrix.build_target }}
-      REPO: ${{ needs.builder-image.outputs.repo }}
-      BRANCH: ${{ needs.builder-image.outputs.branch }}
     container:
-      image: ghcr.io/${{ env.REPO }}/builder-${{ env.BRANCH }}
+      image: ghcr.io/${{ needs.builder-image.outputs.repo }}/builder-${{ needs.builder-image.outputs.branch }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -120,7 +86,7 @@ jobs:
       - name: Setup environment
         run: |
           export CACHE_DIR=$GITHUB_WORKSPACE/cache
-          echo BUILD_TARGET=$BUILD_TARGET
+          echo BUILD_TARGET=${{ matrix.build_target }}
           source ./ci/dash/matrix.sh
 
       - name: Build source
@@ -137,13 +103,8 @@ jobs:
       matrix:
         build_target:
           - linux64
-    env:
-      BUILD_TARGET: ${{ matrix.build_target }}
-      INTEGRATION_TESTS_ARGS: --extended --exclude feature_pruning,feature_dbcrash
-      REPO: ${{ needs.builder-image.outputs.repo }}
-      BRANCH: ${{ needs.builder-image.outputs.branch }}
     container:
-      image: ghcr.io/${{ env.REPO }}/builder-${{ env.BRANCH }}
+      image: ghcr.io/${{ needs.builder-image.outputs.repo }}/builder-${{ needs.builder-image.outputs.branch }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -151,8 +112,8 @@ jobs:
       - name: Setup environment
         run: |
           export CACHE_DIR=$GITHUB_WORKSPACE/cache
-          echo BUILD_TARGET=$BUILD_TARGET
+          echo BUILD_TARGET=${{ matrix.build_target }}
           source ./ci/dash/matrix.sh
 
       - name: Run integration tests
-        run: ./ci/dash/test_integrationtests.sh $INTEGRATION_TESTS_ARGS
+        run: ./ci/dash/test_integrationtests.sh --extended --exclude feature_pruning,feature_dbcrash
