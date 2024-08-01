@@ -59,10 +59,14 @@ jobs:
     runs-on: ubuntu-20.04
     strategy:
       matrix:
-        host:
-          - arm-linux-gnueabihf
-          - x86_64-w64-mingw32
-          - x86_64-pc-linux-gnu
+        include:
+          - build_target: arm-linux
+            host: arm-linux-gnueabihf
+          - build_target: win64
+            host: x86_64-w64-mingw32
+          - build_target: linux64
+            host: x86_64-pc-linux-gnu
+            dep_opts: DEBUG=1
     container:
       image: ghcr.io/${{ needs.builder-image.outputs.repo-name }}/builder:${{ needs.builder-image.outputs.image-tag }}
       options: --user root
@@ -110,8 +114,11 @@ jobs:
       matrix:
         include:
           - build_target: arm-linux
+            host: arm-linux-gnueabihf
           - build_target: win64
+            host: x86_64-w64-mingw32
           - build_target: linux64
+            host: x86_64-pc-linux-gnu
             dep_opts: DEBUG=1
     container:
       image: ghcr.io/${{ needs.builder-image.outputs.repo-name }}/builder:${{ needs.builder-image.outputs.image-tag }}
