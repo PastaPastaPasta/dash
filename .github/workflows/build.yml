@@ -108,6 +108,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
+      - name: Download build artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: depends-artifacts
+          path: depends
+
       - name: Setup environment
         run: |
           echo "BUILD_TARGET=${{ matrix.build_target }}"
@@ -118,6 +124,13 @@ jobs:
         run: |
           ./ci/dash/build_src.sh
           ./ci/dash/test_unittests.sh
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: build-artifacts
+          path: |
+            src/
+
 
   test:
     name: Test
@@ -129,6 +142,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: build-artifacts
+          path: src/
 
       - name: Setup environment
         run: |
