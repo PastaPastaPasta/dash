@@ -113,7 +113,7 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v2
         with:
-          name: depends-artifacts
+          name: depends
           path: ${{ format('depends/{0}', matrix.host) }}
 
       - name: Setup environment
