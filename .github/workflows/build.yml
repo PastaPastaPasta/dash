@@ -57,9 +57,6 @@ jobs:
     name: Build Dependencies
     needs: builder-image
     runs-on: ubuntu-20.04
-    outputs:
-      image-tag: ${{ needs.builder-image.outputs.image-tag }}
-      repo-name: ${{ needs.builder-image.outputs.repo-name }}
     strategy:
       matrix:
         host:
@@ -78,11 +75,8 @@ jobs:
 
   build:
     name: Build
-    needs: build-depends
+    needs: [builder-image, build-depends]
     runs-on: ubuntu-20.04
-    outputs:
-      image-tag: ${{ needs.builder-image.outputs.image-tag }}
-      repo-name: ${{ needs.builder-image.outputs.repo-name }}
     strategy:
       matrix:
         include:
@@ -109,7 +103,7 @@ jobs:
 
   test:
     name: Test
-    needs: build
+    needs: [builder-image, build]
     runs-on: ubuntu-20.04
     container:
       image: ghcr.io/${{ needs.builder-image.outputs.repo-name }}/builder:${{ needs.builder-image.outputs.image-tag }}
