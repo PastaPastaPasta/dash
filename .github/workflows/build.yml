@@ -1,0 +1,154 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+
+env:
+  DOCKER_DRIVER: overlay2
+  FAST_MODE: false
+
+jobs:
+  builder-image:
+    name: Builder Image
+    runs-on: ubuntu-20.04
+    services:
+      docker:
+        image: docker:20.10.20-dind
+        options: --privileged
+        ports:
+          - 2375:2375
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Pull builder image
+        run: |
+          docker pull ghcr.io/${{ github.repository }}/builder-${{ github.ref_name }} || true
+          docker pull ghcr.io/${{ github.repository }}/builder-develop || true
+
+      - name: Build and push builder image
+        run: |
+          cd contrib/containers/ci
+          docker build --cache-from ghcr.io/${{ github.repository }}/builder-${{ github.ref_name }} --cache-from ghcr.io/${{ github.repository }}/builder-develop -t ghcr.io/${{ github.repository }}/builder-${{ github.ref_name }} -f Dockerfile .
+          docker push ghcr.io/${{ github.repository }}/builder-${{ github.ref_name }}
+
+  build-depends:
+    name: Build Dependencies
+    runs-on: ubuntu-20.04
+    needs: builder-image
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Setup MacOS SDK
+        if: env.HOST == 'x86_64-apple-darwin'
+        run: |
+          mkdir -p depends/SDKs
+          mkdir -p depends/sdk-sources
+          OSX_SDK_BASENAME="Xcode-${{ env.XCODE_VERSION }}-${{ env.XCODE_BUILD_ID }}-extracted-SDK-with-libcxx-headers.tar.gz"
+          OSX_SDK_PATH="depends/sdk-sources/${OSX_SDK_BASENAME}"
+          if [ ! -f "$OSX_SDK_PATH" ]; then
+            echo "Downloading MacOS SDK"
+            curl --location --fail "${{ env.SDK_URL }}/${OSX_SDK_BASENAME}" -o "$OSX_SDK_PATH"
+          fi
+          if [ -f "$OSX_SDK_PATH" ]; then
+            echo "Extracting MacOS SDK"
+            tar -C depends/SDKs -xf "$OSX_SDK_PATH"
+
+      - name: Build dependencies
+        run: make -j$(nproc) -C depends HOST=${{ env.HOST }} $DEP_OPTS
+
+      - name: Cache dependencies
+        uses: actions/cache@v2
+        with:
+          path: |
+            depends/built
+            depends/sdk-sources
+          key: ${{ runner.os }}-depends-${{ hashFiles('contrib/containers/ci/Dockerfile') }}
+
+      - name: Upload dependency artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: depends
+          path: |
+            depends/${{ env.HOST }}
+            depends/SDKs
+
+  build:
+    name: Build
+    runs-on: ubuntu-20.04
+    needs: build-depends
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Setup environment
+        run: |
+          export CACHE_DIR=$GITHUB_WORKSPACE/cache
+          echo BUILD_TARGET=$BUILD_TARGET
+          source ./ci/dash/matrix.sh
+
+      - name: Build source
+        run: ./ci/dash/build_src.sh
+
+      - name: Run unit tests
+        run: ./ci/dash/test_unittests.sh
+
+      - name: Cache ccache
+        uses: actions/cache@v2
+        with:
+          path: cache/ccache
+          key: ${{ runner.os }}-ccache-${{ hashFiles('contrib/containers/ci/Dockerfile') }}
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v2
+        with:
+          name: binaries
+          path: build-ci
+          if-no-files-found: ignore
+          exclude:
+            - build-ci/dashcore-${{ env.BUILD_TARGET }}/src/bench/bench_dash
+            - build-ci/dashcore-${{ env.BUILD_TARGET }}/src/bench/bench_dash.exe
+            - build-ci/dashcore-${{ env.BUILD_TARGET }}/src/qt/test/test_dash-qt
+            - build-ci/dashcore-${{ env.BUILD_TARGET }}/src/qt/test/test_dash-qt.exe
+            - build-ci/dashcore-${{ env.BUILD_TARGET }}/src/test/test_dash
+            - build-ci/dashcore-${{ env.BUILD_TARGET }}/src/test/test_dash.exe
+            - build-ci/dashcore-${{ env.BUILD_TARGET }}/src/test/fuzz/*
+
+  test:
+    name: Test
+    runs-on: ubuntu-20.04
+    needs: build
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Setup environment
+        run: |
+          export CACHE_DIR=$GITHUB_WORKSPACE/cache
+          echo BUILD_TARGET=$BUILD_TARGET
+          source ./ci/dash/matrix.sh
+
+      - name: Run integration tests
+        run: ./ci/dash/test_integrationtests.sh $INTEGRATION_TESTS_ARGS
+
+      - name: Upload test logs
+        uses: actions/upload-artifact@v2
+        with:
+          name: testlogs
+          path: testlogs
+          if-no-files-found: ignore
+
+      - name: Cache releases
+        uses: actions/cache@v2
+        with:
+          path: releases
+          key: ${{ runner.os }}-releases-${{ hashFiles('ci/test/00_setup_env_native_qt5.sh') }}
