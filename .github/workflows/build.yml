@@ -2,11 +2,7 @@ name: CI
 
 on:
   push:
-    branches:
-      - '**'
   pull_request:
-    branches:
-      - '**'
 
 env:
   DOCKER_DRIVER: overlay2
@@ -108,20 +104,23 @@ jobs:
           path: cache/ccache
           key: ${{ runner.os }}-ccache-${{ hashFiles('contrib/containers/ci/Dockerfile') }}
 
+      - name: Create tar archive of binaries
+        run: |
+          mkdir -p build-ci-tar
+          tar --exclude='build-ci/dashcore-${{ env.BUILD_TARGET }}/src/bench/bench_dash' \
+              --exclude='build-ci/dashcore-${{ env.BUILD_TARGET }}/src/bench/bench_dash.exe' \
+              --exclude='build-ci/dashcore-${{ env.BUILD_TARGET }}/src/qt/test/test_dash-qt' \
+              --exclude='build-ci/dashcore-${{ env.BUILD_TARGET }}/src/qt/test/test_dash-qt.exe' \
+              --exclude='build-ci/dashcore-${{ env.BUILD_TARGET }}/src/test/test_dash' \
+              --exclude='build-ci/dashcore-${{ env.BUILD_TARGET }}/src/test/test_dash.exe' \
+              --exclude='build-ci/dashcore-${{ env.BUILD_TARGET }}/src/test/fuzz/*' \
+              -czvf build-ci-tar/binaries.tar.gz build-ci
+
       - name: Upload binaries
         uses: actions/upload-artifact@v2
         with:
           name: binaries
-          path: build-ci
-          if-no-files-found: ignore
-          exclude:
-            - build-ci/dashcore-${{ env.BUILD_TARGET }}/src/bench/bench_dash
-            - build-ci/dashcore-${{ env.BUILD_TARGET }}/src/bench/bench_dash.exe
-            - build-ci/dashcore-${{ env.BUILD_TARGET }}/src/qt/test/test_dash-qt
-            - build-ci/dashcore-${{ env.BUILD_TARGET }}/src/qt/test/test_dash-qt.exe
-            - build-ci/dashcore-${{ env.BUILD_TARGET }}/src/test/test_dash
-            - build-ci/dashcore-${{ env.BUILD_TARGET }}/src/test/test_dash.exe
-            - build-ci/dashcore-${{ env.BUILD_TARGET }}/src/test/fuzz/*
+          path: build-ci-tar/binaries.tar.gz
 
   test:
     name: Test
