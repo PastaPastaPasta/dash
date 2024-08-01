@@ -61,6 +61,8 @@ jobs:
         include:
           - host: x86_64-pc-linux-gnu
             dep_opts: DEBUG=1
+    container:
+      image: ghcr.io/${{ steps.lowercase_repo.outputs.repo }}/builder-${{ needs.builder-image.outputs.branch }}
     env:
       HOST: ${{ matrix.host }}
       DEP_OPTS: ${{ matrix.dep_opts || '' }}
@@ -100,6 +102,8 @@ jobs:
           - build_target: linux64
             host: x86_64-pc-linux-gnu
             dep_opts: DEBUG=1
+    container:
+      image: ghcr.io/${{ needs.build-depends.outputs.repo }}/builder-${{ needs.build-depends.outputs.branch }}
     env:
       BUILD_TARGET: ${{ matrix.build_target }}
     steps:
@@ -126,6 +130,8 @@ jobs:
       matrix:
         build_target:
           - linux64
+    container:
+      image: ghcr.io/${{ needs.build.outputs.repo }}/builder-${{ needs.build.outputs.branch }}
     env:
       BUILD_TARGET: ${{ matrix.build_target }}
       INTEGRATION_TESTS_ARGS: --extended --exclude feature_pruning,feature_dbcrash
