@@ -48,6 +48,8 @@ jobs:
           file: ./contrib/containers/ci/Dockerfile
           push: true
           tags: ghcr.io/${{ steps.prepare.outputs.repo-name }}/builder:${{ steps.prepare.outputs.image-tag }}
+          cache-from: type=registry,ref=ghcr.io/${{ steps.prepare.outputs.repo-name }}/builder:latest
+          cache-to: type=inline
 
   build-depends:
     name: Build Dependencies
