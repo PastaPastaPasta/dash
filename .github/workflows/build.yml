@@ -26,19 +26,23 @@ jobs:
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Set lowercase branch name
-        id: vars
-        run: echo "::set-output name=lowercase_branch::${GITHUB_REF##*/}" | tr '[:upper:]' '[:lower:]'
+        id: lowercase_branch
+        run: echo "##[set-output name=branch;]${GITHUB_REF##*/}" | tr '[:upper:]' '[:lower:]'
+
+      - name: Set lowercase repository
+        id: lowercase_repo
+        run: echo "##[set-output name=repo;]${{ github.repository }}" | tr '[:upper:]' '[:lower:]'
 
       - name: Pull builder image
         run: |
-          docker pull ghcr.io/${{ github.repository }}/builder-${{ steps.vars.outputs.lowercase_branch }} || true
-          docker pull ghcr.io/${{ github.repository }}/builder-develop || true
+          docker pull ghcr.io/${{ steps.lowercase_repo.outputs.repo }}/builder-${{ steps.lowercase_branch.outputs.branch }} || true
+          docker pull ghcr.io/${{ steps.lowercase_repo.outputs.repo }}/builder-develop || true
 
       - name: Build and push builder image
         run: |
           cd contrib/containers/ci
-          docker build --cache-from ghcr.io/${{ github.repository }}/builder-${{ steps.vars.outputs.lowercase_branch }} --cache-from ghcr.io/${{ github.repository }}/builder-develop -t ghcr.io/${{ github.repository }}/builder-${{ steps.vars.outputs.lowercase_branch }} -f Dockerfile .
-          docker push ghcr.io/${{ github.repository }}/builder-${{ steps.vars.outputs.lowercase_branch }}
+          docker build --cache-from ghcr.io/${{ steps.lowercase_repo.outputs.repo }}/builder-${{ steps.lowercase_branch.outputs.branch }} --cache-from ghcr.io/${{ steps.lowercase_repo.outputs.repo }}/builder-develop -t ghcr.io/${{ steps.lowercase_repo.outputs.repo }}/builder-${{ steps.lowercase_branch.outputs.branch }} -f Dockerfile .
+          docker push ghcr.io/${{ steps.lowercase_repo.outputs.repo }}/builder-${{ steps.lowercase_branch.outputs.branch }}
 
   build-depends:
     name: Build Dependencies
