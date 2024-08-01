@@ -48,8 +48,7 @@ jobs:
           docker build --cache-from ghcr.io/${{ steps.lowercase_repo.outputs.repo }}/builder-${{ steps.lowercase_branch.outputs.branch }} --cache-from ghcr.io/${{ steps.lowercase_repo.outputs.repo }}/builder-develop -t ghcr.io/${{ steps.lowercase_repo.outputs.repo }}/builder-${{ steps.lowercase_branch.outputs.branch }} -f Dockerfile .
           docker push ghcr.io/${{ steps.lowercase_repo.outputs.repo }}/builder-${{ steps.lowercase_branch.outputs.branch }}
 
-  build-depends:
-    name: Build Dependencies
+  build-depends-template:
     runs-on: ubuntu-20.04
     needs: builder-image
     steps:
@@ -72,28 +71,11 @@ jobs:
             tar -C depends/SDKs -xf "$OSX_SDK_PATH"
 
       - name: Build dependencies
-        run: make -j$(nproc) -C depends HOST=${HOST} $DEP_OPTS
+        run: make -j$(nproc) -C depends HOST=${{ env.HOST }} $DEP_OPTS
 
-      - name: Cache dependencies
-        uses: actions/cache@v2
-        with:
-          path: |
-            depends/built
-            depends/sdk-sources
-          key: ${{ runner.os }}-depends-${{ hashFiles('contrib/containers/ci/Dockerfile') }}
-
-      - name: Upload dependency artifacts
-        uses: actions/upload-artifact@v2
-        with:
-          name: depends
-          path: |
-            depends/${HOST}
-            depends/SDKs
-
-  build:
-    name: Build
+  build-template:
     runs-on: ubuntu-20.04
-    needs: build-depends
+    needs: ${{ matrix.depends_job }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -110,34 +92,9 @@ jobs:
       - name: Run unit tests
         run: ./ci/dash/test_unittests.sh
 
-      - name: Cache ccache
-        uses: actions/cache@v2
-        with:
-          path: cache/ccache
-          key: ${{ runner.os }}-ccache-${{ hashFiles('contrib/containers/ci/Dockerfile') }}
-
-      - name: Create tar archive of binaries
-        run: |
-          mkdir -p build-ci-tar
-          tar --exclude='build-ci/dashcore-${{ env.BUILD_TARGET }}/src/bench/bench_dash' \
-              --exclude='build-ci/dashcore-${{ env.BUILD_TARGET }}/src/bench/bench_dash.exe' \
-              --exclude='build-ci/dashcore-${{ env.BUILD_TARGET }}/src/qt/test/test_dash-qt' \
-              --exclude='build-ci/dashcore-${{ env.BUILD_TARGET }}/src/qt/test/test_dash-qt.exe' \
-              --exclude='build-ci/dashcore-${{ env.BUILD_TARGET }}/src/test/test_dash' \
-              --exclude='build-ci/dashcore-${{ env.BUILD_TARGET }}/src/test/test_dash.exe' \
-              --exclude='build-ci/dashcore-${{ env.BUILD_TARGET }}/src/test/fuzz/*' \
-              -czvf build-ci-tar/binaries.tar.gz build-ci
-
-      - name: Upload binaries
-        uses: actions/upload-artifact@v2
-        with:
-          name: binaries
-          path: build-ci-tar/binaries.tar.gz
-
-  test:
-    name: Test
+  test-template:
     runs-on: ubuntu-20.04
-    needs: build
+    needs: ${{ matrix.build_job }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -151,15 +108,50 @@ jobs:
       - name: Run integration tests
         run: ./ci/dash/test_integrationtests.sh $INTEGRATION_TESTS_ARGS
 
-      - name: Upload test logs
-        uses: actions/upload-artifact@v2
-        with:
-          name: testlogs
-          path: testlogs
-          if-no-files-found: ignore
+  build-depends-arm-linux:
+    name: Build Dependencies (ARM Linux)
+    extends: build-depends-template
+    env:
+      HOST: arm-linux-gnueabihf
 
-      - name: Cache releases
-        uses: actions/cache@v2
-        with:
-          path: releases
-          key: ${{ runner.os }}-releases-${{ hashFiles('ci/test/00_setup_env_native_qt5.sh') }}
+  build-depends-win64:
+    name: Build Dependencies (Win64)
+    extends: build-depends-template
+    env:
+      HOST: x86_64-w64-mingw32
+
+  build-depends-linux64-debug:
+    name: Build Dependencies (Linux64 Debug)
+    extends: build-depends-template
+    env:
+      HOST: x86_64-pc-linux-gnu
+      DEP_OPTS: DEBUG=1
+
+  build-arm-linux:
+    name: Build (ARM Linux)
+    extends: build-template
+    needs: build-depends-arm-linux
+    env:
+      BUILD_TARGET: arm-linux
+
+  build-win64:
+    name: Build (Win64)
+    extends: build-template
+    needs: build-depends-win64
+    env:
+      BUILD_TARGET: win64
+
+  build-linux64-debug:
+    name: Build (Linux64 Debug)
+    extends: build-template
+    needs: build-depends-linux64-debug
+    env:
+      BUILD_TARGET: linux64
+
+  test-linux64:
+    name: Test (Linux64)
+    extends: test-template
+    needs: build-linux64-debug
+    env:
+      BUILD_TARGET: linux64
+      INTEGRATION_TESTS_ARGS: --extended --exclude feature_pruning,feature_dbcrash
