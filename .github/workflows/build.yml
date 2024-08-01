@@ -151,10 +151,10 @@ jobs:
           name: build-artifacts
           path: src/
 
-      - name: Setup environment
-        run: |
-          echo "BUILD_TARGET=${{ needs.build.matrix.build_target }}"
-          source ./ci/dash/matrix.sh
+#      - name: Setup environment
+#        run: |
+#          echo "BUILD_TARGET=${{ needs.build.matrix.build_target }}"
+#          source ./ci/dash/matrix.sh
 
       - name: Run integration tests
         run: ./ci/dash/test_integrationtests.sh --extended --exclude feature_pruning,feature_dbcrash
