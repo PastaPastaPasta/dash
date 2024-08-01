@@ -16,9 +16,6 @@ jobs:
   builder-image:
     name: Builder Image
     runs-on: ubuntu-20.04
-    defaults:
-      run:
-        shell: bash
     outputs:
       image-tag: ${{ steps.prepare.outputs.image-tag }}
       repo-name: ${{ steps.prepare.outputs.repo-name }}
