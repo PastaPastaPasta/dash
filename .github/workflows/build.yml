@@ -95,6 +95,7 @@ jobs:
         run: |
           echo "BUILD_TARGET=${{ matrix.build_target }}"
           source ./ci/dash/matrix.sh
+        shell: bash
 
       - name: Build source and run tests
         run: |
