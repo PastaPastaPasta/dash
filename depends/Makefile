@@ -41,7 +41,7 @@ NO_ZMQ ?=
 NO_UPNP ?=
 NO_NATPMP ?=
 MULTIPROCESS ?=
-FALLBACK_DOWNLOAD_PATH ?= https://ipfs.filebase.io/ipfs/QmXKdCTD9XsgMUcSjMNWeZqP1qc1ti21b7UohG8DKxE8qP
+FALLBACK_DOWNLOAD_PATH ?= https://ipfs.filebase.io/ipfs/QmTDFZXEKbc8tZkWDwmbRw6hGsUrSkwMW7VTEPtBtCSYXU
 
 BUILD = $(shell ./config.guess)
 HOST ?= $(BUILD)
