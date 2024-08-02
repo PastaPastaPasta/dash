@@ -1,20 +1,18 @@
 FROM ubuntu:focal
 
-# Needed to prevent tzdata hanging while expecting user input
-ENV DEBIAN_FRONTEND="noninteractive" TZ="Europe/London"
+# Set non-interactive frontend and timezone to prevent tzdata hanging during builds
+ENV DEBIAN_FRONTEND="noninteractive" \
+    TZ="Europe/London" \
+    APT_ARGS="-y --no-install-recommends --no-upgrade" \
+    PYENV_ROOT="/usr/local/pyenv" \
+    PATH="${PYENV_ROOT}/shims:${PYENV_ROOT}/bin:${PATH}" \
+    USER_ID="1000" \
+    GROUP_ID="1000"
 
-# Build and base stuff
-# (zlib1g-dev is needed for the Qt host binary builds, but should not be used by target binaries)
-ENV APT_ARGS="-y --no-install-recommends --no-upgrade"
-
-
-# Install packages for i386; disabled on aarch64 and arm64 hosts
-RUN (dpkg --print-architecture | grep -Eq 'aarch64|arm64' || dpkg --add-architecture i386)
-RUN (dpkg --print-architecture | grep -Eq 'aarch64|arm64' || (apt-get update && apt-get install $APT_ARGS \
-    g++-9-multilib \
-    wine32) && rm -rf /var/lib/apt/lists/*)
-
-RUN apt-get update && apt-get install $APT_ARGS \
+# One RUN command to update, install, and clean up in one layer
+RUN dpkg --print-architecture | grep -Eq 'aarch64|arm64' || dpkg --add-architecture i386 && \
+    apt-get update && \
+    apt-get install $APT_ARGS \
     autotools-dev \
     automake \
     autoconf \
@@ -46,59 +44,7 @@ RUN apt-get update && apt-get install $APT_ARGS \
     unzip \
     m4 \
     pkg-config \
-    zlib1g-dev
-
-# Python setup
-# PYTHON_VERSION should match the value in .python-version
-ARG PYTHON_VERSION=3.8.16
-RUN apt-get update && apt-get install $APT_ARGS \
-    ca-certificates \
-    libbz2-dev \
-    libffi-dev \
-    liblzma-dev \
-    libncurses5-dev \
-    libncursesw5-dev \
-    libreadline-dev \
-    libsqlite3-dev \
-    libssl-dev \
-    llvm \
-    make \
-    tk-dev \
-    xz-utils
-ENV PYENV_ROOT "/usr/local/pyenv"
-ENV PATH "${PYENV_ROOT}/shims:${PYENV_ROOT}/bin:${PATH}"
-RUN curl https://pyenv.run | bash \
-    && pyenv update \
-    && pyenv install $PYTHON_VERSION \
-    && pyenv global $PYTHON_VERSION \
-    && pyenv rehash
-RUN pip3 install \
-    codespell==1.17.1 \
-    flake8==3.8.3 \
-    jinja2 \
-    lief==0.12.1 \
-    pyzmq \
-    vulture==2.3 \
-    mypy==0.781 \
-    yq \
-    multiprocess
-
-# dash_hash
-ARG DASH_HASH_VERSION=1.4.0
-RUN git clone --depth 1 --no-tags --branch=${DASH_HASH_VERSION} https://github.com/dashpay/dash_hash
-RUN cd dash_hash && pip3 install -r requirements.txt .
-
-ARG USER_ID=1000
-ARG GROUP_ID=1000
-
-# add user with specified (or default) user/group ids
-ENV USER_ID ${USER_ID}
-ENV GROUP_ID ${GROUP_ID}
-RUN groupadd -g ${GROUP_ID} dash
-RUN useradd -u ${USER_ID} -g dash -s /bin/bash -m -d /home/dash dash
-
-# Packages needed for all target builds
-RUN apt-get update && apt-get install $APT_ARGS \
+    zlib1g-dev \
     bc \
     gawk \
     g++-arm-linux-gnueabihf \
@@ -112,54 +58,64 @@ RUN apt-get update && apt-get install $APT_ARGS \
     valgrind \
     wine-stable \
     wine64 \
-    xorriso
-
-ARG CPPCHECK_VERSION=2.13.0
-RUN curl -sL "https://github.com/danmar/cppcheck/archive/${CPPCHECK_VERSION}.tar.gz" | tar -xvzf - --directory /tmp/
-RUN cd /tmp/cppcheck-${CPPCHECK_VERSION} && mkdir build && cd build && cmake .. && cmake --build . -j 8
-ENV PATH "/tmp/cppcheck-${CPPCHECK_VERSION}/build/bin:${PATH}"
-RUN mkdir /usr/local/share/Cppcheck && ln -s /tmp/cppcheck-${CPPCHECK_VERSION}/cfg/ /usr/local/share/Cppcheck/cfg
-
-ARG SHELLCHECK_VERSION=v0.7.1
-RUN curl -sL "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" | tar --xz -xf - --directory /tmp/
-ENV PATH "/tmp/shellcheck-${SHELLCHECK_VERSION}:${PATH}"
-
-# This is a hack. It is needed because gcc-multilib and g++-multilib are conflicting with g++-arm-linux-gnueabihf. This is
-# due to gcc-multilib installing the following symbolic link, which is needed for -m32 support. However, this causes
-# arm builds to also have the asm folder implicitly in the include search path. This is kind of ok, because the asm folder
-# for arm has precedence.
-RUN ln -s x86_64-linux-gnu/asm /usr/include/asm
-
-# Make sure std::thread and friends is available
-RUN \
-  update-alternatives --set x86_64-w64-mingw32-gcc  /usr/bin/x86_64-w64-mingw32-gcc-posix; \
-  update-alternatives --set x86_64-w64-mingw32-g++  /usr/bin/x86_64-w64-mingw32-g++-posix; \
-  exit 0
-
-ARG LLVM_VERSION=16
-# Setup Clang+LLVM support
-RUN apt-get update && apt-get install $APT_ARGS \
+    xorriso \
+    ca-certificates \
+    libbz2-dev \
+    libffi-dev \
+    liblzma-dev \
+    libncurses5-dev \
+    libncursesw5-dev \
+    libreadline-dev \
+    libsqlite3-dev \
+    libssl-dev \
+    llvm \
+    make \
+    tk-dev \
     lsb-release \
     software-properties-common \
     gnupg \
-    && rm -rf /var/lib/apt/lists/*
+    xz-utils && \
+    rm -rf /var/lib/apt/lists/*
 
-RUN cd /tmp && \
-    wget https://apt.llvm.org/llvm.sh && \
-    chmod +x llvm.sh && \
-    /tmp/llvm.sh ${LLVM_VERSION} && \
+# Install Python and Python packages
+ENV PYENV_ROOT "/usr/local/pyenv"
+ENV PATH "${PYENV_ROOT}/shims:${PYENV_ROOT}/bin:${PATH}"
+ENV PYTHON_VERSION=3.8.16
+RUN curl https://pyenv.run | bash && \
+    pyenv update && \
+    pyenv install $PYTHON_VERSION && \
+    pyenv global $PYTHON_VERSION && \
+    pyenv rehash && \
+    pip3 install codespell==1.17.1 flake8==3.8.3 jinja2 lief==0.12.1 pyzmq vulture==2.3 mypy==0.781 yq multiprocess
+
+# Clone and install dash_hash
+RUN git clone --depth 1 --no-tags --branch=1.4.0 https://github.com/dashpay/dash_hash /dash_hash && \
+    cd /dash_hash && pip3 install -r requirements.txt && \
+    rm -rf /dash_hash
+
+# Setup tools
+RUN curl -sL "https://github.com/danmar/cppcheck/archive/2.13.0.tar.gz" | tar -xvzf - --directory /tmp/ && \
+    cd /tmp/cppcheck-2.13.0 && mkdir build && cd build && cmake .. && cmake --build . -j 8 && \
+    mkdir /usr/local/share/Cppcheck && ln -s /tmp/cppcheck-2.13.0/cfg/ /usr/local/share/Cppcheck/cfg && \
+    curl -sL "https://github.com/koalaman/shellcheck/releases/download/v0.7.1/shellcheck-v0.7.1.linux.x86_64.tar.xz" | tar --xz -xf - --directory /tmp/ && \
+    ln -s x86_64-linux-gnu/asm /usr/include/asm && \
+    update-alternatives --set x86_64-w64-mingw32-gcc  /usr/bin/x86_64-w64-mingw32-gcc-posix && \
+    update-alternatives --set x86_64-w64-mingw32-g++  /usr/bin/x86_64-w64-mingw32-g++-posix
+
+# Setup LLVM
+RUN wget -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh && \
+    chmod +x /tmp/llvm.sh && \
+    /tmp/llvm.sh 16 && \
     rm -rf /tmp/llvm.sh
 
-RUN \
-  mkdir -p /src/dash && \
-  mkdir -p /cache/ccache && \
-  mkdir /cache/depends && \
-  mkdir /cache/sdk-sources && \
-  chown ${USER_ID}:${GROUP_ID} /src && \
-  chown ${USER_ID}:${GROUP_ID} -R /src && \
-  chown ${USER_ID}:${GROUP_ID} /cache && \
-  chown ${USER_ID}:${GROUP_ID} -R /cache
+# Setup user and directories
+RUN groupadd -g ${GROUP_ID} dash && \
+    useradd -u ${USER_ID} -g dash -s /bin/bash -m -d /home/dash dash && \
+    mkdir -p /src/dash && \
+    mkdir -p /cache/ccache && \
+    mkdir /cache/depends && \
+    mkdir /cache/sdk-sources && \
+    chown ${USER_ID}:${GROUP_ID} /src /cache -R
 
 WORKDIR /src/dash
-
 USER dash
