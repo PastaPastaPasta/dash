@@ -134,6 +134,16 @@ jobs:
             ${{ runner.os }}-depends-${{ matrix.host }}-${{ github.sha }}
             ${{ runner.os }}-depends-${{ matrix.host }}
             ${{ runner.os }}-depends
+      - name: CCache
+        uses: actions/cache@v4
+        with:
+          path: |
+            cache/
+          key: ${{ runner.os }}-${{ matrix.host }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.host }}-${{ github.sha }}
+            ${{ runner.os }}-${{ matrix.host }}
+            ${{ runner.os }}
 
 #      - name: Build dependencies
 #        run: make -j$(nproc) -C depends HOST=${{ matrix.host }}
@@ -142,6 +152,7 @@ jobs:
       - name: Build source and run tests
         run: |
           git config --global --add safe.directory "$PWD"
+          CCACHE_SIZE="400M"
           BUILD_TARGET="${{ matrix.build_target }}"
           source ./ci/dash/matrix.sh
           ./ci/dash/build_src.sh
