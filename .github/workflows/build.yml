@@ -78,9 +78,9 @@ jobs:
             depends/${{ matrix.host }}
             depends/sdk-sources
           # We don't care about no specific key as depends system will handle that for us
-          key: ${{ runner.os }}-depends-${{ matrix.host }}-${{ github.event.pull_request.head.sha }}
+          key: ${{ runner.os }}-depends-${{ matrix.host }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-depends-${{ matrix.host }}-${{ github.event.pull_request.head.sha }}
+            ${{ runner.os }}-depends-${{ matrix.host }}-${{ github.sha }}
             ${{ runner.os }}-depends-${{ matrix.host }}
             ${{ runner.os }}-depends
 
@@ -125,9 +125,9 @@ jobs:
           path: |
             depends/${{ matrix.host }}
           # We don't care about no specific key as depends system will handle that for us
-          key: ${{ runner.os }}-depends-${{ matrix.host }}-${{ github.event.pull_request.head.sha }}
+          key: ${{ runner.os }}-depends-${{ matrix.host }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-depends-${{ matrix.host }}-${{ github.event.pull_request.head.sha }}
+            ${{ runner.os }}-depends-${{ matrix.host }}-${{ github.sha }}
             ${{ runner.os }}-depends-${{ matrix.host }}
             ${{ runner.os }}-depends
 
