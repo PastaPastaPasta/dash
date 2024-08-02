@@ -133,8 +133,8 @@ jobs:
             ${{ runner.os }}-depends-${{ matrix.host }}
             ${{ runner.os }}-depends
 
-      - name: Build dependencies
-        run: make -j$(nproc) -C depends HOST=${{ matrix.host }}
+#      - name: Build dependencies
+#        run: make -j$(nproc) -C depends HOST=${{ matrix.host }}
 
 
       - name: Setup environment
