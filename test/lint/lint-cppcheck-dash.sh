@@ -80,7 +80,12 @@ ENABLED_CHECKS_REGEXP=$(join_array "|" "${ENABLED_CHECKS[@]}")
 IGNORED_WARNINGS_REGEXP=$(join_array "|" "${IGNORED_WARNINGS[@]}")
 FILES_REGEXP=$(join_array "|" "${FILES[@]}")
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-CPPCHECK_DIR=$SCRIPT_DIR/.cppcheck/
+# Check if CACHE_DIR is set and non-empty, otherwise use default .cppcheck/ directory
+if [[ -n "$CACHE_DIR" ]]; then
+    CPPCHECK_DIR=$CACHE_DIR/cppcheck/
+else
+    CPPCHECK_DIR=$SCRIPT_DIR/.cppcheck/
+fi
 if [ ! -d $CPPCHECK_DIR ]
 then
     mkdir $CPPCHECK_DIR
