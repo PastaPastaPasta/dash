@@ -88,7 +88,7 @@ else
 fi
 if [ ! -d $CPPCHECK_DIR ]
 then
-    mkdir $CPPCHECK_DIR
+    mkdir -p $CPPCHECK_DIR
 fi
 WARNINGS=$(echo "${FILES}" | \
     xargs cppcheck --enable=all --inline-suppr --suppress=missingIncludeSystem --cppcheck-build-dir=$CPPCHECK_DIR -j "$(getconf _NPROCESSORS_ONLN)" --language=c++ --std=c++17 --template=gcc -D__cplusplus -DENABLE_WALLET -DCLIENT_VERSION_BUILD -DCLIENT_VERSION_IS_RELEASE -DCLIENT_VERSION_MAJOR -DCLIENT_VERSION_MINOR -DCOPYRIGHT_YEAR -DDEBUG -DUSE_EPOLL -DCHAR_BIT=8 -I src/ -q 2>&1 | sort -u | \
