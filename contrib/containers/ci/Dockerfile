@@ -94,11 +94,11 @@ RUN git clone --depth 1 --no-tags --branch=1.4.0 https://github.com/dashpay/dash
     rm -rf /dash_hash
 
 # Setup tools
+ARG CPPCHECK_VERSION=2.13.0
+ARG SHELLCHECK_VERSION=v0.7.1
 ENV PATH "/tmp/cppcheck-${CPPCHECK_VERSION}/build/bin:${PATH}"
 ENV PATH "/tmp/shellcheck-${SHELLCHECK_VERSION}:${PATH}"
 ARG LLVM_VERSION=16
-ARG CPPCHECK_VERSION=2.13.0
-ARG SHELLCHECK_VERSION=v0.7.1
 RUN curl -sL "https://github.com/danmar/cppcheck/archive/${CPPCHECK_VERSION}.tar.gz" | tar -xvzf - --directory /tmp/ && \
     cd /tmp/cppcheck-${CPPCHECK_VERSION} && mkdir build && cd build && cmake .. && cmake --build . -j 8 && \
     mkdir /usr/local/share/Cppcheck && ln -s /tmp/cppcheck-${CPPCHECK_VERSION}/cfg/ /usr/local/share/Cppcheck/cfg && \
