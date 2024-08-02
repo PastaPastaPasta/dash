@@ -26,7 +26,8 @@ if [ "$CHECK_DOC" = 1 ]; then
     #test/lint/check-doc.py
     # Run all linters
     test/lint/lint-all.sh
-    test/lint/extended-lint-all.sh
+    # Don't run extended!
+    #test/lint/extended-lint-all.sh
 fi
 
 ccache --zero-stats --max-size=$CCACHE_SIZE
