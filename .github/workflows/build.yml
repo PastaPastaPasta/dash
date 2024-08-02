@@ -114,7 +114,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        run: git config --global --add safe.directory "$PWD"
 
 #      - name: Download build artifacts
 #        uses: actions/download-artifact@v2
@@ -142,6 +141,7 @@ jobs:
 
       - name: Build source and run tests
         run: |
+          git config --global --add safe.directory "$PWD"
           BUILD_TARGET="${{ matrix.build_target }}"
           source ./ci/dash/matrix.sh
           ./ci/dash/build_src.sh
