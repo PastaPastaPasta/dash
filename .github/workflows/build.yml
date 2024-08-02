@@ -138,7 +138,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            cache/
+            /cache
           key: ${{ runner.os }}-${{ matrix.host }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.host }}-${{ github.sha }}
@@ -153,7 +153,7 @@ jobs:
         run: |
           git config --global --add safe.directory "$PWD"
           CCACHE_SIZE="400M"
-          CACHE_DIR="cache/"
+          CACHE_DIR="/cache"
           BUILD_TARGET="${{ matrix.build_target }}"
           source ./ci/dash/matrix.sh
           ./ci/dash/build_src.sh
