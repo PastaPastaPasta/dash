@@ -114,6 +114,7 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        run: git config --global --add safe.directory "$PWD"
 
 #      - name: Download build artifacts
 #        uses: actions/download-artifact@v2
