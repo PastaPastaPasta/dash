@@ -96,18 +96,20 @@ RUN git clone --depth 1 --no-tags --branch=1.4.0 https://github.com/dashpay/dash
 # Setup tools
 ENV PATH "/tmp/cppcheck-${CPPCHECK_VERSION}/build/bin:${PATH}"
 ENV PATH "/tmp/shellcheck-${SHELLCHECK_VERSION}:${PATH}"
-RUN curl -sL "https://github.com/danmar/cppcheck/archive/2.13.0.tar.gz" | tar -xvzf - --directory /tmp/ && \
-    cd /tmp/cppcheck-2.13.0 && mkdir build && cd build && cmake .. && cmake --build . -j 8 && \
-    mkdir /usr/local/share/Cppcheck && ln -s /tmp/cppcheck-2.13.0/cfg/ /usr/local/share/Cppcheck/cfg && \
-    curl -sL "https://github.com/koalaman/shellcheck/releases/download/v0.7.1/shellcheck-v0.7.1.linux.x86_64.tar.xz" | tar --xz -xf - --directory /tmp/ && \
+ARG LLVM_VERSION=16
+ARG CPPCHECK_VERSION=2.13.0
+ARG SHELLCHECK_VERSION=v0.7.1
+RUN curl -sL "https://github.com/danmar/cppcheck/archive/${CPPCHECK_VERSION}.tar.gz" | tar -xvzf - --directory /tmp/ && \
+    cd /tmp/cppcheck-${CPPCHECK_VERSION} && mkdir build && cd build && cmake .. && cmake --build . -j 8 && \
+    mkdir /usr/local/share/Cppcheck && ln -s /tmp/cppcheck-${CPPCHECK_VERSION}/cfg/ /usr/local/share/Cppcheck/cfg && \
+    curl -sL "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" | tar --xz -xf - --directory /tmp/ && \
     ln -s x86_64-linux-gnu/asm /usr/include/asm && \
     update-alternatives --set x86_64-w64-mingw32-gcc  /usr/bin/x86_64-w64-mingw32-gcc-posix && \
-    update-alternatives --set x86_64-w64-mingw32-g++  /usr/bin/x86_64-w64-mingw32-g++-posix
-
-# Setup LLVM
-RUN wget -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh && \
+    update-alternatives --set x86_64-w64-mingw32-g++  /usr/bin/x86_64-w64-mingw32-g++-posix && \
+    #Setup LLVM
+    wget -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh && \
     chmod +x /tmp/llvm.sh && \
-    /tmp/llvm.sh 16 && \
+    /tmp/llvm.sh ${LLVM_VERSION} && \
     rm -rf /tmp/llvm.sh
 
 # Setup user and directories
