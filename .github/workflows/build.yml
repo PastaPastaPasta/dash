@@ -139,16 +139,14 @@ jobs:
 #        run: make -j$(nproc) -C depends HOST=${{ matrix.host }}
 
 
-      - name: Setup environment
+      - name: Build source and run tests
         run: |
           echo "BUILD_TARGET=${{ matrix.build_target }}"
           source ./ci/dash/matrix.sh
-        shell: bash
-
-      - name: Build source and run tests
-        run: |
           ./ci/dash/build_src.sh
           ./ci/dash/test_unittests.sh
+        shell: bash
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v2
         with:
