@@ -10,7 +10,9 @@ on:
 
 jobs:
   build:
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-core" ]
+    # Something broke with infra so that self hosted ubuntu core doesn't exist? let's try normal runners? probably will be quite slow if they work at all... :/
+#    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-core" ]
+    runs-on: ubuntu:latest
     if: contains(github.event.pull_request.labels.*.name, 'guix-build')
     timeout-minutes: 480
     steps:
