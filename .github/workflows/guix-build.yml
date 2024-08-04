@@ -2,18 +2,17 @@ name: Guix Build
 
 on:
   pull_request:
-    types: [ labeled ]
+    types: [labeled]
   push:
-#    tags:
-#      - '*'           # Push events to every tag not containing /
+  # tags:
+  #   - '*'           # Push events to every tag not containing /
   workflow_dispatch:
 
 jobs:
   build:
-    # Something broke with infra so that self hosted ubuntu core doesn't exist? let's try normal runners? probably will be quite slow if they work at all... :/
-#    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-core" ]
-    runs-on: ubuntu:latest
-    if: contains(github.event.pull_request.labels.*.name, 'guix-build')
+    # runs-on: [ "self-hosted", "linux", "x64", "ubuntu-core" ]
+    runs-on: ubuntu-latest
+    if: ${{ contains(github.event.pull_request.labels.*.name, 'guix-build') }}
     strategy:
       matrix:
         build_target: [x86_64-linux-gnu, arm-linux-gnueabihf, aarch64-linux-gnu, riscv64-linux-gnu, x86_64-w64-mingw32, x86_64-apple-darwin, arm64-apple-darwin]
@@ -63,10 +62,8 @@ jobs:
             ${{ github.workspace }}/dash/depends/work
           key: ${{ runner.os }}-guix-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-guix-${{ github.sha }}
             ${{ runner.os }}-guix-
-
-
+            ${{ runner.os }}-guix-
 
       - name: Create .cache folder if missing
         if: steps.guix-cache-restore.outputs.cache-hit != 'true'
@@ -82,7 +79,7 @@ jobs:
             -v ${{ github.workspace }}/.cache:/home/ubuntu/.cache \
             -w /src/dash \
             guix_ubuntu:latest && \
-          docker exec guix-daemon bash -c 'HOSTS=${{ build_target }} /usr/local/bin/guix-start'
+          docker exec guix-daemon bash -c 'HOSTS=${{ matrix.build_target }} /usr/local/bin/guix-start'
 
       - name: Ensure build passes
         run: |
