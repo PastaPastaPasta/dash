@@ -14,6 +14,17 @@ jobs:
 #    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-core" ]
     runs-on: ubuntu:latest
     if: contains(github.event.pull_request.labels.*.name, 'guix-build')
+    strategy:
+      matrix:
+        include:
+          - build_target: x86_64-linux-gnu
+          - build_target: arm-linux-gnueabihf
+          - build_target: aarch64-linux-gnu
+          - build_target: riscv64-linux-gnu
+          - build_target: x86_64-w64-mingw32
+          - build_target: x86_64-apple-darwin
+          - build_target: arm64-apple-darwin
+
     timeout-minutes: 480
     steps:
       - name: Checkout
@@ -78,7 +89,7 @@ jobs:
             -v ${{ github.workspace }}/.cache:/home/ubuntu/.cache \
             -w /src/dash \
             guix_ubuntu:latest && \
-          docker exec guix-daemon bash -c '/usr/local/bin/guix-start'
+          docker exec guix-daemon bash -c 'HOSTS=${{ build_target }} /usr/local/bin/guix-start'
 
       - name: Ensure build passes
         run: |
