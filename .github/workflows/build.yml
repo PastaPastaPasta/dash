@@ -50,8 +50,8 @@ jobs:
 #          tags: |
 #            ghcr.io/${{ steps.prepare.outputs.repo-name }}/builder:${{ steps.prepare.outputs.image-tag }}
 #            ghcr.io/${{ steps.prepare.outputs.repo-name }}/builder:latest
-          cache-from: type=registry,ref=ghcr.io/${{ steps.prepare.outputs.repo-name }}/builder:latest
-          cache-to: type=inline
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   build-depends:
     name: Build Dependencies
