@@ -47,9 +47,9 @@ jobs:
           context: ./contrib/containers/ci
           file: ./contrib/containers/ci/Dockerfile
           push: false
-#          tags: |
-#            ghcr.io/${{ steps.prepare.outputs.repo-name }}/builder:${{ steps.prepare.outputs.image-tag }}
-#            ghcr.io/${{ steps.prepare.outputs.repo-name }}/builder:latest
+          load: true
+          tags: |
+            builder:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -65,7 +65,7 @@ jobs:
 #          - x86_64-w64-mingw32
 #          - x86_64-pc-linux-gnu
     container:
-      image: ghcr.io/${{ needs.builder-image.outputs.repo-name }}/builder:${{ needs.builder-image.outputs.image-tag }}
+      image: builder:latest
       options: --user root
     steps:
       - name: Checkout code
