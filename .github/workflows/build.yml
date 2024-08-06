@@ -79,10 +79,6 @@ jobs:
           host: x86_64-pc-linux-gnu
         - build_target: linux64_nowallet
           host: x86_64-pc-linux-gnu
-        - build_target: linux64_valgrind
-          host: x86_64-pc-linux-gnu
-#        - build_target: mac
-#          host: x86_64-apple-darwin
 
     container:
       image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-ci-runner:${{ needs.build-image.outputs.image-tag }}
@@ -134,11 +130,6 @@ jobs:
             host: x86_64-pc-linux-gnu
           - build_target: linux64_nowallet
             host: x86_64-pc-linux-gnu
-          - build_target: linux64_valgrind
-            host: x86_64-pc-linux-gnu
-#          - build_target: mac
-#            host: x86_64-apple-darwin
-
     container:
       image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-ci-runner:${{ needs.build-image.outputs.image-tag }}
       options: --user root
