@@ -58,6 +58,7 @@ jobs:
     needs: build-image
     runs-on: ubuntu-20.04
     strategy:
+      fail-fast: false
       matrix:
         include:
         - build_target: arm-linux
@@ -112,6 +113,7 @@ jobs:
     needs: [build-image, build-depends]
     runs-on: ubuntu-20.04
     strategy:
+      fail-fast: false
       matrix:
         include:
           - build_target: arm-linux
