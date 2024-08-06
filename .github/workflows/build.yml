@@ -66,21 +66,21 @@ jobs:
         - build_target: win64
           host: x86_64-w64-mingw32
         - build_target: linux64
-          host: x86_64-linux-gnu
+          host: x86_64-pc-linux-gnu
         - build_target: linux64_tsan
-          host: x86_64-linux-gnu
+          host: x86_64-pc-linux-gnu
         - build_target: linux64_ubsan
-          host: x86_64-linux-gnu
+          host: x86_64-pc-linux-gnu
         - build_target: linux64_fuzz
-          host: x86_64-linux-gnu
+          host: x86_64-pc-linux-gnu
         - build_target: linux64_cxx20
-          host: x86_64-linux-gnu
+          host: x86_64-pc-linux-gnu
         - build_target: linux64_sqlite
-          host: x86_64-linux-gnu
+          host: x86_64-pc-linux-gnu
         - build_target: linux64_nowallet
-          host: x86_64-linux-gnu
+          host: x86_64-pc-linux-gnu
         - build_target: linux64_valgrind
-          host: x86_64-linux-gnu
+          host: x86_64-pc-linux-gnu
 #        - build_target: mac
 #          host: x86_64-apple-darwin
 
@@ -121,21 +121,21 @@ jobs:
           - build_target: win64
             host: x86_64-w64-mingw32
           - build_target: linux64
-            host: x86_64-linux-gnu
+            host: x86_64-pc-linux-gnu
           - build_target: linux64_tsan
-            host: x86_64-linux-gnu
+            host: x86_64-pc-linux-gnu
           - build_target: linux64_ubsan
-            host: x86_64-linux-gnu
+            host: x86_64-pc-linux-gnu
           - build_target: linux64_fuzz
-            host: x86_64-linux-gnu
+            host: x86_64-pc-linux-gnu
           - build_target: linux64_cxx20
-            host: x86_64-linux-gnu
+            host: x86_64-pc-linux-gnu
           - build_target: linux64_sqlite
-            host: x86_64-linux-gnu
+            host: x86_64-pc-linux-gnu
           - build_target: linux64_nowallet
-            host: x86_64-linux-gnu
+            host: x86_64-pc-linux-gnu
           - build_target: linux64_valgrind
-            host: x86_64-linux-gnu
+            host: x86_64-pc-linux-gnu
 #          - build_target: mac
 #            host: x86_64-apple-darwin
 
