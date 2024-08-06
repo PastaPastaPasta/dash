@@ -541,7 +541,7 @@ def run_tests(*, test_list, src_dir, build_dir, tmpdir, jobs=1, attempts=1, enab
         logging.debug("Early exiting after failure in TestFramework unit tests")
         sys.exit(False)
 
-    tests_dir = src_dir + '/test/functional/'
+    tests_dir = build_dir + '/test/functional/'
 
     flags = ['--cachedir={}'.format(cache_dir)] + args
 
