@@ -60,6 +60,7 @@ jobs:
             ${{ github.workspace }}/dash/depends/built
             ${{ github.workspace }}/dash/depends/sources
             ${{ github.workspace }}/dash/depends/work
+            /gnu/store
           key: ${{ runner.os }}-guix-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-guix-
