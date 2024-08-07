@@ -89,5 +89,6 @@ jobs:
           fi
 
       - name: Compute SHA256 checksums
+        continue-on-error: true # It will complain on depending on only some hosts
         run: |
           ./dash/contrib/containers/guix/scripts/guix-check ${{ github.workspace }}/dash
