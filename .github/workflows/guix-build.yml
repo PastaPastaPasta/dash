@@ -83,7 +83,7 @@ jobs:
       - name: Restore Guix Archive
         run: |
           if [ -f ~/.cache/guix-archive.nar ]; then
-            docker exec guix-daemon bash -c 'cat ~/.cache/guix-archive.nar | guix archive --import'
+            docker exec guix-daemon bash -c './dash/contrib/containers/guix/scripts/guix-restore-cache'
           else
             echo "Guix archive file not found, skipping import."
           fi
@@ -102,8 +102,7 @@ jobs:
 
       - name: Call Guix Archive
         run: |
-          export OUT=$(docker exec guix-daemon bash -c 'readlink -f ~/.guix-profile')
-          docker exec guix-daemon bash -c 'guix archive --export -r $(OUT) > ~/.cache/guix-archive.nar'
+          docker exec guix-daemon bash -c './dash/contrib/containers/guix/scripts/guix-save-cache'
 
       - name: Compute SHA256 checksums
         continue-on-error: true # It will complain on depending on only some hosts

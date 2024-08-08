@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+guix archive --export -r "$(readlink -f ~/.guix-profile)" > ~/.cache/guix-archive.nar
