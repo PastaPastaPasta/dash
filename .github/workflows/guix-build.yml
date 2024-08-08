@@ -90,7 +90,7 @@ jobs:
 
       - name: Run Guix Build
         run: |
-          docker exec guix-daemon bash -c 'HOSTS=${{ matrix.build_target }} /usr/local/bin/guix-start'
+          docker exec guix-daemon bash -c 'HOSTS=${{ matrix.build_target }} timeout 60 /usr/local/bin/guix-start'
 
       - name: Ensure build passes
         run: |
@@ -101,7 +101,7 @@ jobs:
 
       - name: Call Guix Archive
         run: |
-          docker exec guix-daemon bash -c 'guix archive --export -r $(readlink -f ~/.guix-profile) > ~/.cache/guix-archive.nar'
+          docker exec guix-daemon bash -c 'guix archive --export -r \$(readlink -f ~/.guix-profile) > ~/.cache/guix-archive.nar'
 
       - name: Compute SHA256 checksums
         continue-on-error: true # It will complain on depending on only some hosts
