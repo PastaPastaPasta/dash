@@ -102,7 +102,7 @@ jobs:
 
       - name: Call Guix Archive
         run: |
-          OUT=$(docker exec guix-daemon bash -c 'readlink -f ~/.guix-profile')
+          export OUT=$(docker exec guix-daemon bash -c 'readlink -f ~/.guix-profile')
           docker exec guix-daemon bash -c 'guix archive --export -r $(OUT) > ~/.cache/guix-archive.nar'
 
       - name: Compute SHA256 checksums
