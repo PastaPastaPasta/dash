@@ -70,15 +70,7 @@ jobs:
         if: steps.guix-cache-restore.outputs.cache-hit != 'true'
         run: mkdir -p .cache
 
-      - name: Restore Guix Archive
-        run: |
-          if [ -f ~/.cache/guix-archive.nar ]; then
-            cat ~/.cache/guix-archive.nar | guix archive --import
-          else
-            echo "Guix archive file not found, skipping import."
-          fi
-
-      - name: Run Guix build
+      - name: Start Guix Container
         timeout-minutes: 480
         run: |
           docker run --privileged -d --rm -t \
@@ -88,6 +80,16 @@ jobs:
             -v ${{ github.workspace }}/.cache:/home/ubuntu/.cache \
             -w /src/dash \
             guix_ubuntu:latest && \
+      - name: Restore Guix Archive
+        run: |
+          if [ -f ~/.cache/guix-archive.nar ]; then
+            docker exec guix-daemon bash -c 'cat ~/.cache/guix-archive.nar | guix archive --import'
+          else
+            echo "Guix archive file not found, skipping import."
+          fi
+
+      - name: Run Guix Build
+        run: |
           docker exec guix-daemon bash -c 'HOSTS=${{ matrix.build_target }} /usr/local/bin/guix-start'
 
       - name: Ensure build passes
@@ -99,7 +101,7 @@ jobs:
 
       - name: Call Guix Archive
         run: |
-          guix archive --export -r $(readlink -f ~/.guix-profile) | ~/.cache/guix-archive.nar
+          docker exec guix-daemon bash -c 'guix archive --export -r $(readlink -f ~/.guix-profile) | ~/.cache/guix-archive.nar'
 
       - name: Compute SHA256 checksums
         continue-on-error: true # It will complain on depending on only some hosts
