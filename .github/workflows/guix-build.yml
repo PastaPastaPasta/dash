@@ -79,7 +79,7 @@ jobs:
             -v ${{ github.workspace }}/dash:/src/dash \
             -v ${{ github.workspace }}/.cache:/home/ubuntu/.cache \
             -w /src/dash \
-            guix_ubuntu:latest && \
+            guix_ubuntu:latest
       - name: Restore Guix Archive
         run: |
           if [ -f ~/.cache/guix-archive.nar ]; then
