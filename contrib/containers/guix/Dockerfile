@@ -78,6 +78,8 @@ COPY --from=docker_root ./motd.txt           /etc/motd
 COPY --from=docker_root ./scripts/entrypoint /usr/local/bin/entrypoint
 COPY --from=docker_root ./scripts/guix-check /usr/local/bin/guix-check
 COPY --from=docker_root ./scripts/guix-start /usr/local/bin/guix-start
+COPY --from=docker_root ./scripts/guix-start /usr/local/bin/guix-save-cache
+COPY --from=docker_root ./scripts/guix-start /usr/local/bin/guix-restore-cache
 
 # Create directories for mounting to save/restore cache and grant necessary permissions
 RUN mkdir -p \
