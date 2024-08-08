@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+cat ~/.cache/guix-archive.nar | guix archive --import
