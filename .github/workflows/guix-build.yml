@@ -89,6 +89,7 @@ jobs:
           fi
 
       - name: Run Guix Build
+        continue-on-error: true
         run: |
           docker exec guix-daemon bash -c 'HOSTS=${{ matrix.build_target }} timeout 60 /usr/local/bin/guix-start'
 

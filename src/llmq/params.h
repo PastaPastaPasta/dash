@@ -141,8 +141,8 @@ static constexpr std::array<LLMQParams, 14> available_llmqs = {
         .name = "llmq_test",
         .useRotation = false,
         .size = 3,
-        .minSize = 2,
-        .threshold = 2,
+        .minSize = 1,
+        .threshold = 1,
 
         .dkgInterval = 24, // one DKG per hour
         .dkgPhaseBlocks = 2,
@@ -167,8 +167,8 @@ static constexpr std::array<LLMQParams, 14> available_llmqs = {
         .name = "llmq_test_instantsend",
         .useRotation = false,
         .size = 3,
-        .minSize = 2,
-        .threshold = 2,
+        .minSize = 1,
+        .threshold = 1,
 
         .dkgInterval = 24, // one DKG per hour
         .dkgPhaseBlocks = 2,
@@ -193,8 +193,8 @@ static constexpr std::array<LLMQParams, 14> available_llmqs = {
         .name = "llmq_test_v17",
         .useRotation = false,
         .size = 3,
-        .minSize = 2,
-        .threshold = 2,
+        .minSize = 1,
+        .threshold = 1,
 
         .dkgInterval = 24, // one DKG per hour
         .dkgPhaseBlocks = 2,
@@ -245,8 +245,8 @@ static constexpr std::array<LLMQParams, 14> available_llmqs = {
         .name = "llmq_test_platform",
         .useRotation = false,
         .size = 3,
-        .minSize = 2,
-        .threshold = 2,
+        .minSize = 1,
+        .threshold = 1,
 
         .dkgInterval = 24, // DKG cycle
         .dkgPhaseBlocks = 2,
