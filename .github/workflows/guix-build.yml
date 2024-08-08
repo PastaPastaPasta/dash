@@ -102,7 +102,8 @@ jobs:
 
       - name: Call Guix Archive
         run: |
-          docker exec guix-daemon bash -c 'guix archive --export -r "\$\(readlink -f ~/.guix-profile\)" > ~/.cache/guix-archive.nar'
+          OUT=$(docker exec guix-daemon bash -c 'readlink -f ~/.guix-profile')
+          docker exec guix-daemon bash -c 'guix archive --export -r $(OUT) > ~/.cache/guix-archive.nar'
 
       - name: Compute SHA256 checksums
         continue-on-error: true # It will complain on depending on only some hosts
