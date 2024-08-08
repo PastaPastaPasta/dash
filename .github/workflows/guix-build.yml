@@ -78,6 +78,7 @@ jobs:
             -e ADDITIONAL_GUIX_COMMON_FLAGS="--max-jobs=$(nproc --all)" \
             -v ${{ github.workspace }}/dash:/src/dash \
             -v ${{ github.workspace }}/.cache:/home/ubuntu/.cache \
+            -v /gnu:/gnu \
             -w /src/dash \
             guix_ubuntu:latest && \
           docker exec guix-daemon bash -c 'HOSTS=${{ matrix.build_target }} /usr/local/bin/guix-start'
