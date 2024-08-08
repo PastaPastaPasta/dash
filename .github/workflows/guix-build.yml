@@ -72,7 +72,11 @@ jobs:
 
       - name: Restore Guix Archive
         run: |
-          cat ~/.cache/guix-archive.nar | guix archive --import
+          if [ -f ~/.cache/guix-archive.nar ]; then
+            cat ~/.cache/guix-archive.nar | guix archive --import
+          else
+            echo "Guix archive file not found, skipping import."
+          fi
 
       - name: Run Guix build
         timeout-minutes: 480
