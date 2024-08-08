@@ -70,6 +70,10 @@ jobs:
         if: steps.guix-cache-restore.outputs.cache-hit != 'true'
         run: mkdir -p .cache
 
+      - name: Restore Guix Archive
+        run: |
+          cat ~/.cache/guix-archive.nar | guix archive --import
+
       - name: Run Guix build
         timeout-minutes: 480
         run: |
@@ -78,7 +82,6 @@ jobs:
             -e ADDITIONAL_GUIX_COMMON_FLAGS="--max-jobs=$(nproc --all)" \
             -v ${{ github.workspace }}/dash:/src/dash \
             -v ${{ github.workspace }}/.cache:/home/ubuntu/.cache \
-            -v /gnu:/gnu \
             -w /src/dash \
             guix_ubuntu:latest && \
           docker exec guix-daemon bash -c 'HOSTS=${{ matrix.build_target }} /usr/local/bin/guix-start'
@@ -89,6 +92,10 @@ jobs:
             echo "Guix build failed!"
             exit 1
           fi
+
+      - name: Call Guix Archive
+        run: |
+          guix archive --export -r $(readlink -f ~/.guix-profile) | ~/.cache/guix-archive.nar
 
       - name: Compute SHA256 checksums
         continue-on-error: true # It will complain on depending on only some hosts
