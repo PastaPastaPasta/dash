@@ -133,7 +133,7 @@ jobs:
         continue-on-error: true
         working-directory: ${{ github.workspace }}
         run: |
-          HOSTS=${{ matrix.build_target }} timeout 60 /usr/local/bin/guix-start ${{ github.workspace }}
+          HOSTS=${{ matrix.build_target }} timeout 60 /usr/local/bin/guix-start
 
       - name: Ensure build passes
         run: |
