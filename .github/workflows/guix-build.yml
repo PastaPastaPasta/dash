@@ -79,6 +79,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: symbolic dir
+        run: |
+          ln -s  ${{ github.workspace }} /src/dash
+
       - name: Cache Guix and depends
         id: guix-cache-restore
         uses: actions/cache@v4
