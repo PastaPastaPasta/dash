@@ -120,7 +120,7 @@ jobs:
             -v ${{ github.workspace }}/dash:/src/dash \
             -v ${{ github.workspace }}/.cache:/home/ubuntu/.cache \
             -w /src/dash \
-            ghcr.io/${{ steps.prepare.outputs.repo-name }}/dashcore-guix-builder:${{ steps.prepare.outputs.image-tag }}
+            ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-guix-builder:${{ needs.build-image.outputs.image-tag }}
 
 #      - name: Restore Guix Archive
 #        working-directory: ${{ github.workspace }}
