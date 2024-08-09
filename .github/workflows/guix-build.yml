@@ -61,6 +61,9 @@ jobs:
   guix_build:
     needs: build_docker_image
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-ci-runner:${{ needs.build-image.outputs.image-tag }}
+      options: --user root
     strategy:
       matrix:
         build_target: [x86_64-linux-gnu, arm-linux-gnueabihf, aarch64-linux-gnu, riscv64-linux-gnu, x86_64-w64-mingw32, x86_64-apple-darwin, arm64-apple-darwin]
@@ -71,7 +74,7 @@ jobs:
 
       - name: Cache Guix and depends
         id: guix-cache-restore
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ${{ github.workspace }}/.cache
@@ -88,21 +91,21 @@ jobs:
         if: steps.guix-cache-restore.outputs.cache-hit != 'true'
         run: mkdir -p .cache
 
-      - name: Start Guix Container
-        timeout-minutes: 480
-        run: |
-          docker run --privileged -d --rm -t \
-            --name guix-daemon \
-            -e ADDITIONAL_GUIX_COMMON_FLAGS="--max-jobs=$(nproc --all)" \
-            -v ${{ github.workspace }}/dash:/src/dash \
-            -v ${{ github.workspace }}/.cache:/home/ubuntu/.cache \
-            -w /src/dash \
-            ghcr.io/${{ steps.prepare.outputs.repo-name }}/dashcore-guix-builder:${{ steps.prepare.outputs.image-tag }}
+#      - name: Start Guix Container
+#        timeout-minutes: 480
+#        run: |
+#          docker run --privileged -d --rm -t \
+#            --name guix-daemon \
+#            -e ADDITIONAL_GUIX_COMMON_FLAGS="--max-jobs=$(nproc --all)" \
+#            -v ${{ github.workspace }}/dash:/src/dash \
+#            -v ${{ github.workspace }}/.cache:/home/ubuntu/.cache \
+#            -w /src/dash \
+#            ghcr.io/${{ steps.prepare.outputs.repo-name }}/dashcore-guix-builder:${{ steps.prepare.outputs.image-tag }}
 
       - name: Restore Guix Archive
         run: |
           if [ -f ~/.cache/guix-archive.nar ]; then
-            docker exec guix-daemon bash -c '/usr/local/bin/guix-restore-cache'
+            /usr/local/bin/guix-restore-cache
           else
             echo "Guix archive file not found, skipping import."
           fi
@@ -110,7 +113,7 @@ jobs:
       - name: Run Guix Build
         continue-on-error: true
         run: |
-          docker exec guix-daemon bash -c 'HOSTS=${{ matrix.build_target }} timeout 60 /usr/local/bin/guix-start'
+          HOSTS=${{ matrix.build_target }} timeout 60 /usr/local/bin/guix-start
 
       - name: Ensure build passes
         run: |
@@ -121,7 +124,7 @@ jobs:
 
       - name: Call Guix Archive
         run: |
-          docker exec guix-daemon bash -c '/usr/local/bin/guix-save-cache'
+          /usr/local/bin/guix-save-cache
 
       - name: Compute SHA256 checksums
         continue-on-error: true
