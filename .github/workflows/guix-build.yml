@@ -92,7 +92,7 @@ jobs:
 
       - name: Create .cache folder if missing
         if: steps.guix-cache-restore.outputs.cache-hit != 'true'
-        run: mkdir -p .cache
+        run: mkdir -p ${{ github.workspace }}/.cache
 
 #      - name: Start Guix Container
 #        timeout-minutes: 480
