@@ -81,6 +81,8 @@ COPY --from=docker_root ./scripts/guix-start /usr/local/bin/guix-start
 COPY --from=docker_root ./scripts/guix-save-cache /usr/local/bin/guix-save-cache
 COPY --from=docker_root ./scripts/guix-restore-cache /usr/local/bin/guix-restore-cache
 
+RUN ls -lah /usr/local/bin/
+
 # Create directories for mounting to save/restore cache and grant necessary permissions
 RUN mkdir -p \
         /home/${USERNAME}/.cache \
