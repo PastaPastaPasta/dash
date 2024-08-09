@@ -94,6 +94,10 @@ jobs:
         if: steps.guix-cache-restore.outputs.cache-hit != 'true'
         run: mkdir -p ${{ github.workspace }}/.cache
 
+      - name: Process
+        run: |
+          cd ${{ github.workspace }}
+
       - name: Start Guix Processes
         run: |
           /usr/local/bin/entrypoint
