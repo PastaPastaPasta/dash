@@ -131,6 +131,7 @@ jobs:
 #            echo "Guix archive file not found, skipping import."
 #          fi
 #        shell: bash
+
       - name: Restore Guix Archive
         run: |
           if [ -f ~/.cache/guix-archive.nar ]; then
@@ -143,8 +144,8 @@ jobs:
       - name: Run Guix Build
         continue-on-error: true
         working-directory: ${{ github.workspace }}
+        #          HOSTS=${{ matrix.build_target }} timeout 60 /usr/local/bin/guix-start
         run: |
-#          HOSTS=${{ matrix.build_target }} timeout 60 /usr/local/bin/guix-start
            docker exec guix-daemon bash -c 'HOSTS=${{ matrix.build_target }} timeout 60 /usr/local/bin/guix-start'
 
       - name: Ensure build passes
