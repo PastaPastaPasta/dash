@@ -64,12 +64,12 @@ jobs:
   guix_build:
     needs: build-image
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-guix-builder:${{ needs.build-image.outputs.image-tag }}
-      options: --user root
-      volumes:
-        - ${{ github.workspace }}/dash:/src/dash"
-        - ${{ github.workspace }}/.cache:/home/ubuntu/.cache
+#    container:
+#      image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-guix-builder:${{ needs.build-image.outputs.image-tag }}
+#      options: --user root
+#      volumes:
+#        - ${{ github.workspace }}/dash:/src/dash"
+#        - ${{ github.workspace }}/.cache:/home/ubuntu/.cache
 
     strategy:
       matrix:
@@ -98,42 +98,53 @@ jobs:
             ${{ runner.os }}-guix-${{ matrix.build_target }}
             ${{ runner.os }}-guix-
 
+#      - name: Create .cache folder if missing
+#        if: steps.guix-cache-restore.outputs.cache-hit != 'true'
+#        run: mkdir -p ${{ github.workspace }}/.cache
       - name: Create .cache folder if missing
         if: steps.guix-cache-restore.outputs.cache-hit != 'true'
-        run: mkdir -p ${{ github.workspace }}/.cache
+        run: mkdir -p .cache
 
-      - name: Start Guix Processes
-        working-directory: ${{ github.workspace }}
-        run: |
-          /usr/local/bin/entrypoint
 
-#      - name: Start Guix Container
-#        timeout-minutes: 480
+#      - name: Start Guix Processes
+#        working-directory: ${{ github.workspace }}
 #        run: |
-#          docker run --privileged -d --rm -t \
-#            --name guix-daemon \
-#            -e ADDITIONAL_GUIX_COMMON_FLAGS="--max-jobs=$(nproc --all)" \
-#            -v ${{ github.workspace }}/dash:/src/dash \
-#            -v ${{ github.workspace }}/.cache:/home/ubuntu/.cache \
-#            -w /src/dash \
-#            ghcr.io/${{ steps.prepare.outputs.repo-name }}/dashcore-guix-builder:${{ steps.prepare.outputs.image-tag }}
+#          /usr/local/bin/entrypoint
 
-      - name: Restore Guix Archive
-        working-directory: ${{ github.workspace }}
+      - name: Start Guix Container
+        timeout-minutes: 480
         run: |
-          if [ -f ${{ github.workspace }}/.cache/guix-archive.nar ]; then
-            /usr/local/bin/guix-restore-cache
+          docker run --privileged -d --rm -t \
+            --name guix-daemon \
+            -e ADDITIONAL_GUIX_COMMON_FLAGS="--max-jobs=$(nproc --all)" \
+            -v ${{ github.workspace }}/dash:/src/dash \
+            -v ${{ github.workspace }}/.cache:/home/ubuntu/.cache \
+            -w /src/dash \
+            ghcr.io/${{ steps.prepare.outputs.repo-name }}/dashcore-guix-builder:${{ steps.prepare.outputs.image-tag }}
+
+#      - name: Restore Guix Archive
+#        working-directory: ${{ github.workspace }}
+#        run: |
+#          if [ -f ${{ github.workspace }}/.cache/guix-archive.nar ]; then
+#            /usr/local/bin/guix-restore-cache
+#          else
+#            echo "Guix archive file not found, skipping import."
+#          fi
+#        shell: bash
+      - name: Restore Guix Archive
+        run: |
+          if [ -f ~/.cache/guix-archive.nar ]; then
+            docker exec guix-daemon bash -c '/usr/local/bin/guix-restore-cache'
           else
             echo "Guix archive file not found, skipping import."
           fi
-        shell: bash
-
 
       - name: Run Guix Build
         continue-on-error: true
         working-directory: ${{ github.workspace }}
         run: |
-          HOSTS=${{ matrix.build_target }} timeout 60 /usr/local/bin/guix-start
+#          HOSTS=${{ matrix.build_target }} timeout 60 /usr/local/bin/guix-start
+           docker exec guix-daemon bash -c 'HOSTS=${{ matrix.build_target }} timeout 60 /usr/local/bin/guix-start'
 
       - name: Ensure build passes
         run: |
@@ -144,11 +155,14 @@ jobs:
         shell: bash
 
 
+#      - name: Call Guix Archive
+#        working-directory: ${{ github.workspace }}
+#        run: |
+#          /usr/local/bin/guix-save-cache ${{ github.workspace }}
+#        shell: bash
       - name: Call Guix Archive
-        working-directory: ${{ github.workspace }}
         run: |
-          /usr/local/bin/guix-save-cache ${{ github.workspace }}
-        shell: bash
+          docker exec guix-daemon bash -c '/usr/local/bin/guix-save-cache'
 
 
       - name: Compute SHA256 checksums
