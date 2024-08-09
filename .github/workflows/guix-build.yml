@@ -67,6 +67,10 @@ jobs:
     container:
       image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-guix-builder:${{ needs.build-image.outputs.image-tag }}
       options: --user root
+      volumes:
+        - ${{ github.workspace }}/dash:/src/dash"
+        - ${{ github.workspace }}/.cache:/home/ubuntu/.cache
+
     strategy:
       matrix:
         build_target: [x86_64-linux-gnu, arm-linux-gnueabihf, aarch64-linux-gnu, riscv64-linux-gnu, x86_64-w64-mingw32, x86_64-apple-darwin, arm64-apple-darwin]
@@ -74,8 +78,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          path: /src/dash
 
       - name: Cache Guix and depends
         id: guix-cache-restore
