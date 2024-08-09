@@ -107,7 +107,7 @@ jobs:
 
       - name: Restore Guix Archive
         run: |
-          if [ -f ~/.cache/guix-archive.nar ]; then
+          if [ -f ${{ github.workspace }}/.cache/guix-archive.nar ]; then
             /usr/local/bin/guix-restore-cache
           else
             echo "Guix archive file not found, skipping import."
@@ -131,7 +131,7 @@ jobs:
 
       - name: Call Guix Archive
         run: |
-          /usr/local/bin/guix-save-cache
+          /usr/local/bin/guix-save-cache ${{ github.workspace }}
         shell: bash
 
 
