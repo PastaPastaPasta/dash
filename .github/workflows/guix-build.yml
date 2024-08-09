@@ -74,6 +74,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          path: /src/dash
 
       - name: Cache Guix and depends
         id: guix-cache-restore
