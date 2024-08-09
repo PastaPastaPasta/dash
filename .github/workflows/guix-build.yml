@@ -65,7 +65,7 @@ jobs:
     needs: build-image
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-ci-runner:${{ needs.build-image.outputs.image-tag }}
+      image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-guix-builder:${{ needs.build-image.outputs.image-tag }}
       options: --user root
     strategy:
       matrix:
