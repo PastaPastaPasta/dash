@@ -94,11 +94,8 @@ jobs:
         if: steps.guix-cache-restore.outputs.cache-hit != 'true'
         run: mkdir -p ${{ github.workspace }}/.cache
 
-      - name: Process
-        run: |
-          cd ${{ github.workspace }}
-
       - name: Start Guix Processes
+        working-directory: ${{ github.workspace }}
         run: |
           /usr/local/bin/entrypoint
 
@@ -114,6 +111,7 @@ jobs:
 #            ghcr.io/${{ steps.prepare.outputs.repo-name }}/dashcore-guix-builder:${{ steps.prepare.outputs.image-tag }}
 
       - name: Restore Guix Archive
+        working-directory: ${{ github.workspace }}
         run: |
           if [ -f ${{ github.workspace }}/.cache/guix-archive.nar ]; then
             /usr/local/bin/guix-restore-cache
@@ -125,6 +123,7 @@ jobs:
 
       - name: Run Guix Build
         continue-on-error: true
+        working-directory: ${{ github.workspace }}
         run: |
           HOSTS=${{ matrix.build_target }} timeout 60 /usr/local/bin/guix-start
 
@@ -138,12 +137,14 @@ jobs:
 
 
       - name: Call Guix Archive
+        working-directory: ${{ github.workspace }}
         run: |
           /usr/local/bin/guix-save-cache ${{ github.workspace }}
         shell: bash
 
 
       - name: Compute SHA256 checksums
+        working-directory: ${{ github.workspace }}
         continue-on-error: true
         run: |
           ./dash/contrib/containers/guix/scripts/guix-check ${{ github.workspace }}/dash
