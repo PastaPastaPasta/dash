@@ -112,6 +112,8 @@ jobs:
           else
             echo "Guix archive file not found, skipping import."
           fi
+        shell: bash
+
 
       - name: Run Guix Build
         continue-on-error: true
@@ -124,12 +126,17 @@ jobs:
             echo "Guix build failed!"
             exit 1
           fi
+        shell: bash
+
 
       - name: Call Guix Archive
         run: |
           /usr/local/bin/guix-save-cache
+        shell: bash
+
 
       - name: Compute SHA256 checksums
         continue-on-error: true
         run: |
           ./dash/contrib/containers/guix/scripts/guix-check ${{ github.workspace }}/dash
+        shell: bash
