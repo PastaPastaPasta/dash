@@ -89,9 +89,9 @@ jobs:
         with:
           path: |
             ${{ github.workspace }}/.cache
-            ${{ github.workspace }}/dash/depends/built
-            ${{ github.workspace }}/dash/depends/sources
-            ${{ github.workspace }}/dash/depends/work
+            ${{ github.workspace }}/depends/built
+            ${{ github.workspace }}/depends/sources
+            ${{ github.workspace }}/depends/work
             /gnu/store
           key: ${{ runner.os }}-guix-${{ matrix.build_target }}-${{ github.sha }}
           restore-keys: |
@@ -117,7 +117,7 @@ jobs:
           docker run --privileged -d --rm -t \
             --name guix-daemon \
             -e ADDITIONAL_GUIX_COMMON_FLAGS="--max-jobs=$(nproc --all)" \
-            -v ${{ github.workspace }}/dash:/src/dash \
+            -v ${{ github.workspace }}:/src/dash \
             -v ${{ github.workspace }}/.cache:/home/ubuntu/.cache \
             -w /src/dash \
             ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-guix-builder:${{ needs.build-image.outputs.image-tag }}
@@ -171,5 +171,5 @@ jobs:
         working-directory: ${{ github.workspace }}
         continue-on-error: true
         run: |
-          ./dash/contrib/containers/guix/scripts/guix-check ${{ github.workspace }}/dash
+          ./dash/contrib/containers/guix/scripts/guix-check ${{ github.workspace }}
         shell: bash
