@@ -10,6 +10,19 @@ For notes on the usage of Assumeutxo, please refer to [the usage doc](/doc/assum
 
 ## Design notes
 
+- Snapshot files use the upstream version-2 `SnapshotMetadata` container:
+  `utxo\xff`, metadata version, Dash network message-start bytes, base block
+  hash, and coin count. After the declared coins, Dash appends
+  `[EVO_SNAPSHOT_MARKER][CEvoSnapshot]`. The evo payload retains its own
+  independently evolvable version (currently v3); its version is not folded
+  into or duplicated by the outer metadata version.
+- Introducing the metadata container intentionally makes unframed snapshot
+  files produced by the post-M5 development branches unreadable. Those files
+  were regtest-only development artifacts and must be regenerated. Compiled
+  `AssumeutxoData` and the regtest-only `-assumeutxodata` syntax are unchanged:
+  `hash_serialized` and `evo_hash` commit to the decoded UTXO and evo bodies,
+  not to the metadata header or whole-file bytes.
+
 - The concept of UTXO snapshots is treated as an implementation detail that lives
   behind the ChainstateManager interface. The external presentation of the changes
   required to facilitate the use of UTXO snapshots is the understanding that there are

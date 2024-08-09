@@ -46,7 +46,7 @@ FUZZ_TARGET(utxo_snapshot, .init = initialize_chain)
 
     const auto ActivateFuzzedSnapshot{[&] {
         AutoFile infile{fsbridge::fopen(snapshot_path, "rb")};
-        SnapshotMetadata metadata;
+        SnapshotMetadata metadata{chainman.GetParams().MessageStart()};
         try {
             infile >> metadata;
         } catch (const std::ios_base::failure&) {

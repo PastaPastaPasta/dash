@@ -3290,7 +3290,7 @@ UniValue WriteUTXOSnapshot(
         tip->nHeight, tip->GetBlockHash().ToString(),
         fs::PathToString(path), fs::PathToString(temppath)));
 
-    SnapshotMetadata metadata{tip->GetBlockHash(), maybe_stats->coins_count, tip->nChainTx};
+    SnapshotMetadata metadata{chainstate.m_chainman.GetParams().MessageStart(), tip->GetBlockHash(), maybe_stats->coins_count};
 
     afile << metadata;
 
@@ -3399,13 +3399,20 @@ static RPCHelpMan loadtxoutset()
             "Couldn't open file " + fs::PathToString(path) + " for reading.");
     }
 
-    SnapshotMetadata metadata;
-    afile >> metadata;
+    SnapshotMetadata metadata{chainman.GetParams().MessageStart()};
+    try {
+        afile >> metadata;
+    } catch (const std::ios_base::failure& e) {
+        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("Unable to parse metadata: %s", e.what()));
+    }
 
     uint256 base_blockhash = metadata.m_base_blockhash;
     if (!chainman.GetParams().AssumeutxoForBlockhash(base_blockhash).has_value()) {
+        const auto available_heights{chainman.GetParams().GetAvailableSnapshotHeights()};
+        const std::string heights_formatted{Join(available_heights, ", ", [&](const auto& height) { return ToString(height); })};
         throw JSONRPCError(RPC_INTERNAL_ERROR, strprintf("Unable to load UTXO snapshot, "
-            "assumeutxo block hash in snapshot metadata not recognized (%s)", base_blockhash.ToString()));
+            "assumeutxo block hash in snapshot metadata not recognized (hash: %s). The following snapshot heights are available: %s.",
+            base_blockhash.ToString(), heights_formatted));
     }
     int max_secs_to_wait_for_headers = 60 * 10;
     CBlockIndex* snapshot_start_block = nullptr;
@@ -3440,12 +3447,12 @@ static RPCHelpMan loadtxoutset()
     if (!activation_result) {
         throw JSONRPCError(RPC_INTERNAL_ERROR, "Unable to load UTXO snapshot: " + util::ErrorString(activation_result).original);
     }
-    CBlockIndex* new_tip{WITH_LOCK(::cs_main, return chainman.ActiveTip())};
+    CBlockIndex& snapshot_index{*CHECK_NONFATAL(*activation_result)};
 
     UniValue result(UniValue::VOBJ);
     result.pushKV("coins_loaded", metadata.m_coins_count);
-    result.pushKV("tip_hash", new_tip->GetBlockHash().ToString());
-    result.pushKV("base_height", new_tip->nHeight);
+    result.pushKV("tip_hash", snapshot_index.GetBlockHash().ToString());
+    result.pushKV("base_height", snapshot_index.nHeight);
     result.pushKV("path", fs::PathToString(path));
     return result;
 },

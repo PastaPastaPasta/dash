@@ -5624,7 +5624,7 @@ Chainstate& ChainstateManager::InitializeChainstate(CTxMemPool* mempool,
     return destroyed && !fs::exists(db_path);
 }
 
-util::Result<void> ChainstateManager::ActivateSnapshot(
+util::Result<CBlockIndex*> ChainstateManager::ActivateSnapshot(
         AutoFile& coins_file,
         const SnapshotMetadata& metadata,
         bool in_memory)
@@ -5635,6 +5635,8 @@ util::Result<void> ChainstateManager::ActivateSnapshot(
         return util::Error{_("Can't activate a snapshot-based chainstate more than once")};
     }
 
+    CBlockIndex* snapshot_start_block{nullptr};
+
     {
         LOCK(::cs_main);
 
@@ -5643,7 +5645,7 @@ util::Result<void> ChainstateManager::ActivateSnapshot(
                 base_blockhash.ToString())};
         }
 
-        CBlockIndex* snapshot_start_block = m_blockman.LookupBlockIndex(base_blockhash);
+        snapshot_start_block = m_blockman.LookupBlockIndex(base_blockhash);
         if (!snapshot_start_block) {
             return util::Error{strprintf(_("The base block header (%s) must appear in the headers chain. Make sure all headers are syncing, and call loadtxoutset again."),
                           base_blockhash.ToString())};
@@ -5712,7 +5714,7 @@ util::Result<void> ChainstateManager::ActivateSnapshot(
             static_cast<size_t>(current_coinstip_cache_size * SNAPSHOT_CACHE_PERC));
     }
 
-    auto cleanup_bad_snapshot = [&](const std::string& reason) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) -> util::Result<void> {
+    auto cleanup_bad_snapshot = [&](const std::string& reason) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) -> util::Result<CBlockIndex*> {
         LogPrintf("[snapshot] activation failed - %s\n", reason);
         this->ReleaseSnapshotPruneLock();
         this->MaybeRebalanceCaches();
@@ -5775,7 +5777,7 @@ util::Result<void> ChainstateManager::ActivateSnapshot(
         m_snapshot_chainstate->CoinsTip().DynamicMemoryUsage() / (1000 * 1000));
 
     this->MaybeRebalanceCaches();
-    return {};
+    return snapshot_start_block;
 }
 
 

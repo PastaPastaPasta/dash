@@ -66,22 +66,51 @@ class AssumeutxoTest(BitcoinTestFramework):
         def expected_error(log_msg="", rpc_details=""):
             with node.assert_debug_log([log_msg]):
                 assert_raises_rpc_error(-32603, f"Unable to load UTXO snapshot{rpc_details}", node.loadtxoutset, bad_snapshot_path)
+
+        parsing_error_code = -22
+
+        self.log.info("  - snapshot file with invalid file magic")
+        with open(bad_snapshot_path, 'wb') as f:
+            f.write(b'bad!!' + valid_snapshot_contents[5:])
+        assert_raises_rpc_error(parsing_error_code, "Unable to parse metadata: Invalid UTXO set snapshot magic bytes. Please check if this is indeed a snapshot file or if you are using an outdated snapshot format.", node.loadtxoutset, bad_snapshot_path)
+
+        self.log.info("  - legacy post-M5 snapshot file without container framing")
+        with open(bad_snapshot_path, 'wb') as f:
+            f.write(valid_snapshot_contents[11:])
+        assert_raises_rpc_error(parsing_error_code, "Unable to parse metadata: Invalid UTXO set snapshot magic bytes. Please check if this is indeed a snapshot file or if you are using an outdated snapshot format.", node.loadtxoutset, bad_snapshot_path)
+
+        self.log.info("  - snapshot file with unsupported version")
+        for version in [0, 1, 3]:
+            with open(bad_snapshot_path, 'wb') as f:
+                f.write(valid_snapshot_contents[:5] + version.to_bytes(2, "little") + valid_snapshot_contents[7:])
+            assert_raises_rpc_error(parsing_error_code, f"Unable to parse metadata: Version of snapshot {version} does not match any of the supported versions.", node.loadtxoutset, bad_snapshot_path)
+
+        self.log.info("  - snapshot file with mismatching Dash network magic")
+        for magic in [bytes.fromhex('bf0c6bbd'), bytes.fromhex('cee2caff'), bytes.fromhex('e2caffce'), b'\x00' * 4]:
+            with open(bad_snapshot_path, 'wb') as f:
+                f.write(valid_snapshot_contents[:7] + magic + valid_snapshot_contents[11:])
+            assert_raises_rpc_error(
+                parsing_error_code,
+                f"Unable to parse metadata: The network magic of the snapshot ({magic.hex()}) does not match the network magic of this node (fcc1b7dc).",
+                node.loadtxoutset,
+                bad_snapshot_path,
+            )
+
         prev_block_hash = self.nodes[0].getblockhash(SNAPSHOT_BASE_HEIGHT - 1)
         bogus_block_hash = "0" * 64  # Represents any unknown block hash
         for bad_block_hash in [bogus_block_hash, prev_block_hash]:
             with open(bad_snapshot_path, 'wb') as f:
-                # block hash of the snapshot base is stored right at the start (first 32 bytes)
-                f.write(bytes.fromhex(bad_block_hash)[::-1] + valid_snapshot_contents[32:])
-            error_details = f", assumeutxo block hash in snapshot metadata not recognized ({bad_block_hash})"
+                f.write(valid_snapshot_contents[:11] + bytes.fromhex(bad_block_hash)[::-1] + valid_snapshot_contents[43:])
+            error_details = f", assumeutxo block hash in snapshot metadata not recognized (hash: {bad_block_hash}). The following snapshot heights are available: 110, 200, 299."
             expected_error(rpc_details=error_details)
 
         self.log.info("  - snapshot file with wrong number of coins")
-        valid_num_coins = int.from_bytes(valid_snapshot_contents[32:32 + 8], "little")
+        valid_num_coins = int.from_bytes(valid_snapshot_contents[43:43 + 8], "little")
         for off in [-1, +1]:
             with open(bad_snapshot_path, 'wb') as f:
-                f.write(valid_snapshot_contents[:32])
+                f.write(valid_snapshot_contents[:43])
                 f.write((valid_num_coins + off).to_bytes(8, "little"))
-                f.write(valid_snapshot_contents[32 + 8:])
+                f.write(valid_snapshot_contents[43 + 8:])
             expected_error(log_msg=f"bad evo section marker (or coins left over) after 298 coins" if off == -1 else f"bad snapshot format or truncated snapshot after deserializing 299 coins")
 
         self.log.info("  - snapshot file with alternated UTXO data")
@@ -94,9 +123,9 @@ class AssumeutxoTest(BitcoinTestFramework):
 
         for content, offset, wrong_hash in cases:
             with open(bad_snapshot_path, "wb") as f:
-                f.write(valid_snapshot_contents[:(32 + 8 + offset)])
+                f.write(valid_snapshot_contents[:(5 + 2 + 4 + 32 + 8 + offset)])
                 f.write(content)
-                f.write(valid_snapshot_contents[(32 + 8 + offset + len(content)):])
+                f.write(valid_snapshot_contents[(5 + 2 + 4 + 32 + 8 + offset + len(content)):])
             expected_error(log_msg=f"[snapshot] bad snapshot content hash: expected f6571ed786c40dcbb835b38090eaca87762cf421874461caa779738c7ff602fa, got {wrong_hash}")
 
     def test_invalid_chainstate_scenarios(self, node_index):

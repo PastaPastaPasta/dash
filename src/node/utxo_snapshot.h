@@ -6,18 +6,32 @@
 #ifndef BITCOIN_NODE_UTXO_SNAPSHOT_H
 #define BITCOIN_NODE_UTXO_SNAPSHOT_H
 
+#include <protocol.h>
 #include <serialize.h>
+#include <tinyformat.h>
 #include <uint256.h>
 #include <util/fs.h>
+#include <util/strencodings.h>
 #include <validation.h>
 
+#include <algorithm>
+#include <array>
 #include <optional>
+#include <set>
+
+// UTXO set snapshot magic bytes.
+static constexpr std::array<uint8_t, 5> SNAPSHOT_MAGIC_BYTES = {'u', 't', 'x', 'o', 0xff};
 
 namespace node {
 //! Metadata describing a serialized version of a UTXO set from which an
-//! assumeutxo Chainstate can be constructed.
+//! assumeutxo Chainstate can be constructed. All fields come from an untrusted
+//! file and must be validated before use.
 class SnapshotMetadata
 {
+    inline static const uint16_t VERSION{2};
+    const std::set<uint16_t> m_supported_versions{VERSION};
+    std::array<uint8_t, CMessageHeader::MESSAGE_START_SIZE> m_network_magic;
+
 public:
     //! The hash of the block that reflects the tip of the chain for the
     //! UTXO set contained in this snapshot.
@@ -27,15 +41,55 @@ public:
     //! during snapshot load to estimate progress of UTXO set reconstruction.
     uint64_t m_coins_count = 0;
 
-    SnapshotMetadata() { }
     SnapshotMetadata(
+        const CMessageHeader::MessageStartChars& network_magic) {
+            std::copy(std::begin(network_magic), std::end(network_magic), m_network_magic.begin());
+        }
+    SnapshotMetadata(
+        const CMessageHeader::MessageStartChars& network_magic,
         const uint256& base_blockhash,
-        uint64_t coins_count,
-        unsigned int nchaintx) :
+        uint64_t coins_count) :
             m_base_blockhash(base_blockhash),
-            m_coins_count(coins_count) { }
+            m_coins_count(coins_count) {
+                std::copy(std::begin(network_magic), std::end(network_magic), m_network_magic.begin());
+            }
 
-    SERIALIZE_METHODS(SnapshotMetadata, obj) { READWRITE(obj.m_base_blockhash, obj.m_coins_count); }
+    template <typename Stream>
+    void Serialize(Stream& s) const
+    {
+        s << SNAPSHOT_MAGIC_BYTES;
+        s << VERSION;
+        s << m_network_magic;
+        s << m_base_blockhash;
+        s << m_coins_count;
+    }
+
+    template <typename Stream>
+    void Unserialize(Stream& s)
+    {
+        std::array<uint8_t, SNAPSHOT_MAGIC_BYTES.size()> snapshot_magic;
+        s >> snapshot_magic;
+        if (snapshot_magic != SNAPSHOT_MAGIC_BYTES) {
+            throw std::ios_base::failure("Invalid UTXO set snapshot magic bytes. Please check if this is indeed a snapshot file or if you are using an outdated snapshot format.");
+        }
+
+        uint16_t version;
+        s >> version;
+        if (!m_supported_versions.count(version)) {
+            throw std::ios_base::failure(strprintf("Version of snapshot %s does not match any of the supported versions.", version));
+        }
+
+        std::array<uint8_t, CMessageHeader::MESSAGE_START_SIZE> message;
+        s >> message;
+        if (message != m_network_magic) {
+            throw std::ios_base::failure(strprintf(
+                "The network magic of the snapshot (%s) does not match the network magic of this node (%s).",
+                HexStr(message), HexStr(m_network_magic)));
+        }
+
+        s >> m_base_blockhash;
+        s >> m_coins_count;
+    }
 };
 
 //! The file in the snapshot chainstate dir which stores the base blockhash. This is
