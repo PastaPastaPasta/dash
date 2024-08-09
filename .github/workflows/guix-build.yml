@@ -4,20 +4,11 @@ on:
   pull_request:
     types: [labeled]
   push:
-  # tags:
-  #   - '*'           # Push events to every tag not containing /
   workflow_dispatch:
 
 jobs:
-  build:
-    # runs-on: [ "self-hosted", "linux", "x64", "ubuntu-core" ]
+  build_docker_image:
     runs-on: ubuntu-latest
-#    if: ${{ contains(github.event.pull_request.labels.*.name, 'guix-build') }}
-    strategy:
-      matrix:
-        build_target: [x86_64-linux-gnu, arm-linux-gnueabihf, aarch64-linux-gnu, riscv64-linux-gnu, x86_64-w64-mingw32, x86_64-apple-darwin, arm64-apple-darwin]
-
-    timeout-minutes: 480
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,6 +42,17 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  guix_build:
+    needs: build_docker_image
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        build_target: [x86_64-linux-gnu, arm-linux-gnueabihf, aarch64-linux-gnu, riscv64-linux-gnu, x86_64-w64-mingw32, x86_64-apple-darwin, arm64-apple-darwin]
+    timeout-minutes: 480
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Cache Guix and depends
         id: guix-cache-restore
         uses: actions/cache@v3
@@ -80,6 +82,7 @@ jobs:
             -v ${{ github.workspace }}/.cache:/home/ubuntu/.cache \
             -w /src/dash \
             guix_ubuntu:latest
+
       - name: Restore Guix Archive
         run: |
           if [ -f ~/.cache/guix-archive.nar ]; then
@@ -105,6 +108,6 @@ jobs:
           docker exec guix-daemon bash -c '/usr/local/bin/guix-save-cache'
 
       - name: Compute SHA256 checksums
-        continue-on-error: true # It will complain on depending on only some hosts
+        continue-on-error: true
         run: |
           ./dash/contrib/containers/guix/scripts/guix-check ${{ github.workspace }}/dash
