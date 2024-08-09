@@ -164,7 +164,7 @@ jobs:
 #        shell: bash
       - name: Call Guix Archive
         run: |
-          docker exec guix-daemon bash -c '/usr/local/bin/guix-save-cache'
+          docker exec guix-daemon bash -c '/usr/local/bin/guix-save-cache ${{ github.workspace }}'
 
 
       - name: Compute SHA256 checksums
