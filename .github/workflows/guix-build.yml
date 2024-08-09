@@ -62,7 +62,7 @@ jobs:
           cache-to: type=inline,mode=max
 
   guix_build:
-    needs: build_docker_image
+    needs: build_image
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-ci-runner:${{ needs.build-image.outputs.image-tag }}
