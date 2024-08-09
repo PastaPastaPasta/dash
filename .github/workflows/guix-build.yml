@@ -54,7 +54,7 @@ jobs:
           build-contexts: |
             docker_root=${{ github.workspace }}/dash/contrib/containers/guix
           file: ./dash/contrib/containers/guix/Dockerfile
-          load: true
+          push: true
           tags: |
             ghcr.io/${{ steps.prepare.outputs.repo-name }}/dashcore-guix-builder:${{ steps.prepare.outputs.image-tag }}
             ghcr.io/${{ steps.prepare.outputs.repo-name }}/dashcore-guix-builder:latest
