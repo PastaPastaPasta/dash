@@ -12,6 +12,9 @@ on:
 jobs:
   build_docker_image:
     runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.prepare.outputs.image-tag }}
+      repo-name: ${{ steps.prepare.outputs.repo-name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
