@@ -138,6 +138,7 @@ jobs:
           else
             echo "Guix archive file not found, skipping import."
           fi
+        shell: bash
 
       - name: Run Guix Build
         continue-on-error: true
