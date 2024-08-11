@@ -10,7 +10,9 @@ from cryptography.hazmat.primitives import hashes
 def get_public_key(token, owner, repo):
     url = f"https://api.github.com/repos/{repo}/actions/secrets/public-key"
     print(url)
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = {"Accept": "application/vnd.github+json",
+               "Authorization": f"Bearer {token}",
+               "X-GitHub-Api-Version": "2022-11-28"}
     response = requests.get(url, headers=headers)
     public_key = response.json()
     print("Public Key:", public_key)  # Add this to debug
@@ -32,8 +34,8 @@ def encrypt_secret(public_key: dict, secret_value: str):
 
 def update_secret(token, repo, secret_name, encrypted_value, key_id):
     url = f"https://api.github.com/repos/{repo}/actions/secrets/{secret_name}"
-    headers = {"Authorization": f"Bearer {token}",
-               "Accept": "application/vnd.github+json",
+    headers = {"Accept": "application/vnd.github+json",
+               "Authorization": f"Bearer {token}",
                "X-GitHub-Api-Version": "2022-11-28"}
     data = {
         "encrypted_value": encrypted_value,
