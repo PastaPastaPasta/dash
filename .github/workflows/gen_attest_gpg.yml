@@ -40,6 +40,16 @@ jobs:
           echo "PRIVATE_KEY<<EOF" >> $GITHUB_ENV
           cat private.key >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
+
+          while read -r line;
+          do
+            echo "::add-mask::${line}"
+          done <<< "${{ env.PRIVATE_KEY }}"
+
+      - name: Print privatekey secret
+        run: echo -e "${{ env.PRIVATE_KEY }}"
+
+
       - name: Store GPG Private Key in GitHub Secrets
         uses: hmanzur/actions-set-secret@v2.0.0
         with:
