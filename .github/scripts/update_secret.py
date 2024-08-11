@@ -9,9 +9,11 @@ from cryptography.hazmat.primitives import hashes
 
 def get_public_key(token, repo):
     url = f"https://api.github.com/repos/{repo}/actions/secrets/public-key"
-    headers = {"Authorization": f"Bearer {token}"}  # Use Bearer for token authentication
+    headers = {"Authorization": f"Bearer {token}"}
     response = requests.get(url, headers=headers)
-    return response.json()
+    public_key = response.json()
+    print("Public Key:", public_key)  # Add this to debug
+    return public_key
 
 def encrypt_secret(public_key: dict, secret_value: str):
     key = serialization.load_pem_public_key(
