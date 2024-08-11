@@ -7,8 +7,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import hashes
 
-def get_public_key(token, repo):
-    url = f"https://api.github.com/repos/{repo}/actions/secrets/public-key"
+def get_public_key(token, owner, repo):
+    url = f"https://api.github.com/repos/{owner}/{repo}/actions/secrets/public-key"
     headers = {"Authorization": f"Bearer {token}"}
     response = requests.get(url, headers=headers)
     public_key = response.json()
@@ -41,11 +41,12 @@ def update_secret(token, repo, secret_name, encrypted_value, key_id):
 
 def main():
     token = os.getenv('PAT')
+    owner = os.getenv('OWNER_NAME')
     repo_name = os.getenv('REPO_NAME')
     secret_name = os.getenv('SECRET_NAME')
     secret_value = os.getenv('SECRET_VALUE')
 
-    public_key = get_public_key(token, repo_name)
+    public_key = get_public_key(token, owner, repo_name)
     encrypted_value = encrypt_secret(public_key, secret_value)
     result = update_secret(token, repo_name, secret_name, encrypted_value, public_key['key_id'])
     print(f"Secret update response code: {result}")
