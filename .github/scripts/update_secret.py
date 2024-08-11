@@ -9,6 +9,7 @@ from cryptography.hazmat.primitives import hashes
 
 def get_public_key(token, owner, repo):
     url = f"https://api.github.com/repos/{owner}/{repo}/actions/secrets/public-key"
+    print(url)
     headers = {"Authorization": f"Bearer {token}"}
     response = requests.get(url, headers=headers)
     public_key = response.json()
