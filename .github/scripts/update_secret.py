@@ -32,7 +32,9 @@ def encrypt_secret(public_key: dict, secret_value: str):
 
 def update_secret(token, repo, secret_name, encrypted_value, key_id):
     url = f"https://api.github.com/repos/{repo}/actions/secrets/{secret_name}"
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = {"Authorization": f"Bearer {token}",
+               "Accept": "application/vnd.github+json",
+               "X-GitHub-Api-Version": "2022-11-28"}
     data = {
         "encrypted_value": encrypted_value,
         "key_id": key_id
