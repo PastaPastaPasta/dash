@@ -127,7 +127,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: build-artifacts
+          name: guix-artifacts-${{ matrix.build_target }}
           path: |
             ${{ github.workspace }}/dash/guix-build*/output/${{ matrix.build_target }}/
 
