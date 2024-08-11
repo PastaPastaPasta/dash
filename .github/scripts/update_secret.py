@@ -44,6 +44,7 @@ def main():
     secret_value = os.getenv('SECRET_VALUE')
 
     public_key = get_public_key(token, repo_name)
+    print(public_key)
     encrypted_value = encrypt_secret(public_key, secret_value)
     result = update_secret(token, repo_name, secret_name, encrypted_value, public_key['key_id'])
     print(f"Secret update response code: {result}")
