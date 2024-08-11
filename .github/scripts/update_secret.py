@@ -40,7 +40,7 @@ def update_secret(token, repo, secret_name, encrypted_value, key_id):
     return response.status_code
 
 def main():
-    token = os.getenv('ACCESS_TOKEN')
+    token = os.getenv('PAT')
     repo_name = os.getenv('REPO_NAME')
     secret_name = os.getenv('SECRET_NAME')
     secret_value = os.getenv('SECRET_VALUE')
