@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives import hashes
 
 def get_public_key(token, repo):
     url = f"https://api.github.com/repos/{repo}/actions/secrets/public-key"
-    headers = {"Authorization": f"token {token}"}
+    headers = {"Authorization": f"Bearer {token}"}  # Use Bearer for token authentication
     response = requests.get(url, headers=headers)
     return response.json()
 
@@ -29,7 +29,7 @@ def encrypt_secret(public_key: dict, secret_value: str):
 
 def update_secret(token, repo, secret_name, encrypted_value, key_id):
     url = f"https://api.github.com/repos/{repo}/actions/secrets/{secret_name}"
-    headers = {"Authorization": f"token {token}"}
+    headers = {"Authorization": f"Bearer {token}"}
     data = {
         "encrypted_value": encrypted_value,
         "key_id": key_id
@@ -44,7 +44,6 @@ def main():
     secret_value = os.getenv('SECRET_VALUE')
 
     public_key = get_public_key(token, repo_name)
-    print(public_key)
     encrypted_value = encrypt_secret(public_key, secret_value)
     result = update_secret(token, repo_name, secret_name, encrypted_value, public_key['key_id'])
     print(f"Secret update response code: {result}")
