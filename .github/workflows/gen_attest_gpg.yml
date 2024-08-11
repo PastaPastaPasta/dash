@@ -34,6 +34,8 @@ jobs:
           gpg --batch --generate-key gen-key-script
           gpg --armor --export actions@github.com > public.key
           gpg --armor --export-secret-keys actions@github.com > private.key
+          priv_key=$(cat private.key)
+          echo priv_key | sed 's/^ */::add-mask::/'
           echo "PUBLIC_KEY<<EOF" >> $GITHUB_ENV
           cat public.key >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
