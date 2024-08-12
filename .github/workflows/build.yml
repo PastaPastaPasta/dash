@@ -63,8 +63,6 @@ jobs:
         include:
         - build_target: arm-linux
           host: arm-linux-gnueabihf
-        - build_target: win64
-          host: x86_64-w64-mingw32
         - build_target: linux64
           host: x86_64-pc-linux-gnu
         - build_target: linux64_tsan
@@ -114,8 +112,6 @@ jobs:
         include:
           - build_target: arm-linux
             host: arm-linux-gnueabihf
-          - build_target: win64
-            host: x86_64-w64-mingw32
           - build_target: linux64
             host: x86_64-pc-linux-gnu
           - build_target: linux64_tsan
