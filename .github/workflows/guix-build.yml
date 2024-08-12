@@ -110,6 +110,7 @@ jobs:
         continue-on-error: true
         run: |
           docker exec guix-daemon bash -c 'timeout 10 "/usr/local/bin/guix-start" || true && \
+            ls -lha ~/.cache && \
             cat ~/.cache/guix-archive.nar | guix archive --import'
 
       - name: Run Guix build
