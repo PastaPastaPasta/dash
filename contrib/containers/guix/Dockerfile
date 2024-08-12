@@ -49,7 +49,8 @@ RUN guix_file_name=guix-binary-${guix_version}.$(uname -m)-linux.tar.xz         
 
 RUN touch /etc/nsswitch.conf
 
-RUN guix archive --authorize < /usr/local/guix/current/share/guix/ci.guix.gnu.org.pub && \
+RUN guix archive --generate-key && \
+    guix archive --authorize < /usr/local/guix/current/share/guix/ci.guix.gnu.org.pub && \
     guix archive --authorize < /usr/local/guix/current/share/guix/bordeaux.guix.gnu.org.pub
 
 # Build Environment Setup
