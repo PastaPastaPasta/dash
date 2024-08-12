@@ -96,8 +96,7 @@ jobs:
         if: steps.guix-cache-restore.outputs.cache-hit != 'true'
         run: mkdir -p .cache
 
-      - name: Run Guix build
-        timeout-minutes: 480
+      - name: Initialize Guix Build
         run: |
           docker run --privileged -d --rm -t \
             --name guix-daemon \
@@ -106,7 +105,19 @@ jobs:
             -v ${{ github.workspace }}/.cache:/home/ubuntu/.cache \
             -w /src/dash \
             ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-guix-builder:${{ needs.build-image.outputs.image-tag }} && \
+
+      - name: Restoore Guix Cache
+        run: |
+          docker exec guix-daemon bash -c 'cat ~/.cache/guix-archive.nar | guix archive --import'
+
+      - name: Run Guix build
+        timeout-minutes: 480
+        run: |
           docker exec guix-daemon bash -c 'HOSTS=${{ matrix.build_target }} /usr/local/bin/guix-start'
+
+      - name: Cache Guix Archive
+        run: |
+          docker exec guix-daemon bash -c 'guix archive --export -r "$(readlink -f /var/guix/profiles/per-user/root/current-guix)" > ~/.cache/guix-archive.nar'
 
       - name: Ensure build passes
         run: |
