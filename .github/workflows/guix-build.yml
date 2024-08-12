@@ -109,9 +109,12 @@ jobs:
       - name: Restore Guix Cache
         continue-on-error: true
         run: |
-          docker exec guix-daemon bash -c 'timeout 10 "/usr/local/bin/guix-start" || true && \
+          docker exec guix-daemon bash -c '/usr/local/bin/guix-start || \
             ls -lha ~/.cache && \
-            cat ~/.cache/guix-archive.nar | guix archive --import'
+            ls -lha /gnu/store && \
+            cat ~/.cache/guix-archive.nar | guix archive --import && \
+            ls -lha /gnu/store'
+
 
       - name: Run Guix build
         timeout-minutes: 480
