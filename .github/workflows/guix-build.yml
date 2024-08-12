@@ -107,12 +107,9 @@ jobs:
             ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-guix-builder:${{ needs.build-image.outputs.image-tag }}
 
       - name: Restore Guix Cache
+        continue-on-error: true
         run: |
-          if docker exec guix-daemon bash -c '[[ -f ~/.cache/guix-archive.nar ]]'; then
-            docker exec guix-daemon bash -c 'cat ~/.cache/guix-archive.nar | guix archive --import'
-          else
-            echo "guix-archive.nar does not exist, skipping import."
-          fi
+          docker exec guix-daemon bash -c 'cat ~/.cache/guix-archive.nar | guix archive --import'
 
       - name: Run Guix build
         timeout-minutes: 480
