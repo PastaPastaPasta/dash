@@ -209,7 +209,5 @@ jobs:
 
       - name: Run integration tests
         run: |
-#          echo "BUILD_TARGET=${{ matrix.build_target }}"
-#          source ./ci/dash/matrix.sh
           ./ci/dash/test_integrationtests.sh --extended --exclude feature_pruning,feature_dbcrash
         shell: bash
