@@ -205,11 +205,11 @@ jobs:
         with:
           name: build-artifacts-${{ matrix.build_target }}
           path: |
-            src/
+            ${{ github.workspace }}/src/
 
       - name: Run integration tests
         run: |
-          echo "BUILD_TARGET=${{ matrix.build_target }}"
-          source ./ci/dash/matrix.sh               
+#          echo "BUILD_TARGET=${{ matrix.build_target }}"
+#          source ./ci/dash/matrix.sh
           ./ci/dash/test_integrationtests.sh --extended --exclude feature_pruning,feature_dbcrash
         shell: bash
