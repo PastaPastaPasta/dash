@@ -6,6 +6,12 @@ permissions:
 on:
   pull_request_target:
   push:
+    branches:
+      - develop
+      - master
+      - v*
+  workflow_dispatch:
+
 
 jobs:
   build-image:
