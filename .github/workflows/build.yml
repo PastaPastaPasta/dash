@@ -205,7 +205,7 @@ jobs:
         with:
           name: build-artifacts-${{ matrix.build_target }}
           path: |
-            ${{ github.workspace }}/src/
+            src/
 
       - name: Run integration tests
         run: |
