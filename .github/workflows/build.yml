@@ -92,9 +92,8 @@ jobs:
             depends/built
             depends/${{ matrix.host }}
             depends/sdk-sources
-          key: ${{ runner.os }}-depends-${{ matrix.host }}-${{ hashFiles('depends/**') }}
+          key: ${{ runner.os }}-depends-${{ matrix.host }}-${{ hashFiles('**/depends/**') }}
           restore-keys: |
-            ${{ runner.os }}-depends-${{ matrix.host }}-${{ hashFiles('depends/**') }}
             ${{ runner.os }}-depends-${{ matrix.host }}
             ${{ runner.os }}-depends
 
@@ -139,9 +138,8 @@ jobs:
             depends/built
             depends/${{ matrix.host }}
             depends/sdk-sources
-          key: ${{ runner.os }}-depends-${{ matrix.host }}-${{ hashFiles('depends/**') }}
+          key: ${{ runner.os }}-depends-${{ matrix.host }}-${{ hashFiles('**/depends/**') }}
           restore-keys: |
-            ${{ runner.os }}-depends-${{ matrix.host }}-${{ hashFiles('depends/**') }}
             ${{ runner.os }}-depends-${{ matrix.host }}
             ${{ runner.os }}-depends
 
