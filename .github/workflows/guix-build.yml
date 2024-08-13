@@ -10,6 +10,7 @@ on:
       - develop
       - master
       - v*
+      - guix*
   workflow_dispatch:
 
 
