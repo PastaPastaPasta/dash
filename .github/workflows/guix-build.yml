@@ -78,7 +78,6 @@ jobs:
           fetch-depth: 0
 
       - name: Cache Depends Sources
-        id: guix-cache-restore
         uses: actions/cache@v3
         with:
           path: |
