@@ -65,6 +65,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
+#include <tuple>
 
 using kernel::CCoinsStats;
 using kernel::CoinStatsHashType;
@@ -86,6 +87,24 @@ static std::condition_variable cond_blockchange;
 static CUpdatedBlock latestblock GUARDED_BY(cs_blockchange);
 
 extern void TxToJSON(const CTransaction& tx, const uint256 hashBlock, const CTxMemPool& mempool, const Chainstate& active_chainstate, const chainlock::Chainlocks& chainlocks, const llmq::CInstantSendManager& isman, UniValue& entry, TxVerbosity verbosity = TxVerbosity::SHOW_DETAILS);
+
+std::tuple<std::unique_ptr<CCoinsViewCursor>, CCoinsStats, const CBlockIndex*, evo::CEvoSnapshot>
+PrepareUTXOSnapshot(
+    NodeContext& node,
+    Chainstate& chainstate,
+    const std::function<void()>& interruption_point = {})
+    EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
+UniValue WriteUTXOSnapshot(
+    Chainstate& chainstate,
+    CCoinsViewCursor* pcursor,
+    CCoinsStats* maybe_stats,
+    const CBlockIndex* tip,
+    const evo::CEvoSnapshot& evo_snapshot,
+    AutoFile& afile,
+    const fs::path& path,
+    const fs::path& temppath,
+    const std::function<void()>& interruption_point = {});
 
 /* Calculate the difficulty for a given block index.
  */
@@ -1915,6 +1934,27 @@ static RPCHelpMan preciousblock()
     };
 }
 
+void InvalidateBlock(ChainstateManager& chainman, const uint256 block_hash) {
+    BlockValidationState state;
+    CBlockIndex* pblockindex;
+    {
+        LOCK(chainman.GetMutex());
+        pblockindex = chainman.m_blockman.LookupBlockIndex(block_hash);
+        if (!pblockindex) {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
+        }
+    }
+    chainman.ActiveChainstate().InvalidateBlock(state, pblockindex);
+
+    if (state.IsValid()) {
+        chainman.ActiveChainstate().ActivateBestChain(state);
+    }
+
+    if (!state.IsValid()) {
+        throw JSONRPCError(RPC_DATABASE_ERROR, state.ToString());
+    }
+}
+
 static RPCHelpMan invalidateblock()
 {
     return RPCHelpMan{"invalidateblock",
@@ -1929,33 +1969,33 @@ static RPCHelpMan invalidateblock()
                 },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    uint256 hash(ParseHashV(request.params[0], "blockhash"));
-    BlockValidationState state;
-
-    CBlockIndex* pblockindex;
     ChainstateManager& chainman = EnsureAnyChainman(request.context);
-    {
-        LOCK(cs_main);
-        pblockindex = chainman.m_blockman.LookupBlockIndex(hash);
-        if (!pblockindex) {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
-        }
-    }
+    uint256 hash(ParseHashV(request.params[0], "blockhash"));
 
-    Chainstate& active_chainstate = chainman.ActiveChainstate();
-    active_chainstate.InvalidateBlock(state, pblockindex);
-
-    if (state.IsValid()) {
-        active_chainstate.ActivateBestChain(state);
-    }
-
-    if (!state.IsValid()) {
-        throw JSONRPCError(RPC_DATABASE_ERROR, state.ToString());
-    }
+    InvalidateBlock(chainman, hash);
 
     return UniValue::VNULL;
 },
     };
+}
+
+void ReconsiderBlock(ChainstateManager& chainman, uint256 block_hash, bool ignore_chainlocks = false) {
+    {
+        LOCK(chainman.GetMutex());
+        CBlockIndex* pblockindex = chainman.m_blockman.LookupBlockIndex(block_hash);
+        if (!pblockindex) {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
+        }
+
+        chainman.ActiveChainstate().ResetBlockFailureFlags(pblockindex, ignore_chainlocks);
+    }
+
+    BlockValidationState state;
+    chainman.ActiveChainstate().ActivateBestChain(state);
+
+    if (!state.IsValid()) {
+        throw JSONRPCError(RPC_DATABASE_ERROR, state.ToString());
+    }
 }
 
 static RPCHelpMan reconsiderblock()
@@ -1975,27 +2015,10 @@ static RPCHelpMan reconsiderblock()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     ChainstateManager& chainman = EnsureAnyChainman(request.context);
-    Chainstate& active_chainstate = chainman.ActiveChainstate();
-
     uint256 hash(ParseHashV(request.params[0], "blockhash"));
     const bool ignore_chainlocks{request.params[1].isNull() ? false : request.params[1].get_bool()};
 
-    {
-        LOCK(cs_main);
-        CBlockIndex* pblockindex = chainman.m_blockman.LookupBlockIndex(hash);
-        if (!pblockindex) {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
-        }
-
-        active_chainstate.ResetBlockFailureFlags(pblockindex, ignore_chainlocks);
-    }
-
-    BlockValidationState state;
-    active_chainstate.ActivateBestChain(state);
-
-    if (!state.IsValid()) {
-        throw JSONRPCError(RPC_DATABASE_ERROR, state.ToString());
-    }
+    ReconsiderBlock(chainman, hash, ignore_chainlocks);
 
     return UniValue::VNULL;
 },
@@ -3013,6 +3036,27 @@ static RPCHelpMan getblockfilter()
 }
 
 /**
+ * RAII class that disables the network in its constructor and enables it in its
+ * destructor.
+ */
+class NetworkDisable
+{
+    CConnman& m_connman;
+    CMasternodeSync* const m_mn_sync;
+    const bool m_was_active;
+public:
+    NetworkDisable(CConnman& connman, CMasternodeSync* mn_sync) : m_connman(connman), m_mn_sync(mn_sync), m_was_active(connman.GetNetworkActive()) {
+        m_connman.SetNetworkActive(false, m_mn_sync);
+        if (m_connman.GetNetworkActive()) {
+            throw JSONRPCError(RPC_MISC_ERROR, "Network activity could not be suspended.");
+        }
+    };
+    ~NetworkDisable() {
+        m_connman.SetNetworkActive(m_was_active, m_mn_sync);
+    };
+};
+
+/**
  * Serialize the UTXO set to a file for loading elsewhere.
  *
  * @see SnapshotMetadata
@@ -3021,9 +3065,16 @@ static RPCHelpMan dumptxoutset()
 {
     return RPCHelpMan{
         "dumptxoutset",
-        "Write the serialized UTXO set to disk.",
+        "Write the serialized UTXO set to a file. This can be used in loadtxoutset afterwards if this snapshot height is supported in the chainparams as well.\n\n"
+        "Unless the the \"latest\" type is requested, the node will roll back to the requested height and network activity will be suspended during this process. "
+        "Because of this it is discouraged to interact with the node in any other way during the execution of this call to avoid inconsistent results and race conditions, particularly RPCs that interact with blockstorage.\n\n"
+        "This call may take several minutes. Make sure to use no RPC timeout (dash-cli -rpcclienttimeout=0)",
         {
             {"path", RPCArg::Type::STR, RPCArg::Optional::NO, "Path to the output file. If relative, will be prefixed by datadir."},
+            {"snapshot_type", RPCArg::Type::STR, RPCArg::Default(""), "The type of snapshot to create. Can be \"latest\" to create a snapshot of the current UTXO set or \"rollback\" to temporarily roll back the state of the node to a historical block before creating the snapshot of a historical UTXO set. This parameter can be omitted if a separate \"rollback\" named parameter is specified indicating the height or hash of a specific historical block. If \"rollback\" is specified and separate \"rollback\" named parameter is not specified, this will roll back to the latest valid snapshot block that currently be loaded with loadtxoutset."},
+            {"rollback", RPCArg::Type::AMOUNT, RPCArg::Optional::OMITTED,
+                "Height or hash of the block to roll back to before creating the snapshot. Note: The further this value is from the tip, the longer this process will take. Consider setting a higher -rpcclienttimeout value in this case.",
+                RPCArgOptions{.type_str={"", "string or numeric"}}},
         },
         RPCResult{
             RPCResult::Type::OBJ, "", "",
@@ -3039,10 +3090,32 @@ static RPCHelpMan dumptxoutset()
                 }
         },
         RPCExamples{
-            HelpExampleCli("dumptxoutset", "utxo.dat")
+            HelpExampleCli("-rpcclienttimeout=0 dumptxoutset", "utxo.dat latest") +
+            HelpExampleCli("-rpcclienttimeout=0 dumptxoutset", "utxo.dat rollback") +
+            HelpExampleCli("-rpcclienttimeout=0 -named dumptxoutset", R"(utxo.dat rollback=853456)")
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
+    NodeContext& node = EnsureAnyNodeContext(request.context);
+    const CBlockIndex* tip{WITH_LOCK(::cs_main, return node.chainman->ActiveChain().Tip())};
+    const CBlockIndex* target_index{nullptr};
+    const std::string snapshot_type{self.Arg<std::string>(1)};
+    if (!request.params[2].isNull()) {
+        if (!snapshot_type.empty() && snapshot_type != "rollback") {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid snapshot type \"%s\" specified with rollback option", snapshot_type));
+        }
+        target_index = ParseHashOrHeight(request.params[2], *node.chainman);
+    } else if (snapshot_type == "rollback") {
+        auto snapshot_heights = node.chainman->GetParams().GetAvailableSnapshotHeights();
+        CHECK_NONFATAL(snapshot_heights.size() > 0);
+        auto max_height = std::max_element(snapshot_heights.begin(), snapshot_heights.end());
+        target_index = ParseHashOrHeight(*max_height, *node.chainman);
+    } else if (snapshot_type == "latest") {
+        target_index = tip;
+    } else {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid snapshot type \"%s\" specified. Please specify \"rollback\" or \"latest\"", snapshot_type));
+    }
+
     const ArgsManager& args{EnsureAnyArgsman(request.context)};
     const fs::path path = fsbridge::AbsPathJoin(args.GetDataDirNet(), fs::u8path(request.params[0].get_str()));
     // Write to a temporary path and then move into `path` on completion
@@ -3064,10 +3137,86 @@ static RPCHelpMan dumptxoutset()
             "Couldn't open file " + temppath.utf8string() + " for writing.");
     }
 
-    NodeContext& node = EnsureAnyNodeContext(request.context);
-    UniValue result = CreateUTXOSnapshot(
-        node, node.chainman->ActiveChainstate(), afile, path, temppath);
-    fs::rename(temppath, path);
+    CConnman& connman = EnsureConnman(node);
+    const CBlockIndex* invalidate_index{nullptr};
+    std::unique_ptr<NetworkDisable> disable_network;
+
+    // If the user wants to dump the txoutset of the current tip, we don't have
+    // to roll back at all
+    if (target_index != tip) {
+        // If the node is running in pruned mode we ensure all necessary block
+        // data is available before starting to roll back.
+        if (node::fPruneMode) {
+            LOCK(node.chainman->GetMutex());
+            const CBlockIndex* current_tip{node.chainman->ActiveChain().Tip()};
+            for (const CBlockIndex* block = current_tip; block && block->nHeight > target_index->nHeight; block = block->pprev) {
+                if ((block->nStatus & BLOCK_HAVE_MASK) != BLOCK_HAVE_MASK) {
+                    throw JSONRPCError(RPC_MISC_ERROR, "Could not roll back to requested height since necessary block data is already pruned.");
+                }
+            }
+        }
+
+        // Suspend network activity for the duration of the process when we are
+        // rolling back the chain to get a utxo set from a past height. We do
+        // this so we don't punish peers that send us that send us data that
+        // seems wrong in this temporary state. For example a normal new block
+        // would be classified as a block connecting an invalid block.
+        disable_network = std::make_unique<NetworkDisable>(connman, node.mn_sync.get());
+
+        invalidate_index = WITH_LOCK(::cs_main, return node.chainman->ActiveChain().Next(target_index));
+        InvalidateBlock(*node.chainman, invalidate_index->GetBlockHash());
+    }
+
+    Chainstate* chainstate;
+    std::unique_ptr<CCoinsViewCursor> cursor;
+    CCoinsStats stats;
+    evo::CEvoSnapshot evo_snapshot;
+    UniValue result;
+    UniValue error;
+    try {
+    {
+        // Lock the chainstate before calling PrepareUtxoSnapshot, to be able
+        // to get a UTXO database cursor while the chain is pointing at the
+        // target block. After that, release the lock while calling
+        // WriteUTXOSnapshot. The cursor will remain valid and be used by
+        // WriteUTXOSnapshot to write a consistent snapshot even if the
+        // chainstate changes.
+        LOCK(node.chainman->GetMutex());
+        chainstate = &node.chainman->ActiveChainstate();
+        // In case there is any issue with a block being read from disk we need
+        // to stop here, otherwise the dump could still be created for the wrong
+        // height.
+        // The new tip could also not be the target block if we have a stale
+        // sister block of invalidate_index. This block (or a descendant) would
+        // be activated as the new tip and we would not get to new_tip_index.
+        if (target_index != chainstate->m_chain.Tip()) {
+            LogInfo("Failed to roll back to requested height, reverting to tip.\n");
+            error = JSONRPCError(RPC_MISC_ERROR, "Could not roll back to requested height.");
+        } else {
+            std::tie(cursor, stats, tip, evo_snapshot) = PrepareUTXOSnapshot(node, *chainstate, node.rpc_interruption_point);
+        }
+    }
+
+    if (error.isNull()) {
+        result = WriteUTXOSnapshot(*chainstate, cursor.get(), &stats, tip, evo_snapshot, afile, path, temppath, node.rpc_interruption_point);
+        fs::rename(temppath, path);
+    }
+    } catch (...) {
+        if (invalidate_index) {
+            try {
+                ReconsiderBlock(*node.chainman, invalidate_index->GetBlockHash());
+            } catch (...) {
+                LogPrintf("Failed to restore chain tip after dumptxoutset rollback error\n");
+            }
+        }
+        throw;
+    }
+    if (invalidate_index) {
+        ReconsiderBlock(*node.chainman, invalidate_index->GetBlockHash());
+    }
+    if (!error.isNull()) {
+        throw error;
+    }
 
     result.pushKV("path", path.utf8string());
     return result;
@@ -3075,12 +3224,11 @@ static RPCHelpMan dumptxoutset()
     };
 }
 
-UniValue CreateUTXOSnapshot(
+std::tuple<std::unique_ptr<CCoinsViewCursor>, CCoinsStats, const CBlockIndex*, evo::CEvoSnapshot>
+PrepareUTXOSnapshot(
     NodeContext& node,
     Chainstate& chainstate,
-    AutoFile& afile,
-    const fs::path& path,
-    const fs::path& temppath)
+    const std::function<void()>& interruption_point)
 {
     std::unique_ptr<CCoinsViewCursor> pcursor;
     std::optional<CCoinsStats> maybe_stats;
@@ -3092,7 +3240,7 @@ UniValue CreateUTXOSnapshot(
         // We need to lock cs_main to ensure that the coinsdb isn't written to
         // between (i) flushing coins cache to disk (coinsdb), (ii) getting stats
         // based upon the coinsdb, and (iii) constructing a cursor to the
-        // coinsdb for use below this block.
+        // coinsdb for use in WriteUTXOSnapshot.
         //
         // Cursors returned by leveldb iterate over snapshots, so the contents
         // of the pcursor will not be affected by simultaneous writes during
@@ -3101,11 +3249,11 @@ UniValue CreateUTXOSnapshot(
         // See discussion here:
         //   https://github.com/bitcoin/bitcoin/pull/15606#discussion_r274479369
         //
-        LOCK(::cs_main);
+        AssertLockHeld(::cs_main);
 
         chainstate.ForceFlushStateToDisk();
 
-        maybe_stats = GetUTXOStats(&chainstate.CoinsDB(), chainstate.m_blockman, CoinStatsHashType::HASH_SERIALIZED, node.rpc_interruption_point);
+        maybe_stats = GetUTXOStats(&chainstate.CoinsDB(), chainstate.m_blockman, CoinStatsHashType::HASH_SERIALIZED, interruption_point);
         if (!maybe_stats) {
             throw JSONRPCError(RPC_INTERNAL_ERROR, "Unable to read UTXO set");
         }
@@ -3124,6 +3272,20 @@ UniValue CreateUTXOSnapshot(
         }
     }
 
+    return {std::move(pcursor), *CHECK_NONFATAL(maybe_stats), tip, std::move(evo_snapshot)};
+}
+
+UniValue WriteUTXOSnapshot(
+    Chainstate& chainstate,
+    CCoinsViewCursor* pcursor,
+    CCoinsStats* maybe_stats,
+    const CBlockIndex* tip,
+    const evo::CEvoSnapshot& evo_snapshot,
+    AutoFile& afile,
+    const fs::path& path,
+    const fs::path& temppath,
+    const std::function<void()>& interruption_point)
+{
     LOG_TIME_SECONDS(strprintf("writing UTXO snapshot at height %s (%s) to file %s (via %s)",
         tip->nHeight, tip->GetBlockHash().ToString(),
         fs::PathToString(path), fs::PathToString(temppath)));
@@ -3137,7 +3299,7 @@ UniValue CreateUTXOSnapshot(
     unsigned int iter{0};
 
     while (pcursor->Valid()) {
-        if (iter % 5000 == 0) node.rpc_interruption_point();
+        if (iter % 5000 == 0) interruption_point();
         ++iter;
         if (pcursor->GetKey(key) && pcursor->GetValue(coin)) {
             afile << key;
@@ -3169,6 +3331,17 @@ UniValue CreateUTXOSnapshot(
     // `unsigned int`, nChainTx's type.
     result.pushKV("nchaintx", uint64_t{tip->nChainTx});
     return result;
+}
+
+UniValue CreateUTXOSnapshot(
+    node::NodeContext& node,
+    Chainstate& chainstate,
+    AutoFile& afile,
+    const fs::path& path,
+    const fs::path& tmppath)
+{
+    auto [cursor, stats, tip, evo_snapshot]{WITH_LOCK(::cs_main, return PrepareUTXOSnapshot(node, chainstate, node.rpc_interruption_point))};
+    return WriteUTXOSnapshot(chainstate, cursor.get(), &stats, tip, evo_snapshot, afile, path, tmppath, node.rpc_interruption_point);
 }
 
 static RPCHelpMan loadtxoutset()

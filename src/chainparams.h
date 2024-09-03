@@ -151,6 +151,7 @@ public:
     {
         return FindFirst(m_assumeutxo_data, [&](const auto& d) { return d.blockhash == blockhash; });
     }
+    std::vector<int> GetAvailableSnapshotHeights() const;
 
     const ChainTxData& TxData() const { return chainTxData; }
     void UpdateDIP3Parameters(int nActivationHeight, int nEnforcementHeight);

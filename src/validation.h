@@ -926,6 +926,8 @@ private:
     const CChainParams m_chainparams;
 
     //! Internal helper for ActivateSnapshot().
+    //! De-serialization of a UTXO and Dash evo snapshot created by the
+    //! dumptxoutset RPC.
     [[nodiscard]] bool PopulateAndValidateSnapshot(
         Chainstate& snapshot_chainstate,
         AutoFile& coins_file,

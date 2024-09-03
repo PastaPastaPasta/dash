@@ -1405,6 +1405,16 @@ void CDevNetParams::UpdateLLMQDevnetParametersFromArgs(const ArgsManager& args)
     UpdateLLMQDevnetParameters(size, threshold);
 }
 
+std::vector<int> CChainParams::GetAvailableSnapshotHeights() const
+{
+    std::vector<int> heights;
+    heights.reserve(m_assumeutxo_data.size());
+    for (const auto& data : m_assumeutxo_data) {
+        heights.emplace_back(data.height);
+    }
+    return heights;
+}
+
 static std::unique_ptr<const CChainParams> globalChainParams;
 
 const CChainParams &Params() {

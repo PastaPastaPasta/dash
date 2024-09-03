@@ -22,6 +22,7 @@ from test_framework.util import (
     assert_raises_rpc_error,
     force_finish_mnsync,
     initialize_datadir,
+    sha256sum_file,
 )
 
 
@@ -218,8 +219,39 @@ class AssumeutxoDashTest(DashTestFramework):
         assert ordinary_quorums
         assert rotated_quorums
 
+        self.log.info("Create a tip oracle for the full Dash UTXO+evo snapshot")
+        oracle = node0.dumptxoutset("assumeutxo-dash-oracle.dat", "latest")
+        assert_equal(oracle["base_height"], base_height)
+        assert_equal(oracle["base_hash"], base_hash)
+
+        self.log.info("Dump the same base historically and prove rollback+rollforward preserves Evo state")
+        node0.setnetworkactive(False)
+        extra_hash = self.generate(node0, 1, sync_fun=self.no_op)[0]
+        assert_equal(node0.getblockcount(), base_height + 1)
+        dump = node0.dumptxoutset("assumeutxo-dash.dat", rollback=base_height)
+        assert_equal(node0.getblockcount(), base_height + 1)
+        for field in (
+            "coins_written",
+            "base_hash",
+            "base_height",
+            "txoutset_hash",
+            "evo_hash",
+            "evo_mn_count",
+            "nchaintx",
+        ):
+            assert_equal(dump[field], oracle[field])
+        assert_equal(sha256sum_file(dump["path"]), sha256sum_file(oracle["path"]))
+
+        # Keep the remainder of the lifecycle fixture at the historical base.
+        # The isolated extra block was never relayed or ChainLocked.
+        node0.invalidateblock(extra_hash)
+        assert_equal(node0.getblockcount(), base_height)
+        node0.setnetworkactive(True)
+        force_finish_mnsync(node0)
+        self.sync_all()
+        self.wait_for_sporks_same()
+
         self.log.info("Keep the M4 dump-side checks and capture both commitments")
-        dump = node0.dumptxoutset("assumeutxo-dash.dat")
         assert_equal(dump["base_height"], base_height)
         assert_equal(dump["base_hash"], base_hash)
         assert len(dump["txoutset_hash"]) == 64
