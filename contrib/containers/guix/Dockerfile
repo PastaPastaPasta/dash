@@ -50,7 +50,8 @@ RUN guix_file_name=guix-binary-${guix_version}.$(uname -m)-linux.tar.xz         
 RUN touch /etc/nsswitch.conf
 
 RUN guix archive --authorize < /usr/local/guix/current/share/guix/ci.guix.gnu.org.pub && \
-    guix archive --authorize < /usr/local/guix/current/share/guix/bordeaux.guix.gnu.org.pub
+    guix archive --authorize < /usr/local/guix/current/share/guix/bordeaux.guix.gnu.org.pub && \
+    curl http://build.thepasta.org:8888/signing-key.pub | guix archive --authorize
 
 # Build Environment Setup
 # https://guix.gnu.org/manual/en/html_node/Build-Environment-Setup.html
