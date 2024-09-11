@@ -1969,7 +1969,7 @@ void CConnman::CreateNodeFromAcceptedSocket(std::unique_ptr<Sock>&& sock,
     NodeId id = GetNewNodeId();
     uint64_t nonce = GetDeterministicRandomizer(RANDOMIZER_ID_LOCALHOSTNONCE).Write(id).Finalize();
 
-    ServiceFlags nodeServices = nLocalServices;
+    ServiceFlags nodeServices = GetLocalServices();
     if (NetPermissions::HasFlag(permission_flags, NetPermissionFlags::BloomFilter)) {
         nodeServices = static_cast<ServiceFlags>(nodeServices | NODE_BLOOM);
     }
@@ -3645,7 +3645,7 @@ void CConnman::OpenNetworkConnection(const CAddress& addrConnect, bool fCountFai
         mapSocketToNode.emplace(pnode->m_sock->Get(), pnode);
     }
 
-    m_msgproc->InitializeNode(*pnode, nLocalServices);
+    m_msgproc->InitializeNode(*pnode, GetLocalServices());
     {
         LOCK(m_nodes_mutex);
         m_nodes.push_back(pnode);

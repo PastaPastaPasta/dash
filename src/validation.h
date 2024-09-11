@@ -963,9 +963,9 @@ public:
         : m_chainparams{opts.chainparams},
           m_blockman{{opts.chainparams}} {};
 
-    //! Function to restart active indexes; set dynamically to avoid a circular
-    //! dependency on index/base.cpp.
-    std::function<void()> restart_indexes = std::function<void()>{};
+    //! Function called when snapshot background validation completes; set
+    //! dynamically to avoid a circular dependency on index/base.cpp.
+    std::function<void()> snapshot_download_completed = std::function<void()>();
 
     const CChainParams& GetParams() const { return m_chainparams; }
     const Consensus::Params& GetConsensus() const { return m_chainparams.GetConsensus(); }
