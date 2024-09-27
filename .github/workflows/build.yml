@@ -188,30 +188,31 @@ jobs:
             /output
 
 
-# Come back to this later and implement tests :)
-#  test:
-#    name: Test
-#    needs: [build-image, build]
-#    runs-on: ubuntu-20.04
-#    container:
-#      image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-ci-runner:${{ needs.build-image.outputs.image-tag }}
-#      options: --user root
-#    steps:
-#      - name: Checkout code
-#        uses: actions/checkout@v4
-#        with:
-#          ref: ${{ github.event.pull_request.head.sha }}
-#
-#      - name: Download build artifacts
-#        uses: actions/download-artifact@v4
-#        with:
-#          name: build-artifacts
-#          path: src/
-#
-##      - name: Setup environment
-##        run: |
-##          echo "BUILD_TARGET=${{ needs.build.matrix.build_target }}"
-##          source ./ci/dash/matrix.sh
-#
-#      - name: Run integration tests
-#        run: ./ci/dash/test_integrationtests.sh --extended --exclude feature_pruning,feature_dbcrash
+  # Come back to this later and implement tests :)
+  test:
+    name: Test
+    needs: [build-image, build]
+    runs-on: ubuntu-20.04
+    container:
+      image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-ci-runner:${{ needs.build-image.outputs.image-tag }}
+      options: --user root
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts-${{ matrix.build_targert }}
+          path: src/
+
+     - name: Setup environment
+       run: |
+         echo "BUILD_TARGET=${{ needs.build.matrix.build_target }}"
+         source ./ci/dash/matrix.sh
+
+     - name: Run integration tests
+       run: ./ci/dash/test_integrationtests.sh --extended --exclude feature_pruning,feature_dbcrash
+
