@@ -59,5 +59,6 @@ target_link_libraries(bitcoin_util
     core_interface
     bitcoin_clientversion
     bitcoin_crypto
+    dashbls
     $<$<PLATFORM_ID:Windows>:ws2_32>
 )
