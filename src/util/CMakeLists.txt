@@ -60,5 +60,6 @@ target_link_libraries(bitcoin_util
     bitcoin_clientversion
     bitcoin_crypto
     dashbls
+    univalue
     $<$<PLATFORM_ID:Windows>:ws2_32>
 )
