@@ -102,54 +102,39 @@ endif()
 
 # Home for common functionality shared by different executables and libraries.
 # Similar to `bitcoin_util` library, but higher-level.
-add_library(bitcoin_common STATIC EXCLUDE_FROM_ALL
-  addresstype.cpp
+add_library(bitcoin_common STATIC EXCLUDE_FROM_ALL 
   base58.cpp
   bech32.cpp
+  bloom.cpp
   chainparams.cpp
-  chainparamsbase.cpp
   coins.cpp
-  common/args.cpp
-  common/bloom.cpp
-  common/config.cpp
-  common/init.cpp
-  common/interfaces.cpp
-  common/messages.cpp
-  common/run_command.cpp
-  common/settings.cpp
-  common/signmessage.cpp
-  common/system.cpp
-  common/url.cpp
   compressor.cpp
   core_read.cpp
   core_write.cpp
   deploymentinfo.cpp
-  external_signer.cpp
+  governance/common.cpp
   init/common.cpp
-  kernel/chainparams.cpp
   key.cpp
   key_io.cpp
   merkleblock.cpp
-  net_permissions.cpp
   net_types.cpp
   netaddress.cpp
   netbase.cpp
+  net_permissions.cpp
   outputtype.cpp
   policy/feerate.cpp
   policy/policy.cpp
   protocol.cpp
   psbt.cpp
-  rpc/external_signer.cpp
   rpc/rawtransaction_util.cpp
-  rpc/request.cpp
   rpc/util.cpp
+  saltedhasher.cpp
   scheduler.cpp
   script/descriptor.cpp
-  script/miniscript.cpp
-  script/parsing.cpp
   script/sign.cpp
   script/signingprovider.cpp
-  script/solver.cpp
+  script/standard.cpp
+  warnings.cpp
 )
 target_link_libraries(bitcoin_common
   PRIVATE
