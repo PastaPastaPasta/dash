@@ -17,7 +17,8 @@ target_include_directories(dashbls
   PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     $<$<BOOL:${GMP_FOUND}>:${GMP_INCLUDES}>
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include/dashbls
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include/dashbls
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include/
     ${CMAKE_CURRENT_SOURCE_DIR}/../depends/mimalloc/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../depends/relic/include
     ${CMAKE_CURRENT_BINARY_DIR}/../depends/relic/include
