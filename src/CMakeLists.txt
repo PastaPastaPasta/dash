@@ -379,16 +379,16 @@ if(BUILD_TX)
 endif()
 
 
-if(BUILD_UTIL)
-  add_executable(bitcoin-util bitcoin-util.cpp)
-  add_windows_resources(bitcoin-util bitcoin-util-res.rc)
-  target_link_libraries(bitcoin-util
-    core_interface
-    bitcoin_common
-    bitcoin_util
-  )
-  list(APPEND installable_targets bitcoin-util)
-endif()
+#if(BUILD_UTIL)
+#  add_executable(bitcoin-util bitcoin-util.cpp)
+#  add_windows_resources(bitcoin-util bitcoin-util-res.rc)
+#  target_link_libraries(bitcoin-util
+#    core_interface
+#    bitcoin_common
+#    bitcoin_util
+#  )
+#  list(APPEND installable_targets bitcoin-util)
+#endif()
 
 
 if(BUILD_GUI)
