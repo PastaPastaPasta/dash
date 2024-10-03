@@ -4,34 +4,26 @@
 
 # Wallet functionality used by bitcoind and bitcoin-wallet executables.
 add_library(bitcoin_wallet STATIC EXCLUDE_FROM_ALL
+  ../coinjoin/client.cpp
+  ../coinjoin/interfaces.cpp
+  ../coinjoin/util.cpp
+  bip39.cpp
   coincontrol.cpp
-  coinselection.cpp
   context.cpp
   crypter.cpp
   db.cpp
   dump.cpp
-  external_signer_scriptpubkeyman.cpp
-  feebumper.cpp
   fees.cpp
+  hdchain.cpp
   interfaces.cpp
   load.cpp
-  migrate.cpp
-  receive.cpp
-  rpc/addresses.cpp
-  rpc/backup.cpp
-  rpc/coins.cpp
-  rpc/encrypt.cpp
-  rpc/signmessage.cpp
-  rpc/spend.cpp
-  rpc/transactions.cpp
-  rpc/util.cpp
-  rpc/wallet.cpp
+  rpcdump.cpp
+  rpcwallet.cpp
   scriptpubkeyman.cpp
-  spend.cpp
-  transaction.cpp
   wallet.cpp
   walletdb.cpp
   walletutil.cpp
+  coinselection.cpp
 )
 target_link_libraries(bitcoin_wallet
   PRIVATE
