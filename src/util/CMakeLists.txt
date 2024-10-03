@@ -3,37 +3,55 @@
 # file COPYING or https://opensource.org/license/mit/.
 
 add_library(bitcoin_util STATIC EXCLUDE_FROM_ALL
-  asmap.cpp
-  batchpriority.cpp
-  bip32.cpp
-  bytevectorhash.cpp
-  chaintype.cpp
-  check.cpp
-  exception.cpp
-  feefrac.cpp
-  fs.cpp
-  fs_helpers.cpp
-  hasher.cpp
-  moneystr.cpp
-  rbf.cpp
-  readwritefile.cpp
-  serfloat.cpp
-  signalinterrupt.cpp
-  sock.cpp
-  strencodings.cpp
-  string.cpp
-  syserror.cpp
-  thread.cpp
-  threadinterrupt.cpp
-  threadnames.cpp
-  time.cpp
-  tokenpipe.cpp
+#  ../bls/bls_batchverifier.h
+  ../bls/bls_ies.cpp
+#  ../bls/bls_ies.h
+  ../bls/bls_worker.cpp
+#  ../bls/bls_worker.h
+  ../coinjoin/common.cpp
+  ../coinjoin/options.cpp
+  ../support/lockedpool.cpp
+  ../chainparamsbase.cpp
+  ../clientversion.cpp
+  ../compat/strnlen.cpp
+  ../fs.cpp
+  ../interfaces/echo.cpp
+  ../interfaces/handler.cpp
+  ../interfaces/init.cpp
   ../logging.cpp
+  ../messagesigner.cpp
   ../random.cpp
   ../randomenv.cpp
-  ../streams.cpp
-  ../support/lockedpool.cpp
+  ../rpc/request.cpp
+  ../stacktraces.cpp
+  ../support/cleanse.cpp
   ../sync.cpp
+  ../threadinterrupt.cpp
+  asmap.cpp
+  bip32.cpp
+  bytevectorhash.cpp
+  check.cpp
+  edge.cpp
+  error.cpp
+  fees.cpp
+  hasher.cpp
+  getuniquepath.cpp
+  sock.cpp
+  system.cpp
+  message.cpp
+  moneystr.cpp
+  readwritefile.cpp
+  settings.cpp
+  ranges_set.cpp
+  spanparsing.cpp
+  strencodings.cpp
+  time.cpp
+  serfloat.cpp
+  string.cpp
+  thread.cpp
+  threadnames.cpp
+  tokenpipe.cpp
+  wpipe.cpp
 )
 
 target_link_libraries(bitcoin_util
