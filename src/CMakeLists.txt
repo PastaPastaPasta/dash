@@ -174,18 +174,44 @@ endif()
 
 # P2P and RPC server functionality used by `bitcoind` and `bitcoin-qt` executables.
 add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
-  addrdb.cpp
+        addrdb.cpp
+  addressindex.cpp
   addrman.cpp
   banman.cpp
+  batchedlogger.cpp
   bip324.cpp
   blockencodings.cpp
   blockfilter.cpp
   chain.cpp
+  coinjoin/coinjoin.cpp
+  coinjoin/context.cpp
+  coinjoin/server.cpp
   consensus/tx_verify.cpp
   dbwrapper.cpp
   deploymentstatus.cpp
+  dsnotificationinterface.cpp
+  evo/assetlocktx.cpp
+  evo/cbtx.cpp
+  evo/creditpool.cpp
+  evo/chainhelper.cpp
+  evo/deterministicmns.cpp
+  evo/dmnstate.cpp
+  evo/evodb.cpp
+  evo/mnauth.cpp
+  evo/mnhftx.cpp
+  evo/providertx.cpp
+  evo/simplifiedmns.cpp
+  evo/specialtx.cpp
+  evo/specialtxman.cpp
   flatfile.cpp
-  headerssync.cpp
+  governance/classes.cpp
+  governance/exceptions.cpp
+  governance/governance.cpp
+  governance/object.cpp
+  governance/validators.cpp
+  governance/vote.cpp
+  governance/votedb.cpp
+  gsl/assert.cpp
   httprpc.cpp
   httpserver.cpp
   i2p.cpp
@@ -194,73 +220,73 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   index/coinstatsindex.cpp
   index/txindex.cpp
   init.cpp
-  kernel/chain.cpp
-  kernel/checks.cpp
-  kernel/coinstats.cpp
-  kernel/context.cpp
-  kernel/cs_main.cpp
-  kernel/disconnected_transactions.cpp
-  kernel/mempool_removal_reason.cpp
+  llmq/blockprocessor.cpp
+  llmq/chainlocks.cpp
+  llmq/clsig.cpp
+  llmq/commitment.cpp
+  llmq/context.cpp
+  llmq/debug.cpp
+  llmq/dkgsession.cpp
+  llmq/dkgsessionhandler.cpp
+  llmq/dkgsessionmgr.cpp
+  llmq/ehf_signals.cpp
+  llmq/instantsend.cpp
+  llmq/options.cpp
+  llmq/quorums.cpp
+  llmq/signing.cpp
+  llmq/signing_shares.cpp
+  llmq/snapshot.cpp
+  llmq/utils.cpp
   mapport.cpp
+  masternode/node.cpp
+  masternode/meta.cpp
+  masternode/payments.cpp
+  masternode/sync.cpp
+  masternode/utils.cpp
+  miner.cpp
   net.cpp
-  net_processing.cpp
+  netfulfilledman.cpp
   netgroup.cpp
-  node/abort.cpp
-  node/blockmanager_args.cpp
+  net_processing.cpp
   node/blockstorage.cpp
-  node/caches.cpp
-  node/chainstate.cpp
-  node/chainstatemanager_args.cpp
   node/coin.cpp
-  node/coins_view_args.cpp
+  node/coinstats.cpp
   node/connection_types.cpp
   node/context.cpp
-  node/database_args.cpp
   node/eviction.cpp
-  node/interface_ui.cpp
   node/interfaces.cpp
-  node/kernel_notifications.cpp
-  node/mempool_args.cpp
-  node/mempool_persist.cpp
-  node/mempool_persist_args.cpp
-  node/miner.cpp
-  node/mini_miner.cpp
-  node/minisketchwrapper.cpp
-  node/peerman_args.cpp
   node/psbt.cpp
-  node/timeoffsets.cpp
   node/transaction.cpp
-  node/txreconciliation.cpp
-  node/utxo_snapshot.cpp
-  node/warnings.cpp
+  node/ui_interface.cpp
   noui.cpp
   policy/fees.cpp
-  policy/fees_args.cpp
   policy/packages.cpp
-  policy/rbf.cpp
+  policy/policy.cpp
   policy/settings.cpp
-  policy/truc_policy.cpp
   pow.cpp
   rest.cpp
   rpc/blockchain.cpp
-  rpc/fees.cpp
-  rpc/mempool.cpp
+  rpc/coinjoin.cpp
+  rpc/evo.cpp
+  rpc/index_util.cpp
+  rpc/masternode.cpp
+  rpc/governance.cpp
   rpc/mining.cpp
+  rpc/misc.cpp
   rpc/net.cpp
-  rpc/node.cpp
-  rpc/output_script.cpp
+  rpc/quorums.cpp
   rpc/rawtransaction.cpp
   rpc/server.cpp
   rpc/server_util.cpp
-  rpc/signmessage.cpp
-  rpc/txoutproof.cpp
   script/sigcache.cpp
-  signet.cpp
+  shutdown.cpp
+  spork.cpp
+  statsd_client.cpp
+  timedata.cpp
   torcontrol.cpp
   txdb.cpp
   txmempool.cpp
   txorphanage.cpp
-  txrequest.cpp
   validation.cpp
   validationinterface.cpp
   versionbits.cpp
