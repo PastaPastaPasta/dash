@@ -13,7 +13,6 @@ add_library(bitcoin_util STATIC EXCLUDE_FROM_ALL
   ../support/lockedpool.cpp
   ../chainparamsbase.cpp
   ../clientversion.cpp
-  ../compat/strnlen.cpp
   ../fs.cpp
   ../interfaces/echo.cpp
   ../interfaces/handler.cpp
