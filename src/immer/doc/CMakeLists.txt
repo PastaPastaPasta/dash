@@ -6,10 +6,10 @@ add_custom_target(doxygen
   COMMAND doxygen doxygen.config
   WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/doc")
 
-add_custom_target(docs
+add_custom_target(docs_immer
   COMMAND make html
   WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/doc")
-add_dependencies(docs doxygen)
+add_dependencies(docs_immer doxygen)
 
 set(immer_ssh_method
   ssh -p 5488
