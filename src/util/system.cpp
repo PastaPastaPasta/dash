@@ -26,6 +26,8 @@
 
 #include <tinyformat.h>
 
+#include <config/bitcoin-config.h>
+
 #if (defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__DragonFly__))
 #include <pthread.h>
 #include <pthread_np.h>
