@@ -31,6 +31,10 @@ target_link_libraries(bitcoin_wallet
     bitcoin_common
     univalue
     Boost::headers
+    dashbls
+    immer
+    immer-dev
+        leveldb
     $<TARGET_NAME_IF_EXISTS:USDT::headers>
 )
 
