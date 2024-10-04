@@ -32,6 +32,7 @@
 #include <util/fees.h>
 #include <util/moneystr.h>
 #include <util/string.h>
+#include <util/system.h>
 #include <util/translation.h>
 #ifdef USE_BDB
 #include <wallet/bdb.h>
@@ -5232,11 +5233,7 @@ bool CWallet::AutoBackupWallet(const fs::path& wallet_path, bilingual_str& error
     // Create backup of the ...
     struct tm ts;
     time_t time_val = GetTime();
-#ifdef HAVE_GMTIME_R
     gmtime_r(&time_val, &ts);
-#else
-    gmtime_s(&ts, &time_val);
-#endif
     std::string dateTimeStr = strprintf(".%04i-%02i-%02i-%02i-%02i",
             ts.tm_year + 1900, ts.tm_mon + 1, ts.tm_mday, ts.tm_hour, ts.tm_min);
 
