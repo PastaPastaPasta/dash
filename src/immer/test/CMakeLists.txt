@@ -2,7 +2,7 @@
 #  Targets
 #  =======
 
-add_custom_target(tests
+add_custom_target(immer-tests
   COMMENT "Build all the unit tests.")
 add_dependencies(check tests)
 
@@ -13,7 +13,7 @@ foreach(_file IN LISTS immer_unit_tests)
   immer_target_name_for(_target _output "${_file}")
   add_executable(${_target} EXCLUDE_FROM_ALL "${_file}")
   set_target_properties(${_target} PROPERTIES OUTPUT_NAME ${_output})
-  add_dependencies(tests ${_target})
+  add_dependencies(immer-tests ${_target})
   target_compile_definitions(${_target} PUBLIC
     -DIMMER_OSS_FUZZ_DATA_PATH="${CMAKE_CURRENT_SOURCE_DIR}/oss-fuzz/data"
     DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
