@@ -11,6 +11,8 @@
 #include <util/translation.h>
 #include <hash.h>
 
+#include <config/bitcoin-config.h>
+
 #include <vector>
 
 static Mutex g_warnings_mutex;
