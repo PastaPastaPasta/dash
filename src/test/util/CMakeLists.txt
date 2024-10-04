@@ -21,6 +21,9 @@ target_link_libraries(test_util
   PRIVATE
     core_interface
     Boost::headers
+        leveldb
+        dashbls
+        immer
   PUBLIC
     univalue
 )
