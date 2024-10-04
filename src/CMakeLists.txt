@@ -285,7 +285,7 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   script/sigcache.cpp
   shutdown.cpp
   spork.cpp
-  statsd_client.cpp
+  stats/client.cpp
   timedata.cpp
   torcontrol.cpp
   txdb.cpp
