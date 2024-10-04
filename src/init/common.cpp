@@ -47,10 +47,6 @@ bool SanityChecks()
         return InitError(Untranslated("OS cryptographic RNG sanity check failure. Aborting."));
     }
 
-    if (!ChronoSanityCheck()) {
-        return InitError(Untranslated("Clock epoch mismatch. Aborting."));
-    }
-
     return true;
 }
 
