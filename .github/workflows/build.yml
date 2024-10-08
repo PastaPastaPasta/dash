@@ -163,7 +163,7 @@ jobs:
       - name: Build source and run tests
         run: |
           git config --global --add safe.directory "$PWD"
-          CCACHE_SIZE="400M"
+          CCACHE_SIZE="200M"
           CACHE_DIR="/cache"
           mkdir /output
           BASE_OUTDIR="/output"
@@ -179,6 +179,11 @@ jobs:
           name: build-artifacts-${{ matrix.build_target }}
           path: |
             /output
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          builder-id: 'ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-guix-builder:${{ needs.build-image.outputs.image-tag }}'
+          artifacts: /output/*
 
 
 # Come back to this later and implement tests :)
