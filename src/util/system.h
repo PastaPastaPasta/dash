@@ -111,9 +111,9 @@ fs::path GetSpecialFolderPath(int nFolder, bool fCreate = true);
 #ifndef WIN32
 std::string ShellEscape(const std::string& arg);
 #endif
-#if HAVE_SYSTEM
+//#if HAVE_SYSTEM
 void runCommand(const std::string& strCommand);
-#endif
+//#endif
 #ifdef HAVE_BOOST_PROCESS
 /**
  * Execute a command which returns JSON, and parse the result.
