@@ -4,9 +4,9 @@
 
 #include <chainparams.h>
 #include <coinjoin/coinjoin.h>
-#ifdef ENABLE_WALLET
+//#ifdef ENABLE_WALLET
 #include <coinjoin/client.h>
-#endif // ENABLE_WALLET
+//#endif // ENABLE_WALLET
 #include <coinjoin/context.h>
 #include <dsnotificationinterface.h>
 #include <governance/governance.h>
@@ -85,10 +85,10 @@ void CDSNotificationInterface::UpdatedBlockTip(const CBlockIndex *pindexNew, con
         return;
 
     m_cj_ctx->dstxman->UpdatedBlockTip(pindexNew, *m_llmq_ctx->clhandler, m_mn_sync);
-#ifdef ENABLE_WALLET
+//#ifdef ENABLE_WALLET
     m_cj_ctx->walletman->ForEachCJClientMan(
         [&pindexNew](std::unique_ptr<CCoinJoinClientManager>& clientman) { clientman->UpdatedBlockTip(pindexNew); });
-#endif // ENABLE_WALLET
+//#endif // ENABLE_WALLET
 
     m_llmq_ctx->isman->UpdatedBlockTip(pindexNew);
     m_llmq_ctx->clhandler->UpdatedBlockTip();
