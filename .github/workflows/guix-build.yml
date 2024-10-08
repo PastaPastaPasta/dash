@@ -77,24 +77,32 @@ jobs:
           path: dash
           fetch-depth: 0
 
-      - name: Cache Guix and depends
+      - name: Cache depends
         id: guix-cache-restore
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ${{ github.workspace }}/.cache
-            ${{ github.workspace }}/dash/depends/built
-            ${{ github.workspace }}/dash/depends/sources
-            ${{ github.workspace }}/dash/depends/work
-            /gnu/store
-          key: ${{ runner.os }}-guix-${{ matrix.build_target }}-${{ github.sha }}
+            ${{ github.workspace }}/dash/depends/built/${{ matrix.build_target }}
+          key: ${{ runner.os }}-guix-${{ matrix.build_target }}
           restore-keys: |
-            ${{ runner.os }}-guix-${{ matrix.build_target }}
             ${{ runner.os }}-guix-
 
       - name: Create .cache folder if missing
         if: steps.guix-cache-restore.outputs.cache-hit != 'true'
         run: mkdir -p .cache
+
+      - name: Run Guix pull
+        timeout-minutes: 480
+        run: |
+          docker run --privileged -d --rm -t \
+            --name guix-daemon \
+            -e ADDITIONAL_GUIX_COMMON_FLAGS="--max-jobs=$(nproc --all)" \
+            -v ${{ github.workspace }}/dash:/src/dash \
+            -v ${{ github.workspace }}/.cache:/home/ubuntu/.cache \
+            -w /src/dash \
+            ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-guix-builder:${{ needs.build-image.outputs.image-tag }} && \
+          docker exec guix-daemon bash -c 'guix pull'
 
       - name: Run Guix build
         timeout-minutes: 480
