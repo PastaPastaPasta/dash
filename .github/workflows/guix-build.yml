@@ -132,5 +132,4 @@ jobs:
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v1
         with:
-          builder-id: 'ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-guix-builder:${{ needs.build-image.outputs.image-tag }}'
-          artifacts: ${{ github.workspace }}/dash/guix-build*/output/${{ matrix.build_target }}/*
+          subject-path: ${{ github.workspace }}/dash/guix-build*/output/${{ matrix.build_target }}/*
