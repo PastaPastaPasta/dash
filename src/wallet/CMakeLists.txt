@@ -34,7 +34,7 @@ target_link_libraries(bitcoin_wallet
     dashbls
     immer
     immer-dev
-        leveldb
+    leveldb
     $<TARGET_NAME_IF_EXISTS:USDT::headers>
 )
 
