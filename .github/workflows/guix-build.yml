@@ -90,18 +90,6 @@ jobs:
         if: steps.guix-cache-restore.outputs.cache-hit != 'true'
         run: mkdir -p .cache
 
-      - name: Run Guix pull
-        timeout-minutes: 480
-        run: |
-          docker run --privileged -d --rm -t \
-            --name guix-daemon \
-            -e ADDITIONAL_GUIX_COMMON_FLAGS="--max-jobs=$(nproc --all)" \
-            -v ${{ github.workspace }}/dash:/src/dash \
-            -v ${{ github.workspace }}/.cache:/home/ubuntu/.cache \
-            -w /src/dash \
-            ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-guix-builder:${{ needs.build-image.outputs.image-tag }} && \
-          docker exec guix-daemon bash -c 'guix pull'
-
       - name: Run Guix build
         timeout-minutes: 480
         run: |
