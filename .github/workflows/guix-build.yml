@@ -82,6 +82,7 @@ jobs:
           path: |
             ${{ github.workspace }}/.cache
             ${{ github.workspace }}/dash/depends/built/${{ matrix.build_target }}
+            ${{ github.workspace }}/dash/depends/${{ matrix.build_target }}
           key: ${{ runner.os }}-guix-${{ matrix.build_target }}
           restore-keys: |
             ${{ runner.os }}-guix-
