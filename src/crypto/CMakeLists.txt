@@ -2,6 +2,8 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or https://opensource.org/license/mit/.
 
+add_subdirectory(x11)
+
 add_library(bitcoin_crypto STATIC EXCLUDE_FROM_ALL
   aes.cpp
   chacha20.cpp
