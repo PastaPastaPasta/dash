@@ -306,6 +306,8 @@ target_link_libraries(bitcoin_node
     leveldb
     minisketch
     univalue
+    dashbls
+    immer
     Boost::headers
     $<TARGET_NAME_IF_EXISTS:libevent::libevent>
     $<TARGET_NAME_IF_EXISTS:libevent::pthreads>
