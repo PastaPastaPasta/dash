@@ -95,6 +95,7 @@ target_link_libraries(bitcoin_consensus
   PRIVATE
     core_interface
     bitcoin_crypto
+    bitcoin_x11crypto
     secp256k1
 )
 
