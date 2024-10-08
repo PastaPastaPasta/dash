@@ -186,6 +186,11 @@ jobs:
           name: build-artifacts-${{ matrix.build_target }}
           path: |
             /output
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          builder-id: 'ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-guix-builder:${{ needs.build-image.outputs.image-tag }}'
+          artifacts: /output/*
 
 
 # Come back to this later and implement tests :)
