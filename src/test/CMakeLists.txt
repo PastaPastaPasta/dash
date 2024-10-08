@@ -144,7 +144,7 @@ target_link_libraries(test_bitcoin
   test_util
   bitcoin_cli
   bitcoin_node
-  minisketch
+#  minisketch
   secp256k1
   Boost::headers
   $<TARGET_NAME_IF_EXISTS:libevent::libevent>

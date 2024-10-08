@@ -304,7 +304,7 @@ target_link_libraries(bitcoin_node
     bitcoin_common
     bitcoin_util
     leveldb
-    minisketch
+#    minisketch
     univalue
     dashbls
     immer

@@ -61,7 +61,7 @@ add_executable(fuzz
   merkleblock.cpp
   message.cpp
   miniscript.cpp
-  minisketch.cpp
+#  minisketch.cpp
   mini_miner.cpp
   muhash.cpp
   multiplication_overflow.cpp
@@ -131,7 +131,7 @@ target_link_libraries(fuzz
   test_fuzz
   bitcoin_cli
   bitcoin_common
-  minisketch
+#  minisketch
   leveldb
   univalue
   secp256k1
