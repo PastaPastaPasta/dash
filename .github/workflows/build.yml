@@ -95,10 +95,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            depends/built
             depends/${{ matrix.host }}
-            depends/sdk-sources
-          # We don't care about no specific key as depends system will handle that for us
           key: ${{ runner.os }}-depends-${{ matrix.host }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-depends-${{ matrix.host }}-${{ github.sha }}
@@ -146,10 +143,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: |
-            depends/built
             depends/${{ matrix.host }}
-            depends/sdk-sources
-          # We don't care about no specific key as depends system will handle that for us
           key: ${{ runner.os }}-depends-${{ matrix.host }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-depends-${{ matrix.host }}-${{ github.sha }}
@@ -161,9 +155,8 @@ jobs:
         with:
           path: |
             /cache
-          key: ${{ runner.os }}-${{ matrix.host }}-${{ github.sha }}
+          key: ${{ runner.os }}-${{ matrix.host }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.host }}-${{ github.sha }}
             ${{ runner.os }}-${{ matrix.host }}
             ${{ runner.os }}
 
