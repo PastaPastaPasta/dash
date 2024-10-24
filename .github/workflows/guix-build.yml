@@ -59,11 +59,6 @@ jobs:
           fi
         shell: bash
 
-      - name: Configure Git Safe Directory
-        run: |
-          git config --global --add safe.directory "${{ github.workspace }}/dash"
-          git status > /dev/null
-
       - name: Run Guix build
         timeout-minutes: 480
         working-directory: ./dash
