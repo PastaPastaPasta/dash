@@ -28,7 +28,7 @@ jobs:
       - name: Install Guix
         #        uses: PastaPastaPasta/guix-install-action@v1
         run: |
-          apt install guix
+          sudo apt-get install guix
 
 
       - name: Cache Guix and depends
