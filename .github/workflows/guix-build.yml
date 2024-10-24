@@ -44,6 +44,26 @@ jobs:
             ${{ runner.os }}-guix-${{ matrix.build_target }}
             ${{ runner.os }}-guix-
 
+      - name: Set up macOS SDK
+        if: contains(matrix.build_target, 'apple-darwin')
+        run: |
+          set -eo pipefail
+          WORKSPACE_PATH="${{ github.workspace }}/dash"
+          XCODE_VERSION="12.2"
+          XCODE_RELEASE="12B45b"
+          XCODE_ARCHIVE="Xcode-${XCODE_VERSION}-${XCODE_RELEASE}-extracted-SDK-with-libcxx-headers"
+
+          if [ ! -d "${WORKSPACE_PATH}/depends/SDKs/${XCODE_ARCHIVE}" ]; then
+            mkdir -p "${WORKSPACE_PATH}/depends/SDKs"
+            curl -L https://bitcoincore.org/depends-sources/sdks/${XCODE_ARCHIVE}.tar.gz | tar -xz -C "${WORKSPACE_PATH}/depends/SDKs"
+          fi
+        shell: bash
+
+      - name: Configure Git Safe Directory
+        run: |
+          git config --global --add safe.directory "${{ github.workspace }}/dash"
+          git status > /dev/null
+
       - name: Run Guix build
         timeout-minutes: 480
         working-directory: ./dash
