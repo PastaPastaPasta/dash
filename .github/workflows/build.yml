@@ -59,7 +59,7 @@ jobs:
   build-depends:
     name: Build Dependencies
     needs: build-image
-    runs-on: ubuntu-20.04
+    runs-on: [ubuntu-20.04, self-hosted]
     strategy:
       fail-fast: false
       matrix:
@@ -116,7 +116,7 @@ jobs:
   build:
     name: Build
     needs: [build-image, build-depends]
-    runs-on: ubuntu-20.04
+    runs-on: [ubuntu-20.04, self-hosted]
     strategy:
       fail-fast: false
       matrix:
