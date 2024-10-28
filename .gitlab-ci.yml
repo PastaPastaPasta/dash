@@ -108,6 +108,7 @@ builder-image:
     - export COMMIT_RANGE="$CI_COMMIT_BEFORE_SHA..$CI_COMMIT_SHA"
     - export JOB_NUMBER="$CI_JOB_ID"
     - export HOST_SRC_DIR=$CI_PROJECT_DIR
+    - git config --global --add safe.directory $HOST_SRC_DIR
     - echo PULL_REQUEST=$PULL_REQUEST COMMIT_RANGE=$COMMIT_RANGE HOST_SRC_DIR=$HOST_SRC_DIR CACHE_DIR=$CACHE_DIR
     - echo "Commit log:" && git log --format=fuller -1
 
