@@ -137,6 +137,8 @@ jobs:
         with:
           path: |
             depends/${{ matrix.host }}
+            depends/sdk-sources
+            depends/SDKs
           key: ${{ runner.os }}-depends-${{ matrix.build_target }}-${{ hashFiles('depends/packages/*') }}-${{ matrix.dep_opts }}
           restore-keys: |
             ${{ runner.os }}-depends-${{ matrix.build_target }}-${{ hashFiles('depends/packages/*') }}
@@ -183,7 +185,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-
 
       - name: Restore Cache dependencies
         uses: actions/cache/restore@v4
