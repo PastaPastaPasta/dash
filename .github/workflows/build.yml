@@ -64,23 +64,51 @@ jobs:
       fail-fast: false
       matrix:
         include:
-        - build_target: arm-linux
-          host: arm-linux-gnueabihf
-        - build_target: linux64
-          host: x86_64-pc-linux-gnu
-        - build_target: linux64_tsan
-          host: x86_64-pc-linux-gnu
-        - build_target: linux64_ubsan
-          host: x86_64-pc-linux-gnu
-        - build_target: linux64_fuzz
-          host: x86_64-pc-linux-gnu
-        - build_target: linux64_cxx20
-          host: x86_64-pc-linux-gnu
-        - build_target: linux64_sqlite
-          host: x86_64-pc-linux-gnu
-        - build_target: linux64_nowallet
-          host: x86_64-pc-linux-gnu
-
+          - build_target: arm-linux
+            host: arm-linux-gnueabihf
+            dep_opts: ""
+            skip_if_fast: false
+          - build_target: win64
+            host: x86_64-w64-mingw32
+            dep_opts: ""
+            skip_if_fast: true
+          - build_target: linux64
+            host: x86_64-pc-linux-gnu
+            dep_opts: "DEBUG=1"
+            skip_if_fast: false
+          - build_target: linux64_tsan
+            host: x86_64-pc-linux-gnu
+            dep_opts: ""
+            skip_if_fast: true
+          - build_target: linux64_ubsan
+            host: x86_64-pc-linux-gnu
+            dep_opts: ""
+            skip_if_fast: true
+          - build_target: linux64_fuzz
+            host: x86_64-pc-linux-gnu
+            dep_opts: ""
+            skip_if_fast: true
+          - build_target: linux64_cxx20
+            host: x86_64-pc-linux-gnu
+            dep_opts: ""
+            skip_if_fast: true
+          - build_target: linux64_sqlite
+            host: x86_64-pc-linux-gnu
+            dep_opts: ""
+            skip_if_fast: true
+          - build_target: linux64_nowallet
+            host: x86_64-pc-linux-gnu
+            dep_opts: "NO_WALLET=1"
+            skip_if_fast: true
+          - build_target: linux64_multiprocess
+            host: x86_64-pc-linux-gnu
+            dep_opts: "MULTIPROCESS=1"
+            skip_if_fast: true
+          - build_target: mac
+            host: x86_64-apple-darwin
+            dep_opts: ""
+            skip_if_fast: true
+    if: env.FAST_MODE != 'true' || matrix.skip_if_fast == false
     container:
       image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-ci-runner:${{ needs.build-image.outputs.image-tag }}
       options: --user root
@@ -90,12 +118,29 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
+      - name: Prepare MacOS SDK
+        if: matrix.host == 'x86_64-apple-darwin'
+        run: |
+          mkdir -p depends/SDKs
+          mkdir -p depends/sdk-sources
+          OSX_SDK_BASENAME="Xcode-12.2-12B45b-extracted-SDK-with-libcxx-headers.tar.gz"
+          OSX_SDK_PATH="depends/sdk-sources/${OSX_SDK_BASENAME}"
+          if [ ! -f "$OSX_SDK_PATH" ]; then
+            echo "Downloading MacOS SDK"
+            curl --location --fail "https://bitcoincore.org/depends-sources/sdks/${OSX_SDK_BASENAME}" -o "$OSX_SDK_PATH"
+          fi
+          if [ -f "$OSX_SDK_PATH" ]; then
+            echo "Extracting MacOS SDK"
+            tar -C depends/SDKs -xf "$OSX_SDK_PATH"
+          fi
 
       - name: Cache depends sources
         uses: actions/cache@v4
         with:
           path: |
             depends/sources
+            depends/sdk-sources
+            depends/SDKs
           key: depends-sources-${{ hashFiles('depends/packages/*') }}
           restore-keys: |
             depends-sources-
@@ -105,13 +150,13 @@ jobs:
         with:
           path: |
             depends/${{ matrix.host }}
-          key: ${{ runner.os }}-depends-${{ matrix.build_target }}-${{ hashFiles('depends/packages/*') }}
+          key: ${{ runner.os }}-depends-${{ matrix.build_target }}-${{ hashFiles('depends/packages/*') }}-${{ matrix.dep_opts }}
           restore-keys: |
             ${{ runner.os }}-depends-${{ matrix.build_target }}-${{ hashFiles('depends/packages/*') }}
             ${{ runner.os }}-depends-${{ matrix.build_target }}
 
       - name: Build dependencies
-        run: make -j$(nproc) -C depends HOST=${{ matrix.host }}
+        run: make -j$(nproc) -C depends HOST=${{ matrix.host }} ${{ matrix.dep_opts }}
 
   build:
     name: Build
@@ -123,20 +168,38 @@ jobs:
         include:
           - build_target: arm-linux
             host: arm-linux-gnueabihf
+            skip_if_fast: false
+          - build_target: win64
+            host: x86_64-w64-mingw32
+            skip_if_fast: true
           - build_target: linux64
             host: x86_64-pc-linux-gnu
+            skip_if_fast: false
           - build_target: linux64_tsan
             host: x86_64-pc-linux-gnu
+            skip_if_fast: true
           - build_target: linux64_ubsan
             host: x86_64-pc-linux-gnu
+            skip_if_fast: true
           - build_target: linux64_fuzz
             host: x86_64-pc-linux-gnu
+            skip_if_fast: true
           - build_target: linux64_cxx20
             host: x86_64-pc-linux-gnu
+            skip_if_fast: true
           - build_target: linux64_sqlite
             host: x86_64-pc-linux-gnu
+            skip_if_fast: true
           - build_target: linux64_nowallet
             host: x86_64-pc-linux-gnu
+            skip_if_fast: true
+          - build_target: linux64_multiprocess
+            host: x86_64-pc-linux-gnu
+            skip_if_fast: true
+          - build_target: mac
+            host: x86_64-apple-darwin
+            skip_if_fast: true
+    if: env.FAST_MODE != 'true' || matrix.skip_if_fast == false
     container:
       image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-ci-runner:${{ needs.build-image.outputs.image-tag }}
       options: --user root
@@ -152,7 +215,9 @@ jobs:
         with:
           path: |
             depends/${{ matrix.host }}
-          key: ${{ runner.os }}-depends-${{ matrix.build_target }}-${{ hashFiles('depends/packages/*') }}
+            depends/sdk-sources
+            depends/SDKs
+          key: ${{ runner.os }}-depends-${{ matrix.build_target }}-${{ hashFiles('depends/packages/*') }}-${{ matrix.dep_opts }}
           restore-keys: |
             ${{ runner.os }}-depends-${{ matrix.build_target }}-${{ hashFiles('depends/packages/*') }}
             ${{ runner.os }}-depends-${{ matrix.build_target }}
@@ -173,7 +238,7 @@ jobs:
             ${{ runner.os }}-${{ matrix.build_target }}-${{ steps.vars.outputs.PR_BASE_SHA }}
             ${{ runner.os }}-${{ matrix.build_target }}
 
-      - name: Build source and run tests
+      - name: Build source and run unit tests
         run: |
           git config --global --add safe.directory "$PWD"
           CCACHE_SIZE="400M"
@@ -193,6 +258,39 @@ jobs:
           path: |
             /output
 
+  test:
+    name: Test
+    needs: [build]
+    runs-on: ubuntu-20.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - build_target: linux64
+            skip_if_fast: false
+          - build_target: linux64_sqlite
+            skip_if_fast: true
+          - build_target: linux64_tsan
+            skip_if_fast: true
+          - build_target: linux64_ubsan
+            skip_if_fast: true
+          - build_target: linux64_multiprocess
+            skip_if_fast: true
+    if: env.FAST_MODE != 'true' || matrix.skip_if_fast == false
+    container:
+      image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-ci-runner:${{ needs.build-image.outputs.image-tag }}
+      options: --user root
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts-${{ matrix.build_target }}
+          path: /output
 
 # Come back to this later and implement tests :)
 #  test:
