@@ -10,7 +10,6 @@ permissions:
 
 env:
   DOCKER_DRIVER: overlay2
-  FAST_MODE: false
 
 jobs:
   build-image:
@@ -67,48 +66,36 @@ jobs:
           - build_target: arm-linux
             host: arm-linux-gnueabihf
             dep_opts: ""
-            skip_if_fast: false
           - build_target: win64
             host: x86_64-w64-mingw32
             dep_opts: ""
-            skip_if_fast: true
           - build_target: linux64
             host: x86_64-pc-linux-gnu
             dep_opts: "DEBUG=1"
-            skip_if_fast: false
           - build_target: linux64_tsan
             host: x86_64-pc-linux-gnu
             dep_opts: ""
-            skip_if_fast: true
           - build_target: linux64_ubsan
             host: x86_64-pc-linux-gnu
             dep_opts: ""
-            skip_if_fast: true
           - build_target: linux64_fuzz
             host: x86_64-pc-linux-gnu
             dep_opts: ""
-            skip_if_fast: true
           - build_target: linux64_cxx20
             host: x86_64-pc-linux-gnu
             dep_opts: ""
-            skip_if_fast: true
           - build_target: linux64_sqlite
             host: x86_64-pc-linux-gnu
             dep_opts: ""
-            skip_if_fast: true
           - build_target: linux64_nowallet
             host: x86_64-pc-linux-gnu
             dep_opts: "NO_WALLET=1"
-            skip_if_fast: true
           - build_target: linux64_multiprocess
             host: x86_64-pc-linux-gnu
             dep_opts: "MULTIPROCESS=1"
-            skip_if_fast: true
           - build_target: mac
             host: x86_64-apple-darwin
             dep_opts: ""
-            skip_if_fast: true
-    if: ${{ env.FAST_MODE != 'true' || matrix.skip_if_fast == false }}
     container:
       image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-ci-runner:${{ needs.build-image.outputs.image-tag }}
       options: --user root
@@ -168,38 +155,26 @@ jobs:
         include:
           - build_target: arm-linux
             host: arm-linux-gnueabihf
-            skip_if_fast: false
           - build_target: win64
             host: x86_64-w64-mingw32
-            skip_if_fast: true
           - build_target: linux64
             host: x86_64-pc-linux-gnu
-            skip_if_fast: false
           - build_target: linux64_tsan
             host: x86_64-pc-linux-gnu
-            skip_if_fast: true
           - build_target: linux64_ubsan
             host: x86_64-pc-linux-gnu
-            skip_if_fast: true
           - build_target: linux64_fuzz
             host: x86_64-pc-linux-gnu
-            skip_if_fast: true
           - build_target: linux64_cxx20
             host: x86_64-pc-linux-gnu
-            skip_if_fast: true
           - build_target: linux64_sqlite
             host: x86_64-pc-linux-gnu
-            skip_if_fast: true
           - build_target: linux64_nowallet
             host: x86_64-pc-linux-gnu
-            skip_if_fast: true
           - build_target: linux64_multiprocess
             host: x86_64-pc-linux-gnu
-            skip_if_fast: true
           - build_target: mac
             host: x86_64-apple-darwin
-            skip_if_fast: true
-    if: ${{ env.FAST_MODE != 'true' || matrix.skip_if_fast == false }}
     container:
       image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-ci-runner:${{ needs.build-image.outputs.image-tag }}
       options: --user root
@@ -267,16 +242,10 @@ jobs:
       matrix:
         include:
           - build_target: linux64
-            skip_if_fast: false
           - build_target: linux64_sqlite
-            skip_if_fast: true
           - build_target: linux64_tsan
-            skip_if_fast: true
           - build_target: linux64_ubsan
-            skip_if_fast: true
           - build_target: linux64_multiprocess
-            skip_if_fast: true
-    if: ${{ env.FAST_MODE != 'true' || matrix.skip_if_fast == false }}
     container:
       image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-ci-runner:${{ needs.build-image.outputs.image-tag }}
       options: --user root
