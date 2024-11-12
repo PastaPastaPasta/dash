@@ -14,6 +14,8 @@ source ./ci/dash/matrix.sh
 unset CC; unset CXX
 unset DISPLAY
 
+git config --global --add safe.directory .
+
 if [ "$PULL_REQUEST" != "false" ]; then test/lint/commit-script-check.sh $COMMIT_RANGE; fi
 
 if [ "$CHECK_DOC" = 1 ]; then
