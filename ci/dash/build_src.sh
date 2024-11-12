@@ -47,6 +47,8 @@ rm -rf build-ci
 mkdir build-ci
 cd build-ci
 
+git config --global --add safe.directory .
+
 bash -c "../configure $BITCOIN_CONFIG_ALL $BITCOIN_CONFIG" || ( cat config.log && false)
 make distdir VERSION=$BUILD_TARGET
 
