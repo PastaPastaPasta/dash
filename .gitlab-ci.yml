@@ -109,7 +109,7 @@ builder-image:
     - export JOB_NUMBER="$CI_JOB_ID"
     - export HOST_SRC_DIR=$CI_PROJECT_DIR
     - echo PULL_REQUEST=$PULL_REQUEST COMMIT_RANGE=$COMMIT_RANGE HOST_SRC_DIR=$HOST_SRC_DIR CACHE_DIR=$CACHE_DIR
-    - echo "Commit log:" && git log --format=fuller -1
+#    - echo "Commit log:" && git log --format=fuller -1
 
 .build-template:
   stage: build
