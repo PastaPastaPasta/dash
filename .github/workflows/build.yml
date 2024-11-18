@@ -65,34 +65,24 @@ jobs:
         include:
           - build_target: arm-linux
             host: arm-linux-gnueabihf
-            dep_opts: ""
           - build_target: win64
             host: x86_64-w64-mingw32
-            dep_opts: ""
           - build_target: linux64
             host: x86_64-pc-linux-gnu
-            dep_opts: "DEBUG=1"
           - build_target: linux64_tsan
             host: x86_64-pc-linux-gnu
-            dep_opts: ""
           - build_target: linux64_ubsan
             host: x86_64-pc-linux-gnu
-            dep_opts: ""
           - build_target: linux64_fuzz
             host: x86_64-pc-linux-gnu
-            dep_opts: ""
           - build_target: linux64_cxx20
             host: x86_64-pc-linux-gnu
-            dep_opts: ""
           - build_target: linux64_sqlite
             host: x86_64-pc-linux-gnu
-            dep_opts: ""
           - build_target: linux64_nowallet
             host: x86_64-pc-linux-gnu
-            dep_opts: "NO_WALLET=1"
           - build_target: linux64_multiprocess
             host: x86_64-pc-linux-gnu
-            dep_opts: "MULTIPROCESS=1"
     container:
       image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-ci-runner:${{ needs.build-image.outputs.image-tag }}
       options: --user root
@@ -120,13 +110,13 @@ jobs:
             depends/${{ matrix.host }}
             depends/sdk-sources
             depends/SDKs
-          key: ${{ runner.os }}-depends-${{ matrix.build_target }}-${{ hashFiles('depends/packages/*') }}-${{ matrix.dep_opts }}
+          key: ${{ runner.os }}-depends-${{ matrix.build_target }}-${{ hashFiles('depends/packages/*') }}
           restore-keys: |
             ${{ runner.os }}-depends-${{ matrix.build_target }}-${{ hashFiles('depends/packages/*') }}
             ${{ runner.os }}-depends-${{ matrix.build_target }}
 
       - name: Build dependencies
-        run: make -j$(nproc) -C depends HOST=${{ matrix.host }} ${{ matrix.dep_opts }}
+        run: make -j$(nproc) -C depends HOST=${{ matrix.host }}
 
   build:
     name: Build
@@ -153,8 +143,6 @@ jobs:
           - build_target: linux64_sqlite
             host: x86_64-pc-linux-gnu
           - build_target: linux64_nowallet
-            host: x86_64-pc-linux-gnu
-          - build_target: linux64_multiprocess
             host: x86_64-pc-linux-gnu
     container:
       image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-ci-runner:${{ needs.build-image.outputs.image-tag }}
@@ -193,7 +181,7 @@ jobs:
             ${{ runner.os }}-${{ matrix.build_target }}-${{ steps.vars.outputs.PR_BASE_SHA }}
             ${{ runner.os }}-${{ matrix.build_target }}
 
-      - name: Build source and run unit tests
+      - name: Build source and run tests
         run: |
           git config --global --add safe.directory "$PWD"
           CCACHE_SIZE="400M"
