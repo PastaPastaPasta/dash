@@ -21,7 +21,6 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           path: dash
-          fetch-depth: 0
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -77,7 +76,6 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           path: dash
-          fetch-depth: 0
 
       - name: Cache depends sources
         uses: actions/cache@v4
