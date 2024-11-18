@@ -81,8 +81,6 @@ jobs:
             host: x86_64-pc-linux-gnu
           - build_target: linux64_nowallet
             host: x86_64-pc-linux-gnu
-          - build_target: linux64_multiprocess
-            host: x86_64-pc-linux-gnu
     container:
       image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-ci-runner:${{ needs.build-image.outputs.image-tag }}
       options: --user root
