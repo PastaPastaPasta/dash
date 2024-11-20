@@ -1364,9 +1364,10 @@ void CSigSharesManager::Cleanup()
             nodeStatesToDelete.emplace(nodeId);
         }
     }
-    connman.ForEachNode([&nodeStatesToDelete](const CNode* pnode) {
+    const CConnman::NodesSnapshot snap{connman, /* filter = */ CConnman::FullyConnectedOnly};
+    for (const auto& pnode : snap.Nodes()) {
         nodeStatesToDelete.erase(pnode->GetId());
-    });
+    }
 
     // Now delete these node states
     LOCK(cs);
