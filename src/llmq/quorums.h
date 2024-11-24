@@ -223,6 +223,11 @@ private:
     bool ReadContributions(const CDBWrapper& db);
 };
 
+// when selecting a quorum for signing and verification, we use CQuorumManager::SelectQuorum with this offset as
+// starting height for scanning. This is because otherwise the resulting signatures would not be verifiable by nodes
+// which are not 100% at the chain tip.
+static constexpr int SIGN_HEIGHT_OFFSET{8};
+
 /**
  * The quorum manager maintains quorums which were mined on chain. When a quorum is requested from the manager,
  * it will lookup the commitment (through CQuorumBlockProcessor) and build a CQuorum object from it.
@@ -286,6 +291,9 @@ public:
     // this one is cs_main-free
     std::vector<CQuorumCPtr> ScanQuorums(Consensus::LLMQType llmqType, const CBlockIndex* pindexStart, size_t nCountRequested) const;
 
+    CQuorumCPtr SelectQuorumForSigning(const Consensus::LLMQParams& llmq_params, const CChain& active_chain,
+                                       const uint256& selectionHash, int signHeight = -1 /*chain tip*/, int signOffset = SIGN_HEIGHT_OFFSET) const;
+
 private:
     // all private methods here are cs_main-free
     void CheckQuorumConnections(const Consensus::LLMQParams& llmqParams, const CBlockIndex *pindexNew) const;
@@ -305,14 +313,6 @@ private:
     void StartCleanupOldQuorumDataThread(const CBlockIndex* pIndex) const;
     void MigrateOldQuorumDB(CEvoDB& evoDb) const;
 };
-
-// when selecting a quorum for signing and verification, we use CQuorumManager::SelectQuorum with this offset as
-// starting height for scanning. This is because otherwise the resulting signatures would not be verifiable by nodes
-// which are not 100% at the chain tip.
-static constexpr int SIGN_HEIGHT_OFFSET{8};
-
-CQuorumCPtr SelectQuorumForSigning(const Consensus::LLMQParams& llmq_params, const CChain& active_chain, const CQuorumManager& qman,
-                                   const uint256& selectionHash, int signHeight = -1 /*chain tip*/, int signOffset = SIGN_HEIGHT_OFFSET);
 
 // Verifies a recovered sig that was signed while the chain tip was at signedAtTip
 VerifyRecSigStatus VerifyRecoveredSig(Consensus::LLMQType llmqType, const CChain& active_chain, const CQuorumManager& qman,

@@ -1200,8 +1200,8 @@ void CQuorumManager::MigrateOldQuorumDB(CEvoDB& evoDb) const
     LogPrint(BCLog::LLMQ, "CQuorumManager::%s -- done\n", __func__);
 }
 
-CQuorumCPtr SelectQuorumForSigning(const Consensus::LLMQParams& llmq_params, const CChain& active_chain, const CQuorumManager& qman,
-                                   const uint256& selectionHash, int signHeight, int signOffset)
+CQuorumCPtr CQuorumManager::SelectQuorumForSigning(const Consensus::LLMQParams& llmq_params, const CChain& active_chain,
+                                   const uint256& selectionHash, int signHeight, int signOffset) const
 {
     size_t poolSize = llmq_params.signingActiveQuorumCount;
 
@@ -1219,7 +1219,7 @@ CQuorumCPtr SelectQuorumForSigning(const Consensus::LLMQParams& llmq_params, con
     }
 
     if (IsQuorumRotationEnabled(llmq_params, pindexStart)) {
-        auto quorums = qman.ScanQuorums(llmq_params.type, pindexStart, poolSize);
+        auto quorums = ScanQuorums(llmq_params.type, pindexStart, poolSize);
         if (quorums.empty()) {
             return nullptr;
         }
@@ -1243,7 +1243,7 @@ CQuorumCPtr SelectQuorumForSigning(const Consensus::LLMQParams& llmq_params, con
         }
         return *itQuorum;
     } else {
-        auto quorums = qman.ScanQuorums(llmq_params.type, pindexStart, poolSize);
+        auto quorums = ScanQuorums(llmq_params.type, pindexStart, poolSize);
         if (quorums.empty()) {
             return nullptr;
         }
@@ -1268,7 +1268,7 @@ VerifyRecSigStatus VerifyRecoveredSig(Consensus::LLMQType llmqType, const CChain
 {
     const auto& llmq_params_opt = Params().GetLLMQ(llmqType);
     assert(llmq_params_opt.has_value());
-    auto quorum = SelectQuorumForSigning(llmq_params_opt.value(), active_chain, qman, id, signedAtHeight, signOffset);
+    auto quorum = qman.SelectQuorumForSigning(llmq_params_opt.value(), active_chain, id, signedAtHeight, signOffset);
     if (!quorum) {
         return VerifyRecSigStatus::NoQuorum;
     }
