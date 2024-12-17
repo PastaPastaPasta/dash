@@ -353,11 +353,11 @@ void CDKGSessionHandler::HandlePhase(QuorumPhase curPhase,
 template<typename Message>
 std::set<NodeId> BatchVerifyMessageSigs(CDKGSession& session, const std::vector<std::pair<NodeId, std::shared_ptr<Message>>>& messages)
 {
+    std::set<NodeId> ret;
     if (messages.empty()) {
-        return {};
+        return ret;
     }
 
-    std::set<NodeId> ret;
     bool revertToSingleVerification = false;
 
     CBLSSignature aggSig;

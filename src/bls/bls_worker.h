@@ -164,23 +164,35 @@ public:
 
 private:
     template <typename T, typename Builder>
-    T GetOrBuild(const uint256& cacheKey, std::map<uint256, std::shared_future<T> >& cache, Builder&& builder)
+    T GetOrBuild(const uint256& cacheKey, std::map<uint256, std::shared_future<T>>& cache, Builder&& builder)
     {
-        cacheCs.lock();
-        auto it = cache.find(cacheKey);
-        if (it != cache.end()) {
-            auto f = it->second;
-            cacheCs.unlock();
-            return f.get();
+        std::promise<T> promise;
+
+        auto opt_future = [&]() -> std::optional<std::shared_future<T>> {
+            // Use lock_guard for exception-safe locking
+            std::lock_guard<std::mutex> lock(cacheCs);
+            auto it = cache.find(cacheKey);
+            if (it != cache.end()) {
+                // Cache hit
+                return std::make_optional(it->second);
+            } else {
+                // Cache miss: insert a new promise's future into the cache
+                cache.emplace(cacheKey, promise.get_future());
+                return std::nullopt;
+            }
+        }();
+
+        T result;
+        if (!opt_future.has_value()) {
+            // Build the value outside the lock to avoid blocking other threads
+            result = builder();
+            promise.set_value(result);
+        } else {
+            // Retrieve the value from the existing future
+            result = promise.get_future().get();
         }
 
-        std::promise<T> p;
-        cache.emplace(cacheKey, p.get_future());
-        cacheCs.unlock();
-
-        T v = builder();
-        p.set_value(v);
-        return v;
+        return result; // NRVO can optimize this return
     }
 };
 

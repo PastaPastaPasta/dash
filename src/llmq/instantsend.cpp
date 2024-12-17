@@ -156,11 +156,12 @@ void CInstantSendDb::WriteInstantSendLockArchived(CDBBatch& batch, const uint256
 
 std::unordered_map<uint256, CInstantSendLockPtr, StaticSaltedHasher> CInstantSendDb::RemoveConfirmedInstantSendLocks(int nUntilHeight)
 {
+    std::unordered_map<uint256, CInstantSendLockPtr, StaticSaltedHasher> ret;
     LOCK(cs_db);
     if (nUntilHeight <= best_confirmed_height) {
         LogPrint(BCLog::ALL, "CInstantSendDb::%s -- Attempting to confirm height %d, however we've already confirmed height %d. This should never happen.\n", __func__,
                  nUntilHeight, best_confirmed_height);
-        return {};
+        return ret;
     }
     best_confirmed_height = nUntilHeight;
 
@@ -171,7 +172,6 @@ std::unordered_map<uint256, CInstantSendLockPtr, StaticSaltedHasher> CInstantSen
     it->Seek(firstKey);
 
     CDBBatch batch(*db);
-    std::unordered_map<uint256, CInstantSendLockPtr, StaticSaltedHasher> ret;
     while (it->Valid()) {
         decltype(firstKey) curKey;
         if (!it->GetKey(curKey) || std::get<0>(curKey) != DB_MINED_BY_HEIGHT_AND_HASH) {
@@ -304,11 +304,11 @@ size_t CInstantSendDb::GetInstantSendLockCount() const
 CInstantSendLockPtr CInstantSendDb::GetInstantSendLockByHashInternal(const uint256& hash, bool use_cache) const
 {
     AssertLockHeld(cs_db);
+    CInstantSendLockPtr ret;
     if (hash.IsNull()) {
-        return nullptr;
+        return ret;
     }
 
-    CInstantSendLockPtr ret;
     if (use_cache && islockCache.get(hash, ret)) {
         return ret;
     }
@@ -332,7 +332,8 @@ uint256 CInstantSendDb::GetInstantSendLockHashByTxidInternal(const uint256& txid
     uint256 islockHash;
     if (!txidCache.get(txid, islockHash)) {
         if (!db->Read(std::make_tuple(DB_HASH_BY_TXID, txid), islockHash)) {
-            return {};
+            islockHash = uint256();
+            return islockHash;
         }
         txidCache.insert(txid, islockHash);
     }
@@ -872,7 +873,7 @@ std::unordered_set<uint256, StaticSaltedHasher> CInstantSendManager::ProcessPend
 {
     CBLSBatchVerifier<NodeId, uint256> batchVerifier(false, true, 8);
     std::unordered_map<uint256, CRecoveredSig, StaticSaltedHasher> recSigs;
-
+    std::unordered_set<uint256, StaticSaltedHasher> badISLocks;
     size_t verifyCount = 0;
     size_t alreadyVerified = 0;
     for (const auto& p : pend) {
@@ -912,7 +913,7 @@ std::unordered_set<uint256, StaticSaltedHasher> CInstantSendManager::ProcessPend
         auto quorum = llmq::SelectQuorumForSigning(llmq_params, m_chainstate.m_chain, qman, id, nSignHeight, signOffset);
         if (!quorum) {
             // should not happen, but if one fails to select, all others will also fail to select
-            return {};
+            return badISLocks;
         }
         uint256 signHash = BuildSignHash(llmq_params.type, quorum->qc->quorumHash, id, islock->txid);
         batchVerifier.PushMessage(nodeId, hash, signHash, islock->sig.Get(), quorum->qc->quorumPublicKey);
@@ -932,8 +933,6 @@ std::unordered_set<uint256, StaticSaltedHasher> CInstantSendManager::ProcessPend
 
     LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- verified locks. count=%d, alreadyVerified=%d, vt=%d, nodes=%d\n", __func__,
             verifyCount, alreadyVerified, verifyTimer.count(), batchVerifier.GetUniqueSourceCount());
-
-    std::unordered_set<uint256, StaticSaltedHasher> badISLocks;
 
     if (ban && !batchVerifier.badSources.empty()) {
         LOCK(cs_main);
@@ -1567,21 +1566,19 @@ bool CInstantSendManager::IsWaitingForTx(const uint256& txHash) const
 
 CInstantSendLockPtr CInstantSendManager::GetConflictingLock(const CTransaction& tx) const
 {
+    CInstantSendLockPtr otherIsLock{nullptr};
     if (!IsInstantSendEnabled()) {
-        return nullptr;
+        return otherIsLock;
     }
 
     for (const auto& in : tx.vin) {
-        auto otherIsLock = db.GetInstantSendLockByInput(in.prevout);
-        if (!otherIsLock) {
-            continue;
-        }
-
-        if (otherIsLock->txid != tx.GetHash()) {
+        otherIsLock = db.GetInstantSendLockByInput(in.prevout);
+        if (otherIsLock && otherIsLock->txid != tx.GetHash()) {
             return otherIsLock;
         }
     }
-    return nullptr;
+    otherIsLock = nullptr;
+    return otherIsLock;
 }
 
 size_t CInstantSendManager::GetInstantSendLockCount() const

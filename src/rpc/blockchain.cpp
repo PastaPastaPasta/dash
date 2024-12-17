@@ -537,22 +537,21 @@ static void entryToJSON(const CTxMemPool& pool, UniValue& info, const CTxMemPool
 
 UniValue MempoolToJSON(const CTxMemPool& pool, const llmq::CInstantSendManager* isman, bool verbose, bool include_mempool_sequence)
 {
+    UniValue result;
+
     if (verbose) {
         if (include_mempool_sequence) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Verbose results cannot contain mempool sequence values.");
         }
         LOCK(pool.cs);
-        UniValue o(UniValue::VOBJ);
+        result = UniValue(UniValue::VOBJ);
         for (const CTxMemPoolEntry& e : pool.mapTx) {
             const uint256& hash = e.GetTx().GetHash();
             UniValue info(UniValue::VOBJ);
             entryToJSON(pool, info, e, isman);
-            // Mempool has unique entries so there is no advantage in using
-            // UniValue::pushKV, which checks if the key already exists in O(N).
-            // UniValue::__pushKV is used instead which currently is O(1).
-            o.__pushKV(hash.ToString(), info);
+            // Using __pushKV for performance as mempool entries are unique
+            result.__pushKV(hash.ToString(), info);
         }
-        return o;
     } else {
         uint64_t mempool_sequence;
         std::vector<uint256> vtxid;
@@ -561,19 +560,21 @@ UniValue MempoolToJSON(const CTxMemPool& pool, const llmq::CInstantSendManager* 
             pool.queryHashes(vtxid);
             mempool_sequence = pool.GetSequence();
         }
-        UniValue a(UniValue::VARR);
-        for (const uint256& hash : vtxid)
-            a.push_back(hash.ToString());
+        UniValue txidArray(UniValue::VARR);
+        for (const uint256& hash : vtxid) {
+            txidArray.push_back(hash.ToString());
+        }
 
         if (!include_mempool_sequence) {
-            return a;
+            result = std::move(txidArray);
         } else {
-            UniValue o(UniValue::VOBJ);
-            o.pushKV("txids", a);
-            o.pushKV("mempool_sequence", mempool_sequence);
-            return o;
+            result = UniValue(UniValue::VOBJ);
+            result.pushKV("txids", std::move(txidArray));
+            result.pushKV("mempool_sequence", mempool_sequence);
         }
     }
+
+    return result;
 }
 
 static RPCHelpMan getrawmempool()
@@ -653,9 +654,11 @@ static RPCHelpMan getmempoolancestors()
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
+    // Initialize variables
     bool fVerbose = false;
-    if (!request.params[1].isNull())
+    if (!request.params[1].isNull()) {
         fVerbose = request.params[1].get_bool();
+    }
 
     uint256 hash(ParseHashV(request.params[0], "parameter 1"));
 
@@ -674,24 +677,29 @@ static RPCHelpMan getmempoolancestors()
     std::string dummy;
     mempool.CalculateMemPoolAncestors(*it, setAncestors, noLimit, noLimit, noLimit, noLimit, dummy, false);
 
+    // Declare a single UniValue object to be used for all return paths
+    UniValue result;
+
     if (!fVerbose) {
-        UniValue o(UniValue::VARR);
-        for (CTxMemPool::txiter ancestorIt : setAncestors) {
-            o.push_back(ancestorIt->GetTx().GetHash().ToString());
+        result = UniValue(UniValue::VARR);
+        for (const CTxMemPool::txiter& ancestorIt : setAncestors) {
+            result.push_back(ancestorIt->GetTx().GetHash().ToString());
         }
-        return o;
     } else {
-        UniValue o(UniValue::VOBJ);
+        result = UniValue(UniValue::VOBJ);
         const LLMQContext& llmq_ctx = EnsureLLMQContext(node);
-        for (CTxMemPool::txiter ancestorIt : setAncestors) {
-            const CTxMemPoolEntry &e = *ancestorIt;
-            const uint256& _hash = e.GetTx().GetHash();
+        for (const CTxMemPool::txiter& ancestorIt : setAncestors) {
+            const CTxMemPoolEntry& e = *ancestorIt;
+            const uint256& ancestorHash = e.GetTx().GetHash();
             UniValue info(UniValue::VOBJ);
             entryToJSON(mempool, info, e, llmq_ctx.isman);
-            o.pushKV(_hash.ToString(), info);
+            // Using pushKV for inserting key-value pairs into the JSON object
+            result.pushKV(ancestorHash.ToString(), info);
         }
-        return o;
     }
+
+    // Single return statement ensures RVO/NRVO
+    return result;
 },
     };
 }
@@ -741,15 +749,14 @@ static RPCHelpMan getmempooldescendants()
     // CTxMemPool::CalculateDescendants will include the given tx
     setDescendants.erase(it);
 
+    UniValue o;
     if (!fVerbose) {
-        UniValue o(UniValue::VARR);
+        o = UniValue(UniValue::VARR);
         for (CTxMemPool::txiter descendantIt : setDescendants) {
             o.push_back(descendantIt->GetTx().GetHash().ToString());
         }
-
-        return o;
     } else {
-        UniValue o(UniValue::VOBJ);
+        o = UniValue(UniValue::VOBJ);
         const LLMQContext& llmq_ctx = EnsureLLMQContext(node);
         for (CTxMemPool::txiter descendantIt : setDescendants) {
             const CTxMemPoolEntry &e = *descendantIt;
@@ -758,8 +765,8 @@ static RPCHelpMan getmempooldescendants()
             entryToJSON(mempool, info, e, llmq_ctx.isman);
             o.pushKV(_hash.ToString(), info);
         }
-        return o;
     }
+    return o;
 },
     };
 }
@@ -1589,11 +1596,13 @@ static RPCHelpMan gettxout()
         LOCK(mempool.cs);
         CCoinsViewMemPool view(coins_view, mempool);
         if (!view.GetCoin(out, coin) || mempool.isSpent(out)) {
-            return NullUniValue;
+            ret = NullUniValue;
+            return ret;
         }
     } else {
         if (!coins_view->GetCoin(out, coin)) {
-            return NullUniValue;
+            ret = NullUniValue;
+            return ret;
         }
     }
 
@@ -2366,37 +2375,45 @@ static RPCHelpMan getblockstats()
                 },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
+    // Ensure transaction index is synced if enabled
     if (g_txindex) {
         g_txindex->BlockUntilSyncedToCurrentChain();
     }
 
+    // Acquire the chain state manager and lock the main chain
     ChainstateManager& chainman = EnsureAnyChainman(request.context);
     LOCK(cs_main);
+
+    // Parse the block index from the first parameter
     const CBlockIndex* pindex{ParseHashOrHeight(request.params[0], chainman)};
     CHECK_NONFATAL(pindex != nullptr);
 
+    // Parse the stats set from the second parameter, if provided
     std::set<std::string> stats;
     if (!request.params[1].isNull()) {
         const UniValue stats_univalue = request.params[1].get_array();
-        for (unsigned int i = 0; i < stats_univalue.size(); i++) {
+        for (unsigned int i = 0; i < stats_univalue.size(); ++i) {
             const std::string stat = stats_univalue[i].get_str();
             stats.insert(stat);
         }
     }
 
+    // Retrieve the block and its undo data
     const CBlock block = GetBlockChecked(chainman.m_blockman, pindex);
     const CBlockUndo blockUndo = GetUndoChecked(chainman.m_blockman, pindex);
 
-    const bool do_all = stats.size() == 0; // Calculate everything if nothing selected (default)
+    // Determine which statistics to compute based on the provided stats set
+    const bool do_all = stats.empty(); // Calculate everything if nothing selected (default)
     const bool do_mediantxsize = do_all || stats.count("mediantxsize") != 0;
     const bool do_medianfee = do_all || stats.count("medianfee") != 0;
     const bool do_feerate_percentiles = do_all || stats.count("feerate_percentiles") != 0;
     const bool loop_inputs = do_all || do_medianfee || do_feerate_percentiles ||
         SetHasKeys(stats, "utxo_size_inc", "totalfee", "avgfee", "avgfeerate", "minfee", "maxfee", "minfeerate", "maxfeerate");
-    const bool loop_outputs = do_all || loop_inputs || stats.count("total_out");
+    const bool loop_outputs = do_all || loop_inputs || stats.count("total_out") != 0;
     const bool do_calculate_size = do_all || do_mediantxsize ||
         SetHasKeys(stats, "total_size", "avgtxsize", "mintxsize", "maxtxsize", "avgfeerate", "feerate_percentiles", "minfeerate", "maxfeerate");
 
+    // Initialize variables for statistics
     CAmount maxfee = 0;
     CAmount maxfeerate = 0;
     CAmount minfee = MAX_MONEY;
@@ -2413,6 +2430,7 @@ static RPCHelpMan getblockstats()
     std::vector<std::pair<CAmount, int64_t>> feerate_array;
     std::vector<int64_t> txsize_array;
 
+    // Iterate over each transaction in the block to compute statistics
     for (size_t i = 0; i < block.vtx.size(); ++i) {
         const auto& tx = block.vtx.at(i);
         outputs += tx->vout.size();
@@ -2425,6 +2443,7 @@ static RPCHelpMan getblockstats()
             }
         }
 
+        // Skip coinbase transactions
         if (tx->IsCoinBase()) {
             continue;
         }
@@ -2434,7 +2453,6 @@ static RPCHelpMan getblockstats()
 
         int64_t tx_size = 0;
         if (do_calculate_size) {
-
             tx_size = tx->GetTotalSize();
             if (do_mediantxsize) {
                 txsize_array.push_back(tx_size);
@@ -2447,9 +2465,8 @@ static RPCHelpMan getblockstats()
         if (loop_inputs) {
             CAmount tx_total_in = 0;
             const auto& txundo = blockUndo.vtxundo.at(i - 1);
-            for (const Coin& coin: txundo.vprevout) {
+            for (const Coin& coin : txundo.vprevout) {
                 const CTxOut& prevoutput = coin.out;
-
                 tx_total_in += prevoutput.nValue;
                 utxo_size_inc -= GetSerializeSize(prevoutput, PROTOCOL_VERSION) + PER_UTXO_OVERHEAD;
             }
@@ -2479,21 +2496,24 @@ static RPCHelpMan getblockstats()
         }
     }
 
+    // Calculate feerate percentiles
     CAmount feerate_percentiles[NUM_GETBLOCKSTATS_PERCENTILES] = { 0 };
     CalculatePercentilesBySize(feerate_percentiles, feerate_array, total_size);
 
+    // Prepare feerate_percentiles as a UniValue array
     UniValue feerates_res(UniValue::VARR);
-    for (int64_t i = 0; i < NUM_GETBLOCKSTATS_PERCENTILES; i++) {
+    for (int64_t i = 0; i < NUM_GETBLOCKSTATS_PERCENTILES; ++i) {
         feerates_res.push_back(feerate_percentiles[i]);
     }
 
+    // Prepare a UniValue object with all possible statistics
     UniValue ret_all(UniValue::VOBJ);
     ret_all.pushKV("avgfee", (block.vtx.size() > 1) ? totalfee / (block.vtx.size() - 1) : 0);
     ret_all.pushKV("avgfeerate", total_size ? totalfee / total_size : 0); // Unit: sat/byte
     ret_all.pushKV("avgtxsize", (block.vtx.size() > 1) ? total_size / (block.vtx.size() - 1) : 0);
     ret_all.pushKV("blockhash", pindex->GetBlockHash().GetHex());
     ret_all.pushKV("feerate_percentiles", feerates_res);
-    ret_all.pushKV("height", (int64_t)pindex->nHeight);
+    ret_all.pushKV("height", static_cast<int64_t>(pindex->nHeight));
     ret_all.pushKV("ins", inputs);
     ret_all.pushKV("maxfee", maxfee);
     ret_all.pushKV("maxfeerate", maxfeerate);
@@ -2503,30 +2523,37 @@ static RPCHelpMan getblockstats()
     ret_all.pushKV("mediantxsize", CalculateTruncatedMedian(txsize_array));
     ret_all.pushKV("minfee", (minfee == MAX_MONEY) ? 0 : minfee);
     ret_all.pushKV("minfeerate", (minfeerate == MAX_MONEY) ? 0 : minfeerate);
-    ret_all.pushKV("mintxsize", mintxsize == MaxBlockSize() ? 0 : mintxsize);
+    ret_all.pushKV("mintxsize", (mintxsize == MaxBlockSize()) ? 0 : mintxsize);
     ret_all.pushKV("outs", outputs);
     ret_all.pushKV("subsidy", GetBlockSubsidy(pindex, Params().GetConsensus()));
     ret_all.pushKV("time", pindex->GetBlockTime());
     ret_all.pushKV("total_out", total_out);
     ret_all.pushKV("total_size", total_size);
     ret_all.pushKV("totalfee", totalfee);
-    ret_all.pushKV("txs", (int64_t)block.vtx.size());
+    ret_all.pushKV("txs", static_cast<int64_t>(block.vtx.size()));
     ret_all.pushKV("utxo_increase", outputs - inputs);
     ret_all.pushKV("utxo_size_inc", utxo_size_inc);
 
+    // Declare a single UniValue object for the final result
+    UniValue result;
+
     if (do_all) {
-        return ret_all;
+        // If all stats are requested, assign ret_all to result
+        result = std::move(ret_all);
+    } else {
+        // Otherwise, populate result with only the requested stats
+        result = UniValue(UniValue::VOBJ);
+        for (const std::string& stat : stats) {
+            const UniValue& value = ret_all[stat];
+            if (value.isNull()) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid selected statistic '%s'", stat));
+            }
+            result.pushKV(stat, value);
+        }
     }
 
-    UniValue ret(UniValue::VOBJ);
-    for (const std::string& stat : stats) {
-        const UniValue& value = ret_all[stat];
-        if (value.isNull()) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid selected statistic '%s'", stat));
-        }
-        ret.pushKV(stat, value);
-    }
-    return ret;
+    // Single return statement ensures RVO/NRVO
+    return result;
 },
     };
 }
@@ -2815,7 +2842,8 @@ static RPCHelpMan scantxoutset()
         CoinsViewScanReserver reserver;
         if (reserver.reserve()) {
             // no scan in progress
-            return NullUniValue;
+            result = NullUniValue;
+            return result;
         }
         result.pushKV("progress", g_scan_progress);
         return result;
@@ -2823,11 +2851,13 @@ static RPCHelpMan scantxoutset()
         CoinsViewScanReserver reserver;
         if (reserver.reserve()) {
             // reserve was possible which means no scan was running
-            return false;
+            result = false;
+            return result;
         }
         // set the abort flag
         g_should_abort_scan = true;
-        return true;
+        result = true;
+        return result;
     } else if (request.params[0].get_str() == "start") {
         CoinsViewScanReserver reserver;
         if (!reserver.reserve()) {

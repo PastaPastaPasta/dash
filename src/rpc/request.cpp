@@ -192,10 +192,10 @@ void JSONRPCRequest::parse(const UniValue& valRequest)
 
 JSONRPCRequest JSONRPCRequest::squashed() const
 {
-   if (params.empty()) {
-        return *this;
-    }
     JSONRPCRequest new_request{*this};
+    if (params.empty()) {
+        return new_request;
+    }
     new_request.strMethod = strMethod + params[0].get_str();
     new_request.params.setArray();
     for (unsigned int i = 1; i < params.size(); ++i) {

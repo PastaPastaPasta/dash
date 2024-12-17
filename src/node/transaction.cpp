@@ -119,20 +119,20 @@ TransactionError BroadcastTransaction(NodeContext& node, const CTransactionRef t
 
 CTransactionRef GetTransaction(const CBlockIndex* const block_index, const CTxMemPool* const mempool, const uint256& hash, const Consensus::Params& consensusParams, uint256& hashBlock)
 {
+    CTransactionRef ret_tx;
     if (mempool && !block_index) {
-        CTransactionRef ptx = mempool->get(hash);
-        if (ptx) return ptx;
+        ret_tx = mempool->get(hash);
+        if (ret_tx) return ret_tx;
     }
     if (g_txindex) {
-        CTransactionRef tx;
         uint256 block_hash;
-        if (g_txindex->FindTx(hash, block_hash, tx)) {
+        if (g_txindex->FindTx(hash, block_hash, ret_tx)) {
             if (!block_index || block_index->GetBlockHash() == block_hash) {
                 // Don't return the transaction if the provided block hash doesn't match.
                 // The case where a transaction appears in multiple blocks (e.g. reorgs or
                 // BIP30) is handled by the block lookup below.
                 hashBlock = block_hash;
-                return tx;
+                return ret_tx;
             }
         }
     }
@@ -142,10 +142,12 @@ CTransactionRef GetTransaction(const CBlockIndex* const block_index, const CTxMe
             for (const auto& tx : block.vtx) {
                 if (tx->GetHash() == hash) {
                     hashBlock = block_index->GetBlockHash();
-                    return tx;
+                    ret_tx = tx;
+                    return ret_tx;
                 }
             }
         }
     }
-    return nullptr;
+    ret_tx = nullptr;
+    return ret_tx;
 }

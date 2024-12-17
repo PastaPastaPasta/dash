@@ -116,15 +116,15 @@ static UniValue GetNextMasternodeForPayment(const CChain& active_chain, CDetermi
     const CBlockIndex *tip = WITH_LOCK(::cs_main, return active_chain.Tip());
     auto mnList = dmnman.GetListForBlock(tip);
     auto payees = mnList.GetProjectedMNPayees(tip, heightShift);
+    UniValue obj(UniValue::VOBJ);
     if (payees.empty())
-        return "unknown";
+        obj = "unknown";
+        return obj;
     auto payee = payees.back();
     CScript payeeScript = payee->pdmnState->scriptPayout;
 
     CTxDestination payeeDest;
     ExtractDestination(payeeScript, payeeDest);
-
-    UniValue obj(UniValue::VOBJ);
 
     obj.pushKV("height",        mnList.GetHeight() + heightShift);
     obj.pushKV("IP:port",       payee->pdmnState->addr.ToStringAddrPort());
@@ -201,12 +201,13 @@ static RPCHelpMan masternode_outputs()
         LOCK(wallet->cs_wallet);
         wallet->AvailableCoins(vPossibleCoins, &coin_control);
     }
-    UniValue outputsArr(UniValue::VARR);
-    for (const auto& out : vPossibleCoins) {
-        outputsArr.push_back(out.GetInputCoin().outpoint.ToStringShort());
-    }
-
-    return outputsArr;
+    return [&]() {
+        UniValue outputsArr(UniValue::VARR);
+        for (const auto& out : vPossibleCoins) {
+            outputsArr.push_back(out.GetInputCoin().outpoint.ToStringShort());
+        }
+        return outputsArr;
+    }();
 },
     };
 }
@@ -267,7 +268,8 @@ static std::string GetRequiredPaymentsString(CGovernanceManager& govman, const C
     if (govman.IsSuperblockTriggered(tip_mn_list, nBlockHeight)) {
         std::vector<CTxOut> voutSuperblock;
         if (!govman.GetSuperblockPayments(tip_mn_list, nBlockHeight, voutSuperblock)) {
-            return strPayments + ", error";
+            strPayments += ", error";
+            return strPayments;
         }
         std::string strSBPayees = "Unknown";
         for (const auto& txout : voutSuperblock) {
@@ -299,10 +301,14 @@ static RPCHelpMan masternode_winners()
     const NodeContext& node = EnsureAnyNodeContext(request.context);
     const ChainstateManager& chainman = EnsureChainman(node);
     const CBlockIndex* pindexTip{nullptr};
+    UniValue obj(UniValue::VOBJ);
     {
         LOCK(cs_main);
         pindexTip = chainman.ActiveChain().Tip();
-        if (!pindexTip) return NullUniValue;
+        if (!pindexTip) {
+            obj = NullUniValue;
+            return obj;
+        }
     }
 
     int nCount = 10;
@@ -315,8 +321,6 @@ static RPCHelpMan masternode_winners()
     if (!request.params[1].isNull()) {
         strFilter = request.params[1].get_str();
     }
-
-    UniValue obj(UniValue::VOBJ);
 
     int nChainTipHeight = pindexTip->nHeight;
     int nStartHeight = std::max(nChainTipHeight - nCount, 1);

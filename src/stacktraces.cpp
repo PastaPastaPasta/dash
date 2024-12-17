@@ -55,12 +55,15 @@ std::string DemangleSymbol(const std::string& name)
 #if defined(__GNUC__) || defined(__clang__)
     int status = -4; // some arbitrary value to eliminate the compiler warning
     char* str = abi::__cxa_demangle(name.c_str(), nullptr, nullptr, &status);
+    std::string ret;
     if (status != 0) {
         free(str);
-        return name;
+        ret = name;
+        return ret;
+    } else {
+        ret = str;
+        free(str);
     }
-    std::string ret = str;
-    free(str);
     return ret;
 #else
     // TODO other platforms/compilers
@@ -287,12 +290,11 @@ static __attribute__((noinline)) std::vector<uint64_t> GetStackFrames(size_t ski
     // FYI, this is not using libbacktrace, but "backtrace()" from <execinfo.h>
     std::vector<void*> buf(max_frames);
     int count = backtrace(buf.data(), (int)buf.size());
+    std::vector<uint64_t> ret;
     if (count == 0) {
-        return {};
+        return ret;
     }
     buf.resize((size_t)count);
-
-    std::vector<uint64_t> ret;
     ret.reserve(count);
     for (size_t i = skip + 1; i < buf.size(); i++) {
         ret.emplace_back((uint64_t) buf[i]);
@@ -470,8 +472,10 @@ std::string GetCrashInfoStrFromSerializedStr(const std::string& ciStr)
 
 static std::string GetCrashInfoStr(const crash_info& ci, size_t spaces)
 {
+    std::string ret;
     if (ci.stackframeInfos.empty()) {
-        return GetCrashInfoStrNoDebugInfo(ci);
+        ret = GetCrashInfoStrNoDebugInfo(ci);
+        return ret;
     }
 
     std::string sp;
@@ -501,7 +505,7 @@ static std::string GetCrashInfoStr(const crash_info& ci, size_t spaces)
 
     std::string fmtStr = strprintf("%%2d#: (0x%%08X) %%-%ds - %%s\n", lstrlen);
 
-    std::string s = ci.crashDescription + "\n";
+    ret = ci.crashDescription + "\n";
     for (size_t i = 0; i < ci.stackframeInfos.size(); i++) {
         auto& si = ci.stackframeInfos[i];
 
@@ -516,10 +520,10 @@ static std::string GetCrashInfoStr(const crash_info& ci, size_t spaces)
 
         std::string s2 = strprintf(fmtStr, i, si.pc, lstr, fstr);
 
-        s += sp;
-        s += s2;
+        ret += sp;
+        ret += s2;
     }
-    return s;
+    return ret;
 }
 
 static void PrintCrashInfo(const crash_info& ci)

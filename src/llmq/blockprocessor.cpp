@@ -54,14 +54,14 @@ CQuorumBlockProcessor::CQuorumBlockProcessor(CChainState& chainstate, CDetermini
 MessageProcessingResult CQuorumBlockProcessor::ProcessMessage(const CNode& peer, std::string_view msg_type,
                                                               CDataStream& vRecv)
 {
+    MessageProcessingResult ret;
     if (msg_type != NetMsgType::QFCOMMITMENT) {
-        return {};
+        return ret;
     }
 
     CFinalCommitment qc;
     vRecv >> qc;
 
-    MessageProcessingResult ret;
     ret.m_to_erase = CInv{MSG_QUORUM_FINAL_COMMITMENT, ::SerializeHash(qc)};
 
     if (qc.IsNull()) {
@@ -443,7 +443,8 @@ uint256 CQuorumBlockProcessor::GetQuorumBlockHash(const Consensus::LLMQParams& l
     uint256 quorumBlockHash;
     if (!GetBlockHash(active_chain, quorumBlockHash, quorumStartHeight)) {
         LogPrint(BCLog::LLMQ, "[GetQuorumBlockHash] llmqType[%d] h[%d] qi[%d] quorumStartHeight[%d] quorumHash[EMPTY]\n", ToUnderlying(llmqParams.type), nHeight, quorumIndex, quorumStartHeight);
-        return {};
+        quorumBlockHash = uint256(); // This should already be the case as a failed GetBlockHash doesn't set anything. Preserve NRVO
+        return quorumBlockHash;
     }
 
     LogPrint(BCLog::LLMQ, "[GetQuorumBlockHash] llmqType[%d] h[%d] qi[%d] quorumStartHeight[%d] quorumHash[%s]\n", ToUnderlying(llmqParams.type), nHeight, quorumIndex, quorumStartHeight, quorumBlockHash.ToString());

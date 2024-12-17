@@ -1762,10 +1762,11 @@ bool LegacyScriptPubKeyMan::ImportScriptPubKeys(const std::set<CScript>& script_
 std::set<CKeyID> LegacyScriptPubKeyMan::GetKeys() const
 {
     LOCK(cs_KeyStore);
-    if (!m_storage.HasEncryptionKeys()) {
-        return FillableSigningProvider::GetKeys();
-    }
     std::set<CKeyID> set_address;
+    if (!m_storage.HasEncryptionKeys()) {
+        set_address = FillableSigningProvider::GetKeys();
+        return set_address;
+    }
     for (const auto& mi : mapCryptedKeys) {
         set_address.insert(mi.first);
     }
@@ -2161,7 +2162,10 @@ std::unique_ptr<FlatSigningProvider> DescriptorScriptPubKeyMan::GetSigningProvid
     // Get the scripts, keys, and key origins for this script
     std::unique_ptr<FlatSigningProvider> out_keys = std::make_unique<FlatSigningProvider>();
     std::vector<CScript> scripts_temp;
-    if (!m_wallet_descriptor.descriptor->ExpandFromCache(index, m_wallet_descriptor.cache, scripts_temp, *out_keys)) return nullptr;
+    if (!m_wallet_descriptor.descriptor->ExpandFromCache(index, m_wallet_descriptor.cache, scripts_temp, *out_keys)) {
+        out_keys = nullptr;
+        return out_keys;
+    }
 
     if (HavePrivateKeys() && include_private) {
         FlatSigningProvider master_provider;

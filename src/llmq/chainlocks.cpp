@@ -408,7 +408,8 @@ CChainLocksHandler::BlockTxs::mapped_type CChainLocksHandler::GetBlockTxs(const 
             const auto* pindex = m_chainstate.m_blockman.LookupBlockIndex(blockHash);
             CBlock block;
             if (!ReadBlockFromDisk(block, pindex, Params().GetConsensus())) {
-                return nullptr;
+                ret = nullptr;
+                return ret;
             }
 
             ret = std::make_shared<std::unordered_set<uint256, StaticSaltedHasher>>();

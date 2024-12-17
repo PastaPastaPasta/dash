@@ -469,16 +469,18 @@ static UniValue quorum_sign_helper(const JSONRPCRequest& request, Consensus::LLM
             throw JSONRPCError(RPC_INVALID_PARAMETER, "failed to create sigShare");
         }
 
-        UniValue obj(UniValue::VOBJ);
-        obj.pushKV("llmqType", static_cast<uint8_t>(llmqType));
-        obj.pushKV("quorumHash", sigShare->getQuorumHash().ToString());
-        obj.pushKV("quorumMember", sigShare->getQuorumMember());
-        obj.pushKV("id", id.ToString());
-        obj.pushKV("msgHash", msgHash.ToString());
-        obj.pushKV("signHash", sigShare->GetSignHash().ToString());
-        obj.pushKV("signature", sigShare->sigShare.Get().ToString());
+        return [&]() {
+            UniValue obj(UniValue::VOBJ);
+            obj.pushKV("llmqType", static_cast<uint8_t>(llmqType));
+            obj.pushKV("quorumHash", sigShare->getQuorumHash().ToString());
+            obj.pushKV("quorumMember", sigShare->getQuorumMember());
+            obj.pushKV("id", id.ToString());
+            obj.pushKV("msgHash", msgHash.ToString());
+            obj.pushKV("signHash", sigShare->GetSignHash().ToString());
+            obj.pushKV("signature", sigShare->sigShare.Get().ToString());
 
-        return obj;
+            return obj;
+        }();
     }
 }
 

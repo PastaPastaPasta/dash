@@ -390,8 +390,10 @@ std::string BCLog::Logger::LogTimestampStr(const std::string& str)
 {
     std::string strStamped;
 
-    if (!m_log_timestamps)
-        return str;
+    if (!m_log_timestamps) {
+        strStamped = str;
+        return strStamped;
+    }
 
     if (m_started_new_line) {
         int64_t nTimeMicros = GetTimeMicros();
@@ -405,8 +407,9 @@ std::string BCLog::Logger::LogTimestampStr(const std::string& str)
             strStamped += " (mocktime: " + FormatISO8601DateTime(count_seconds(mocktime)) + ")";
         }
         strStamped += ' ' + str;
-    } else
+    } else {
         strStamped = str;
+    }
 
     return strStamped;
 }

@@ -103,10 +103,10 @@ std::vector<CDeterministicMNCPtr> GetAllQuorumMembers(Consensus::LLMQType llmqTy
     static std::map<Consensus::LLMQType, unordered_lru_cache<uint256, std::vector<CDeterministicMNCPtr>, StaticSaltedHasher>> mapQuorumMembers GUARDED_BY(cs_members);
     static RecursiveMutex cs_indexed_members;
     static std::map<Consensus::LLMQType, unordered_lru_cache<std::pair<uint256, int>, std::vector<CDeterministicMNCPtr>, StaticSaltedHasher>> mapIndexedQuorumMembers GUARDED_BY(cs_indexed_members);
-    if (!IsQuorumTypeEnabled(llmqType, pQuorumBaseBlockIndex->pprev)) {
-        return {};
-    }
     std::vector<CDeterministicMNCPtr> quorumMembers;
+    if (!IsQuorumTypeEnabled(llmqType, pQuorumBaseBlockIndex->pprev)) {
+        return quorumMembers;
+    }
     {
         LOCK(cs_members);
         if (mapQuorumMembers.empty()) {
@@ -138,7 +138,8 @@ std::vector<CDeterministicMNCPtr> GetAllQuorumMembers(Consensus::LLMQType llmqTy
 
         int quorumIndex = pQuorumBaseBlockIndex->nHeight % llmq_params.dkgInterval;
         if (quorumIndex >= llmq_params.signingActiveQuorumCount) {
-            return {};
+            quorumMembers.clear();
+            return quorumMembers;
         }
         int cycleQuorumBaseHeight = pQuorumBaseBlockIndex->nHeight - quorumIndex;
         const CBlockIndex* pCycleQuorumBaseBlockIndex = pQuorumBaseBlockIndex->GetAncestor(cycleQuorumBaseHeight);
@@ -195,9 +196,12 @@ std::vector<std::vector<CDeterministicMNCPtr>> ComputeQuorumMembersByQuarterRota
     const Consensus::LLMQType llmqType = llmqParams.type;
 
     const int cycleLength = llmqParams.dkgInterval;
+    size_t nQuorums = static_cast<size_t>(llmqParams.signingActiveQuorumCount);
+    std::vector<std::vector<CDeterministicMNCPtr>> quorumMembers{nQuorums};
     if (!llmqParams.useRotation || pCycleQuorumBaseBlockIndex->nHeight % llmqParams.dkgInterval != 0) {
         ASSERT_IF_DEBUG(false);
-        return {};
+        quorumMembers.clear();
+        return quorumMembers;
     }
 
     const CBlockIndex* pBlockHMinusCIndex = pCycleQuorumBaseBlockIndex->GetAncestor(pCycleQuorumBaseBlockIndex->nHeight - cycleLength);
@@ -208,9 +212,6 @@ std::vector<std::vector<CDeterministicMNCPtr>> ComputeQuorumMembersByQuarterRota
     LogPrint(BCLog::LLMQ, "ComputeQuorumMembersByQuarterRotation llmqType[%d] nHeight[%d] allMns[%d]\n", ToUnderlying(llmqType), pCycleQuorumBaseBlockIndex->nHeight, allMns.GetValidMNsCount());
 
     PreviousQuorumQuarters previousQuarters = GetPreviousQuorumQuarterMembers(llmqParams, dmnman, pBlockHMinusCIndex, pBlockHMinus2CIndex, pBlockHMinus3CIndex, pCycleQuorumBaseBlockIndex->nHeight);
-
-    size_t nQuorums = static_cast<size_t>(llmqParams.signingActiveQuorumCount);
-    std::vector<std::vector<CDeterministicMNCPtr>> quorumMembers{nQuorums};
 
     auto newQuarterMembers = BuildNewQuorumQuarterMembers(llmqParams, dmnman, pCycleQuorumBaseBlockIndex, previousQuarters);
     //TODO Check if it is triggered from outside (P2P, block validation). Throwing an exception is probably a wiser choice
@@ -303,13 +304,14 @@ std::vector<std::vector<CDeterministicMNCPtr>> BuildNewQuorumQuarterMembers(cons
                                                                             const CBlockIndex* pCycleQuorumBaseBlockIndex,
                                                                             const PreviousQuorumQuarters& previousQuarters)
 {
-    if (!llmqParams.useRotation || pCycleQuorumBaseBlockIndex->nHeight % llmqParams.dkgInterval != 0) {
-        ASSERT_IF_DEBUG(false);
-        return {};
-    }
-
     size_t nQuorums = static_cast<size_t>(llmqParams.signingActiveQuorumCount);
     std::vector<std::vector<CDeterministicMNCPtr>> quarterQuorumMembers{nQuorums};
+    if (!llmqParams.useRotation || pCycleQuorumBaseBlockIndex->nHeight % llmqParams.dkgInterval != 0) {
+        ASSERT_IF_DEBUG(false);
+        quarterQuorumMembers.clear();
+        return quarterQuorumMembers;
+    }
+
 
     size_t quorumSize = static_cast<size_t>(llmqParams.size);
     auto quarterSize{quorumSize / 4};
@@ -442,7 +444,8 @@ std::vector<std::vector<CDeterministicMNCPtr>> BuildNewQuorumQuarterMembers(cons
                 // we made full "while" loop
                 if (!updated) {
                     // there are not enough MNs, there is nothing we can do here
-                    return std::vector<std::vector<CDeterministicMNCPtr>>(nQuorums);
+                    quarterQuorumMembers = std::vector<std::vector<CDeterministicMNCPtr>>(nQuorums);
+                    return quarterQuorumMembers;
                 }
                 // reset and try again
                 updated = false;
@@ -500,9 +503,12 @@ std::vector<std::vector<CDeterministicMNCPtr>> GetQuorumQuarterMembersBySnapshot
                                                                                  const llmq::CQuorumSnapshot& snapshot,
                                                                                  int nHeight)
 {
+    size_t numQuorums = static_cast<size_t>(llmqParams.signingActiveQuorumCount);
+    std::vector<std::vector<CDeterministicMNCPtr>> quarterQuorumMembers(numQuorums);
     if (!llmqParams.useRotation || pCycleQuorumBaseBlockIndex->nHeight % llmqParams.dkgInterval != 0) {
         ASSERT_IF_DEBUG(false);
-        return {};
+        quarterQuorumMembers.clear();
+        return quarterQuorumMembers;
     }
 
     std::vector<CDeterministicMNCPtr> sortedCombinedMns;
@@ -528,11 +534,8 @@ std::vector<std::vector<CDeterministicMNCPtr>> GetQuorumQuarterMembersBySnapshot
                  pCycleQuorumBaseBlockIndex->nHeight, nHeight, ss.str());
     }
 
-    size_t numQuorums = static_cast<size_t>(llmqParams.signingActiveQuorumCount);
     size_t quorumSize = static_cast<size_t>(llmqParams.size);
     auto quarterSize{quorumSize / 4};
-
-    std::vector<std::vector<CDeterministicMNCPtr>> quarterQuorumMembers(numQuorums);
 
     if (sortedCombinedMns.empty()) {
         return quarterQuorumMembers;
@@ -684,16 +687,16 @@ std::set<uint256> GetQuorumRelayMembers(const Consensus::LLMQParams& llmqParams,
     std::set<uint256> result;
 
     auto calcOutbound = [&](size_t i, const uint256& proTxHash) {
+        std::set<uint256> r;
         if (mns.size() == 1) {
             // No outbound connections are needed when there is one MN only.
             // Also note that trying to calculate results via the algorithm below
             // would result in an endless loop.
-            return std::set<uint256>();
+            return r;
         }
         // Relay to nodes at indexes (i+2^k)%n, where
         //   k: 0..max(1, floor(log2(n-1))-1)
         //   n: size of the quorum/ring
-        std::set<uint256> r;
         int gap = 1;
         int gap_max = (int)mns.size() - 1;
         int k = 0;

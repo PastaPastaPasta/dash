@@ -162,33 +162,34 @@ CPartialMerkleTree::CPartialMerkleTree() : nTransactions(0), fBad(true) {}
 
 uint256 CPartialMerkleTree::ExtractMatches(std::vector<uint256> &vMatch, std::vector<unsigned int> &vnIndex) {
     vMatch.clear();
+    uint256 hashMerkleRoot;
     // An empty set will not work
     if (nTransactions == 0)
-        return uint256();
+        return hashMerkleRoot;
     // check for excessively high numbers of transactions
     if (nTransactions > MaxBlockSize() / 60) // 60 is the lower bound for the size of a serialized CTransaction
-        return uint256();
+        return hashMerkleRoot;
     // there can never be more hashes provided than one for every txid
     if (vHash.size() > nTransactions)
-        return uint256();
+        return hashMerkleRoot;
     // there must be at least one bit per node in the partial tree, and at least one node per hash
     if (vBits.size() < vHash.size())
-        return uint256();
+        return hashMerkleRoot;
     // calculate height of tree
     int nHeight = 0;
     while (CalcTreeWidth(nHeight) > 1)
         nHeight++;
     // traverse the partial tree
     unsigned int nBitsUsed = 0, nHashUsed = 0;
-    uint256 hashMerkleRoot = TraverseAndExtract(nHeight, 0, nBitsUsed, nHashUsed, vMatch, vnIndex);
+    hashMerkleRoot = TraverseAndExtract(nHeight, 0, nBitsUsed, nHashUsed, vMatch, vnIndex);
     // verify that no problems occurred during the tree traversal
     if (fBad)
-        return uint256();
+        hashMerkleRoot.SetNull();
     // verify that all bits were consumed (except for the padding caused by serializing it as a byte sequence)
     if ((nBitsUsed+7)/8 != (vBits.size()+7)/8)
-        return uint256();
+        hashMerkleRoot.SetNull();
     // verify that all hashes were consumed
     if (nHashUsed != vHash.size())
-        return uint256();
+        hashMerkleRoot.SetNull();
     return hashMerkleRoot;
 }

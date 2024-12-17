@@ -4024,9 +4024,11 @@ MempoolAcceptResult ChainstateManager::ProcessTransaction(const CTransactionRef&
         state.Invalid(TxValidationResult::TX_NO_MEMPOOL, "no-mempool");
         return MempoolAcceptResult::Failure(state);
     }
-    auto result = AcceptToMemoryPool(active_chainstate, tx, GetTime(), bypass_limits, test_accept);
-    active_chainstate.GetMempool()->check(active_chainstate.CoinsTip(), active_chainstate.m_chain.Height() + 1);
-    return result;
+    return [&]() {
+        auto result = AcceptToMemoryPool(active_chainstate, tx, GetTime(), bypass_limits, test_accept);
+        active_chainstate.GetMempool()->check(active_chainstate.CoinsTip(), active_chainstate.m_chain.Height() + 1);
+        return result;
+    }();
 }
 
 bool TestBlockValidity(BlockValidationState& state,

@@ -799,11 +799,13 @@ static UniValue protx_register_common_wrapper(const JSONRPCRequest& request,
                 ptx.vchSig.clear();
                 SetTxPayload(tx, ptx);
 
-                UniValue ret(UniValue::VOBJ);
-                ret.pushKV("tx", EncodeHexTx(CTransaction(tx)));
-                ret.pushKV("collateralAddress", EncodeDestination(txDest));
-                ret.pushKV("signMessage", ptx.MakeSignString());
-                return ret;
+                return [&tx, &txDest, &ptx]() {
+                    UniValue ret(UniValue::VOBJ);
+                    ret.pushKV("tx", EncodeHexTx(CTransaction(tx)));
+                    ret.pushKV("collateralAddress", EncodeDestination(txDest));
+                    ret.pushKV("signMessage", ptx.MakeSignString());
+                    return ret;
+                }();
             } else {
                 {
                     LOCK(pwallet->cs_wallet);
@@ -1282,11 +1284,13 @@ static bool CheckWalletOwnsKey(const CWallet* const pwallet, const CKeyID& keyID
 
 static UniValue BuildDMNListEntry(const CWallet* const pwallet, const CDeterministicMN& dmn, CMasternodeMetaMan& mn_metaman, bool detailed, const ChainstateManager& chainman, const CBlockIndex* pindex = nullptr)
 {
+    UniValue o;
     if (!detailed) {
-        return dmn.proTxHash.ToString();
+        o = dmn.proTxHash.ToString();
+        return o;
     }
 
-    UniValue o = dmn.ToJson();
+    o = dmn.ToJson();
 
     CTransactionRef collateralTx{nullptr};
     int confirmations = GetUTXOConfirmations(chainman.ActiveChainstate(), dmn.collateralOutpoint);

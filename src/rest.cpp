@@ -164,8 +164,10 @@ static std::string AvailableDataFormatsString()
         }
     }
 
-    if (formats.length() > 0)
-        return formats.substr(0, formats.length() - 2);
+    if (!formats.empty()) {
+        // Remove the trailing ", " if the string is not empty
+        formats.erase(formats.length() - 2);
+    }
 
     return formats;
 }

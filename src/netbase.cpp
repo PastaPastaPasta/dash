@@ -56,6 +56,8 @@ std::vector<CNetAddr> WrappedGetAddrInfo(const std::string& name, bool allow_loo
     // hostname lookups.
     ai_hint.ai_flags = allow_lookup ? AI_ADDRCONFIG : AI_NUMERICHOST;
 
+    std::vector<CNetAddr> resolved_addresses;
+
     addrinfo* ai_res{nullptr};
     const int n_err{getaddrinfo(name.c_str(), nullptr, &ai_hint, &ai_res)};
     if (n_err != 0) {
@@ -65,16 +67,15 @@ std::vector<CNetAddr> WrappedGetAddrInfo(const std::string& name, bool allow_loo
             ai_hint.ai_flags = (ai_hint.ai_flags & ~AI_ADDRCONFIG);
             const int n_err_retry{getaddrinfo(name.c_str(), nullptr, &ai_hint, &ai_res)};
             if (n_err_retry != 0) {
-                return {};
+                return resolved_addresses;
             }
         } else {
-            return {};
+            return resolved_addresses;
         }
     }
 
     // Traverse the linked list starting with ai_trav.
     addrinfo* ai_trav{ai_res};
-    std::vector<CNetAddr> resolved_addresses;
     while (ai_trav != nullptr) {
         if (ai_trav->ai_family == AF_INET) {
             assert(ai_trav->ai_addrlen >= sizeof(sockaddr_in));
@@ -144,19 +145,18 @@ std::vector<std::string> GetNetworkNames(bool append_unroutable)
 
 static std::vector<CNetAddr> LookupIntern(const std::string& name, unsigned int nMaxSolutions, bool fAllowLookup, DNSLookupFn dns_lookup_function)
 {
-    if (!ValidAsCString(name)) return {};
-    {
-        CNetAddr addr;
-        // From our perspective, onion addresses are not hostnames but rather
-        // direct encodings of CNetAddr much like IPv4 dotted-decimal notation
-        // or IPv6 colon-separated hextet notation. Since we can't use
-        // getaddrinfo to decode them and it wouldn't make sense to resolve
-        // them, we return a network address representing it instead. See
-        // CNetAddr::SetSpecial(const std::string&) for more details.
-        if (addr.SetSpecial(name)) return {addr};
-    }
-
     std::vector<CNetAddr> addresses;
+    if (!ValidAsCString(name)) return addresses;
+    // From our perspective, onion addresses are not hostnames but rather
+    // direct encodings of CNetAddr much like IPv4 dotted-decimal notation
+    // or IPv6 colon-separated hextet notation. Since we can't use
+    // getaddrinfo to decode them and it wouldn't make sense to resolve
+    // them, we return a network address representing it instead. See
+    // CNetAddr::SetSpecial(const std::string&) for more details.
+    if (CNetAddr addr; addr.SetSpecial(name)) {
+        addresses.push_back(addr);
+        return addresses;
+    }
 
     for (const CNetAddr& resolved : dns_lookup_function(name, fAllowLookup)) {
         if (nMaxSolutions > 0 && addresses.size() >= nMaxSolutions) {
@@ -191,16 +191,16 @@ std::optional<CNetAddr> LookupHost(const std::string& name, bool fAllowLookup, D
 
 std::vector<CService> Lookup(const std::string& name, uint16_t portDefault, bool fAllowLookup, unsigned int nMaxSolutions, DNSLookupFn dns_lookup_function)
 {
+    std::vector<CService> services;
     if (name.empty() || !ValidAsCString(name)) {
-        return {};
+        return services;
     }
     uint16_t port{portDefault};
     std::string hostname;
     SplitHostPort(name, port, hostname);
 
     const std::vector<CNetAddr> addresses{LookupIntern(hostname, nMaxSolutions, fAllowLookup, dns_lookup_function)};
-    if (addresses.empty()) return {};
-    std::vector<CService> services;
+    if (addresses.empty()) return services;
     services.reserve(addresses.size());
     for (const auto& addr : addresses)
         services.emplace_back(addr, port);
@@ -472,24 +472,26 @@ std::unique_ptr<Sock> CreateSockTCP(const CService& address_family)
     // Create a sockaddr from the specified service.
     struct sockaddr_storage sockaddr;
     socklen_t len = sizeof(sockaddr);
+    std::unique_ptr<Sock> sock{nullptr};
     if (!address_family.GetSockAddr((struct sockaddr*)&sockaddr, &len)) {
         LogPrintf("Cannot create socket for %s: unsupported network\n", address_family.ToStringAddrPort());
-        return nullptr;
+        return sock;
     }
 
     // Create a TCP socket in the address family of the specified service.
     SOCKET hSocket = socket(((struct sockaddr*)&sockaddr)->sa_family, SOCK_STREAM, IPPROTO_TCP);
     if (hSocket == INVALID_SOCKET) {
-        return nullptr;
+        return sock;
     }
 
-    auto sock = std::make_unique<Sock>(hSocket);
+    sock = std::make_unique<Sock>(hSocket);
 
     // Ensure that waiting for I/O on this socket won't result in undefined
     // behavior.
     if (!IsSelectableSocket(sock->Get())) {
         LogPrintf("Cannot create connection: non-selectable socket created (fd >= FD_SETSIZE ?)\n");
-        return nullptr;
+        sock = nullptr;
+        return sock;
     }
 
 #ifdef SO_NOSIGPIPE
@@ -511,7 +513,8 @@ std::unique_ptr<Sock> CreateSockTCP(const CService& address_family)
     // Set the non-blocking option on the socket.
     if (!SetSocketNonBlocking(sock->Get())) {
         LogPrintf("Error setting socket to non-blocking: %s\n", NetworkErrorString(WSAGetLastError()));
-        return nullptr;
+        sock = nullptr;
+        return sock;
     }
     return sock;
 }

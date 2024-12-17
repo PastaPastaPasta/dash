@@ -213,7 +213,7 @@ std::vector<bool> DecodeAsmap(fs::path path)
     }
     if (!SanityCheckASMap(bits, 128)) {
         LogPrintf("Sanity check of asmap file %s failed\n", fs::quoted(fs::PathToString(path)));
-        return {};
+        bits.clear();
     }
     return bits;
 }

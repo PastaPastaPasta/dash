@@ -32,20 +32,22 @@
 
 SecureString CMnemonic::Generate(int strength)
 {
+    SecureString mnemonic;
     if (strength % 32 || strength < 128 || strength > 256) {
-        return SecureString();
+        return mnemonic;
     }
     SecureVector data(32);
     GetStrongRandBytes({data.data(), 32});
-    SecureString mnemonic = FromData(data, strength / 8);
+    mnemonic = FromData(data, strength / 8);
     return mnemonic;
 }
 
 // SecureString CMnemonic::FromData(const uint8_t *data, int len)
 SecureString CMnemonic::FromData(const SecureVector& data, int len)
 {
+    SecureString mnemonic;
     if (len % 4 || len < 16 || len > 32) {
-        return SecureString();
+        return mnemonic;
     }
 
     SecureVector checksum(32);
@@ -58,7 +60,6 @@ SecureString CMnemonic::FromData(const SecureVector& data, int len)
     bits.push_back(checksum[0]);
 
     int mlen = len * 3 / 4;
-    SecureString mnemonic;
 
     for (int i = 0; i < mlen; i++) {
         int idx = 0;

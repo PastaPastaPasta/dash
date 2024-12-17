@@ -276,7 +276,7 @@ public:
         FeeCalculation fee_calc_out;
         if (!m_wallet->CreateTransaction(recipients, tx, fee, change_pos,
                 fail_reason, coin_control, fee_calc_out, sign)) {
-            return {};
+            tx = nullptr;
         }
         return tx;
     }

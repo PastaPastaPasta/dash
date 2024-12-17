@@ -254,10 +254,10 @@ static std::vector<CAddress> ConvertSeeds(const std::vector<uint8_t> &vSeedsIn)
 CService GetLocalAddress(const CNode& peer)
 {
     CService addr;
-    if (GetLocal(addr, peer)) {
-        return addr;
+    if (!GetLocal(addr, peer)) {
+        addr = CService{CNetAddr(), GetListenPort()};
     }
-    return CService{CNetAddr(), GetListenPort()};
+    return addr;
 }
 
 static int GetnScore(const CService& addr)
@@ -1652,22 +1652,27 @@ CNetMessage V2Transport::GetReceivedMessage(std::chrono::microseconds time, bool
 {
     AssertLockNotHeld(m_recv_mutex);
     LOCK(m_recv_mutex);
-    if (m_recv_state == RecvState::V1) return m_v1_fallback.GetReceivedMessage(time, reject_message);
+
+    CNetMessage result{CDataStream(m_recv_type, m_recv_version)}; // Named return variable for NRVO
+
+    if (m_recv_state == RecvState::V1) {
+        result = m_v1_fallback.GetReceivedMessage(time, reject_message); // Assign to result
+        return result;
+    }
 
     Assume(m_recv_state == RecvState::APP_READY);
     Span<const uint8_t> contents{m_recv_decode_buffer};
     auto msg_type = GetMessageType(contents);
-    CDataStream ret(m_recv_type, m_recv_version);
-    CNetMessage msg{std::move(ret)};
-    // Note that BIP324Cipher::EXPANSION also includes the length descriptor size.
-    msg.m_raw_message_size = m_recv_decode_buffer.size() + BIP324Cipher::EXPANSION;
+
+    result.m_raw_message_size = m_recv_decode_buffer.size() + BIP324Cipher::EXPANSION;
+
     if (msg_type) {
         reject_message = false;
-        msg.m_type = std::move(*msg_type);
-        msg.m_time = time;
-        msg.m_message_size = contents.size();
-        msg.m_recv.resize(contents.size());
-        std::copy(contents.begin(), contents.end(), UCharCast(msg.m_recv.data()));
+        result.m_type = std::move(*msg_type);
+        result.m_time = time;
+        result.m_message_size = contents.size();
+        result.m_recv.resize(contents.size());
+        std::copy(contents.begin(), contents.end(), UCharCast(result.m_recv.data()));
     } else {
         LogPrint(BCLog::NET, "V2 transport error: invalid message type (%u bytes contents), peer=%d\n", m_recv_decode_buffer.size(), m_nodeid);
         reject_message = true;
@@ -1675,7 +1680,7 @@ CNetMessage V2Transport::GetReceivedMessage(std::chrono::microseconds time, bool
     ClearShrink(m_recv_decode_buffer);
     SetReceiveState(RecvState::APP);
 
-    return msg;
+    return result;
 }
 
 bool V2Transport::SetMessageToSend(CSerializedNetMsg& msg) noexcept
@@ -1779,9 +1784,12 @@ Transport::Info V2Transport::GetInfo() const noexcept
 {
     AssertLockNotHeld(m_recv_mutex);
     LOCK(m_recv_mutex);
-    if (m_recv_state == RecvState::V1) return m_v1_fallback.GetInfo();
-
     Transport::Info info;
+
+    if (m_recv_state == RecvState::V1) {
+        info = m_v1_fallback.GetInfo();
+        return info;
+    }
 
     // Do not report v2 and session ID until the version packet has been received
     // and verified (confirming that the other side very likely has the same keys as us).
@@ -3811,9 +3819,9 @@ void CConnman::ThreadOpenMasternodeConnections(CDeterministicMNManager& dmnman, 
         auto getConnectToDmn = [&]() -> CDeterministicMNCPtr {
             // don't hold lock while calling OpenMasternodeConnection as cs_main is locked deep inside
             LOCK2(m_nodes_mutex, cs_vPendingMasternodes);
-
+            CDeterministicMNCPtr dmn{nullptr};
             if (!vPendingMasternodes.empty()) {
-                auto dmn = mnList.GetValidMN(vPendingMasternodes.front());
+                dmn = mnList.GetValidMN(vPendingMasternodes.front());
                 vPendingMasternodes.erase(vPendingMasternodes.begin());
                 if (dmn && !connectedNodes.count(dmn->pdmnState->addr) && !IsMasternodeOrDisconnectRequested(dmn->pdmnState->addr)) {
                     LogPrint(BCLog::NET_NETCONN, "CConnman::%s -- opening pending masternode connection to %s, service=%s\n", _func_, dmn->proTxHash.ToString(), dmn->pdmnState->addr.ToStringAddrPort());
@@ -3823,7 +3831,7 @@ void CConnman::ThreadOpenMasternodeConnections(CDeterministicMNManager& dmnman, 
 
             if (const auto pending = getPendingQuorumNodes(); !pending.empty()) {
                 // not-null
-                auto dmn = pending[GetRand(pending.size())];
+                dmn = pending[GetRand(pending.size())];
                 LogPrint(BCLog::NET_NETCONN, "CConnman::%s -- opening quorum connection to %s, service=%s\n",
                          _func_, dmn->proTxHash.ToString(), dmn->pdmnState->addr.ToStringAddrPort());
                 return dmn;
@@ -3831,14 +3839,15 @@ void CConnman::ThreadOpenMasternodeConnections(CDeterministicMNManager& dmnman, 
 
             if (const auto pending = getPendingProbes(); !pending.empty()) {
                 // not-null
-                auto dmn = pending[GetRand(pending.size())];
+                dmn = pending[GetRand(pending.size())];
                 masternodePendingProbes.erase(dmn->proTxHash);
                 isProbe = MasternodeProbeConn::IsConnection;
 
                 LogPrint(BCLog::NET_NETCONN, "CConnman::%s -- probing masternode %s, service=%s\n", _func_, dmn->proTxHash.ToString(), dmn->pdmnState->addr.ToStringAddrPort());
                 return dmn;
             }
-            return nullptr;
+            dmn = nullptr;
+            return dmn;
         };
 
         CDeterministicMNCPtr connectToDmn = getConnectToDmn();
@@ -4674,12 +4683,12 @@ std::set<NodeId> CConnman::GetMasternodeQuorumNodes(Consensus::LLMQType llmqType
 {
     LOCK2(m_nodes_mutex, cs_vPendingMasternodes);
     auto it = masternodeQuorumNodes.find(std::make_pair(llmqType, quorumHash));
+    std::set<NodeId> nodes;
     if (it == masternodeQuorumNodes.end()) {
-        return {};
+        return nodes;
     }
     const auto& proRegTxHashes = it->second;
 
-    std::set<NodeId> nodes;
     for (const auto pnode : m_nodes) {
         if (pnode->fDisconnect) {
             continue;

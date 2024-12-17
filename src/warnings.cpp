@@ -54,7 +54,7 @@ bilingual_str GetWarnings(bool verbose)
     }
 
     if (verbose) {
-        return Join(warnings_verbose, Untranslated("<hr />"));
+        warnings_concise = Join(warnings_verbose, Untranslated("<hr />"));
     }
 
     return warnings_concise;

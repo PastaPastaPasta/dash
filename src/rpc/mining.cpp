@@ -879,6 +879,7 @@ static RPCHelpMan getblocktemplate()
     aMutable.push_back("transactions");
     aMutable.push_back("prevblock");
 
+    return [&]() {
     UniValue result(UniValue::VOBJ);
     result.pushKV("capabilities", aCaps);
 
@@ -990,6 +991,7 @@ static RPCHelpMan getblocktemplate()
     result.pushKV("coinbase_payload", HexStr(pblock->vtx[0]->vExtraPayload));
 
     return result;
+    }();
 },
     };
 }

@@ -175,21 +175,20 @@ static RPCHelpMan spork()
     std:: string strCommand = request.params[0].get_str();
     const NodeContext& node = EnsureAnyNodeContext(request.context);
     CHECK_NONFATAL(node.sporkman);
+    UniValue ret(UniValue::VOBJ);
     if (strCommand == "show") {
-        UniValue ret(UniValue::VOBJ);
         for (const auto& sporkDef : sporkDefs) {
             ret.pushKV(std::string(sporkDef.name), node.sporkman->GetSporkValue(sporkDef.sporkId));
         }
         return ret;
     } else if(strCommand == "active"){
-        UniValue ret(UniValue::VOBJ);
         for (const auto& sporkDef : sporkDefs) {
             ret.pushKV(std::string(sporkDef.name), node.sporkman->IsSporkActive(sporkDef.sporkId));
         }
         return ret;
     }
-
-    return NullUniValue;
+    ret = NullUniValue;
+    return ret;
 },
     };
 }

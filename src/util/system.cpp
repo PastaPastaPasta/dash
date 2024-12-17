@@ -281,10 +281,10 @@ const std::set<std::string> ArgsManager::GetUnsuitableSectionOnlyArgs() const
     LOCK(cs_args);
 
     // if there's no section selected, don't worry
-    if (m_network.empty()) return std::set<std::string> {};
+    if (m_network.empty()) return unsuitables;
 
     // if it's okay to use the default section for this network, don't worry
-    if (m_network == CBaseChainParams::MAIN) return std::set<std::string> {};
+    if (m_network == CBaseChainParams::MAIN) return unsuitables;
 
     for (const auto& arg : m_network_only_args) {
         if (OnlyHasDefaultSectionSetting(m_settings, m_network, SettingName(arg))) {

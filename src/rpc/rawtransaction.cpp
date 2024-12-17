@@ -272,10 +272,12 @@ static RPCHelpMan getrawtransaction()
     const LLMQContext& llmq_ctx = EnsureLLMQContext(node);
     const CTxMemPool& mempool = EnsureMemPool(node);
 
-    UniValue result(UniValue::VOBJ);
-    if (blockindex) result.pushKV("in_active_chain", in_active_chain);
-    TxToJSON(*tx, hash_block, mempool, chainman.ActiveChainstate(), *llmq_ctx.clhandler, *llmq_ctx.isman, result);
-    return result;
+    return [&] () {
+        UniValue result(UniValue::VOBJ);
+        if (blockindex) result.pushKV("in_active_chain", in_active_chain);
+        TxToJSON(*tx, hash_block, mempool, chainman.ActiveChainstate(), *llmq_ctx.clhandler, *llmq_ctx.isman, result);
+        return result;
+    }();
 },
     };
 }

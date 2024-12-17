@@ -207,10 +207,11 @@ CCreditPool CCreditPoolManager::ConstructCreditPool(const gsl::not_null<const CB
             strprintf("Negative limit for CreditPool: %d.%08d\n", currentLimit / COIN, currentLimit % COIN));
     }
 
-    CCreditPool pool{locked, currentLimit, latelyUnlocked, indexes};
-    AddToCache(block_index->GetBlockHash(), block_index->nHeight, pool);
-    return pool;
-
+    return [&]() {
+        CCreditPool pool{locked, currentLimit, latelyUnlocked, indexes};
+        AddToCache(block_index->GetBlockHash(), block_index->nHeight, pool);
+        return pool;
+    }();
 }
 
 CCreditPool CCreditPoolManager::GetCreditPool(const CBlockIndex* block_index, const Consensus::Params& consensusParams)

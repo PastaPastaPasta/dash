@@ -105,7 +105,7 @@ CDeterministicMNCPtr CDeterministicMNList::GetValidMN(const uint256& proTxHash) 
 {
     auto dmn = GetMN(proTxHash);
     if (dmn && !IsMNValid(*dmn)) {
-        return nullptr;
+        dmn = nullptr;
     }
     return dmn;
 }
@@ -129,7 +129,7 @@ CDeterministicMNCPtr CDeterministicMNList::GetValidMNByCollateral(const COutPoin
 {
     auto dmn = GetMNByCollateral(collateralOutpoint);
     if (dmn && !IsMNValid(*dmn)) {
-        return nullptr;
+        dmn = nullptr;
     }
     return dmn;
 }
@@ -176,15 +176,15 @@ static bool CompareByLastPaid(const CDeterministicMN* _a, const CDeterministicMN
 
 CDeterministicMNCPtr CDeterministicMNList::GetMNPayee(gsl::not_null<const CBlockIndex*> pindexPrev) const
 {
+    CDeterministicMNCPtr best = nullptr;
     if (mnMap.size() == 0) {
-        return nullptr;
+        return best;
     }
 
     const bool isv19Active{DeploymentActiveAfter(pindexPrev, Params().GetConsensus(), Consensus::DEPLOYMENT_V19)};
     const bool isMNRewardReallocation{DeploymentActiveAfter(pindexPrev, Params().GetConsensus(), Consensus::DEPLOYMENT_MN_RR)};
     // EvoNodes are rewarded 4 blocks in a row until MNRewardReallocation (Platform release)
     // For optimization purposes we also check if v19 active to avoid loop over all masternodes
-    CDeterministicMNCPtr best = nullptr;
     if (isv19Active && !isMNRewardReallocation) {
         ForEachMNShared(true, [&](const CDeterministicMNCPtr& dmn) {
             if (dmn->pdmnState->nLastPaidHeight == nHeight) {
@@ -213,15 +213,15 @@ CDeterministicMNCPtr CDeterministicMNList::GetMNPayee(gsl::not_null<const CBlock
 
 std::vector<CDeterministicMNCPtr> CDeterministicMNList::GetProjectedMNPayees(gsl::not_null<const CBlockIndex* const> pindexPrev, int nCount) const
 {
+    std::vector<CDeterministicMNCPtr> result;
     if (nCount < 0 ) {
-        return {};
+        return result;
     }
     const bool isMNRewardReallocation = DeploymentActiveAfter(pindexPrev, Params().GetConsensus(),
                                                               Consensus::DEPLOYMENT_MN_RR);
     const auto weighted_count = isMNRewardReallocation ? GetValidMNsCount() : GetValidWeightedMNsCount();
     nCount = std::min(nCount, int(weighted_count));
 
-    std::vector<CDeterministicMNCPtr> result;
     result.reserve(weighted_count);
 
     int remaining_evo_payments{0};
@@ -1521,20 +1521,21 @@ static bool CheckHashSig(const ProTx& proTx, const CBLSPublicKey& pubKey, TxVali
 template<typename ProTx>
 static std::optional<ProTx> GetValidatedPayload(const CTransaction& tx, gsl::not_null<const CBlockIndex*> pindexPrev, TxValidationState& state)
 {
+    std::optional<ProTx> opt_ptx{std::nullopt};
     if (tx.nType != ProTx::SPECIALTX_TYPE) {
         state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-type");
-        return std::nullopt;
+        return opt_ptx;
     }
 
-    auto opt_ptx = GetTxPayload<ProTx>(tx);
-    if (!opt_ptx) {
+    opt_ptx = GetTxPayload<ProTx>(tx);
+    if (opt_ptx == std::nullopt) {
         state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-payload");
-        return std::nullopt;
+        return opt_ptx;
     }
     const bool is_basic_scheme_active{DeploymentActiveAfter(pindexPrev, Params().GetConsensus(), Consensus::DEPLOYMENT_V19)};
     if (!opt_ptx->IsTriviallyValid(is_basic_scheme_active, state)) {
         // pass the state returned by the function above
-        return std::nullopt;
+        opt_ptx = std::nullopt;
     }
     return opt_ptx;
 }

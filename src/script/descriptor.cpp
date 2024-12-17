@@ -135,9 +135,11 @@ std::string DescriptorChecksum(const Span<const char>& span)
     for (int j = 0; j < 8; ++j) c = PolyMod(c, 0); // Shift further to determine the checksum.
     c ^= 1; // Prevent appending zeroes from not affecting the checksum.
 
-    std::string ret(8, ' ');
-    for (int j = 0; j < 8; ++j) ret[j] = CHECKSUM_CHARSET[(c >> (5 * (7 - j))) & 31];
-    return ret;
+    return [&]() {
+        std::string ret(8, ' ');
+        for (int j = 0; j < 8; ++j) ret[j] = CHECKSUM_CHARSET[(c >> (5 * (7 - j))) & 31];
+        return ret;
+    }();
 }
 
 std::string AddChecksum(const std::string& str) { return str + "#" + DescriptorChecksum(str); }
@@ -1042,14 +1044,23 @@ std::unique_ptr<DescriptorImpl> ParseScript(uint32_t& key_exp_index, Span<const 
     return nullptr;
 }
 
-std::unique_ptr<PubkeyProvider> InferPubkey(const CPubKey& pubkey, ParseScriptContext, const SigningProvider& provider)
+std::unique_ptr<PubkeyProvider> InferPubkey(
+    const CPubKey& pubkey, 
+    ParseScriptContext context, 
+    const SigningProvider& provider)
 {
-    std::unique_ptr<PubkeyProvider> key_provider = std::make_unique<ConstPubkeyProvider>(0, pubkey);
     KeyOriginInfo info;
     if (provider.GetKeyOrigin(pubkey.GetID(), info)) {
-        return std::make_unique<OriginPubkeyProvider>(0, std::move(info), std::move(key_provider));
+        // Directly return the OriginPubkeyProvider if key origin info is available
+        return std::make_unique<OriginPubkeyProvider>(
+            0, 
+            std::move(info), 
+            std::make_unique<ConstPubkeyProvider>(0, pubkey)
+        );
     }
-    return key_provider;
+    
+    // Directly return the ConstPubkeyProvider if key origin info is not available
+    return std::make_unique<ConstPubkeyProvider>(0, pubkey);
 }
 
 std::unique_ptr<DescriptorImpl> InferScript(const CScript& script, ParseScriptContext ctx, const SigningProvider& provider)
@@ -1153,7 +1164,7 @@ std::string GetDescriptorChecksum(const std::string& descriptor)
     std::string ret;
     std::string error;
     Span<const char> sp{descriptor};
-    if (!CheckChecksum(sp, false, error, &ret)) return "";
+    if (!CheckChecksum(sp, false, error, &ret)) ret = "";
     return ret;
 }
 

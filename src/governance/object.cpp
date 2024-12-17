@@ -192,17 +192,18 @@ void CGovernanceObject::ClearMasternodeVotes(const CDeterministicMNList& tip_mn_
 
 std::set<uint256> CGovernanceObject::RemoveInvalidVotes(const CDeterministicMNList& tip_mn_list, const COutPoint& mnOutpoint)
 {
+    std::set<uint256> removedVotes{};
     LOCK(cs);
 
     auto it = mapCurrentMNVotes.find(mnOutpoint);
     if (it == mapCurrentMNVotes.end()) {
         // don't even try as we don't have any votes from this MN
-        return {};
+        return removedVotes;
     }
 
-    auto removedVotes = fileVotes.RemoveInvalidVotes(tip_mn_list, mnOutpoint, m_obj.type == GovernanceObject::PROPOSAL);
+    removedVotes = fileVotes.RemoveInvalidVotes(tip_mn_list, mnOutpoint, m_obj.type == GovernanceObject::PROPOSAL);
     if (removedVotes.empty()) {
-        return {};
+        return removedVotes;
     }
 
     auto nParentHash = GetHash();

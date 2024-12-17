@@ -842,14 +842,16 @@ std::unique_ptr<BerkeleyDatabase> MakeBerkeleyDatabase(const fs::path& path, con
         if (env->m_databases.count(data_filename)) {
             error = Untranslated(strprintf("Refusing to load database. Data file '%s' is already loaded.", fs::PathToString(env->Directory() / data_filename)));
             status = DatabaseStatus::FAILED_ALREADY_LOADED;
-            return nullptr;
+            db = nullptr;
+            return db;
         }
         db = std::make_unique<BerkeleyDatabase>(std::move(env), std::move(data_filename));
     }
 
     if (options.verify && !db->Verify(error)) {
         status = DatabaseStatus::FAILED_VERIFY;
-        return nullptr;
+        db = nullptr;
+        return db;
     }
 
     status = DatabaseStatus::SUCCESS;

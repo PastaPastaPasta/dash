@@ -55,26 +55,28 @@ static std::shared_ptr<CWallet> MakeWallet(const std::string& name, const fs::pa
     DatabaseStatus status;
     bilingual_str error;
     std::unique_ptr<WalletDatabase> database = MakeDatabase(path, options, status, error);
+    std::shared_ptr<CWallet> wallet_instance{nullptr};
     if (!database) {
         tfm::format(std::cerr, "%s\n", error.original);
-        return nullptr;
+        return wallet_instance;
     }
 
     // dummy chain interface
-    std::shared_ptr<CWallet> wallet_instance{new CWallet(/*chain=*/ nullptr, /*coinjoin_loader=*/ nullptr, name, std::move(database)), WalletToolReleaseWallet};
+    wallet_instance = std::make_shared<CWallet>(/*chain=*/ nullptr, /*coinjoin_loader=*/ nullptr, name, std::move(database)), WalletToolReleaseWallet;
     DBErrors load_wallet_ret;
     try {
         load_wallet_ret = wallet_instance->LoadWallet();
     } catch (const std::runtime_error&) {
         tfm::format(std::cerr, "Error loading %s. Is wallet being used by another process?\n", name);
-        return nullptr;
+        wallet_instance = nullptr;
+        return wallet_instance;
     }
 
     if (load_wallet_ret != DBErrors::LOAD_OK) {
         wallet_instance = nullptr;
         if (load_wallet_ret == DBErrors::CORRUPT) {
             tfm::format(std::cerr, "Error loading %s: Wallet corrupted", name);
-            return nullptr;
+            return wallet_instance;
         } else if (load_wallet_ret == DBErrors::NONCRITICAL_ERROR) {
             tfm::format(std::cerr, "Error reading %s! All keys read correctly, but transaction data"
                             " or address book entries might be missing or incorrect.",
@@ -82,13 +84,13 @@ static std::shared_ptr<CWallet> MakeWallet(const std::string& name, const fs::pa
         } else if (load_wallet_ret == DBErrors::TOO_NEW) {
             tfm::format(std::cerr, "Error loading %s: Wallet requires newer version of %s",
                 name, PACKAGE_NAME);
-            return nullptr;
+            return wallet_instance;
         } else if (load_wallet_ret == DBErrors::NEED_REWRITE) {
             tfm::format(std::cerr, "Wallet needed to be rewritten: restart %s to complete", PACKAGE_NAME);
-            return nullptr;
+            return wallet_instance;
         } else {
             tfm::format(std::cerr, "Error loading %s", name);
-            return nullptr;
+            return wallet_instance;
         }
     }
 

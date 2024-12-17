@@ -92,12 +92,12 @@ public:
     template<typename Message>
     std::vector<std::pair<NodeId, std::shared_ptr<Message>>> PopAndDeserializeMessages(size_t maxCount)
     {
+        std::vector<std::pair<NodeId, std::shared_ptr<Message>>> ret{};
         auto binaryMessages = PopPendingMessages(maxCount);
         if (binaryMessages.empty()) {
-            return {};
+            return ret;
         }
 
-        std::vector<std::pair<NodeId, std::shared_ptr<Message>>> ret;
         ret.reserve(binaryMessages.size());
         for (const auto& bm : binaryMessages) {
             auto msg = std::make_shared<Message>();

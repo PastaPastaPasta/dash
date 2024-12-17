@@ -95,12 +95,12 @@ MessageProcessingResult CEHFSignalsHandler::HandleNewRecoveredSig(const CRecover
         g_txindex->BlockUntilSyncedToCurrentChain();
     }
 
+    MessageProcessingResult ret;
     if (WITH_LOCK(cs, return ids.find(recoveredSig.getId()) == ids.end())) {
         // Do nothing, it's not for this handler
-        return {};
+        return ret;
     }
 
-    MessageProcessingResult ret;
     const auto ehfSignals = mnhfman.GetSignalsStage(WITH_LOCK(cs_main, return m_chainman.ActiveTip()));
     MNHFTxPayload mnhfPayload;
     for (const auto& deployment : Params().GetConsensus().vDeployments) {

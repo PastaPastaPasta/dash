@@ -1184,8 +1184,9 @@ std::optional<CInv> CDKGSession::ReceiveMessage(const CDKGPrematureCommitment& q
 
 std::vector<CFinalCommitment> CDKGSession::FinalizeCommitments()
 {
+    std::vector<CFinalCommitment> finalCommitments;
     if (!AreWeMember()) {
-        return {};
+        return finalCommitments;
     }
 
     CDKGLogger logger(*this, __func__, __LINE__);
@@ -1214,7 +1215,6 @@ std::vector<CFinalCommitment> CDKGSession::FinalizeCommitments()
         }
     }
 
-    std::vector<CFinalCommitment> finalCommitments;
     for (const auto& p : commitmentsMap) {
         const auto& cvec = p.second;
         if (cvec.size() < size_t(params.minSize)) {

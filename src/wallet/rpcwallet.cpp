@@ -561,36 +561,37 @@ static RPCHelpMan listaddressgroupings()
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
+    UniValue result;
+
     std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
-    if (!pwallet) return NullUniValue;
+    if (!pwallet) {
+        result = NullUniValue;
+    } else {
+        pwallet->BlockUntilSyncedToCurrentChain();
+        LOCK(pwallet->cs_wallet);
 
-    // Make sure the results are valid at least up to the most recent block
-    // the user could have gotten from another RPC command prior to now
-    pwallet->BlockUntilSyncedToCurrentChain();
-
-    LOCK(pwallet->cs_wallet);
-
-    UniValue jsonGroupings(UniValue::VARR);
-    std::map<CTxDestination, CAmount> balances = pwallet->GetAddressBalances();
-    for (const std::set<CTxDestination>& grouping : pwallet->GetAddressGroupings()) {
-        UniValue jsonGrouping(UniValue::VARR);
-        for (const CTxDestination& address : grouping)
-        {
-            UniValue addressInfo(UniValue::VARR);
-            addressInfo.push_back(EncodeDestination(address));
-            addressInfo.push_back(ValueFromAmount(balances[address]));
+        result = UniValue(UniValue::VARR);
+        std::map<CTxDestination, CAmount> balances = pwallet->GetAddressBalances();
+        for (const std::set<CTxDestination>& grouping : pwallet->GetAddressGroupings()) {
+            UniValue jsonGrouping(UniValue::VARR);
+            for (const CTxDestination& address : grouping)
             {
+                UniValue addressInfo(UniValue::VARR);
+                addressInfo.push_back(EncodeDestination(address));
+                addressInfo.push_back(ValueFromAmount(balances[address]));
                 const auto* address_book_entry = pwallet->FindAddressBookEntry(address);
                 if (address_book_entry) {
                     addressInfo.push_back(address_book_entry->GetLabel());
                 }
+                jsonGrouping.push_back(addressInfo);
             }
-            jsonGrouping.push_back(addressInfo);
+            result.push_back(jsonGrouping);
         }
-        jsonGroupings.push_back(jsonGrouping);
     }
-    return jsonGroupings;
-},
+
+    return result;
+}
+,
     };
 }
 
@@ -627,6 +628,7 @@ static RPCHelpMan listaddressbalances()
     if (nMinAmount < 0)
         throw JSONRPCError(RPC_TYPE_ERROR, "Invalid amount");
 
+    return [&]() {
     UniValue jsonBalances(UniValue::VOBJ);
     std::map<CTxDestination, CAmount> balances = pwallet->GetAddressBalances();
     for (auto& balance : balances)
@@ -634,6 +636,7 @@ static RPCHelpMan listaddressbalances()
             jsonBalances.pushKV(EncodeDestination(balance.first), ValueFromAmount(balance.second));
 
     return jsonBalances;
+    }();
 },
     };
 }
@@ -1066,11 +1069,13 @@ RPCHelpMan addmultisigaddress()
     // Make the descriptor
     std::unique_ptr<Descriptor> descriptor = InferDescriptor(GetScriptForDestination(dest), spk_man);
 
-    UniValue result(UniValue::VOBJ);
-    result.pushKV("address", EncodeDestination(dest));
-    result.pushKV("redeemScript", HexStr(inner));
-    result.pushKV("descriptor", descriptor->ToString());
-    return result;
+    return [&]() {
+        UniValue result(UniValue::VOBJ);
+        result.pushKV("address", EncodeDestination(dest));
+        result.pushKV("redeemScript", HexStr(inner));
+        result.pushKV("descriptor", descriptor->ToString());
+        return result;
+    }();
 },
     };
 }
@@ -1565,9 +1570,11 @@ static RPCHelpMan listtransactions()
         nCount = ret.size() - nFrom;
 
     const std::vector<UniValue>& txs = ret.getValues();
-    UniValue result{UniValue::VARR};
-    result.push_backV({ txs.rend() - nFrom - nCount, txs.rend() - nFrom }); // Return oldest to newest
-    return result;
+    return [&]() {
+        UniValue result{UniValue::VARR};
+        result.push_backV({ txs.rend() - nFrom - nCount, txs.rend() - nFrom }); // Return oldest to newest
+        return result;
+    }();
 },
     };
 }
@@ -1702,12 +1709,14 @@ static RPCHelpMan listsinceblock()
     target_confirms = std::min(target_confirms, wallet.GetLastBlockHeight() + 1);
     CHECK_NONFATAL(wallet.chain().findAncestorByHeight(wallet.GetLastBlockHash(), wallet.GetLastBlockHeight() + 1 - target_confirms, FoundBlock().hash(lastblock)));
 
-    UniValue ret(UniValue::VOBJ);
-    ret.pushKV("transactions", transactions);
-    if (include_removed) ret.pushKV("removed", removed);
-    ret.pushKV("lastblock", lastblock.GetHex());
+    return [&]() {
+        UniValue ret(UniValue::VOBJ);
+        ret.pushKV("transactions", transactions);
+        if (include_removed) ret.pushKV("removed", removed);
+        ret.pushKV("lastblock", lastblock.GetHex());
 
-    return ret;
+        return ret;
+    }();
 },
     };
 }
@@ -1768,8 +1777,11 @@ static RPCHelpMan gettransaction()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
-    if (!pwallet) return NullUniValue;
-
+    UniValue entry;
+    if (!pwallet) {
+        entry = NullUniValue;
+        return entry;
+    }
     // Make sure the results are valid at least up to the most recent block
     // the user could have gotten from another RPC command prior to now
     pwallet->BlockUntilSyncedToCurrentChain();
@@ -1786,7 +1798,7 @@ static RPCHelpMan gettransaction()
 
     bool verbose = request.params[2].isNull() ? false : request.params[2].get_bool();
 
-    UniValue entry(UniValue::VOBJ);
+    entry = (UniValue::VOBJ);
     auto it = pwallet->mapWallet.find(hash);
     if (it == pwallet->mapWallet.end()) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid or non-wallet transaction id");
@@ -2352,14 +2364,16 @@ static RPCHelpMan listlockunspent()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
-    if (!pwallet) return NullUniValue;
-
+    UniValue ret(UniValue::VARR);
+    if (!pwallet) {
+        ret = NullUniValue;
+        return ret;
+    }
     LOCK(pwallet->cs_wallet);
 
     std::vector<COutPoint> vOutpts;
     pwallet->ListLockedCoins(vOutpts);
 
-    UniValue ret(UniValue::VARR);
 
     for (const COutPoint& outpt : vOutpts) {
         UniValue o(UniValue::VOBJ);
@@ -2508,7 +2522,11 @@ static RPCHelpMan getbalances()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     std::shared_ptr<CWallet> const rpc_wallet = GetWalletForJSONRPCRequest(request);
-    if (!rpc_wallet) return NullUniValue;
+    UniValue balances{UniValue::VOBJ};
+    if (!rpc_wallet) {
+        balances = NullUniValue;
+        return balances;
+    } 
     CWallet& wallet = *rpc_wallet;
 
     // Make sure the results are valid at least up to the most recent block
@@ -2518,7 +2536,6 @@ static RPCHelpMan getbalances()
     LOCK(wallet.cs_wallet);
 
     const auto bal = wallet.GetBalance();
-    UniValue balances{UniValue::VOBJ};
     {
         UniValue balances_mine{UniValue::VOBJ};
         balances_mine.pushKV("trusted", ValueFromAmount(bal.m_mine_trusted));
@@ -2597,8 +2614,11 @@ static RPCHelpMan getwalletinfo()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
-    if (!pwallet) return NullUniValue;
-
+    UniValue obj(UniValue::VOBJ);
+    if (!pwallet) {
+        obj = NullUniValue;
+        return obj;
+    }
     // Make sure the results are valid at least up to the most recent block
     // the user could have gotten from another RPC command prior to now
     pwallet->BlockUntilSyncedToCurrentChain();
@@ -2608,7 +2628,6 @@ static RPCHelpMan getwalletinfo()
     LegacyScriptPubKeyMan* spk_man = pwallet->GetLegacyScriptPubKeyMan();
     CHDChain hdChainCurrent;
     bool fHDEnabled = spk_man && spk_man->GetHDChain(hdChainCurrent);
-    UniValue obj(UniValue::VOBJ);
 
     const auto bal = pwallet->GetBalance();
     int64_t kp_oldest = pwallet->GetOldestKeyPoolTime();
@@ -2935,7 +2954,11 @@ static RPCHelpMan setwalletflag()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
-    if (!pwallet) return NullUniValue;
+    UniValue res(UniValue::VOBJ);
+    if (!pwallet) {
+        res = NullUniValue;
+        return res;
+    }
 
 
     std::string flag_str = request.params[0].get_str();
@@ -2950,8 +2973,6 @@ static RPCHelpMan setwalletflag()
     if (!(flag & MUTABLE_WALLET_FLAGS)) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Wallet flag is immutable: %s", flag_str));
     }
-
-    UniValue res(UniValue::VOBJ);
 
     if (pwallet->IsWalletFlagSet(flag) == value) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Wallet flag is already set to %s: %s", value ? "true" : "false", flag_str));
@@ -3317,6 +3338,7 @@ static RPCHelpMan listunspent()
     // the user could have gotten from another RPC command prior to now
     pwallet->BlockUntilSyncedToCurrentChain();
 
+    return [&]() {
     UniValue results(UniValue::VARR);
     std::vector<COutput> vecOutputs;
     {
@@ -3385,6 +3407,7 @@ static RPCHelpMan listunspent()
     }
 
     return results;
+    }();
 },
     };
 }
@@ -3592,12 +3615,14 @@ static RPCHelpMan fundrawtransaction()
     coin_control.m_add_inputs = true;
     FundTransaction(*pwallet, tx, fee, change_position, request.params[1], coin_control, /* override_min_fee */ true);
 
-    UniValue result(UniValue::VOBJ);
-    result.pushKV("hex", EncodeHexTx(CTransaction(tx)));
-    result.pushKV("fee", ValueFromAmount(fee));
-    result.pushKV("changepos", change_position);
+    return [&]() {
+        UniValue result(UniValue::VOBJ);
+        result.pushKV("hex", EncodeHexTx(CTransaction(tx)));
+        result.pushKV("fee", ValueFromAmount(fee));
+        result.pushKV("changepos", change_position);
 
-    return result;
+        return result;
+    }();
 },
     };
 }
@@ -3687,9 +3712,11 @@ RPCHelpMan signrawtransactionwithwallet()
     std::map<int, bilingual_str> input_errors;
 
     bool complete = pwallet->SignTransaction(mtx, coins, nHashType, input_errors);
-    UniValue result(UniValue::VOBJ);
-    SignTransactionResultToJSON(mtx, complete, coins, input_errors, result);
-    return result;
+    return [&]() {
+        UniValue result(UniValue::VOBJ);
+        SignTransactionResultToJSON(mtx, complete, coins, input_errors, result);
+        return result;
+    }();
 },
     };
 }
@@ -3771,10 +3798,12 @@ static RPCHelpMan rescanblockchain()
         throw JSONRPCError(RPC_MISC_ERROR, "Rescan aborted.");
         // no default case, so the compiler can warn about missing cases
     }
-    UniValue response(UniValue::VOBJ);
-    response.pushKV("start_height", start_height);
-    response.pushKV("stop_height", result.last_scanned_height ? *result.last_scanned_height : UniValue());
-    return response;
+    return [&]() {
+        UniValue response(UniValue::VOBJ);
+        response.pushKV("start_height", start_height);
+        response.pushKV("stop_height", result.last_scanned_height ? *result.last_scanned_height : UniValue());
+        return response;
+    }();
 },
     };
 }
@@ -3971,8 +4000,11 @@ RPCHelpMan getaddressinfo()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
-    if (!pwallet) return NullUniValue;
-
+    UniValue ret(UniValue::VOBJ);
+    if (!pwallet) {
+        ret = NullUniValue;
+        return ret;
+    }
     LOCK(pwallet->cs_wallet);
 
     std::string error_msg;
@@ -3985,8 +4017,6 @@ RPCHelpMan getaddressinfo()
 
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, error_msg);
     }
-
-    UniValue ret(UniValue::VOBJ);
 
     std::string currentAddress = EncodeDestination(dest);
     ret.pushKV("address", currentAddress);
@@ -4081,14 +4111,16 @@ static RPCHelpMan getaddressesbylabel()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
-    if (!pwallet) return NullUniValue;
-
+    UniValue ret(UniValue::VOBJ);
+    if (!pwallet) {
+        ret = NullUniValue;
+        return ret;
+    }
     LOCK(pwallet->cs_wallet);
 
     std::string label = LabelFromValue(request.params[0]);
 
     // Find all addresses that have the given label
-    UniValue ret(UniValue::VOBJ);
     std::set<std::string> addresses;
     for (const std::pair<const CTxDestination, CAddressBookData>& item : pwallet->m_address_book) {
         if (item.second.IsChange()) continue;
@@ -4160,12 +4192,14 @@ static RPCHelpMan listlabels()
         }
     }
 
-    UniValue ret(UniValue::VARR);
-    for (const std::string& name : label_set) {
-        ret.push_back(name);
-    }
+    return [&]() {
+        UniValue ret(UniValue::VARR);
+        for (const std::string& name : label_set) {
+            ret.push_back(name);
+        }
 
-    return ret;
+        return ret;
+    }();
 },
     };
 }
@@ -4335,29 +4369,31 @@ static RPCHelpMan send()
     CMutableTransaction mtx;
     complete = FinalizeAndExtractPSBT(psbtx, mtx);
 
-    UniValue result(UniValue::VOBJ);
+    return [&]() {
+        UniValue result(UniValue::VOBJ);
 
-    if (psbt_opt_in || !complete || !add_to_wallet) {
-        // Serialize the PSBT
-        CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
-        ssTx << psbtx;
-        result.pushKV("psbt", EncodeBase64(ssTx.str()));
-    }
-
-    if (complete) {
-        std::string err_string;
-        std::string hex = EncodeHexTx(CTransaction(mtx));
-        CTransactionRef tx(MakeTransactionRef(std::move(mtx)));
-        result.pushKV("txid", tx->GetHash().GetHex());
-        if (add_to_wallet && !psbt_opt_in) {
-            pwallet->CommitTransaction(tx, {}, {} /* orderForm */);
-        } else {
-            result.pushKV("hex", hex);
+        if (psbt_opt_in || !complete || !add_to_wallet) {
+            // Serialize the PSBT
+            CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
+            ssTx << psbtx;
+            result.pushKV("psbt", EncodeBase64(ssTx.str()));
         }
-    }
-    result.pushKV("complete", complete);
 
-    return result;
+        if (complete) {
+            std::string err_string;
+            std::string hex = EncodeHexTx(CTransaction(mtx));
+            CTransactionRef tx(MakeTransactionRef(std::move(mtx)));
+            result.pushKV("txid", tx->GetHash().GetHex());
+            if (add_to_wallet && !psbt_opt_in) {
+                pwallet->CommitTransaction(tx, {}, {} /* orderForm */);
+            } else {
+                result.pushKV("hex", hex);
+            }
+        }
+        result.pushKV("complete", complete);
+
+        return result;
+    }();
 },
     };
 }
@@ -4503,13 +4539,15 @@ RPCHelpMan walletprocesspsbt()
         throw JSONRPCTransactionError(err);
     }
 
-    UniValue result(UniValue::VOBJ);
-    CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
-    ssTx << psbtx;
-    result.pushKV("psbt", EncodeBase64(ssTx.str()));
-    result.pushKV("complete", complete);
+    return [&]() {
+        UniValue result(UniValue::VOBJ);
+        CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
+        ssTx << psbtx;
+        result.pushKV("psbt", EncodeBase64(ssTx.str()));
+        result.pushKV("complete", complete);
 
-    return result;
+        return result;
+    }();
 },
     };
 }
@@ -4631,11 +4669,13 @@ static RPCHelpMan walletcreatefundedpsbt()
     CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
     ssTx << psbtx;
 
-    UniValue result(UniValue::VOBJ);
-    result.pushKV("psbt", EncodeBase64(ssTx.str()));
-    result.pushKV("fee", ValueFromAmount(fee));
-    result.pushKV("changepos", change_position);
-    return result;
+    return [&]() {
+        UniValue result(UniValue::VOBJ);
+        result.pushKV("psbt", EncodeBase64(ssTx.str()));
+        result.pushKV("fee", ValueFromAmount(fee));
+        result.pushKV("changepos", change_position);
+        return result;
+    }();
 },
     };
 }
@@ -4689,17 +4729,19 @@ static RPCHelpMan upgradewallet()
         }
     }
 
-    UniValue obj(UniValue::VOBJ);
-    obj.pushKV("wallet_name", pwallet->GetName());
-    obj.pushKV("previous_version", previous_version);
-    obj.pushKV("current_version", current_version);
-    if (!result.empty()) {
-        obj.pushKV("result", result);
-    } else {
-        CHECK_NONFATAL(!error.empty());
-        obj.pushKV("error", error.original);
-    }
-    return obj;
+    return [&]() {
+        UniValue obj(UniValue::VOBJ);
+        obj.pushKV("wallet_name", pwallet->GetName());
+        obj.pushKV("previous_version", previous_version);
+        obj.pushKV("current_version", current_version);
+        if (!result.empty()) {
+            obj.pushKV("result", result);
+        } else {
+            CHECK_NONFATAL(!error.empty());
+            obj.pushKV("error", error.original);
+        }
+        return obj;
+    }();
 },
     };
 }

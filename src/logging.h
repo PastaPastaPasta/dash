@@ -244,13 +244,14 @@ bool GetLogCategory(BCLog::LogFlags& flag, const std::string& str);
 template<typename... Args>
 std::string SafeStringFormat(const std::string& fmt, const Args&... args)
 {
+    std::string result; // Named variable to facilitate NRVO
     try {
-        return tinyformat::format(fmt, args...);
-    } catch (std::runtime_error& fmterr) {
-        std::string message = tinyformat::format("\n****TINYFORMAT ERROR****\n    err=\"%s\"\n    fmt=\"%s\"\n", fmterr.what(), fmt);
-        tfm::format(std::cerr, "%s", message);
-        return message;
+        result = tinyformat::format(fmt, args...);
+    } catch (const std::runtime_error& fmterr) {
+        result = tinyformat::format("\n****TINYFORMAT ERROR****\n    err=\"%s\"\n    fmt=\"%s\"\n", fmterr.what(), fmt);
+        tfm::format(std::cerr, "%s", result);
     }
+    return result; // NRVO can now be applied
 }
 
 // Be conservative when using LogPrintf/error or other things which

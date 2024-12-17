@@ -872,8 +872,11 @@ RPCHelpMan dumphdinfo()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
-    if (!pwallet) return NullUniValue;
-
+    UniValue obj(UniValue::VOBJ);
+    if (!pwallet) {
+        obj = NullUniValue;
+        return obj;
+    }
     LOCK(pwallet->cs_wallet);
 
     EnsureWalletIsUnlocked(*pwallet);
@@ -890,7 +893,6 @@ RPCHelpMan dumphdinfo()
     SecureString ssMnemonicPassphrase;
     hdChainCurrent.GetMnemonic(ssMnemonic, ssMnemonicPassphrase);
 
-    UniValue obj(UniValue::VOBJ);
     obj.pushKV("hdseed", HexStr(hdChainCurrent.GetSeed()));
     obj.pushKV("mnemonic", ssMnemonic.c_str());
     obj.pushKV("mnemonicpassphrase", ssMnemonicPassphrase.c_str());
@@ -925,7 +927,11 @@ RPCHelpMan dumpwallet()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
-    if (!pwallet) return NullUniValue;
+    UniValue obj(UniValue::VOBJ);
+    if (!pwallet) {
+        obj = NullUniValue;
+        return obj;
+    }
 
     CWallet& wallet = *pwallet;
     LegacyScriptPubKeyMan& spk_man = EnsureLegacyScriptPubKeyMan(wallet);
@@ -983,7 +989,6 @@ RPCHelpMan dumpwallet()
     file << strprintf("#   mined on %s\n", FormatISO8601DateTime(block_time));
     file << "\n";
 
-    UniValue obj(UniValue::VOBJ);
     obj.pushKV("dashcoreversion", FormatFullVersion());
     obj.pushKV("lastblockheight", wallet.GetLastBlockHeight());
     obj.pushKV("lastblockhash", wallet.GetLastBlockHash().ToString());
@@ -1530,7 +1535,11 @@ RPCHelpMan importmulti()
     const UniValue& requests = mainRequest.params[0];
 
     std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(mainRequest);
-    if (!pwallet) return NullUniValue;
+    UniValue response(UniValue::VARR);
+    if (!pwallet) {
+        response = NullUniValue;
+        return response;
+    }
     CWallet& wallet{*pwallet};
 
     // Make sure the results are valid at least up to the most recent block
@@ -1558,7 +1567,6 @@ RPCHelpMan importmulti()
     int64_t now = 0;
     bool fRunScan = false;
     int64_t nLowestTimestamp = 0;
-    UniValue response(UniValue::VARR);
     {
         LOCK(pwallet->cs_wallet);
         EnsureWalletIsUnlocked(*pwallet);
@@ -1834,7 +1842,11 @@ RPCHelpMan importdescriptors() {
 {
     // Acquire the wallet
     std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(main_request);
-    if (!pwallet) return NullUniValue;
+    UniValue response(UniValue::VARR);
+    if (!pwallet) {
+        response = NullUniValue;
+        return response;
+    }
     CWallet& wallet{*pwallet};
 
     // Make sure the results are valid at least up to the most recent block
@@ -1858,7 +1870,6 @@ RPCHelpMan importdescriptors() {
     int64_t now = 0;
     int64_t lowest_timestamp = 0;
     bool rescan = false;
-    UniValue response(UniValue::VARR);
     {
         LOCK(pwallet->cs_wallet);
         EnsureWalletIsUnlocked(*pwallet);
@@ -1969,7 +1980,11 @@ RPCHelpMan listdescriptors()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    if (!wallet) return NullUniValue;
+    UniValue response(UniValue::VOBJ);
+    if (!wallet) {
+        response = NullUniValue;
+        return response;
+    }
 
     if (!wallet->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) {
         throw JSONRPCError(RPC_WALLET_ERROR, "listdescriptors is not available for non-descriptor wallets");
@@ -2015,7 +2030,6 @@ RPCHelpMan listdescriptors()
         descriptors.push_back(spk);
     }
 
-    UniValue response(UniValue::VOBJ);
     response.pushKV("wallet_name", wallet->GetName());
     response.pushKV("descriptors", descriptors);
 

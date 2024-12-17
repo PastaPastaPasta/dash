@@ -94,15 +94,16 @@ bool CCoinsViewDB::HaveCoin(const COutPoint &outpoint) const {
 
 uint256 CCoinsViewDB::GetBestBlock() const {
     uint256 hashBestChain;
-    if (!m_db->Read(DB_BEST_BLOCK, hashBestChain))
-        return uint256();
+    if (!m_db->Read(DB_BEST_BLOCK, hashBestChain)) {
+        hashBestChain = uint256();
+    }
     return hashBestChain;
 }
 
 std::vector<uint256> CCoinsViewDB::GetHeadBlocks() const {
     std::vector<uint256> vhashHeadBlocks;
     if (!m_db->Read(DB_HEAD_BLOCKS, vhashHeadBlocks)) {
-        return std::vector<uint256>();
+        vhashHeadBlocks.clear();
     }
     return vhashHeadBlocks;
 }

@@ -218,8 +218,11 @@ std::map<std::string,std::string> ParseTorReplyMapping(const std::string &s)
             key.push_back(s[ptr]);
             ++ptr;
         }
-        if (ptr == s.size()) // unexpected end of line
-            return std::map<std::string,std::string>();
+        if (ptr == s.size()) {
+            // unexpected end of line
+            mapping.clear();
+            break;
+        }
         if (s[ptr] == ' ') // The remaining string is an OptArguments
             break;
         ++ptr; // skip '='
@@ -232,8 +235,11 @@ std::map<std::string,std::string> ParseTorReplyMapping(const std::string &s)
                 value.push_back(s[ptr]);
                 ++ptr;
             }
-            if (ptr == s.size()) // unexpected end of line
-                return std::map<std::string,std::string>();
+            if (ptr == s.size()) {
+                // unexpected end of line
+                mapping.clear();
+                break;
+            }
             ++ptr; // skip closing '"'
             /**
              * Unescape value. Per https://spec.torproject.org/control-spec section 2.1.1:

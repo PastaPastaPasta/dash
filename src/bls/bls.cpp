@@ -41,8 +41,9 @@ void CBLSSecretKey::AggregateInsecure(const CBLSSecretKey& o)
 
 CBLSSecretKey CBLSSecretKey::AggregateInsecure(Span<CBLSSecretKey> sks)
 {
+    CBLSSecretKey ret{};
     if (sks.empty()) {
-        return {};
+        return ret;
     }
 
     std::vector<bls::PrivateKey> v;
@@ -51,7 +52,6 @@ CBLSSecretKey CBLSSecretKey::AggregateInsecure(Span<CBLSSecretKey> sks)
         v.emplace_back(sk.impl);
     }
 
-    CBLSSecretKey ret;
     ret.impl = bls::PrivateKey::Aggregate(v);
     ret.fValid = true;
     ret.cachedHash.SetNull();
@@ -106,11 +106,11 @@ bool CBLSSecretKey::SecretKeyShare(Span<CBLSSecretKey> msk, const CBLSId& _id)
 
 CBLSPublicKey CBLSSecretKey::GetPublicKey() const
 {
+    CBLSPublicKey pubKey{};
     if (!IsValid()) {
-        return {};
+        return pubKey;
     }
 
-    CBLSPublicKey pubKey;
     pubKey.impl = impl.GetG1Element();
     pubKey.fValid = true;
     pubKey.cachedHash.SetNull();
@@ -124,11 +124,11 @@ CBLSSignature CBLSSecretKey::Sign(const uint256& hash) const
 
 CBLSSignature CBLSSecretKey::Sign(const uint256& hash, const bool specificLegacyScheme) const
 {
+    CBLSSignature sigRet{};
     if (!IsValid()) {
-        return {};
+        return sigRet;
     }
 
-    CBLSSignature sigRet;
     try {
         sigRet.impl = Scheme(specificLegacyScheme)->Sign(impl, bls::Bytes(hash.begin(), hash.size()));
         sigRet.fValid = true;
@@ -154,8 +154,9 @@ void CBLSPublicKey::AggregateInsecure(const CBLSPublicKey& o)
 
 CBLSPublicKey CBLSPublicKey::AggregateInsecure(Span<CBLSPublicKey> pks)
 {
+    CBLSPublicKey ret{};
     if (pks.empty()) {
-        return {};
+        return ret;
     }
 
     std::vector<bls::G1Element> vecPublicKeys;
@@ -164,7 +165,6 @@ CBLSPublicKey CBLSPublicKey::AggregateInsecure(Span<CBLSPublicKey> pks)
         vecPublicKeys.emplace_back(pk.impl);
     }
 
-    CBLSPublicKey ret;
     try {
         ret.impl = Scheme(bls::bls_legacy_scheme.load())->Aggregate(vecPublicKeys);
         ret.fValid = true;
@@ -232,8 +232,9 @@ void CBLSSignature::AggregateInsecure(const CBLSSignature& o)
 
 CBLSSignature CBLSSignature::AggregateInsecure(Span<CBLSSignature> sigs)
 {
+    CBLSSignature ret{};
     if (sigs.empty()) {
-        return {};
+        return ret;
     }
 
     std::vector<bls::G2Element> v;
@@ -242,7 +243,6 @@ CBLSSignature CBLSSignature::AggregateInsecure(Span<CBLSSignature> sigs)
         v.emplace_back(pk.impl);
     }
 
-    CBLSSignature ret;
     try {
         ret.impl = Scheme(bls::bls_legacy_scheme.load())->Aggregate(v);
         ret.fValid = true;
@@ -258,8 +258,9 @@ CBLSSignature CBLSSignature::AggregateSecure(Span<CBLSSignature> sigs,
                                              Span<CBLSPublicKey> pks,
                                              const uint256& hash)
 {
+    CBLSSignature ret{};
     if (sigs.size() != pks.size() || sigs.empty()) {
-        return {};
+        return ret;
     }
 
     std::vector<bls::G1Element> vecPublicKeys;
@@ -274,7 +275,6 @@ CBLSSignature CBLSSignature::AggregateSecure(Span<CBLSSignature> sigs,
         vecSignatures.push_back(sig.impl);
     }
 
-    CBLSSignature ret;
     try {
         ret.impl = Scheme(bls::bls_legacy_scheme.load())->AggregateSecure(vecPublicKeys, vecSignatures, bls::Bytes(hash.begin(), hash.size()));
         ret.fValid = true;

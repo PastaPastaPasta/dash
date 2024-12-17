@@ -592,9 +592,11 @@ std::string HTTPRequest::ReadBody()
     const char* data = (const char*)evbuffer_pullup(buf, size);
     if (!data) // returns nullptr in case of empty buffer
         return "";
-    std::string rv(data, size);
-    evbuffer_drain(buf, size);
-    return rv;
+    return [&]() {
+        std::string rv(data, size);
+        evbuffer_drain(buf, size);
+        return rv;
+    }();
 }
 
 void HTTPRequest::WriteHeader(const std::string& hdr, const std::string& value)
