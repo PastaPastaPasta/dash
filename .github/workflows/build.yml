@@ -15,7 +15,7 @@ env:
 jobs:
   build-image:
     name: Build Image
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-22.04-arm
     outputs:
       image-tag: ${{ steps.prepare.outputs.image-tag }}
       repo-name: ${{ steps.prepare.outputs.repo-name }}
@@ -58,7 +58,7 @@ jobs:
   build-depends:
     name: Build Dependencies
     needs: build-image
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-22.04-arm
     strategy:
       fail-fast: false
       matrix:
@@ -66,7 +66,7 @@ jobs:
         - build_target: arm-linux
           host: arm-linux-gnueabihf
         - build_target: linux64
-          host: x86_64-pc-linux-gnu
+          host: aarch64-linux-gnu
 
     container:
       image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-ci-runner:${{ needs.build-image.outputs.image-tag }}
@@ -103,7 +103,7 @@ jobs:
   build:
     name: Build
     needs: [build-image, build-depends]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-22.04-arm
     strategy:
       fail-fast: false
       matrix:
@@ -112,25 +112,25 @@ jobs:
             host: arm-linux-gnueabihf
             depends_on: arm-linux
           - build_target: linux64
-            host: x86_64-pc-linux-gnu
+            host: aarch64-linux-gnu
             depends_on: linux64
           - build_target: linux64_cxx20
-            host: x86_64-pc-linux-gnu
+            host: aarch64-linux-gnu
             depends_on: linux64
           - build_target: linux64_fuzz
-            host: x86_64-pc-linux-gnu
+            host: aarch64-linux-gnu
             depends_on: linux64
           - build_target: linux64_nowallet
-            host: x86_64-pc-linux-gnu
+            host: aarch64-linux-gnu
             depends_on: linux64
           - build_target: linux64_sqlite
-            host: x86_64-pc-linux-gnu
+            host: aarch64-linux-gnu
             depends_on: linux64
           - build_target: linux64_tsan
-            host: x86_64-pc-linux-gnu
+            host: aarch64-linux-gnu
             depends_on: linux64
           - build_target: linux64_ubsan
-            host: x86_64-pc-linux-gnu
+            host: aarch64-linux-gnu
             depends_on: linux64
     container:
       image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-ci-runner:${{ needs.build-image.outputs.image-tag }}
@@ -178,6 +178,7 @@ jobs:
           mkdir /output
           BASE_OUTDIR="/output"
           BUILD_TARGET="${{ matrix.build_target }}"
+          HOST="${{ matrix.host }}"
           source ./ci/dash/matrix.sh
           ./ci/dash/build_src.sh
           ./ci/dash/test_unittests.sh
