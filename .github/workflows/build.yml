@@ -14,9 +14,30 @@ env:
   TARGET_ARCH: amd64 # Change this to "amd64" if you want to run on x86
 
 jobs:
+  setup:
+    name: Set Architecture
+    runs-on: ubuntu-latest
+    outputs:
+      target_arch: ${{ steps.set-arch.outputs.target_arch }}
+      runner_label: ${{ steps.set-arch.outputs.runner_label }}
+    steps:
+      - name: Determine Target Architecture
+        id: set-arch
+        run: |
+          TARGET_ARCH="arm64"  # Change to "amd64" if you want to run on x86
+          echo "target_arch=${TARGET_ARCH}" >> $GITHUB_ENV
+          if [[ "$TARGET_ARCH" == "arm64" ]]; then
+            echo "runner_label=ubuntu-22.04-arm" >> $GITHUB_ENV
+          else
+            echo "runner_label=ubuntu-22.04" >> $GITHUB_ENV
+          fi
+          echo "target_arch=${TARGET_ARCH}" >> $GITHUB_OUTPUT
+          echo "runner_label=${runner_label}" >> $GITHUB_OUTPUT
+
   build-image:
     name: Build Image
-    runs-on: ${{ env.TARGET_ARCH == 'arm64' && 'ubuntu-22.04-arm' || 'ubuntu-22.04' }}
+    needs: setup
+    runs-on: ${{ needs.setup.outputs.runner_label }}
     outputs:
       image-tag: ${{ steps.prepare.outputs.image-tag }}
       repo-name: ${{ steps.prepare.outputs.repo-name }}
@@ -110,29 +131,21 @@ jobs:
         include:
           - build_target: arm-linux
             host: arm-linux-gnueabihf
-            depends_on: arm-linux
-            runs_on: ubuntu-22.04-arm # Force arm64 runner for arm-linux
+            runner_label: ubuntu-22.04-arm  # Always run on arm64
           - build_target: linux64
-            host: ${{ env.TARGET_ARCH == 'arm64' && 'aarch64-linux-gnu' || 'x86_64-linux-gnu' }}
-            depends_on: linux64
+            host: ${{ needs.setup.outputs.target_arch == 'arm64' && 'aarch64-linux-gnu' || 'x86_64-linux-gnu' }}
           - build_target: linux64_cxx20
-            host: ${{ env.TARGET_ARCH == 'arm64' && 'aarch64-linux-gnu' || 'x86_64-linux-gnu' }}
-            depends_on: linux64
+            host: ${{ needs.setup.outputs.target_arch == 'arm64' && 'aarch64-linux-gnu' || 'x86_64-linux-gnu' }}
           - build_target: linux64_fuzz
-            host: ${{ env.TARGET_ARCH == 'arm64' && 'aarch64-linux-gnu' || 'x86_64-linux-gnu' }}
-            depends_on: linux64
+            host: ${{ needs.setup.outputs.target_arch == 'arm64' && 'aarch64-linux-gnu' || 'x86_64-linux-gnu' }}
           - build_target: linux64_nowallet
-            host: ${{ env.TARGET_ARCH == 'arm64' && 'aarch64-linux-gnu' || 'x86_64-linux-gnu' }}
-            depends_on: linux64
+            host: ${{ needs.setup.outputs.target_arch == 'arm64' && 'aarch64-linux-gnu' || 'x86_64-linux-gnu' }}
           - build_target: linux64_sqlite
-            host: ${{ env.TARGET_ARCH == 'arm64' && 'aarch64-linux-gnu' || 'x86_64-linux-gnu' }}
-            depends_on: linux64
+            host: ${{ needs.setup.outputs.target_arch == 'arm64' && 'aarch64-linux-gnu' || 'x86_64-linux-gnu' }}
           - build_target: linux64_tsan
-            host: ${{ env.TARGET_ARCH == 'arm64' && 'aarch64-linux-gnu' || 'x86_64-linux-gnu' }}
-            depends_on: linux64
+            host: ${{ needs.setup.outputs.target_arch == 'arm64' && 'aarch64-linux-gnu' || 'x86_64-linux-gnu' }}
           - build_target: linux64_ubsan
-            host: ${{ env.TARGET_ARCH == 'arm64' && 'aarch64-linux-gnu' || 'x86_64-linux-gnu' }}
-            depends_on: linux64
+            host: ${{ needs.setup.outputs.target_arch == 'arm64' && 'aarch64-linux-gnu' || 'x86_64-linux-gnu' }}
     container:
       image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-ci-runner:${{ needs.build-image.outputs.image-tag }}
       options: --user root
