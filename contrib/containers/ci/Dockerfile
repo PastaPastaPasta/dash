@@ -138,7 +138,7 @@ ENV LD_LIBRARY_PATH="/usr/lib/llvm-${LLVM_VERSION}/lib"
 # -----------------------------------------------------------------------------
 RUN set -ex; \
     ARCH="$(dpkg --print-architecture)"; \
-    if [ "${ARCH}" = "amd64" ]; then \
+    if [ "${ARCH}" = "amd64" || "${ARCH}" = "arm64"]; then \
       echo "Installing cross-compiler for ARM on amd64"; \
       apt-get update && apt-get install $APT_ARGS \
         gcc-arm-linux-gnueabihf \
