@@ -22,22 +22,26 @@ RUN set -ex; \
       xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-#
+
 # -----------------------------------------------------------------------------
-# Detect host architecture; add foreign architectures as needed
+# Detect host architecture, add foreign architecture, and add a proper source
+# list for the foreign architecture
 # -----------------------------------------------------------------------------
 RUN set -ex; \
     ARCH="$(dpkg --print-architecture)"; \
     echo "Host architecture is: ${ARCH}"; \
     if [ "${ARCH}" = "amd64" ]; then \
-        # We want to be able to cross-compile for armhf
-        dpkg --add-architecture armhf; \
+      # We're running on amd64 and want to cross-compile for armhf.
+      dpkg --add-architecture armhf; \
+      echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse" \
+        > /etc/apt/sources.list.d/armhf.list; \
     elif [ "${ARCH}" = "arm64" ]; then \
-        # We want to cross-compile for x86_64
-        dpkg --add-architecture amd64; \
+      # We're running on arm64 and want to cross-compile for amd64.
+      dpkg --add-architecture amd64; \
+      echo "deb [arch=amd64] http://archive.ubuntu.com/ubuntu jammy main restricted universe multiverse" \
+        > /etc/apt/sources.list.d/amd64.list; \
     fi; \
     apt-get update
-
 #
 # -----------------------------------------------------------------------------
 # Install common development packages (including Python via PyEnv)
