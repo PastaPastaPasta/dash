@@ -113,7 +113,7 @@ jobs:
             -v ${{ github.workspace }}/.cache:/home/ubuntu/.cache \
             -w /src/dash \
             ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-guix-builder:${{ needs.build-image.outputs.image-tag }} && \
-          docker exec guix-daemon bash -c 'guix pull --url=https://github.com/PastaPastaPasta/guix.git'
+            docker exec guix-daemon bash -c 'guix pull --url=https://github.com/PastaPastaPasta/guix.git --substitute-urls="http://build.thepasta.org:3000 https://ci.guix.gnu.org"'
 
       - name: Run Guix build
         timeout-minutes: 480
@@ -124,7 +124,7 @@ jobs:
             -v ${{ github.workspace }}/.cache:/home/ubuntu/.cache \
             -w /src/dash \
             ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-guix-builder:${{ needs.build-image.outputs.image-tag }} && \
-          docker exec guix-daemon bash -c 'HOSTS=${{ matrix.build_target }} /usr/local/bin/guix-start /src/dash'
+            docker exec guix-daemon bash -c 'HOSTS=${{ matrix.build_target }} GUIX_SUBSTITUTE_URLS="http://build.thepasta.org:3000 https://ci.guix.gnu.org" /usr/local/bin/guix-start /src/dash'
 
       - name: Ensure build passes
         run: |
