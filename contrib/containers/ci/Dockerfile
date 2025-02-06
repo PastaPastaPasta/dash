@@ -22,26 +22,26 @@ RUN set -ex; \
       xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-
+#
 # -----------------------------------------------------------------------------
-# Detect host architecture, add foreign architecture, and add a proper source
-# list for the foreign architecture
+# Detect host architecture and add a foreign architecture if needed.
+#
+# On an amd64 host we add armhf (with its dedicated sources file) so that we
+# can install packages like g++-arm-linux-gnueabihf. On ARM we do nothing,
+# as we assume the cross-compiler for x86_64 (g++-x86-64-linux-gnu) is available
+# from the native repositories.
 # -----------------------------------------------------------------------------
 RUN set -ex; \
     ARCH="$(dpkg --print-architecture)"; \
     echo "Host architecture is: ${ARCH}"; \
     if [ "${ARCH}" = "amd64" ]; then \
-      # We're running on amd64 and want to cross-compile for armhf.
+      echo "Running on amd64; adding armhf as a foreign architecture"; \
       dpkg --add-architecture armhf; \
       echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse" \
         > /etc/apt/sources.list.d/armhf.list; \
-    elif [ "${ARCH}" = "arm64" ]; then \
-      # We're running on arm64 and want to cross-compile for amd64.
-      dpkg --add-architecture amd64; \
-      echo "deb [arch=amd64] http://archive.ubuntu.com/ubuntu jammy main restricted universe multiverse" \
-        > /etc/apt/sources.list.d/amd64.list; \
     fi; \
     apt-get update
+
 #
 # -----------------------------------------------------------------------------
 # Install common development packages (including Python via PyEnv)
@@ -68,7 +68,7 @@ RUN set -ex; \
       valgrind \
       zlib1g-dev \
     \
-    # Python build deps
+    # Python build dependencies
       libbz2-dev \
       libffi-dev \
       liblzma-dev \
@@ -79,7 +79,6 @@ RUN set -ex; \
       libssl-dev \
       make \
       tk-dev \
-    \
     && rm -rf /var/lib/apt/lists/*
 
 # Install PyEnv and the requested Python version
@@ -116,7 +115,7 @@ RUN set -ex; \
       "libclang-rt-${LLVM_VERSION}-dev" \
       "lld-${LLVM_VERSION}" \
     && rm -rf /var/lib/apt/lists/*; \
-    # update-alternatives
+    # Update alternatives so that the LLVM binaries point to version ${LLVM_VERSION}
     ALT_CMD="update-alternatives --install /usr/bin/llvm-config llvm-config /usr/bin/llvm-config-${LLVM_VERSION} 100"; \
     for binName in clang clang++ clang-format clang-tidy clangd dsymutil lld lldb lldb-server llvm-ar llvm-cov llvm-nm llvm-objdump llvm-ranlib llvm-strip; do \
         ALT_CMD="$ALT_CMD --slave /usr/bin/${binName} ${binName} /usr/bin/${binName}-${LLVM_VERSION}"; \
@@ -126,23 +125,24 @@ RUN set -ex; \
     done; \
     sh -c "$ALT_CMD"
 
-# LD_LIBRARY_PATH is empty by default, so let's add the LLVM libs
+# LD_LIBRARY_PATH is empty by default, so add the LLVM libraries
 ENV LD_LIBRARY_PATH="/usr/lib/llvm-${LLVM_VERSION}/lib"
 
 #
 # -----------------------------------------------------------------------------
-# Install cross compilers *depending on host architecture*
+# Install cross compilers depending on host architecture.
+#
+# - On amd64, install g++-arm-linux-gnueabihf (which comes from the armhf sources).
+# - On ARM, install g++-x86-64-linux-gnu (provided by the native ARM repositories).
 # -----------------------------------------------------------------------------
 RUN set -ex; \
     ARCH="$(dpkg --print-architecture)"; \
     if [ "${ARCH}" = "amd64" ]; then \
-      # Cross-compiler for 32-bit ARM
-      apt-get update && apt-get install $APT_ARGS \
-        g++-arm-linux-gnueabihf; \
+      echo "Installing cross-compiler for ARM on amd64"; \
+      apt-get update && apt-get install $APT_ARGS g++-arm-linux-gnueabihf; \
     elif [ "${ARCH}" = "arm64" ]; then \
-      # Cross-compiler for x86_64
-      apt-get update && apt-get install $APT_ARGS \
-        g++-x86-64-linux-gnu; \
+      echo "Installing cross-compiler for x86_64 on arm64"; \
+      apt-get update && apt-get install $APT_ARGS g++-x86-64-linux-gnu; \
     else \
       echo "Warning: no cross-compiler installed for architecture: ${ARCH}"; \
     fi && \
@@ -154,12 +154,11 @@ RUN set -ex; \
 # -----------------------------------------------------------------------------
 ARG SHELLCHECK_VERSION=v0.9.0
 RUN set -ex; \
-    # If you need shellcheck for scripts:
+    # If you need ShellCheck for scripts:
     curl -fL \
       "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" \
       -o /tmp/shellcheck.tar.xz || true; \
-    # The above .x86_64 package obviously won't run natively on ARM, so you might need QEMU or a separate ARM build
-    # => For demonstration only
+    # Note: the above x86_64 binary won’t run natively on ARM unless you have QEMU set up.
     rm -f /tmp/shellcheck.tar.xz
 
 # dash_hash
@@ -185,7 +184,7 @@ ENV PATH="/opt/cppcheck/build/bin:${PATH}"
 
 #
 # -----------------------------------------------------------------------------
-# Add non-root user
+# Add a non-root user
 # -----------------------------------------------------------------------------
 ARG USER_ID=1000
 ARG GROUP_ID=1000
