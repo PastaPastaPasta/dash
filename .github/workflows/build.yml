@@ -178,6 +178,7 @@ jobs:
           mkdir /output
           BASE_OUTDIR="/output"
           BUILD_TARGET="${{ matrix.build_target }}"
+          HOST="${{ matrix.host }}"
           source ./ci/dash/matrix.sh
           ./ci/dash/build_src.sh
           ./ci/dash/test_unittests.sh
