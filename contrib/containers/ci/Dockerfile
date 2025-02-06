@@ -1,6 +1,6 @@
 FROM ubuntu:jammy
 
-# Prevent tzdata from prompting
+# Prevent tzdata from prompting for input
 ENV DEBIAN_FRONTEND="noninteractive" TZ="Europe/London"
 
 # Common APT arguments
@@ -27,8 +27,8 @@ RUN set -ex; \
 # Detect host architecture and add a foreign architecture if needed.
 #
 # On an amd64 host, add armhf (with its dedicated sources) so that we can install
-# the ARM cross‑compiler. On ARM, we assume that the x86_64 cross‑compiler is available
-# from the native repositories.
+# the ARM cross‑compiler. On ARM hosts we assume that the x86_64 cross‑compiler is
+# provided natively.
 # -----------------------------------------------------------------------------
 RUN set -ex; \
     ARCH="$(dpkg --print-architecture)"; \
@@ -131,9 +131,10 @@ ENV LD_LIBRARY_PATH="/usr/lib/llvm-${LLVM_VERSION}/lib"
 # -----------------------------------------------------------------------------
 # Install cross compilers depending on host architecture.
 #
-# - On amd64: install the ARM cross compiler packages.
-# - On ARM: install the x86_64 cross compiler packages and create symlinks so that
-#         "x86_64-pc-linux-gnu-gcc" resolves to the installed cross compiler.
+# - On amd64: install the ARM cross-compiler packages and create symlinks so that
+#           "arm-linux-gnueabihf-gcc" and "arm-linux-gnueabihf-g++" are available.
+# - On ARM: install the x86_64 cross-compiler packages and create symlinks so that
+#           "x86_64-pc-linux-gnu-gcc" and "x86_64-pc-linux-gnu-g++" are available.
 # -----------------------------------------------------------------------------
 RUN set -ex; \
     ARCH="$(dpkg --print-architecture)"; \
@@ -142,12 +143,18 @@ RUN set -ex; \
       apt-get update && apt-get install $APT_ARGS \
         gcc-arm-linux-gnueabihf \
         g++-arm-linux-gnueabihf; \
+      \
+      # Create symlinks for the ARM cross-compiler.
+      # (Ubuntu Jammy typically installs versioned binaries—adjust the version if needed.)
+      ln -sf /usr/bin/arm-linux-gnueabihf-gcc-11 /usr/bin/arm-linux-gnueabihf-gcc; \
+      ln -sf /usr/bin/arm-linux-gnueabihf-g++-11 /usr/bin/arm-linux-gnueabihf-g++; \
     elif [ "${ARCH}" = "arm64" ]; then \
       echo "Installing cross-compiler for x86_64 on arm64"; \
       apt-get update && apt-get install $APT_ARGS \
         gcc-x86-64-linux-gnu \
         g++-x86-64-linux-gnu; \
-      # Create symlinks so that a build expecting x86_64-pc-linux-gnu-gcc will find the compiler.
+      \
+      # Create symlinks so that a build expecting x86_64-pc-linux-gnu-gcc/g++ will find the compiler.
       ln -sf /usr/bin/x86_64-linux-gnu-gcc /usr/bin/x86_64-pc-linux-gnu-gcc; \
       ln -sf /usr/bin/x86_64-linux-gnu-g++ /usr/bin/x86_64-pc-linux-gnu-g++; \
     else \
