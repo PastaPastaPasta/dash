@@ -11,7 +11,7 @@ permissions:
 env:
   DOCKER_DRIVER: overlay2
   FAST_MODE: false
-  TARGET_ARCH: arm64 # Change this to "amd64" if you want to run on x86
+  TARGET_ARCH: amd64 # Change this to "amd64" if you want to run on x86
 
 jobs:
   build-image:
