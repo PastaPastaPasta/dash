@@ -8,11 +8,6 @@ permissions:
   contents: read
   packages: write
 
-env:
-  DOCKER_DRIVER: overlay2
-  FAST_MODE: false
-  TARGET_ARCH: amd64 # Change this to "amd64" if you want to run on x86
-
 jobs:
   setup:
     name: Set Architecture
@@ -79,16 +74,17 @@ jobs:
 
   build-depends:
     name: Build Dependencies
-    needs: build-image
-    runs-on: ${{ env.TARGET_ARCH == 'arm64' && 'ubuntu-22.04-arm' || 'ubuntu-22.04' }}
+    needs: [setup, build-image]
+    runs-on: ${{ needs.setup.outputs.runner_label }}
     strategy:
       fail-fast: false
       matrix:
         include:
-        - build_target: arm-linux
-          host: arm-linux-gnueabihf
-        - build_target: linux64
-          host: aarch64-linux-gnu
+          - build_target: arm-linux
+            host: arm-linux-gnueabihf
+            runner_label: ubuntu-22.04-arm  # Always on ARM64
+          - build_target: linux64
+            host: ${{ needs.setup.outputs.target_arch == 'arm64' && 'aarch64-linux-gnu' || 'x86_64-linux-gnu' }}
 
     container:
       image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-ci-runner:${{ needs.build-image.outputs.image-tag }}
@@ -123,15 +119,15 @@ jobs:
 
   build:
     name: Build
-    needs: [build-image, build-depends]
-    runs-on: ${{ env.TARGET_ARCH == 'arm64' && 'ubuntu-22.04-arm' || 'ubuntu-22.04' }}
+    needs: [setup, build-image, build-depends]
+    runs-on: ${{ needs.setup.outputs.runner_label }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - build_target: arm-linux
             host: arm-linux-gnueabihf
-            runner_label: ubuntu-22.04-arm  # Always run on arm64
+            runner_label: ubuntu-22.04-arm  # Always on ARM64
           - build_target: linux64
             host: ${{ needs.setup.outputs.target_arch == 'arm64' && 'aarch64-linux-gnu' || 'x86_64-linux-gnu' }}
           - build_target: linux64_cxx20
@@ -162,7 +158,7 @@ jobs:
           path: |
             depends/built
             depends/${{ matrix.host }}
-          key: ${{ runner.os }}-depends-${{ matrix.depends_on }}-${{ hashFiles('depends/packages/*') }}
+          key: ${{ runner.os }}-depends-${{ matrix.build_target }}-${{ hashFiles('depends/packages/*') }}
 
       - name: Determine PR Base SHA
         id: vars
