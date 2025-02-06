@@ -11,11 +11,12 @@ permissions:
 env:
   DOCKER_DRIVER: overlay2
   FAST_MODE: false
+  TARGET_ARCH: arm64 # Change this to "amd64" if you want to run on x86
 
 jobs:
   build-image:
     name: Build Image
-    runs-on: ubuntu-22.04-arm
+    runs-on: ${{ env.TARGET_ARCH == 'arm64' && 'ubuntu-22.04-arm' || 'ubuntu-22.04' }}
     outputs:
       image-tag: ${{ steps.prepare.outputs.image-tag }}
       repo-name: ${{ steps.prepare.outputs.repo-name }}
@@ -58,7 +59,7 @@ jobs:
   build-depends:
     name: Build Dependencies
     needs: build-image
-    runs-on: ubuntu-22.04-arm
+    runs-on: ${{ env.TARGET_ARCH == 'arm64' && 'ubuntu-22.04-arm' || 'ubuntu-22.04' }}
     strategy:
       fail-fast: false
       matrix:
@@ -94,7 +95,6 @@ jobs:
             depends/${{ matrix.host }}
           key: ${{ runner.os }}-depends-${{ matrix.build_target }}-${{ hashFiles('depends/packages/*') }}
           restore-keys: |
-            ${{ runner.os }}-depends-${{ matrix.build_target }}-${{ hashFiles('depends/packages/*') }}
             ${{ runner.os }}-depends-${{ matrix.build_target }}
 
       - name: Build depends
@@ -103,7 +103,7 @@ jobs:
   build:
     name: Build
     needs: [build-image, build-depends]
-    runs-on: ubuntu-22.04-arm
+    runs-on: ${{ env.TARGET_ARCH == 'arm64' && 'ubuntu-22.04-arm' || 'ubuntu-22.04' }}
     strategy:
       fail-fast: false
       matrix:
@@ -111,26 +111,27 @@ jobs:
           - build_target: arm-linux
             host: arm-linux-gnueabihf
             depends_on: arm-linux
+            runs_on: ubuntu-22.04-arm # Force arm64 runner for arm-linux
           - build_target: linux64
-            host: aarch64-linux-gnu
+            host: ${{ env.TARGET_ARCH == 'arm64' && 'aarch64-linux-gnu' || 'x86_64-linux-gnu' }}
             depends_on: linux64
           - build_target: linux64_cxx20
-            host: aarch64-linux-gnu
+            host: ${{ env.TARGET_ARCH == 'arm64' && 'aarch64-linux-gnu' || 'x86_64-linux-gnu' }}
             depends_on: linux64
           - build_target: linux64_fuzz
-            host: aarch64-linux-gnu
+            host: ${{ env.TARGET_ARCH == 'arm64' && 'aarch64-linux-gnu' || 'x86_64-linux-gnu' }}
             depends_on: linux64
           - build_target: linux64_nowallet
-            host: aarch64-linux-gnu
+            host: ${{ env.TARGET_ARCH == 'arm64' && 'aarch64-linux-gnu' || 'x86_64-linux-gnu' }}
             depends_on: linux64
           - build_target: linux64_sqlite
-            host: aarch64-linux-gnu
+            host: ${{ env.TARGET_ARCH == 'arm64' && 'aarch64-linux-gnu' || 'x86_64-linux-gnu' }}
             depends_on: linux64
           - build_target: linux64_tsan
-            host: aarch64-linux-gnu
+            host: ${{ env.TARGET_ARCH == 'arm64' && 'aarch64-linux-gnu' || 'x86_64-linux-gnu' }}
             depends_on: linux64
           - build_target: linux64_ubsan
-            host: aarch64-linux-gnu
+            host: ${{ env.TARGET_ARCH == 'arm64' && 'aarch64-linux-gnu' || 'x86_64-linux-gnu' }}
             depends_on: linux64
     container:
       image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-ci-runner:${{ needs.build-image.outputs.image-tag }}
