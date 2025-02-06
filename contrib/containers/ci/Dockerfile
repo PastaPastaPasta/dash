@@ -148,7 +148,8 @@ RUN set -ex; \
       # (Ubuntu Jammy typically installs versioned binaries—adjust the version if needed.)
       ln -sf /usr/bin/arm-linux-gnueabihf-gcc-11 /usr/bin/arm-linux-gnueabihf-gcc; \
       ln -sf /usr/bin/arm-linux-gnueabihf-g++-11 /usr/bin/arm-linux-gnueabihf-g++; \
-    elif [ "${ARCH}" = "arm64" ]; then \
+    fi; \
+    if [ "${ARCH}" = "arm64" ]; then \
       echo "Installing cross-compiler for x86_64 on arm64"; \
       apt-get update && apt-get install $APT_ARGS \
         gcc-x86-64-linux-gnu \
