@@ -19,15 +19,19 @@ jobs:
       - name: Determine Target Architecture
         id: set-arch
         run: |
-          TARGET_ARCH="arm64"  # Change to "amd64" if you want to run on x86
-          echo "target_arch=${TARGET_ARCH}" >> $GITHUB_ENV
+          TARGET_ARCH="amd64"  # Change this to "arm64" if needed
+          
           if [[ "$TARGET_ARCH" == "arm64" ]]; then
-            echo "runner_label=ubuntu-22.04-arm" >> $GITHUB_ENV
+            RUNNER_LABEL="ubuntu-22.04-arm"
           else
-            echo "runner_label=ubuntu-22.04" >> $GITHUB_ENV
+            RUNNER_LABEL="ubuntu-22.04"
           fi
+
+          echo "target_arch=${TARGET_ARCH}" >> $GITHUB_ENV
+          echo "runner_label=${RUNNER_LABEL}" >> $GITHUB_ENV
+
           echo "target_arch=${TARGET_ARCH}" >> $GITHUB_OUTPUT
-          echo "runner_label=${runner_label}" >> $GITHUB_OUTPUT
+          echo "runner_label=${RUNNER_LABEL}" >> $GITHUB_OUTPUT  # Fix: Explicitly set output
 
   build-image:
     name: Build Image
