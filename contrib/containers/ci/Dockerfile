@@ -1,6 +1,6 @@
 FROM ubuntu:jammy
 
-# Needed to prevent tzdata hanging while expecting user input
+# Prevent tzdata from prompting
 ENV DEBIAN_FRONTEND="noninteractive" TZ="Europe/London"
 
 # Common APT arguments
@@ -26,9 +26,8 @@ RUN set -ex; \
 # -----------------------------------------------------------------------------
 # Detect host architecture and add a foreign architecture if needed.
 #
-# On an amd64 host we add armhf (with its dedicated sources file) so that we
-# can install packages like g++-arm-linux-gnueabihf. On ARM we do nothing,
-# as we assume the cross-compiler for x86_64 (g++-x86-64-linux-gnu) is available
+# On an amd64 host, add armhf (with its dedicated sources) so that we can install
+# the ARM cross‑compiler. On ARM, we assume that the x86_64 cross‑compiler is available
 # from the native repositories.
 # -----------------------------------------------------------------------------
 RUN set -ex; \
@@ -102,7 +101,7 @@ RUN set -ex; \
 
 #
 # -----------------------------------------------------------------------------
-# Install LLVM/Clang (example: version 18), set it as default
+# Install LLVM/Clang (example: version 18) and set it as default
 # -----------------------------------------------------------------------------
 ARG LLVM_VERSION=18
 RUN set -ex; \
@@ -115,7 +114,7 @@ RUN set -ex; \
       "libclang-rt-${LLVM_VERSION}-dev" \
       "lld-${LLVM_VERSION}" \
     && rm -rf /var/lib/apt/lists/*; \
-    # Update alternatives so that the LLVM binaries point to version ${LLVM_VERSION}
+    # Set up update-alternatives for LLVM tools
     ALT_CMD="update-alternatives --install /usr/bin/llvm-config llvm-config /usr/bin/llvm-config-${LLVM_VERSION} 100"; \
     for binName in clang clang++ clang-format clang-tidy clangd dsymutil lld lldb lldb-server llvm-ar llvm-cov llvm-nm llvm-objdump llvm-ranlib llvm-strip; do \
         ALT_CMD="$ALT_CMD --slave /usr/bin/${binName} ${binName} /usr/bin/${binName}-${LLVM_VERSION}"; \
@@ -125,24 +124,32 @@ RUN set -ex; \
     done; \
     sh -c "$ALT_CMD"
 
-# LD_LIBRARY_PATH is empty by default, so add the LLVM libraries
+# Add LLVM libraries to LD_LIBRARY_PATH
 ENV LD_LIBRARY_PATH="/usr/lib/llvm-${LLVM_VERSION}/lib"
 
 #
 # -----------------------------------------------------------------------------
 # Install cross compilers depending on host architecture.
 #
-# - On amd64, install g++-arm-linux-gnueabihf (which comes from the armhf sources).
-# - On ARM, install g++-x86-64-linux-gnu (provided by the native ARM repositories).
+# - On amd64: install the ARM cross compiler packages.
+# - On ARM: install the x86_64 cross compiler packages and create symlinks so that
+#         "x86_64-pc-linux-gnu-gcc" resolves to the installed cross compiler.
 # -----------------------------------------------------------------------------
 RUN set -ex; \
     ARCH="$(dpkg --print-architecture)"; \
     if [ "${ARCH}" = "amd64" ]; then \
       echo "Installing cross-compiler for ARM on amd64"; \
-      apt-get update && apt-get install $APT_ARGS g++-arm-linux-gnueabihf; \
+      apt-get update && apt-get install $APT_ARGS \
+        gcc-arm-linux-gnueabihf \
+        g++-arm-linux-gnueabihf; \
     elif [ "${ARCH}" = "arm64" ]; then \
       echo "Installing cross-compiler for x86_64 on arm64"; \
-      apt-get update && apt-get install $APT_ARGS g++-x86-64-linux-gnu; \
+      apt-get update && apt-get install $APT_ARGS \
+        gcc-x86-64-linux-gnu \
+        g++-x86-64-linux-gnu; \
+      # Create symlinks so that a build expecting x86_64-pc-linux-gnu-gcc will find the compiler.
+      ln -sf /usr/bin/x86_64-linux-gnu-gcc /usr/bin/x86_64-pc-linux-gnu-gcc; \
+      ln -sf /usr/bin/x86_64-linux-gnu-g++ /usr/bin/x86_64-pc-linux-gnu-g++; \
     else \
       echo "Warning: no cross-compiler installed for architecture: ${ARCH}"; \
     fi && \
@@ -150,15 +157,14 @@ RUN set -ex; \
 
 #
 # -----------------------------------------------------------------------------
-# Example: Additional Tools (ShellCheck, Cppcheck, dash_hash, etc.)
+# Additional Tools (ShellCheck, dash_hash, Cppcheck, etc.)
 # -----------------------------------------------------------------------------
 ARG SHELLCHECK_VERSION=v0.9.0
 RUN set -ex; \
-    # If you need ShellCheck for scripts:
+    # Example: download ShellCheck (note: the x86_64 binary won't run natively on ARM)
     curl -fL \
       "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" \
       -o /tmp/shellcheck.tar.xz || true; \
-    # Note: the above x86_64 binary won’t run natively on ARM unless you have QEMU set up.
     rm -f /tmp/shellcheck.tar.xz
 
 # dash_hash
