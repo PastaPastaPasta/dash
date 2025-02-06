@@ -113,7 +113,7 @@ jobs:
             -v ${{ github.workspace }}/.cache:/home/ubuntu/.cache \
             -w /src/dash \
             ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-guix-builder:${{ needs.build-image.outputs.image-tag }} && \
-          docker exec guix-daemon bash -c 'guix pull'
+          docker exec guix-daemon bash -c 'guix pull --url=https://github.com/PastaPastaPasta/guix.git'
 
       - name: Run Guix build
         timeout-minutes: 480
