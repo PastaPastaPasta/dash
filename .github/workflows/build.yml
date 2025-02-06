@@ -112,25 +112,25 @@ jobs:
             host: arm-linux-gnueabihf
             depends_on: arm-linux
           - build_target: linux64
-            host: aarch64-linux-gnu
+            host: x86_64-pc-linux-gnu
             depends_on: linux64
           - build_target: linux64_cxx20
-            host: aarch64-linux-gnu
+            host: x86_64-pc-linux-gnu
             depends_on: linux64
           - build_target: linux64_fuzz
-            host: aarch64-linux-gnu
+            host: x86_64-pc-linux-gnu
             depends_on: linux64
           - build_target: linux64_nowallet
-            host: aarch64-linux-gnu
+            host: x86_64-pc-linux-gnu
             depends_on: linux64
           - build_target: linux64_sqlite
-            host: aarch64-linux-gnu
+            host: x86_64-pc-linux-gnu
             depends_on: linux64
           - build_target: linux64_tsan
-            host: aarch64-linux-gnu
+            host: x86_64-pc-linux-gnu
             depends_on: linux64
           - build_target: linux64_ubsan
-            host: aarch64-linux-gnu
+            host: x86_64-pc-linux-gnu
             depends_on: linux64
     container:
       image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-ci-runner:${{ needs.build-image.outputs.image-tag }}
