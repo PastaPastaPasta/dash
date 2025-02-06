@@ -151,7 +151,7 @@ RUN set -ex; \
       echo "Installing cross-compiler for x86_64 on arm64"; \
       apt-get update && apt-get install $APT_ARGS \
         gcc-x86-64-linux-gnu \
-        g++-x86-64-linux-gnu \
+        g++-x86-64-linux-gnu; \
     fi && \
     rm -rf /var/lib/apt/lists/*
 
