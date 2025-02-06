@@ -151,13 +151,7 @@ RUN set -ex; \
       echo "Installing cross-compiler for x86_64 on arm64"; \
       apt-get update && apt-get install $APT_ARGS \
         gcc-x86-64-linux-gnu \
-        g++-x86-64-linux-gnu; \
-        binutils-x86-64-linux-gnu; \
-      \
-      # Create symlinks so that a build expecting x86_64-pc-linux-gnu-gcc/g++ will find the compiler.
-      ln -sf /usr/bin/x86_64-linux-gnu-gcc /usr/bin/x86_64-pc-linux-gnu-gcc; \
-      ln -sf /usr/bin/x86_64-linux-gnu-g++ /usr/bin/x86_64-pc-linux-gnu-g++; \
-      ln -sf /usr/bin/x86_64-linux-gnu-ar /usr/bin/x86_64-pc-linux-gnu-ar; \
+        g++-x86-64-linux-gnu \
     fi && \
     rm -rf /var/lib/apt/lists/*
 
