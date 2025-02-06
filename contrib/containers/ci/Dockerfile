@@ -138,17 +138,15 @@ ENV LD_LIBRARY_PATH="/usr/lib/llvm-${LLVM_VERSION}/lib"
 # -----------------------------------------------------------------------------
 RUN set -ex; \
     ARCH="$(dpkg --print-architecture)"; \
-    if [ "${ARCH}" = "amd64" || "${ARCH}" = "arm64"]; then \
-      echo "Installing cross-compiler for ARM on amd64"; \
-      apt-get update && apt-get install $APT_ARGS \
-        gcc-arm-linux-gnueabihf \
-        g++-arm-linux-gnueabihf; \
-      \
-      # Create symlinks for the ARM cross-compiler.
-      # (Ubuntu Jammy typically installs versioned binaries—adjust the version if needed.)
-      ln -sf /usr/bin/arm-linux-gnueabihf-gcc-11 /usr/bin/arm-linux-gnueabihf-gcc; \
-      ln -sf /usr/bin/arm-linux-gnueabihf-g++-11 /usr/bin/arm-linux-gnueabihf-g++; \
-    fi; \
+    echo "Installing cross-compiler for ARM on amd64"; \
+    apt-get update && apt-get install $APT_ARGS \
+    gcc-arm-linux-gnueabihf \
+    g++-arm-linux-gnueabihf; \
+    \
+    # Create symlinks for the ARM cross-compiler.
+    # (Ubuntu Jammy typically installs versioned binaries—adjust the version if needed.)
+    ln -sf /usr/bin/arm-linux-gnueabihf-gcc-11 /usr/bin/arm-linux-gnueabihf-gcc; \
+    ln -sf /usr/bin/arm-linux-gnueabihf-g++-11 /usr/bin/arm-linux-gnueabihf-g++; \
     if [ "${ARCH}" = "arm64" ]; then \
       echo "Installing cross-compiler for x86_64 on arm64"; \
       apt-get update && apt-get install $APT_ARGS \
