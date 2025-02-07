@@ -180,8 +180,8 @@ jobs:
           git checkout ${GIT_HEAD}
           CCACHE_SIZE="400M"
           CACHE_DIR="/cache"
-          mkdir /output
-          BASE_OUTDIR="/output"
+#          mkdir /output
+#          BASE_OUTDIR="/output"
           BUILD_TARGET="${{ matrix.build_target }}"
           source ./ci/dash/matrix.sh
           ./ci/dash/build_src.sh
@@ -192,7 +192,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-artifacts-${{ matrix.build_target }}
-          path: /output
+          path: build-ci/
 
   test:
     name: Functional Tests
