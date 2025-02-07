@@ -211,6 +211,12 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts-${{ matrix.build_target }}
+          path: build-ci/
+
       - name: Run functional tests
         run: ./ci/dash/test_integrationtests.sh --extended --exclude feature_pruning,feature_dbcrash
 
