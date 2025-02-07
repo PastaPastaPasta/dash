@@ -196,7 +196,7 @@ jobs:
 
   test:
     name: Functional Tests
-    needs: build
+    needs: [build-image, build-depends, build]
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
