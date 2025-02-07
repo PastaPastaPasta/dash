@@ -192,5 +192,32 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-artifacts-${{ matrix.build_target }}
-          path: |
-            /output
+          path: /output
+
+  test:
+    name: Functional Tests
+    needs: build
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - build_target: linux64
+          - build_target: win64
+    container:
+      image: ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-ci-runner:${{ needs.build-image.outputs.image-tag }}
+      options: --user root
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Run functional tests
+        run: ./ci/dash/test_integrationtests.sh --extended --exclude feature_pruning,feature_dbcrash
+
+      - name: Upload test logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs-${{ matrix.build_target }}
+          path: testlogs
