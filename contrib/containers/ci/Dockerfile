@@ -55,7 +55,7 @@ RUN set -ex; \
 ENV LD_LIBRARY_PATH="/usr/lib/llvm-${LLVM_VERSION}/lib"
 
 # Pyenv Builder (Minimal Installation)
-FROM ubuntu:jammy AS pyenv-builder
+FROM ubuntu:focal AS pyenv-builder
 # Needed to prevent tzdata hanging while expecting user input
 ENV DEBIAN_FRONTEND="noninteractive" TZ="Europe/London"
 ARG PYTHON_VERSION=3.9.21
@@ -85,13 +85,16 @@ RUN curl https://pyenv.run | bash \
     && pyenv update \
     && pyenv install $PYTHON_VERSION \
     && pyenv global $PYTHON_VERSION \
-    && pyenv rehash \
-    && pyenv which python3 > /tmp/python3_path
+    && pyenv rehash
 
 # Move installed Python to a standard location
-RUN mv "$(cat /tmp/python3_path | sed 's|/bin/python3||')" /usr/local/python3 \
+RUN mv /root/.pyenv/versions/${PYTHON_VERSION}/ /usr/local/python3 \
+    && ls -R /usr/local/python3 \
     && ln -s /usr/local/python3/bin/python3 /usr/local/bin/python3 \
     && ln -s /usr/local/python3/bin/pip3 /usr/local/bin/pip3
+
+
+RUN ls -R /usr/local/python3/lib
 
 # Clean up Pyenv to reduce image size
 RUN rm -rf /root/.pyenv /tmp/python3_path \
@@ -120,26 +123,19 @@ COPY --from=llvm-builder /usr/lib/llvm-${LLVM_VERSION}/ /usr/lib/llvm-${LLVM_VER
 COPY --from=llvm-builder /usr/lib/llvm-${LLVM_VERSION}/lib/ /usr/lib/llvm-${LLVM_VERSION}/lib/
 
 # Copy Python from pyenv-builder
-COPY --from=pyenv-builder /usr/local/python3/ /usr/local/python3/
-COPY --from=pyenv-builder /usr/local/bin/python3 /usr/local/bin/python3
-COPY --from=pyenv-builder /usr/local/bin/pip3 /usr/local/bin/pip3
-
-# Install Python packages
-RUN pip3 install --no-cache-dir \
-    codespell==1.17.1 \
-    flake8==3.8.3 \
-    jinja2 \
-    lief==0.13.2 \
-    multiprocess \
-    mypy==0.910 \
-    pyzmq==22.3.0 \
-    vulture==2.3
+COPY --from=pyenv-builder /usr/local/python3/bin/ /usr/local/bin/
+# Copy Python shared libraries to fix missing `libpython3.9.so.1.0`
+COPY --from=pyenv-builder /usr/local/python3/lib/ /usr/local/python3/lib/
+RUN ls -R /usr/local/python3/lib
+ENV LD_LIBRARY_PATH="/usr/local/python3/lib"
 
 # Set LD_LIBRARY_PATH for LLVM
-ENV LD_LIBRARY_PATH="/usr/lib/llvm-${LLVM_VERSION}/lib"
+ENV LD_LIBRARY_PATH="/usr/lib/llvm-${LLVM_VERSION}/lib:${LD_LIBRARY_PATH}"
 
 # Set Path
-ENV PATH="/usr/local/bin:${PATH}"
+ENV PATH="/usr/local/python3/bin:/usr/local/bin:${PATH}"
+
+RUN ls /usr/local/bin && python3 --version && python3 -m pip3 --version
 
 # Needed to prevent tzdata hanging while expecting user input
 ENV DEBIAN_FRONTEND="noninteractive" TZ="Europe/London"
@@ -192,6 +188,19 @@ RUN set -ex; \
     pkg-config \
     zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
+
+ENV PATH="/usr/local/python3/bin:/usr/local/bin:${PATH}"
+
+# Install Python packages
+RUN pip3 install --no-cache-dir \
+    codespell==1.17.1 \
+    flake8==3.8.3 \
+    jinja2 \
+    lief==0.13.2 \
+    multiprocess \
+    mypy==0.910 \
+    pyzmq==22.3.0 \
+    vulture==2.3
 
 ARG DASH_HASH_VERSION=1.4.0
 RUN set -ex; \
