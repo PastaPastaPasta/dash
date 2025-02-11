@@ -17,10 +17,62 @@ RUN set -ex; \
     mkdir build && cd build && cmake .. && cmake --build . -j"$(nproc)"; \
     strip bin/cppcheck
 
+# LLVM Builder
+# LLVM Builder
+FROM ubuntu:jammy AS llvm-builder
+
+ARG LLVM_VERSION=18
+
+RUN set -ex; \
+    apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        ca-certificates \
+        software-properties-common \
+        wget \
+    && rm -rf /var/lib/apt/lists/*; \
+    echo "Installing LLVM and Clang ${LLVM_VERSION}..."; \
+    curl -sL https://apt.llvm.org/llvm.sh | bash -s -- "${LLVM_VERSION}"; \
+    echo "Installing additional packages..."; \
+    apt-get update && apt-get install -y --no-install-recommends \
+        "clang-format-${LLVM_VERSION}" \
+        "clang-tidy-${LLVM_VERSION}" \
+        "libc++-${LLVM_VERSION}-dev" \
+        "libc++abi-${LLVM_VERSION}-dev" \
+        "libclang-rt-${LLVM_VERSION}-dev" \
+        "lld-${LLVM_VERSION}" \
+    && rm -rf /var/lib/apt/lists/*; \
+    echo "Setting defaults..."; \
+    lldbUpdAltArgs="update-alternatives --install /usr/bin/llvm-config llvm-config /usr/bin/llvm-config-${LLVM_VERSION} 100"; \
+    for binName in clang clang++ clang-format clang-tidy clangd dsymutil lld lldb lldb-server llvm-ar llvm-cov llvm-nm llvm-objdump llvm-ranlib llvm-strip; do \
+        lldbUpdAltArgs="${lldbUpdAltArgs} --slave /usr/bin/${binName} ${binName} /usr/bin/${binName}-${LLVM_VERSION}"; \
+    done; \
+    for binName in ld64.lld ld.lld lld-link wasm-ld; do \
+        lldbUpdAltArgs="${lldbUpdAltArgs} --slave /usr/bin/${binName} ${binName} /usr/bin/lld-${LLVM_VERSION}"; \
+    done; \
+    sh -c "${lldbUpdAltArgs}"
+
+# Store LD_LIBRARY_PATH for later use
+ENV LD_LIBRARY_PATH="/usr/lib/llvm-${LLVM_VERSION}/lib"
+
 # Final Image
 FROM ubuntu:focal
 COPY --from=cppcheck-builder /src/cppcheck/build/bin/cppcheck /usr/local/bin/cppcheck
 COPY --from=cppcheck-builder /src/cppcheck/cfg /usr/local/share/Cppcheck/cfg
+
+ARG LLVM_VERSION=18
+# Copy only LLVM binaries from pre-built llvm-builder
+COPY --from=llvm-builder /usr/bin/clang-${LLVM_VERSION} /usr/bin/
+COPY --from=llvm-builder /usr/bin/clang++-${LLVM_VERSION} /usr/bin/
+COPY --from=llvm-builder /usr/bin/llvm-* /usr/bin/
+COPY --from=llvm-builder /usr/bin/lld-${LLVM_VERSION} /usr/bin/
+COPY --from=llvm-builder /usr/bin/ld.lld-${LLVM_VERSION} /usr/bin/
+
+# Copy only the necessary LLVM libraries
+COPY --from=llvm-builder /usr/lib/llvm-${LLVM_VERSION}/ /usr/lib/llvm-${LLVM_VERSION}/
+COPY --from=llvm-builder /usr/lib/llvm-${LLVM_VERSION}/lib/ /usr/lib/llvm-${LLVM_VERSION}/lib/
+
+# Set LD_LIBRARY_PATH for LLVM
+ENV LD_LIBRARY_PATH="/usr/lib/llvm-${LLVM_VERSION}/lib"
 
 # Set Path
 ENV PATH="/usr/local/bin:${PATH}"
@@ -76,34 +128,6 @@ RUN set -ex; \
     pkg-config \
     zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
-
-# Install Clang+LLVM and set it as default
-# We don't need all packages but the default set doesn't include some
-# packages we want so we will need to install some of them manually.
-ARG LLVM_VERSION=18
-RUN set -ex; \
-    echo "Installing LLVM and Clang ${LLVM_VERSION}..."; \
-    curl -sL https://apt.llvm.org/llvm.sh | bash -s -- "${LLVM_VERSION}"; \
-    echo "Installing additional packages..."; \
-    apt-get update && apt-get install $APT_ARGS \
-    "clang-format-${LLVM_VERSION}" \
-    "clang-tidy-${LLVM_VERSION}" \
-    "libc++-${LLVM_VERSION}-dev" \
-    "libc++abi-${LLVM_VERSION}-dev" \
-    "libclang-rt-${LLVM_VERSION}-dev" \
-    "lld-${LLVM_VERSION}"; \
-    rm -rf /var/lib/apt/lists/*; \
-    echo "Setting defaults..."; \
-    lldbUpdAltArgs="update-alternatives --install /usr/bin/llvm-config llvm-config /usr/bin/llvm-config-${LLVM_VERSION} 100"; \
-    for binName in clang clang++ clang-format clang-tidy clangd dsymutil lld lldb lldb-server llvm-ar llvm-cov llvm-nm llvm-objdump llvm-ranlib llvm-strip; do \
-        lldbUpdAltArgs="${lldbUpdAltArgs} --slave /usr/bin/${binName} ${binName} /usr/bin/${binName}-${LLVM_VERSION}"; \
-    done; \
-    for binName in ld64.lld ld.lld lld-link wasm-ld; do \
-        lldbUpdAltArgs="${lldbUpdAltArgs} --slave /usr/bin/${binName} ${binName} /usr/bin/lld-${LLVM_VERSION}"; \
-    done; \
-    sh -c "${lldbUpdAltArgs}";
-# LD_LIBRARY_PATH is empty by default, this is the first entry
-ENV LD_LIBRARY_PATH="/usr/lib/llvm-${LLVM_VERSION}/lib"
 
 # Python setup
 # PYTHON_VERSION should match the value in .python-version
