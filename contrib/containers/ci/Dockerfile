@@ -87,17 +87,16 @@ RUN curl https://pyenv.run | bash \
     && pyenv rehash
 
 # Move installed Python to a standard location
-RUN mv /root/.pyenv/versions/${PYTHON_VERSION}/ /usr/local/python3 \
-    && ls -R /usr/local/python3 \
-    && ln -s /usr/local/python3/bin/python3 /usr/local/bin/python3 \
-    && ln -s /usr/local/python3/bin/pip3 /usr/local/bin/pip3
+# RUN mv /root/.pyenv/versions/${PYTHON_VERSION}/ /usr/local/python3 \
+#     && ls -R /usr/local/python3 \
+#     && ln -s /usr/local/python3/bin/python3 /usr/local/bin/python3 \
+#     && ln -s /usr/local/python3/bin/pip3 /usr/local/bin/pip3
 
 
-RUN ls -R /usr/local/python3/lib
+# RUN ls -R /usr/local/python3/lib
 
 # Clean up Pyenv to reduce image size
-RUN rm -rf /root/.pyenv /tmp/python3_path \
-    && apt-get remove -y build-essential libbz2-dev libffi-dev liblzma-dev \
+RUN apt-get remove -y build-essential libbz2-dev libffi-dev liblzma-dev \
     libncurses5-dev libncursesw5-dev libreadline-dev libsqlite3-dev libssl-dev \
     make tk-dev xz-utils zlib1g-dev \
     && apt-get autoremove -y \
@@ -121,20 +120,25 @@ COPY --from=llvm-builder /usr/bin/ld.lld-${LLVM_VERSION} /usr/bin/
 COPY --from=llvm-builder /usr/lib/llvm-${LLVM_VERSION}/ /usr/lib/llvm-${LLVM_VERSION}/
 COPY --from=llvm-builder /usr/lib/llvm-${LLVM_VERSION}/lib/ /usr/lib/llvm-${LLVM_VERSION}/lib/
 
+ARG PYTHON_VERSION=3.9.21
+
 # Copy Python from pyenv-builder
-COPY --from=pyenv-builder /usr/local/python3/bin/ /usr/local/bin/
+COPY --from=pyenv-builder /root/.pyenv /root/.pyenv
 # Copy Python shared libraries to fix missing `libpython3.9.so.1.0`
-COPY --from=pyenv-builder /usr/local/python3/lib/ /usr/local/python3/lib/
-RUN ls -R /usr/local/python3/lib
-ENV LD_LIBRARY_PATH="/usr/local/python3/lib"
+# COPY --from=pyenv-builder /usr/local/python3/lib/ /usr/local/python3/lib/
+# RUN ls -R /usr/local/python3/lib
+ENV LD_LIBRARY_PATH="/root/.pyenv/versions/$PYTHON_VERSION/lib"
 
 # Set LD_LIBRARY_PATH for LLVM
 ENV LD_LIBRARY_PATH="/usr/lib/llvm-${LLVM_VERSION}/lib:${LD_LIBRARY_PATH}"
 
 # Set Path
-ENV PATH="/usr/local/python3/bin:/usr/local/bin:${PATH}"
+ENV PATH="/usr/local/python3/bin:/usr/local/bin:/root/.pyenv/versions/3.9.21/bin:${PATH}"
+ENV PYTHONHOME="/root/.pyenv/versions/$PYTHON_VERSION"
+# ENV PYTHONPATH="/root/.pyenv/versions/$PYTHON_VERSION/lib"
+RUN ls /root/.pyenv/ && ls /root/.pyenv/versions/$PYTHON_VERSION/bin
 
-RUN ls /usr/local/bin && python3 --version && python3 -m pip3 --version
+# RUN python3 --version && python3 -m pip --version && pip3 --version
 
 # Needed to prevent tzdata hanging while expecting user input
 ENV DEBIAN_FRONTEND="noninteractive" TZ="Europe/London"
@@ -142,6 +146,29 @@ ENV DEBIAN_FRONTEND="noninteractive" TZ="Europe/London"
 # Build and base stuff
 # (zlib1g-dev is needed for the Qt host binary builds, but should not be used by target binaries)
 ENV APT_ARGS="-y --no-install-recommends --no-upgrade"
+
+#pyenv packages?
+RUN set -ex; \
+    apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        ca-certificates \
+        build-essential \
+        libbz2-dev \
+        libffi-dev \
+        liblzma-dev \
+        libncurses5-dev \
+        libncursesw5-dev \
+        libreadline-dev \
+        libsqlite3-dev \
+        libssl-dev \
+        make \
+        tk-dev \
+        xz-utils \
+        zlib1g-dev \
+        git \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN ls /usr/local/bin && python3 --version && python3 -m pip --version
 
 # Install packages for i386 on amd64 hosts, then install common packages
 RUN set -ex; \
@@ -199,7 +226,8 @@ RUN pip3 install --no-cache-dir \
     multiprocess \
     mypy==0.910 \
     pyzmq==22.3.0 \
-    vulture==2.3
+    vulture==2.3 \
+    pyzmq
 
 ARG DASH_HASH_VERSION=1.4.0
 RUN set -ex; \
@@ -234,7 +262,7 @@ RUN apt-get update && apt-get install $APT_ARGS \
     libz-dev \
     libncurses5 \
     nsis \
-    python3-zmq \
+#     python3-zmq \
     parallel \
     valgrind \
     wine-stable \
