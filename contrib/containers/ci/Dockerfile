@@ -54,6 +54,54 @@ RUN set -ex; \
 # Store LD_LIBRARY_PATH for later use
 ENV LD_LIBRARY_PATH="/usr/lib/llvm-${LLVM_VERSION}/lib"
 
+# Pyenv Builder (Minimal Installation)
+FROM ubuntu:jammy AS pyenv-builder
+# Needed to prevent tzdata hanging while expecting user input
+ENV DEBIAN_FRONTEND="noninteractive" TZ="Europe/London"
+ARG PYTHON_VERSION=3.9.21
+RUN set -ex; \
+    apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        ca-certificates \
+        build-essential \
+        libbz2-dev \
+        libffi-dev \
+        liblzma-dev \
+        libncurses5-dev \
+        libncursesw5-dev \
+        libreadline-dev \
+        libsqlite3-dev \
+        libssl-dev \
+        make \
+        tk-dev \
+        xz-utils \
+        zlib1g-dev \
+        git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python using Pyenv
+RUN curl https://pyenv.run | bash \
+    && export PATH="/root/.pyenv/shims:/root/.pyenv/bin:$PATH" \
+    && pyenv update \
+    && pyenv install $PYTHON_VERSION \
+    && pyenv global $PYTHON_VERSION \
+    && pyenv rehash \
+    && pyenv which python3 > /tmp/python3_path
+
+# Move installed Python to a standard location
+RUN mv "$(cat /tmp/python3_path | sed 's|/bin/python3||')" /usr/local/python3 \
+    && ln -s /usr/local/python3/bin/python3 /usr/local/bin/python3 \
+    && ln -s /usr/local/python3/bin/pip3 /usr/local/bin/pip3
+
+# Clean up Pyenv to reduce image size
+RUN rm -rf /root/.pyenv /tmp/python3_path \
+    && apt-get remove -y build-essential libbz2-dev libffi-dev liblzma-dev \
+    libncurses5-dev libncursesw5-dev libreadline-dev libsqlite3-dev libssl-dev \
+    make tk-dev xz-utils zlib1g-dev \
+    && apt-get autoremove -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 # Final Image
 FROM ubuntu:focal
 COPY --from=cppcheck-builder /src/cppcheck/build/bin/cppcheck /usr/local/bin/cppcheck
@@ -70,6 +118,22 @@ COPY --from=llvm-builder /usr/bin/ld.lld-${LLVM_VERSION} /usr/bin/
 # Copy only the necessary LLVM libraries
 COPY --from=llvm-builder /usr/lib/llvm-${LLVM_VERSION}/ /usr/lib/llvm-${LLVM_VERSION}/
 COPY --from=llvm-builder /usr/lib/llvm-${LLVM_VERSION}/lib/ /usr/lib/llvm-${LLVM_VERSION}/lib/
+
+# Copy Python from pyenv-builder
+COPY --from=pyenv-builder /usr/local/python3/ /usr/local/python3/
+COPY --from=pyenv-builder /usr/local/bin/python3 /usr/local/bin/python3
+COPY --from=pyenv-builder /usr/local/bin/pip3 /usr/local/bin/pip3
+
+# Install Python packages
+RUN pip3 install --no-cache-dir \
+    codespell==1.17.1 \
+    flake8==3.8.3 \
+    jinja2 \
+    lief==0.13.2 \
+    multiprocess \
+    mypy==0.910 \
+    pyzmq==22.3.0 \
+    vulture==2.3
 
 # Set LD_LIBRARY_PATH for LLVM
 ENV LD_LIBRARY_PATH="/usr/lib/llvm-${LLVM_VERSION}/lib"
@@ -128,41 +192,6 @@ RUN set -ex; \
     pkg-config \
     zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
-
-# Python setup
-# PYTHON_VERSION should match the value in .python-version
-ARG PYTHON_VERSION=3.9.21
-RUN apt-get update && apt-get install $APT_ARGS \
-    ca-certificates \
-    libbz2-dev \
-    libffi-dev \
-    liblzma-dev \
-    libncurses5-dev \
-    libncursesw5-dev \
-    libreadline-dev \
-    libsqlite3-dev \
-    libssl-dev \
-    make \
-    tk-dev \
-    xz-utils \
-    && rm -rf /var/lib/apt/lists/*
-
-ENV PYENV_ROOT="/usr/local/pyenv"
-ENV PATH="${PYENV_ROOT}/shims:${PYENV_ROOT}/bin:${PATH}"
-RUN curl https://pyenv.run | bash \
-    && pyenv update \
-    && pyenv install $PYTHON_VERSION \
-    && pyenv global $PYTHON_VERSION \
-    && pyenv rehash
-RUN pip3 install --no-cache-dir \
-    codespell==1.17.1 \
-    flake8==3.8.3 \
-    jinja2 \
-    lief==0.13.2 \
-    multiprocess \
-    mypy==0.910 \
-    pyzmq==22.3.0 \
-    vulture==2.3
 
 ARG DASH_HASH_VERSION=1.4.0
 RUN set -ex; \
