@@ -18,7 +18,6 @@ RUN set -ex; \
     strip bin/cppcheck
 
 # LLVM Builder
-# LLVM Builder
 FROM ubuntu:jammy AS llvm-builder
 
 ARG LLVM_VERSION=18
