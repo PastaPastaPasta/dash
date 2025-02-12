@@ -82,6 +82,13 @@ jobs:
           source ./ci/dash/matrix.sh
           ./ci/dash/test_unittests.sh
 
+      - name: Ccache statistics
+        run: |
+          ccache -s
+          ccache -c
+          ccache -X 9
+        if: always()
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
