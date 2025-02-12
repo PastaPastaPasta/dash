@@ -20,8 +20,6 @@ jobs:
   build-depends:
     name: Build depends
     runs-on: ubuntu-24.04
-    outputs:
-      key:  ${{ steps.restore.outputs.cache-primary-key }}
     container:
       image: ${{ inputs.container-path }}
       options: --user root
@@ -68,12 +66,3 @@ jobs:
 
       - name: Build depends
         run: env ${{ steps.setup.outputs.DEP_OPTS }} HOST=${{ steps.setup.outputs.HOST }} make -j$(nproc) -C depends
-
-      - name: Save depends cache
-        uses: actions/cache/save@v4
-        if: steps.restore.outputs.cache-hit != 'true'
-        with:
-          path: |
-            depends/built
-            depends/${{ steps.setup.outputs.HOST }}
-          key: ${{ steps.restore.outputs.cache-primary-key }}
