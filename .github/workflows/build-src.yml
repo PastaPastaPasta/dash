@@ -81,6 +81,7 @@ jobs:
           BUILD_TARGET="${{ inputs.build-target }}"
           source ./ci/dash/matrix.sh
           ./ci/dash/test_unittests.sh
+        shell: bash
 
       - name: Ccache statistics
         run: |
