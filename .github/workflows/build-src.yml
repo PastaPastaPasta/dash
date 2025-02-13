@@ -66,7 +66,7 @@ jobs:
 
       - name: Build source
         run: |
-          CCACHE_SIZE="50M"
+          CCACHE_SIZE="100M"
           CACHE_DIR="/cache"
           mkdir /output
           BASE_OUTDIR="/output"
