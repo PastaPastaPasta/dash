@@ -14,7 +14,7 @@ on:
     outputs:
       key:
         description: "Key needed for restoring depends cache"
-        value: ${{ jobs.build-depends.outputs.key }}
+        value: ${{ jobs.setup.outputs.DEP_HASH }}
 
 jobs:
   build-depends:
