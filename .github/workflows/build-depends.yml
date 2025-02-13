@@ -59,7 +59,6 @@ jobs:
         id: restore
         with:
           path: |
-            depends/built
             depends/${{ steps.setup.outputs.HOST }}
           key: ${{ runner.os }}-depends-${{ inputs.build-target }}-${{ steps.setup.outputs.DEP_HASH }}-${{ hashFiles('depends/packages/*') }}
           restore-keys: |
