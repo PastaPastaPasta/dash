@@ -38,6 +38,7 @@ jobs:
           source ./ci/dash/matrix.sh
           echo "DEP_OPTS=${DEP_OPTS}" >> "${GITHUB_OUTPUT}"
           echo "HOST=${HOST}" >> "${GITHUB_OUTPUT}"
+          echo "BUILD_TARGET=${BUILD_TARGET}" >> "${GITHUB_OUTPUT}"
           DEP_HASH="$(echo -n "${BUILD_TARGET}" "${DEP_OPTS}" "${HOST}" | sha256sum | head -c 64)"
           echo "\"${BUILD_TARGET}\" has HOST=\"${HOST}\" and DEP_OPTS=\"${DEP_OPTS}\" with hash \"${DEP_HASH}\""
           echo "DEP_HASH=${DEP_HASH}" >> "${GITHUB_OUTPUT}"
