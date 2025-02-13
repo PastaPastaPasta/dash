@@ -73,8 +73,8 @@ jobs:
           BUILD_TARGET="${{ inputs.build-target }}"
           source ./ci/dash/matrix.sh
           ./ci/dash/build_src.sh
-          ccache -c
           ccache -X 9
+          ccache -c
         shell: bash
 
       - name: Run unit tests
