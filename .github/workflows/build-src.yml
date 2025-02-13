@@ -45,14 +45,12 @@ jobs:
           echo "PR_BASE_SHA=${{ github.event.pull_request.base.sha || '' }}" >> $GITHUB_OUTPUT
         shell: bash
 
-      - name: Restore depends cache
-        uses: actions/cache/restore@v4
+      - name: Download depends artifact
+        uses: actions/download-artifact@v4
         with:
+          name: depends-${{ steps.setup.outputs.HOST }}
           path: |
-            depends/built
             depends/${{ steps.setup.outputs.HOST }}
-          key: ${{ inputs.depends-key }}
-          fail-on-cache-miss: true
 
       - name: Manage ccache
         uses: actions/cache@v4

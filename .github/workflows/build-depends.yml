@@ -59,7 +59,7 @@ jobs:
         id: restore
         with:
           path: |
-            depends/${{ steps.setup.outputs.HOST }}
+            depends/built
           key: ${{ runner.os }}-depends-${{ inputs.build-target }}-${{ steps.setup.outputs.DEP_HASH }}-${{ hashFiles('depends/packages/*') }}
           restore-keys: |
             ${{ runner.os }}-depends-${{ inputs.build-target }}-${{ hashFiles('depends/packages/*') }}
@@ -68,11 +68,17 @@ jobs:
       - name: Build depends
         run: env ${{ steps.setup.outputs.DEP_OPTS }} HOST=${{ steps.setup.outputs.HOST }} make -j$(nproc) -C depends
 
+      - name: Upload depends artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: depends-${{ steps.setup.outputs.HOST }}
+          path: |
+            depends/${{ steps.setup.outputs.HOST }}
+
       - name: Save depends cache
         uses: actions/cache/save@v4
         if: steps.restore.outputs.cache-hit != 'true'
         with:
           path: |
             depends/built
-            depends/${{ steps.setup.outputs.HOST }}
           key: ${{ steps.restore.outputs.cache-primary-key }}
