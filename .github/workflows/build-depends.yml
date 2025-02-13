@@ -71,7 +71,7 @@ jobs:
       - name: Upload depends artifact
         uses: actions/upload-artifact@v4
         with:
-          name: depends-${{ steps.setup.outputs.HOST }}
+          name: depends-${{ steps.setup.outputs.BUILD_TARGET }}
           path: |
             depends/${{ steps.setup.outputs.HOST }}
 
