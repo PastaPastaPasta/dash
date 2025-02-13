@@ -21,7 +21,7 @@ jobs:
     name: Build depends
     runs-on: ubuntu-24.04
     outputs:
-      key:  ${{ steps.restore.outputs.cache-primary-key }}
+      key:  ${{ steps.setup.outputs.DEP_HASH }}
     container:
       image: ${{ inputs.container-path }}
       options: --user root
