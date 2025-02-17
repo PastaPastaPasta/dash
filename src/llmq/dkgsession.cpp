@@ -1222,9 +1222,8 @@ std::vector<CFinalCommitment> CDKGSession::FinalizeCommitments()
     {
         LOCK(invCs);
 
-        for (const auto& p : prematureCommitments) {
-            const auto& qc = p.second;
-            if (validCommitments.count(p.first) == 0) {
+        for (const auto& [hash, qc] : prematureCommitments) {
+            if (validCommitments.count(hash) == 0) {
                 continue;
             }
 
@@ -1241,8 +1240,7 @@ std::vector<CFinalCommitment> CDKGSession::FinalizeCommitments()
     }
 
     std::vector<CFinalCommitment> finalCommitments;
-    for (const auto& p : commitmentsMap) {
-        const auto& cvec = p.second;
+    for (const auto& [_, cvec] : commitmentsMap) {
         if (cvec.size() < size_t(params.minSize)) {
             // commitment was signed by a minority
             continue;
