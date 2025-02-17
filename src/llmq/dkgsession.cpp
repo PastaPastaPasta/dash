@@ -283,6 +283,11 @@ std::optional<CInv> CDKGSession::ReceiveMessage(const CDKGContribution& qc)
     CDKGLogger logger(*this, __func__, __LINE__);
 
     auto* member = GetMember(qc.proTxHash);
+    // This should've been verified in PreVerifyMessage
+    if (!member) {
+        ASSERT_IF_DEBUG(false);
+        return {};
+    }
 
     cxxtimer::Timer t1(true);
     logger.Batch("received contribution from %s", qc.proTxHash.ToString());
@@ -594,6 +599,12 @@ std::optional<CInv> CDKGSession::ReceiveMessage(const CDKGComplaint& qc)
 
     auto* member = GetMember(qc.proTxHash);
 
+    // This should've been verified in PreVerifyMessage
+    if (!member) {
+        ASSERT_IF_DEBUG(false);
+        return {};
+    }
+
     if (member->complaints.size() >= 2) {
         // only relay up to 2 complaints, that's enough to let the other members know about his bad behavior
         return std::nullopt;
@@ -803,6 +814,12 @@ std::optional<CInv> CDKGSession::ReceiveMessage(const CDKGJustification& qj)
     logger.Batch("received justification from %s", qj.proTxHash.ToString());
 
     auto* member = GetMember(qj.proTxHash);
+
+    // This should've been verified in PreVerifyMessage
+    if (!member) {
+        ASSERT_IF_DEBUG(false);
+        return {};
+    }
 
     if (member->justifications.size() >= 2) {
         // only relay up to 2 justifications, that's enough to let the other members know about his bad behavior
@@ -1116,6 +1133,13 @@ std::optional<CInv> CDKGSession::ReceiveMessage(const CDKGPrematureCommitment& q
     logger.Batch("received premature commitment from %s. validMembers=%d", qc.proTxHash.ToString(), qc.CountValidMembers());
 
     auto* member = GetMember(qc.proTxHash);
+
+    // This should've been verified in PreVerifyMessage
+    if (!member) {
+        ASSERT_IF_DEBUG(false);
+        return {};
+    }
+
     const uint256 hash = ::SerializeHash(qc);
 
     {
