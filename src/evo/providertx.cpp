@@ -12,9 +12,9 @@
 #include <tinyformat.h>
 #include <util/underlying.h>
 
-bool CProRegTx::IsTriviallyValid(bool is_basic_scheme_active, TxValidationState& state) const
+bool CProRegTx::IsTriviallyValid(ProtxBLSSchemeRules bls_rules, TxValidationState& state) const
 {
-    if (nVersion == 0 || nVersion > GetVersion(is_basic_scheme_active)) {
+    if (nVersion == 0 || nVersion > GetVersion(bls_rules.is_basic_scheme_active)) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-version");
     }
     if (nVersion != BASIC_BLS_VERSION && nType == MnType::Evo) {
@@ -96,15 +96,17 @@ std::string CProRegTx::ToString() const
                      platformHTTPPort);
 }
 
-bool CProUpServTx::IsTriviallyValid(bool is_basic_scheme_active, TxValidationState& state) const
+bool CProUpServTx::IsTriviallyValid(ProtxBLSSchemeRules bls_rules, TxValidationState& state) const
 {
-    if (nVersion == 0 || nVersion > GetVersion(is_basic_scheme_active)) {
+    if (nVersion == 0 || nVersion > GetVersion(bls_rules.is_basic_scheme_active)) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-version");
     }
     if (nVersion != BASIC_BLS_VERSION && nType == MnType::Evo) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-evo-version");
     }
-
+    if (nVersion != BASIC_BLS_VERSION && bls_rules.is_basic_scheme_mandated) {
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-bls-legacy");
+    }
     return true;
 }
 
@@ -122,9 +124,9 @@ std::string CProUpServTx::ToString() const
                      platformNodeID.ToString(), platformP2PPort, platformHTTPPort);
 }
 
-bool CProUpRegTx::IsTriviallyValid(bool is_basic_scheme_active, TxValidationState& state) const
+bool CProUpRegTx::IsTriviallyValid(ProtxBLSSchemeRules bls_rules, TxValidationState& state) const
 {
-    if (nVersion == 0 || nVersion > GetVersion(is_basic_scheme_active)) {
+    if (nVersion == 0 || nVersion > GetVersion(bls_rules.is_basic_scheme_active)) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-version");
     }
     if (nMode != 0) {
@@ -155,9 +157,9 @@ std::string CProUpRegTx::ToString() const
         nVersion, proTxHash.ToString(), pubKeyOperator.ToString(), EncodeDestination(PKHash(keyIDVoting)), payee);
 }
 
-bool CProUpRevTx::IsTriviallyValid(bool is_basic_scheme_active, TxValidationState& state) const
+bool CProUpRevTx::IsTriviallyValid(ProtxBLSSchemeRules bls_rules, TxValidationState& state) const
 {
-    if (nVersion == 0 || nVersion > GetVersion(is_basic_scheme_active)) {
+    if (nVersion == 0 || nVersion > GetVersion(bls_rules.is_basic_scheme_active)) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-version");
     }
 

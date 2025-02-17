@@ -19,6 +19,13 @@
 
 class TxValidationState;
 
+struct ProtxBLSSchemeRules {
+    // Require new masternodes to use non-legacy BLS scheme
+    const bool is_basic_scheme_active;
+    // Require banned masternodes to use basic scheme in order to be revived
+    const bool is_basic_scheme_mandated;
+};
+
 class CProRegTx
 {
 public:
@@ -112,7 +119,7 @@ public:
         return obj;
     }
 
-    bool IsTriviallyValid(bool is_basic_scheme_active, TxValidationState& state) const;
+    bool IsTriviallyValid(ProtxBLSSchemeRules bls_rules, TxValidationState& state) const;
 };
 
 class CProUpServTx
@@ -192,7 +199,7 @@ public:
         return obj;
     }
 
-    bool IsTriviallyValid(bool is_basic_scheme_active, TxValidationState& state) const;
+    bool IsTriviallyValid(ProtxBLSSchemeRules bls_rules, TxValidationState& state) const;
 };
 
 class CProUpRegTx
@@ -257,7 +264,7 @@ public:
         return obj;
     }
 
-    bool IsTriviallyValid(bool is_basic_scheme_active, TxValidationState& state) const;
+    bool IsTriviallyValid(ProtxBLSSchemeRules bls_rules, TxValidationState& state) const;
 };
 
 class CProUpRevTx
@@ -321,7 +328,7 @@ public:
         return obj;
     }
 
-    bool IsTriviallyValid(bool is_basic_scheme_active, TxValidationState& state) const;
+    bool IsTriviallyValid(ProtxBLSSchemeRules bls_rules, TxValidationState& state) const;
 };
 
 template <typename ProTx>

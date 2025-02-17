@@ -40,10 +40,11 @@ constexpr bool ValidDeployment(BuriedDeployment dep) { return dep <= DEPLOYMENT_
 enum DeploymentPos : uint16_t {
     DEPLOYMENT_TESTDUMMY,
     DEPLOYMENT_WITHDRAWALS, // Deployment of Fix for quorum selection for withdrawals
+    DEPLOYMENT_V23,
     // NOTE: Also add new deployments to VersionBitsDeploymentInfo in deploymentinfo.cpp
     MAX_VERSION_BITS_DEPLOYMENTS
 };
-constexpr bool ValidDeployment(DeploymentPos dep) { return dep < MAX_VERSION_BITS_DEPLOYMENTS; }
+constexpr bool ValidDeployment(DeploymentPos dep) { return dep < DEPLOYMENT_V23; }
 
 /**
  * Struct for each individual consensus rule change using BIP9.
