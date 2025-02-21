@@ -56,6 +56,7 @@ jobs:
         with:
           context: ${{ inputs.context }}
           file: ${{ inputs.file }}
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ghcr.io/${{ steps.prepare.outputs.repo }}/${{ inputs.name }}:${{ hashFiles(inputs.file) }}
