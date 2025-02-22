@@ -18,35 +18,53 @@ concurrency:
   cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 jobs:
-  container:
-    name: Build container
+  container-arm:
+    name: Build container (arm)
+    uses: ./.github/workflows/build-container.yml
+    with:
+      runs-on: ubuntu-24.04-arm
+
+  container-x86:
+    name: Build container (x86)
     uses: ./.github/workflows/build-container.yml
     with:
       context: ./contrib/containers/ci
       file: ./contrib/containers/ci/ci.Dockerfile
       name: dashcore-ci-runner
+      runs-on: ubuntu-24.04
 
-  container-slim:
+  container-slim-arm:
     name: Build slim container
     uses: ./.github/workflows/build-container.yml
     with:
       context: ./contrib/containers/ci
       file: ./contrib/containers/ci/ci-slim.Dockerfile
       name: dashcore-ci-slim
+      runs-on: ubuntu-24.04-arm
+
+  container-slim-x86:
+    name: Build slim container
+    uses: ./.github/workflows/build-container.yml
+    with:
+      context: ./contrib/containers/ci
+      file: ./contrib/containers/ci/ci-slim.Dockerfile
+      name: dashcore-ci-slim
+      runs-on: ubuntu-24.04
 
   depends-arm-linux:
     name: arm-linux-gnueabihf
     uses: ./.github/workflows/build-depends.yml
-    needs: [container]
+    needs: [container-arm]
     if: ${{ vars.SKIP_ARM_LINUX == '' }}
     with:
       build-target: arm-linux
-      container-path: ${{ needs.container.outputs.path }}
+      container-path: ${{ needs.container-arm.outputs.path }}
+      runs-on: ubuntu-24.04-arm
 
   depends-linux64:
     name: x86_64-pc-linux-gnu
     uses: ./.github/workflows/build-depends.yml
-    needs: [container]
+    needs: [container-arm]
     if: |
       vars.SKIP_LINUX64 == '' ||
       vars.SKIP_LINUX64_FUZZ == '' ||
@@ -54,146 +72,161 @@ jobs:
       vars.SKIP_LINUX64_UBSAN == ''
     with:
       build-target: linux64
-      container-path: ${{ needs.container.outputs.path }}
+      container-path: ${{ needs.container-arm.outputs.path }}
+      runs-on: ubuntu-24.04-arm
 
   depends-linux64_multiprocess:
     name: x86_64-pc-linux-gnu_multiprocess
     uses: ./.github/workflows/build-depends.yml
-    needs: [container]
+    needs: [container-arm]
     if: |
       vars.SKIP_LINUX64_MULTIPROCESS == '' ||
       vars.SKIP_LINUX64_TSAN == ''
     with:
       build-target: linux64_multiprocess
-      container-path: ${{ needs.container.outputs.path }}
+      container-path: ${{ needs.container-arm.outputs.path }}
+      runs-on: ubuntu-24.04-arm
 
   depends-linux64_nowallet:
     name: x86_64-pc-linux-gnu_nowallet
     uses: ./.github/workflows/build-depends.yml
-    needs: [container]
+    needs: [container-x86]
     if: ${{ vars.SKIP_LINUX64_NOWALLET == '' }}
     with:
       build-target: linux64_nowallet
-      container-path: ${{ needs.container.outputs.path }}
+      container-path: ${{ needs.container-x86.outputs.path }}
+      runs-on: ubuntu-24.04
 
   depends-mac:
     name: x86_64-apple-darwin
     uses: ./.github/workflows/build-depends.yml
-    needs: [container]
+    needs: [container-x86]
     if: ${{ vars.SKIP_MAC == '' }}
     with:
       build-target: mac
-      container-path: ${{ needs.container.outputs.path }}
+      container-path: ${{ needs.container-x86.outputs.path }}
+      runs-on: ubuntu-24.04
 
   depends-win64:
     name: x86_64-w64-mingw32
     uses: ./.github/workflows/build-depends.yml
-    needs: [container]
+    needs: [container-x86]
     if: ${{ vars.SKIP_WIN64 == '' }}
     with:
       build-target: win64
-      container-path: ${{ needs.container.outputs.path }}
+      container-path: ${{ needs.container-x86.outputs.path }}
+      runs-on: ubuntu-24.04
 
   src-arm-linux:
     name: arm-linux-build
     uses: ./.github/workflows/build-src.yml
-    needs: [container, depends-arm-linux]
+    needs: [container-arm, depends-arm-linux]
     with:
       build-target: arm-linux
-      container-path: ${{ needs.container.outputs.path }}
+      container-path: ${{ needs.container-arm.outputs.path }}
       depends-key: ${{ needs.depends-arm-linux.outputs.key }}
+      runs-on: ubuntu-24.04-arm
 
   src-linux64:
     name: linux64-build
     uses: ./.github/workflows/build-src.yml
-    needs: [container, depends-linux64]
+    needs: [container-arm, depends-linux64]
     if: ${{ vars.SKIP_LINUX64 == '' }}
     with:
       build-target: linux64
-      container-path: ${{ needs.container.outputs.path }}
+      container-path: ${{ needs.container-arm.outputs.path }}
       depends-key: ${{ needs.depends-linux64.outputs.key }}
+      runs-on: ubuntu-24.04-arm
 
   src-linux64_fuzz:
     name: linux64_fuzz-build
     uses: ./.github/workflows/build-src.yml
-    needs: [container, depends-linux64]
+    needs: [container-arm, depends-linux64]
     if: ${{ vars.SKIP_LINUX64_FUZZ == '' }}
     with:
       build-target: linux64_fuzz
-      container-path: ${{ needs.container.outputs.path }}
+      container-path: ${{ needs.container-arm.outputs.path }}
       depends-key: ${{ needs.depends-linux64.outputs.key }}
+      runs-on: ubuntu-24.04-arm
 
   src-linux64_multiprocess:
     name: linux64_multiprocess-build
     uses: ./.github/workflows/build-src.yml
-    needs: [container, depends-linux64_multiprocess]
+    needs: [container-arm, depends-linux64_multiprocess]
     if: ${{ vars.SKIP_LINUX64_MULTIPROCESS == '' }}
     with:
       build-target: linux64_multiprocess
-      container-path: ${{ needs.container.outputs.path }}
+      container-path: ${{ needs.container-arm.outputs.path }}
       depends-key: ${{ needs.depends-linux64_multiprocess.outputs.key }}
+      runs-on: ubuntu-24.04-arm
 
   src-linux64_nowallet:
     name: linux64_nowallet-build
     uses: ./.github/workflows/build-src.yml
-    needs: [container, depends-linux64_nowallet]
+    needs: [container-x86, depends-linux64_nowallet]
     with:
       build-target: linux64_nowallet
-      container-path: ${{ needs.container.outputs.path }}
+      container-path: ${{ needs.container-x86.outputs.path }}
       depends-key: ${{ needs.depends-linux64_nowallet.outputs.key }}
+      runs-on: ubuntu-24.04
 
   src-linux64_sqlite:
     name: linux64_sqlite-build
     uses: ./.github/workflows/build-src.yml
-    needs: [container, depends-linux64]
+    needs: [container-arm, depends-linux64]
     if: ${{ vars.SKIP_LINUX64_SQLITE == '' }}
     with:
       build-target: linux64_sqlite
-      container-path: ${{ needs.container.outputs.path }}
+      container-path: ${{ needs.container-arm.outputs.path }}
       depends-key: ${{ needs.depends-linux64.outputs.key }}
+      runs-on: ubuntu-24.04-arm
 
   src-linux64_tsan:
     name: linux64_tsan-build
     uses: ./.github/workflows/build-src.yml
-    needs: [container, depends-linux64_multiprocess]
+    needs: [container-arm, depends-linux64_multiprocess]
     if: ${{ vars.SKIP_LINUX64_TSAN == '' }}
     with:
       build-target: linux64_tsan
-      container-path: ${{ needs.container.outputs.path }}
+      container-path: ${{ needs.container-arm.outputs.path }}
       depends-key: ${{ needs.depends-linux64_multiprocess.outputs.key }}
+      runs-on: ubuntu-24.04-arm
 
   src-linux64_ubsan:
     name: linux64_ubsan-build
     uses: ./.github/workflows/build-src.yml
-    needs: [container, depends-linux64]
+    needs: [container-arm, depends-linux64]
     if: ${{ vars.SKIP_LINUX64_UBSAN == '' }}
     with:
       build-target: linux64_ubsan
-      container-path: ${{ needs.container.outputs.path }}
+      container-path: ${{ needs.container-arm.outputs.path }}
       depends-key: ${{ needs.depends-linux64.outputs.key }}
+      runs-on: ubuntu-24.04-arm
 
   src-mac:
     name: mac-build
     uses: ./.github/workflows/build-src.yml
-    needs: [container, depends-mac]
+    needs: [container-x86, depends-mac]
     with:
       build-target: mac
-      container-path: ${{ needs.container.outputs.path }}
+      container-path: ${{ needs.container-x86.outputs.path }}
       depends-key: ${{ needs.depends-mac.outputs.key }}
+      runs-on: ubuntu-24.04
 
   src-win64:
     name: win64-build
     uses: ./.github/workflows/build-src.yml
-    needs: [container, depends-win64]
+    needs: [container-x86, depends-win64]
     with:
       build-target: win64
-      container-path: ${{ needs.container.outputs.path }}
+      container-path: ${{ needs.container-x86.outputs.path }}
       depends-key: ${{ needs.depends-win64.outputs.key }}
+      runs-on: ubuntu-24.04
 
   test-linux64:
     name: linux64-test
     uses: ./.github/workflows/test-src.yml
-    needs: [container-slim, src-linux64]
+    needs: [container-slim-arm, src-linux64]
     with:
       bundle-key: ${{ needs.src-linux64.outputs.key }}
       build-target: linux64
@@ -202,7 +235,7 @@ jobs:
   test-linux64_multiprocess:
     name: linux64_multiprocess-test
     uses: ./.github/workflows/test-src.yml
-    needs: [container-slim, src-linux64_multiprocess]
+    needs: [container-slim-arm, src-linux64_multiprocess]
     with:
       bundle-key: ${{ needs.src-linux64_multiprocess.outputs.key }}
       build-target: linux64_multiprocess
@@ -211,7 +244,7 @@ jobs:
   test-linux64_nowallet:
     name: linux64_nowallet-test
     uses: ./.github/workflows/test-src.yml
-    needs: [container-slim, src-linux64_nowallet]
+    needs: [container-slim-x86, src-linux64_nowallet]
     with:
       bundle-key: ${{ needs.src-linux64_nowallet.outputs.key }}
       build-target: linux64_nowallet
@@ -220,7 +253,7 @@ jobs:
   test-linux64_sqlite:
     name: linux64_sqlite-test
     uses: ./.github/workflows/test-src.yml
-    needs: [container-slim, src-linux64_sqlite]
+    needs: [container-slim-arm, src-linux64_sqlite]
     with:
       bundle-key: ${{ needs.src-linux64_sqlite.outputs.key }}
       build-target: linux64_sqlite
@@ -229,7 +262,7 @@ jobs:
   test-linux64_tsan:
     name: linux64_tsan-test
     uses: ./.github/workflows/test-src.yml
-    needs: [container-slim, src-linux64_tsan]
+    needs: [container-slim-x86, src-linux64_tsan]
     with:
       bundle-key: ${{ needs.src-linux64_tsan.outputs.key }}
       build-target: linux64_tsan
@@ -238,7 +271,7 @@ jobs:
   test-linux64_ubsan:
     name: linux64_ubsan-test
     uses: ./.github/workflows/test-src.yml
-    needs: [container-slim, src-linux64_ubsan]
+    needs: [container-slim-arm, src-linux64_ubsan]
     with:
       bundle-key: ${{ needs.src-linux64_ubsan.outputs.key }}
       build-target: linux64_ubsan

@@ -11,6 +11,11 @@ on:
         description: "Path to built container at registry"
         required: true
         type: string
+      runs-on:
+        description: "Runner for building depends"
+        required: false
+        type: string
+        default: "ubuntu-24.04-arm"
     outputs:
       key:
         description: "Key needed for restoring depends cache"
@@ -19,9 +24,9 @@ on:
 jobs:
   build-depends:
     name: Build depends
-    runs-on: ubuntu-24.04-arm
+    runs-on: ${{ inputs.runs-on }}
     outputs:
-      key:  ${{ steps.restore.outputs.cache-primary-key }}
+      key: ${{ steps.restore.outputs.cache-primary-key }}
     container:
       image: ${{ inputs.container-path }}
       options: --user root
@@ -41,7 +46,6 @@ jobs:
           DEP_HASH="$(echo -n "${BUILD_TARGET}" "${DEP_OPTS}" "${HOST}" | sha256sum | head -c 64)"
           echo "\"${BUILD_TARGET}\" has HOST=\"${HOST}\" and DEP_OPTS=\"${DEP_OPTS}\" with hash \"${DEP_HASH}\""
           echo "DEP_HASH=${DEP_HASH}" >> "${GITHUB_OUTPUT}"
-
         shell: bash
 
       - name: Cache depends sources
@@ -77,7 +81,7 @@ jobs:
 
       - name: Build depends
         run: |
-          export HOST="${{ steps.setup.outputs.HOST  }}"
+          export HOST="${{ steps.setup.outputs.HOST }}"
           if [ "${HOST}" = "x86_64-apple-darwin" ]; then
             ./contrib/containers/guix/scripts/setup-sdk
           fi
