@@ -87,8 +87,16 @@ RUN set -ex; \
     cd .. && rm -rf dash_hash
 
 ARG SHELLCHECK_VERSION=v0.7.1
+ARG TARGETARCH
 RUN set -ex; \
-    curl -fL "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" -o /tmp/shellcheck.tar.xz; \
+    if [ "$TARGETARCH" = "arm64" ]; then \
+      ARCH="aarch64"; \
+    elif [ "$TARGETARCH" = "amd64" ]; then \
+      ARCH="x86_64"; \
+    else \
+      ARCH="x86_64"; \
+    fi; \
+    curl -fL "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.${ARCH}.tar.xz" -o /tmp/shellcheck.tar.xz; \
     mkdir -p /opt/shellcheck && tar -xf /tmp/shellcheck.tar.xz -C /opt/shellcheck --strip-components=1 && rm /tmp/shellcheck.tar.xz
 ENV PATH="/opt/shellcheck:${PATH}"
 
