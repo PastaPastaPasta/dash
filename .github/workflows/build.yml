@@ -240,6 +240,7 @@ jobs:
       bundle-key: ${{ needs.src-linux64_multiprocess.outputs.key }}
       build-target: linux64_multiprocess
       container-path: ${{ needs.container-slim.outputs.path }}
+      runs-on: ubuntu-24.04-arm
 
   test-linux64_nowallet:
     name: linux64_nowallet-test
@@ -249,6 +250,7 @@ jobs:
       bundle-key: ${{ needs.src-linux64_nowallet.outputs.key }}
       build-target: linux64_nowallet
       container-path: ${{ needs.container-slim.outputs.path }}
+      runs-on: ubuntu-24.04
 
   test-linux64_sqlite:
     name: linux64_sqlite-test
@@ -267,6 +269,7 @@ jobs:
       bundle-key: ${{ needs.src-linux64_tsan.outputs.key }}
       build-target: linux64_tsan
       container-path: ${{ needs.container-slim.outputs.path }}
+      runs-on: ubuntu-24.04-arm
 
   test-linux64_ubsan:
     name: linux64_ubsan-test
@@ -276,3 +279,4 @@ jobs:
       bundle-key: ${{ needs.src-linux64_ubsan.outputs.key }}
       build-target: linux64_ubsan
       container-path: ${{ needs.container-slim.outputs.path }}
+      runs-on: ubuntu-24.04-arm
