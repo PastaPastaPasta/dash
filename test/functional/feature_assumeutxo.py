@@ -19,11 +19,16 @@ from test_framework.blocktools import (
     create_block,
     create_coinbase,
 )
+from test_framework.compressor import (
+    compress_amount,
+)
 from test_framework.messages import (
     CBlockHeader,
     from_hex,
     msg_headers,
-    tx_from_hex
+    tx_from_hex,
+    ser_varint,
+    MAX_MONEY,
 )
 from test_framework.p2p import (
     P2PInterface,
@@ -127,18 +132,27 @@ class AssumeutxoTest(BitcoinTestFramework):
 
         self.log.info("  - snapshot file with alternated UTXO data")
         cases = [
-            [b"\xff" * 32, 0, "f7fcf56f2db4e9d1584d7fced850ec5afe26b5c2e01dc62be3dc22c10705f030"], # wrong outpoint hash
-            [(1).to_bytes(4, "little"), 32, "611366963fd1fe4cfcf3e590502e2436f28f8080c5b9e28b93867028ae8d8eb2"], # wrong outpoint index
-            [b"\x82", 36, "4a761d666cd80fdb8855946310f249edc702e7c3ab338c0b2305e4d4f033057f"], # wrong coin code VARINT((coinbase ? 1 : 0) | (height << 1))
-            [b"\x83", 36, "f81e8792f2e6f6da5843f9250dc39809a1294847e9a371c7c4471f110f260c74"], # another wrong coin code
+            # (content, offset, wrong_hash, custom_message)
+            [b"\xff" * 32, 0, "f7fcf56f2db4e9d1584d7fced850ec5afe26b5c2e01dc62be3dc22c10705f030", None], # wrong outpoint hash
+            [(1).to_bytes(4, "little"), 32, "611366963fd1fe4cfcf3e590502e2436f28f8080c5b9e28b93867028ae8d8eb2", None], # wrong outpoint index
+            [b"\x82", 36, "4a761d666cd80fdb8855946310f249edc702e7c3ab338c0b2305e4d4f033057f", None], # wrong coin code VARINT((coinbase ? 1 : 0) | (height << 1))
+            [b"\x83", 36, "f81e8792f2e6f6da5843f9250dc39809a1294847e9a371c7c4471f110f260c74", None], # another wrong coin code
+            [
+                # compressed txout value + scriptpubkey
+                ser_varint(compress_amount(MAX_MONEY + 1)) + ser_varint(0),
+                # outpoint txid + index + coin height/coinbase code
+                32 + 4 + 1,
+                None,
+                "bad snapshot data after deserializing 0 coins - bad tx out value"
+            ],  # Amount exceeds MAX_MONEY
         ]
 
-        for content, offset, wrong_hash in cases:
+        for content, offset, wrong_hash, custom_message in cases:
             with open(bad_snapshot_path, "wb") as f:
                 f.write(valid_snapshot_contents[:(5 + 2 + 4 + 32 + 8 + offset)])
                 f.write(content)
                 f.write(valid_snapshot_contents[(5 + 2 + 4 + 32 + 8 + offset + len(content)):])
-            expected_error(log_msg=f"[snapshot] bad snapshot content hash: expected f6571ed786c40dcbb835b38090eaca87762cf421874461caa779738c7ff602fa, got {wrong_hash}")
+            expected_error(log_msg=custom_message or f"[snapshot] bad snapshot content hash: expected f6571ed786c40dcbb835b38090eaca87762cf421874461caa779738c7ff602fa, got {wrong_hash}")
 
     def test_invalid_chainstate_scenarios(self, node_index):
         self.log.info("Test different scenarios of invalid snapshot chainstate in datadir")
