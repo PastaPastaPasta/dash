@@ -9,6 +9,7 @@ to a hash that has been compiled into dashd.
 The assumeutxo value generated and used here is committed to in
 `CRegTestParams::m_assumeutxo_data` in `src/chainparams.cpp`.
 """
+import contextlib
 import time
 from shutil import rmtree
 
@@ -342,6 +343,22 @@ class AssumeutxoTest(BitcoinTestFramework):
         assert 'NETWORK' not in node_services
         assert 'NETWORK_LIMITED' in node_services
 
+    @contextlib.contextmanager
+    def assert_disk_cleanup(self, node, assumeutxo_used):
+        """
+        Ensure an assumeutxo node is cleaning up the background chainstate
+        """
+        msg = []
+        if assumeutxo_used:
+            # Check that the snapshot actually existed before restart
+            assert (node.datadir_path / node.chain / "chainstate_snapshot").exists()
+            msg = ["cleaning up unneeded background chainstate"]
+
+        with node.assert_debug_log(msg):
+            yield
+
+        assert not (node.datadir_path / node.chain / "chainstate_snapshot").exists()
+
     def run_test(self):
         """
         Bring up two (disconnected) nodes, mine some new blocks on the first,
@@ -659,8 +676,9 @@ class AssumeutxoTest(BitcoinTestFramework):
         for i in (0, 1):
             n = self.nodes[i]
             self.log.info(f"Restarting node {i} to ensure (Check|Load)BlockIndex passes")
-            self.restart_node(i, extra_args=self.extra_args[i],
-                              expected_stderr=EXPECTED_STDERR_NO_GOV_PRUNE if i == 1 else '')
+            with self.assert_disk_cleanup(n, i == 1):
+                self.restart_node(i, extra_args=self.extra_args[i],
+                                  expected_stderr=EXPECTED_STDERR_NO_GOV_PRUNE if i == 1 else '')
 
             assert_equal(n.getblockchaininfo()["blocks"], FINAL_HEIGHT)
 
@@ -749,7 +767,8 @@ class AssumeutxoTest(BitcoinTestFramework):
         for i in (0, 2):
             n = self.nodes[i]
             self.log.info(f"Restarting node {i} to ensure (Check|Load)BlockIndex passes")
-            self.restart_node(i, extra_args=self.extra_args[i])
+            with self.assert_disk_cleanup(n, i == 2):
+                self.restart_node(i, extra_args=self.extra_args[i])
 
             assert_equal(n.getblockchaininfo()["blocks"], FINAL_HEIGHT)
 
