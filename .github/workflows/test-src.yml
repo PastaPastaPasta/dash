@@ -27,7 +27,7 @@ env:
 jobs:
   test-src:
     name: Test source
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.runs-on }}
     container:
       image: ${{ inputs.container-path }}
       options: --user root
