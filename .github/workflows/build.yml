@@ -22,6 +22,9 @@ jobs:
     name: Build container (arm)
     uses: ./.github/workflows/build-container.yml
     with:
+      context: ./contrib/containers/ci
+      file: ./contrib/containers/ci/ci.Dockerfile
+      name: dashcore-ci-runner
       runs-on: ubuntu-24.04-arm
 
   container-x86:
