@@ -1,16 +1,24 @@
+# Dash Core Development Container
+#
+# Port Configuration:
+# - Ports are configurable via environment variables (see .env file)
+# - If ports are already in use, you can:
+#   1. Change the port numbers in .env file
+#   2. Comment out ports in .env to disable forwarding
+#   3. Use: docker-compose -f docker-compose.yml -f docker-compose.no-ports.yml up
+#
 services:
   container:
     entrypoint: /bin/bash
     build:
       context: '..'
-      dockerfile: './develop/Dockerfile'
-    ports:
-      - "9998:9998"           # Mainnet Ports
-      - "9999:9999"
-      - "19998:19998"         # Testnet Ports
-      - "19999:19999"
-    security_opt:
-      - seccomp:unconfined
+      dockerfile: './combined.Dockerfile'
+      target: develop
+    # ports:
+    #   - "${DASH_P2P_PORT:-9998}:9998"           # Mainnet P2P Port
+    #   - "${DASH_RPC_PORT:-9999}:9999"           # Mainnet RPC Port  
+    #   - "${DASH_TESTNET_P2P_PORT:-19998}:19998" # Testnet P2P Port
+    #   - "${DASH_TESTNET_RPC_PORT:-19999}:19999" # Testnet RPC Port
     stdin_open: true  # Equivalent to -i
     tty: true         # Equivalent to -t
 

@@ -1,0 +1,107 @@
+{
+  "name": "Dash Core Development",
+  "dockerComposeFile": "../contrib/containers/develop/docker-compose.yml",
+  "service": "container",
+  "workspaceFolder": "/src/dash",
+  "shutdownAction": "stopCompose",
+  
+  // Configure tool-specific properties
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cpptools-extension-pack",
+        "llvm-vs-code-extensions.vscode-clangd",
+        "ms-python.python",
+        "ms-python.autopep8",
+        "ms-python.flake8",
+        "ms-vscode.hexeditor",
+        "streetsidesoftware.code-spell-checker",
+        "eamodio.gitlens",
+        "ms-vscode.test-adapter-converter",
+        "hbenl.vscode-test-explorer",
+        "matepek.vscode-catch2-test-adapter"
+      ],
+      "settings": {
+        "C_Cpp.default.cppStandard": "c++20",
+        "C_Cpp.default.compilerPath": "/usr/bin/clang++",
+        "C_Cpp.default.includePath": [
+          "/src/dash/src",
+          "/src/dash/depends/x86_64-pc-linux-gnu/include"
+        ],
+        "clangd.path": "/usr/bin/clangd-18",
+        "clangd.arguments": [
+          "--compile-commands-dir=/src/dash",
+          "--background-index",
+          "--clang-tidy",
+          "--completion-style=detailed"
+        ],
+        "python.defaultInterpreterPath": "/usr/bin/python3",
+        "python.linting.enabled": true,
+        "python.linting.flake8Enabled": true,
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "terminal.integrated.profiles.linux": {
+          "zsh": {
+            "path": "/usr/bin/zsh"
+          }
+        },
+        "files.associations": {
+          "*.ac": "shellscript",
+          "*.am": "makefile"
+        }
+      }
+    }
+  },
+
+  // Features to add to the dev container
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  // Use 'forwardPorts' to make a list of ports inside the container available locally
+  "forwardPorts": [
+    9998,  // Mainnet RPC
+    9999,  // Mainnet P2P
+    19998, // Testnet RPC
+    19999  // Testnet P2P
+  ],
+
+  // Configure port attributes
+  "portsAttributes": {
+    "9998": {
+      "label": "Dash Mainnet RPC",
+      "onAutoForward": "notify"
+    },
+    "9999": {
+      "label": "Dash Mainnet P2P",
+      "onAutoForward": "silent"
+    },
+    "19998": {
+      "label": "Dash Testnet RPC", 
+      "onAutoForward": "notify"
+    },
+    "19999": {
+      "label": "Dash Testnet P2P",
+      "onAutoForward": "silent"
+    }
+  },
+
+  // Use 'postCreateCommand' to run commands after the container is created
+  "postCreateCommand": "/src/dash/.devcontainer/setup.sh",
+
+  // Comment out to connect as root instead. More info: https://aka.ms/vscode-remote/containers/non-root
+  "remoteUser": "dash",
+
+  // Configure container capabilities
+  "capAdd": ["SYS_PTRACE"],
+  "securityOpt": ["seccomp:unconfined"],
+
+  // Mount the Docker socket for Docker-in-Docker scenarios
+  "mounts": [
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
+  ],
+
+  // Override the default entrypoint to keep container running
+  "overrideCommand": true
+}
