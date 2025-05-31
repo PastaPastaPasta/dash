@@ -9,7 +9,7 @@ RUN set -ex; \
         make \
         g++ \
     && rm -rf /var/lib/apt/lists/*; \
-    echo "Downloading Cppcheck version: ${CPPCHECK_VERSION}"; \
+echo "Downloading Cppcheck version: ${CPPCHECK_VERSION}"; \
     curl -fL "https://github.com/danmar/cppcheck/archive/${CPPCHECK_VERSION}.tar.gz" -o /tmp/cppcheck.tar.gz; \
     mkdir -p /src/cppcheck && tar -xzf /tmp/cppcheck.tar.gz -C /src/cppcheck --strip-components=1; \
     rm /tmp/cppcheck.tar.gz; \
@@ -89,12 +89,7 @@ RUN set -ex; \
 ARG SHELLCHECK_VERSION=v0.7.1
 RUN set -ex; \
     ARCH=$(uname -m); \
-    case "${ARCH}" in \
-        x86_64) SHELLCHECK_ARCH="x86_64" ;; \
-        aarch64) SHELLCHECK_ARCH="aarch64" ;; \
-        arm64) SHELLCHECK_ARCH="aarch64" ;; \
-        *) echo "Unsupported architecture: ${ARCH}" && exit 1 ;; \
-    esac; \
+    if [ "$ARCH" = "aarch64" ]; then SHELLCHECK_ARCH="aarch64"; else SHELLCHECK_ARCH="x86_64"; fi; \
     curl -fL "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.${SHELLCHECK_ARCH}.tar.xz" -o /tmp/shellcheck.tar.xz; \
     mkdir -p /opt/shellcheck && tar -xf /tmp/shellcheck.tar.xz -C /opt/shellcheck --strip-components=1 && rm /tmp/shellcheck.tar.xz
 ENV PATH="/opt/shellcheck:${PATH}"
