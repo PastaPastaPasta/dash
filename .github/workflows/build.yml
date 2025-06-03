@@ -42,11 +42,12 @@ jobs:
   depends-arm-linux:
     name: arm-linux-gnueabihf
     uses: ./.github/workflows/build-depends.yml
-    needs: [container]
+    needs: [container-arm64]
     if: ${{ vars.SKIP_ARM_LINUX == '' }}
     with:
       build-target: arm-linux
-      container-path: ${{ needs.container.outputs.path }}
+      container-path: ${{ needs.container-arm64.outputs.path }}
+      runs-on: ubuntu-24.04-arm
 
   depends-linux64:
     name: x86_64-pc-linux-gnu
@@ -102,11 +103,12 @@ jobs:
   src-arm-linux:
     name: arm-linux-build
     uses: ./.github/workflows/build-src.yml
-    needs: [container, depends-arm-linux]
+    needs: [container-arm64, depends-arm-linux]
     with:
       build-target: arm-linux
-      container-path: ${{ needs.container.outputs.path }}
+      container-path: ${{ needs.container-arm64.outputs.path }}
       depends-key: ${{ needs.depends-arm-linux.outputs.key }}
+      runs-on: ubuntu-24.04-arm
 
   src-linux64:
     name: linux64-build
@@ -257,3 +259,4 @@ jobs:
       bundle-key: ${{ needs.src-arm-linux.outputs.key }}
       build-target: arm-linux
       container-path: ${{ needs.container-arm64.outputs.slim-path }}
+      runs-on: ubuntu-24.04-arm

@@ -11,6 +11,11 @@ on:
         description: "Path to built container at registry"
         required: true
         type: string
+      runs-on:
+        description: "Runner to use for the job"
+        required: false
+        type: string
+        default: "ubuntu-24.04"
     outputs:
       key:
         description: "Key needed for restoring depends cache"
@@ -19,7 +24,7 @@ on:
 jobs:
   build-depends:
     name: Build depends
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.runs-on }}
     outputs:
       key:  ${{ steps.restore.outputs.cache-primary-key }}
     container:
