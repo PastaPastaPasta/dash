@@ -506,7 +506,7 @@ CBlock TestChainSetup::CreateBlock(
         if (!m_node.dmnman->BuildNewListFromBlock(block, chainstate.m_chain.Tip(), state, chainstate.CoinsTip(), mn_list, *m_node.llmq_ctx->qsnapman, true)) {
             Assert(false);
         }
-        if (!CalcCbTxMerkleRootMNList(cbTx->merkleRootMNList, CSimplifiedMNList(mn_list), state)) {
+        if (!CalcCbTxMerkleRootMNList(cbTx->merkleRootMNList, std::move(mn_list), state)) {
             Assert(false);
         }
         if (!CalcCbTxMerkleRootQuorums(block, chainstate.m_chain.Tip(), *m_node.llmq_ctx->quorum_block_processor, cbTx->merkleRootQuorums, state)) {
