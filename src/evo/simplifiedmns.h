@@ -13,16 +13,10 @@
 #include <netaddress.h>
 #include <pubkey.h>
 
-class UniValue;
-class CDeterministicMN;
-class CDeterministicMNList;
-class ChainstateManager;
+#include <memory>
+#include <vector>
 
-namespace llmq {
-class CFinalCommitment;
-class CQuorumBlockProcessor;
-class CQuorumManager;
-} // namespace llmq
+class UniValue;
 
 class CSimplifiedMNListEntry
 {
@@ -41,7 +35,10 @@ public:
     MnType nType{MnType::Regular};
 
     CSimplifiedMNListEntry() = default;
-    explicit CSimplifiedMNListEntry(const CDeterministicMN& dmn);
+    CSimplifiedMNListEntry(const uint256& proreg_tx_hash, const uint256& confirmed_hash, MnNetInfo net_info,
+                           const CBLSLazyPublicKey& pubkey_operator, const CKeyID& keyid_voting, bool is_valid,
+                           uint16_t platform_http_port, const uint160& platform_node_id, const CScript& script_payout,
+                           const CScript& script_operator_payout, uint16_t version, MnType type);
 
     bool operator==(const CSimplifiedMNListEntry& rhs) const
     {
@@ -99,10 +96,9 @@ public:
     std::vector<std::unique_ptr<CSimplifiedMNListEntry>> mnList;
 
     CSimplifiedMNList() = default;
-    explicit CSimplifiedMNList(const CDeterministicMNList& dmnList);
 
     // This constructor from std::vector is used in unit-tests
-    explicit CSimplifiedMNList(const std::vector<CSimplifiedMNListEntry>& smlEntries);
+    explicit CSimplifiedMNList(std::vector<std::unique_ptr<CSimplifiedMNListEntry>>&& smlEntries);
 
     uint256 CalcMerkleRoot(bool* pmutated = nullptr) const;
     bool operator==(const CSimplifiedMNList& rhs) const;

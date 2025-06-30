@@ -4,8 +4,8 @@
 
 #include <evo/simplifiedmns.h>
 
+#include <clientversion.h>
 #include <consensus/merkle.h>
-#include <evo/deterministicmns.h>
 #include <key_io.h>
 #include <pubkey.h>
 #include <serialize.h>
@@ -13,19 +13,23 @@
 #include <util/underlying.h>
 #include <version.h>
 
-CSimplifiedMNListEntry::CSimplifiedMNListEntry(const CDeterministicMN& dmn) :
-    proRegTxHash(dmn.proTxHash),
-    confirmedHash(dmn.pdmnState->confirmedHash),
-    netInfo(dmn.pdmnState->netInfo),
-    pubKeyOperator(dmn.pdmnState->pubKeyOperator),
-    keyIDVoting(dmn.pdmnState->keyIDVoting),
-    isValid(!dmn.pdmnState->IsBanned()),
-    platformHTTPPort(dmn.pdmnState->platformHTTPPort),
-    platformNodeID(dmn.pdmnState->platformNodeID),
-    scriptPayout(dmn.pdmnState->scriptPayout),
-    scriptOperatorPayout(dmn.pdmnState->scriptOperatorPayout),
-    nVersion(dmn.pdmnState->nVersion),
-    nType(dmn.nType)
+CSimplifiedMNListEntry::CSimplifiedMNListEntry(const uint256& proreg_tx_hash, const uint256& confirmed_hash,
+                                               MnNetInfo net_info, const CBLSLazyPublicKey& pubkey_operator,
+                                               const CKeyID& keyid_voting, bool is_valid, uint16_t platform_http_port,
+                                               const uint160& platform_node_id, const CScript& script_payout,
+                                               const CScript& script_operator_payout, uint16_t version, MnType type) :
+    proRegTxHash(proreg_tx_hash),
+    confirmedHash(confirmed_hash),
+    netInfo(net_info),
+    pubKeyOperator(pubkey_operator),
+    keyIDVoting(keyid_voting),
+    isValid(is_valid),
+    platformHTTPPort(platform_http_port),
+    platformNodeID(platform_node_id),
+    scriptPayout(script_payout),
+    scriptOperatorPayout(script_operator_payout),
+    nVersion(version),
+    nType(type)
 {
 }
 
@@ -57,24 +61,9 @@ std::string CSimplifiedMNListEntry::ToString() const
                      operatorPayoutAddress, platformHTTPPort, platformNodeID.ToString(), netInfo.ToString());
 }
 
-CSimplifiedMNList::CSimplifiedMNList(const std::vector<CSimplifiedMNListEntry>& smlEntries)
+CSimplifiedMNList::CSimplifiedMNList(std::vector<std::unique_ptr<CSimplifiedMNListEntry>>&& smlEntries)
 {
-    mnList.reserve(smlEntries.size());
-    for (const auto& entry : smlEntries) {
-        mnList.emplace_back(std::make_unique<CSimplifiedMNListEntry>(entry));
-    }
-
-    std::sort(mnList.begin(), mnList.end(), [&](const std::unique_ptr<CSimplifiedMNListEntry>& a, const std::unique_ptr<CSimplifiedMNListEntry>& b) {
-        return a->proRegTxHash.Compare(b->proRegTxHash) < 0;
-    });
-}
-
-CSimplifiedMNList::CSimplifiedMNList(const CDeterministicMNList& dmnList)
-{
-    mnList.reserve(dmnList.GetAllMNsCount());
-    dmnList.ForEachMN(false, [this](auto& dmn) {
-        mnList.emplace_back(std::make_unique<CSimplifiedMNListEntry>(dmn));
-    });
+    mnList = std::move(smlEntries);
 
     std::sort(mnList.begin(), mnList.end(), [&](const std::unique_ptr<CSimplifiedMNListEntry>& a, const std::unique_ptr<CSimplifiedMNListEntry>& b) {
         return a->proRegTxHash.Compare(b->proRegTxHash) < 0;
