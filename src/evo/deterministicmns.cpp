@@ -630,7 +630,7 @@ bool CDeterministicMNManager::ProcessBlock(const CBlock& block, gsl::not_null<co
     int nHeight = pindex->nHeight;
 
     try {
-        newList.to_sml(); // to fullfill cache of SML
+        newList.to_sml(); // to populate the SML cache
 
         LOCK(cs);
 
