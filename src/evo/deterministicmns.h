@@ -183,6 +183,20 @@ private:
     mutable Mutex m_cached_sml_mutex;
     mutable std::shared_ptr<const CSimplifiedMNList> m_cached_sml GUARDED_BY(m_cached_sml_mutex);
 
+    // Private helper method to invalidate SML cache
+    void InvalidateSMLCache() {
+        LOCK(m_cached_sml_mutex);
+        m_cached_sml = nullptr;
+    }
+
+    // Private helper method to conditionally invalidate SML cache if entry changed
+    void InvalidateSMLCacheIfChanged(const CSimplifiedMNListEntry& oldEntry, const CSimplifiedMNListEntry& newEntry) {
+        LOCK(m_cached_sml_mutex);
+        if (m_cached_sml && oldEntry != newEntry) {
+            m_cached_sml = nullptr;
+        }
+    }
+
 public:
     CDeterministicMNList() = default;
     explicit CDeterministicMNList(const uint256& _blockHash, int _height, uint32_t _totalRegisteredCount) :
@@ -247,10 +261,7 @@ public:
         mnMap = MnMap();
         mnUniquePropertyMap = MnUniquePropertyMap();
         mnInternalIdMap = MnInternalIdMap();
-        {
-            LOCK(m_cached_sml_mutex);
-            m_cached_sml = nullptr;
-        }
+        InvalidateSMLCache();
 
         SerializationOpBase(s, CSerActionUnserialize());
 
