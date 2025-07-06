@@ -104,7 +104,7 @@ bool CalcCbTxMerkleRootMNList(uint256& merkleRootRet, const CDeterministicMNList
 
         std::shared_ptr<const CSimplifiedMNList> sml{mn_list.to_sml()};
         LOCK(cached_mutex);
-        if (sml == cached_sml || *sml == *cached_sml) {
+        if (sml == cached_sml || (cached_sml && *sml == *cached_sml)) {
             merkleRootRet = merkleRootCached;
             if (mutatedCached) {
                 return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "mutated-cached-calc-cb-mnmerkleroot");
