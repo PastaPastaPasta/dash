@@ -28,6 +28,9 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <thread>
+#include <vector>
+
 using node::GetTransaction;
 
 using SimpleUTXOMap = std::map<COutPoint, std::pair<int, CAmount>>;
@@ -930,6 +933,223 @@ BOOST_AUTO_TEST_CASE(verify_db_legacy)
 {
     TestChainDIP3Setup setup;
     FuncVerifyDB(setup);
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+
+BOOST_AUTO_TEST_SUITE(evo_sml_cache_tests)
+
+BOOST_FIXTURE_TEST_CASE(sml_cache_basic_functionality, TestChainSetup)
+{
+    auto& dmnman = *Assert(m_node.dmnman);
+    
+    // Create empty list and verify SML cache
+    CDeterministicMNList emptyList(uint256(), 0, 0);
+    auto sml1 = emptyList.to_sml();
+    auto sml2 = emptyList.to_sml();
+    
+    // Should return the same cached object
+    BOOST_CHECK(sml1 == sml2);
+    BOOST_CHECK(sml1.get() == sml2.get()); // Same pointer
+    
+    // Should contain empty list
+    BOOST_CHECK_EQUAL(sml1->mnList.size(), 0);
+}
+
+BOOST_FIXTURE_TEST_CASE(sml_cache_invalidation_on_addmn, TestChainSetup)
+{
+    auto& chainman = *Assert(m_node.chainman.get());
+    auto& dmnman = *Assert(m_node.dmnman);
+    
+    // Start with empty list
+    CDeterministicMNList mnList(uint256(), 0, 0);
+    auto sml1 = mnList.to_sml();
+    
+    // Create a mock MN
+    CKey ownerKey;
+    ownerKey.MakeNewKey(true);
+    CBLSSecretKey operatorKey;
+    operatorKey.MakeNewKey();
+    
+    auto dmn = std::make_shared<CDeterministicMN>(dmn_types::Regular);
+    dmn->proTxHash = GetRandHash();
+    dmn->collateralOutpoint = COutPoint(GetRandHash(), 0);
+    dmn->nOperatorReward = 0;
+    dmn->internalId = 1;
+    
+    auto dmnState = std::make_shared<CDeterministicMNState>();
+    dmnState->confirmedHash = GetRandHash();
+    dmnState->keyIDOwner = ownerKey.GetPubKey().GetID();
+    dmnState->pubKeyOperator.Set(operatorKey.GetPublicKey(), bls::bls_legacy_scheme.load());
+    dmnState->keyIDVoting = ownerKey.GetPubKey().GetID();
+    dmnState->scriptPayout = GetScriptForDestination(PKHash(ownerKey.GetPubKey()));
+    dmnState->scriptOperatorPayout = GetScriptForDestination(PKHash(ownerKey.GetPubKey()));
+    BOOST_CHECK_EQUAL(dmnState->netInfo.AddEntry("1.1.1.1:1"), NetInfoStatus::Success);
+    dmn->pdmnState = dmnState;
+    
+    // Add MN - should invalidate cache
+    mnList.AddMN(dmn, true);
+    auto sml2 = mnList.to_sml();
+    
+    // Cache should be invalidated, so different pointer but equal content after regeneration
+    BOOST_CHECK(sml1.get() != sml2.get()); // Different pointer (cache invalidated)
+    BOOST_CHECK_EQUAL(sml2->mnList.size(), 1); // Should contain the added MN
+}
+
+BOOST_FIXTURE_TEST_CASE(sml_cache_invalidation_on_removemn, TestChainSetup)
+{
+    auto& chainman = *Assert(m_node.chainman.get());
+    auto& dmnman = *Assert(m_node.dmnman);
+    
+    // Start with a list containing one MN
+    CDeterministicMNList mnList(uint256(), 0, 0);
+    
+    // Create and add a mock MN
+    CKey ownerKey;
+    ownerKey.MakeNewKey(true);
+    CBLSSecretKey operatorKey;
+    operatorKey.MakeNewKey();
+    
+    auto dmn = std::make_shared<CDeterministicMN>(dmn_types::Regular);
+    dmn->proTxHash = GetRandHash();
+    dmn->collateralOutpoint = COutPoint(GetRandHash(), 0);
+    dmn->nOperatorReward = 0;
+    dmn->internalId = 1;
+    
+    auto dmnState = std::make_shared<CDeterministicMNState>();
+    dmnState->confirmedHash = GetRandHash();
+    dmnState->keyIDOwner = ownerKey.GetPubKey().GetID();
+    dmnState->pubKeyOperator.Set(operatorKey.GetPublicKey(), bls::bls_legacy_scheme.load());
+    dmnState->keyIDVoting = ownerKey.GetPubKey().GetID();
+    dmnState->scriptPayout = GetScriptForDestination(PKHash(ownerKey.GetPubKey()));
+    dmnState->scriptOperatorPayout = GetScriptForDestination(PKHash(ownerKey.GetPubKey()));
+    BOOST_CHECK_EQUAL(dmnState->netInfo.AddEntry("1.1.1.1:1"), NetInfoStatus::Success);
+    dmn->pdmnState = dmnState;
+    
+    mnList.AddMN(dmn, true);
+    auto sml1 = mnList.to_sml();
+    BOOST_CHECK_EQUAL(sml1->mnList.size(), 1);
+    
+    // Remove MN - should invalidate cache
+    mnList.RemoveMN(dmn->proTxHash);
+    auto sml2 = mnList.to_sml();
+    
+    // Cache should be invalidated
+    BOOST_CHECK(sml1.get() != sml2.get()); // Different pointer (cache invalidated)
+    BOOST_CHECK_EQUAL(sml2->mnList.size(), 0); // Should be empty after removal
+}
+
+BOOST_FIXTURE_TEST_CASE(sml_cache_conditional_invalidation_on_updatemn, TestChainSetup)
+{
+    auto& chainman = *Assert(m_node.chainman.get());
+    auto& dmnman = *Assert(m_node.dmnman);
+    
+    // Start with a list containing one MN
+    CDeterministicMNList mnList(uint256(), 0, 0);
+    
+    // Create and add a mock MN
+    CKey ownerKey;
+    ownerKey.MakeNewKey(true);
+    CBLSSecretKey operatorKey;
+    operatorKey.MakeNewKey();
+    
+    auto dmn = std::make_shared<CDeterministicMN>(dmn_types::Regular);
+    dmn->proTxHash = GetRandHash();
+    dmn->collateralOutpoint = COutPoint(GetRandHash(), 0);
+    dmn->nOperatorReward = 0;
+    dmn->internalId = 1;
+    
+    auto dmnState = std::make_shared<CDeterministicMNState>();
+    dmnState->confirmedHash = GetRandHash();
+    dmnState->keyIDOwner = ownerKey.GetPubKey().GetID();
+    dmnState->pubKeyOperator.Set(operatorKey.GetPublicKey(), bls::bls_legacy_scheme.load());
+    dmnState->keyIDVoting = ownerKey.GetPubKey().GetID();
+    dmnState->scriptPayout = GetScriptForDestination(PKHash(ownerKey.GetPubKey()));
+    dmnState->scriptOperatorPayout = GetScriptForDestination(PKHash(ownerKey.GetPubKey()));
+    BOOST_CHECK_EQUAL(dmnState->netInfo.AddEntry("1.1.1.1:1"), NetInfoStatus::Success);
+    dmn->pdmnState = dmnState;
+    
+    mnList.AddMN(dmn, true);
+    auto sml1 = mnList.to_sml();
+    BOOST_CHECK_EQUAL(sml1->mnList.size(), 1);
+    
+    // Test 1: Update with same SML entry data - cache should NOT be invalidated
+    auto unchangedState = std::make_shared<CDeterministicMNState>(*dmnState);
+    mnList.UpdateMN(*dmn, unchangedState);
+    auto sml2 = mnList.to_sml();
+    
+    // Cache should NOT be invalidated since SML entry didn't change
+    BOOST_CHECK(sml1.get() == sml2.get()); // Same pointer (cache preserved)
+    
+    // Test 2: Update with different SML entry data - cache SHOULD be invalidated
+    auto changedState = std::make_shared<CDeterministicMNState>(*dmnState);
+    BOOST_CHECK_EQUAL(changedState->netInfo.AddEntry("2.2.2.2:2"), NetInfoStatus::Success); // Change IP
+    mnList.UpdateMN(*dmn, changedState);
+    auto sml3 = mnList.to_sml();
+    
+    // Cache should be invalidated since SML entry changed
+    BOOST_CHECK(sml2.get() != sml3.get()); // Different pointer (cache invalidated)
+    BOOST_CHECK_EQUAL(sml3->mnList.size(), 1); // Still one MN but with updated data
+}
+
+BOOST_FIXTURE_TEST_CASE(sml_cache_thread_safety, TestChainSetup)
+{
+    auto& chainman = *Assert(m_node.chainman.get());
+    auto& dmnman = *Assert(m_node.dmnman);
+    
+    CDeterministicMNList mnList(uint256(), 0, 0);
+    
+    // Create multiple threads accessing the cache simultaneously
+    std::vector<std::thread> threads;
+    std::vector<std::shared_ptr<const CSimplifiedMNList>> results(10);
+    
+    for (int i = 0; i < 10; ++i) {
+        threads.emplace_back([&mnList, &results, i]() {
+            results[i] = mnList.to_sml();
+        });
+    }
+    
+    // Wait for all threads to complete
+    for (auto& thread : threads) {
+        thread.join();
+    }
+    
+    // All results should be the same cached object
+    for (int i = 1; i < 10; ++i) {
+        BOOST_CHECK(results[0].get() == results[i].get());
+    }
+}
+
+BOOST_FIXTURE_TEST_CASE(sml_cache_copy_constructor, TestChainSetup)
+{
+    auto& chainman = *Assert(m_node.chainman.get());
+    auto& dmnman = *Assert(m_node.dmnman);
+    
+    CDeterministicMNList mnList1(uint256(), 0, 0);
+    auto sml1 = mnList1.to_sml(); // Populate cache
+    
+    // Copy constructor should copy the cached SML
+    CDeterministicMNList mnList2(mnList1);
+    auto sml2 = mnList2.to_sml();
+    
+    // Should return the same cached object (shared)
+    BOOST_CHECK(sml1.get() == sml2.get());
+}
+
+BOOST_FIXTURE_TEST_CASE(sml_cache_assignment_operator, TestChainSetup)
+{
+    auto& chainman = *Assert(m_node.chainman.get());
+    auto& dmnman = *Assert(m_node.dmnman);
+    
+    CDeterministicMNList mnList1(uint256(), 0, 0);
+    auto sml1 = mnList1.to_sml(); // Populate cache
+    
+    CDeterministicMNList mnList2(uint256(), 1, 1);
+    mnList2 = mnList1; // Assignment should copy the cached SML
+    auto sml2 = mnList2.to_sml();
+    
+    // Should return the same cached object (shared)
+    BOOST_CHECK(sml1.get() == sml2.get());
 }
 
 BOOST_AUTO_TEST_SUITE_END()
