@@ -1,4 +1,4 @@
-name: "Check Potential Conflicts"
+name: "Check Potential Conflicts - Test PR 2 Different Change"
 
 on:
   pull_request_target:
