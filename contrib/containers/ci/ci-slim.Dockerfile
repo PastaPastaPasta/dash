@@ -17,54 +17,8 @@ RUN set -ex; \
     mkdir build && cd build && cmake .. && cmake --build . -j"$(nproc)"; \
     strip bin/cppcheck
 
-# Main image
-FROM ubuntu:noble
-
-# Include built assets
-COPY --from=cppcheck-builder /src/cppcheck/build/bin/cppcheck /usr/local/bin/cppcheck
-COPY --from=cppcheck-builder /src/cppcheck/cfg /usr/local/share/Cppcheck/cfg
-ENV PATH="/usr/local/bin:${PATH}"
-
-# Needed to prevent tzdata hanging while expecting user input
-ENV DEBIAN_FRONTEND="noninteractive" TZ="Europe/London"
-
-# Build and base stuff
-ENV APT_ARGS="-y --no-install-recommends --no-upgrade"
-
-# Packages needed to build Python and extract artifacts
-RUN set -ex; \
-    apt-get update && apt-get install ${APT_ARGS} \
-    build-essential \
-    ca-certificates \
-    curl \
-    g++ \
-    git \
-    libbz2-dev \
-    libffi-dev \
-    liblzma-dev \
-    libncurses5-dev \
-    libncursesw5-dev \
-    libreadline-dev \
-    libsqlite3-dev \
-    libssl-dev \
-    make \
-    tk-dev \
-    xz-utils \
-    zlib1g-dev \
-    zstd \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Python and set it as default
-ENV PYENV_ROOT="/usr/local/pyenv"
-ENV PATH="${PYENV_ROOT}/shims:${PYENV_ROOT}/bin:${PATH}"
-# PYTHON_VERSION should match the value in .python-version
-ARG PYTHON_VERSION=3.9.18
-RUN set -ex; \
-    curl https://pyenv.run | bash \
-    && pyenv update \
-    && pyenv install ${PYTHON_VERSION} \
-    && pyenv global ${PYTHON_VERSION} \
-    && pyenv rehash
+# Builder for Python
+FROM python:3.9.18-slim-bookworm AS python-builder
 
 # Install Python packages
 RUN set -ex; \
@@ -81,14 +35,61 @@ RUN set -ex; \
 # Install packages relied on by tests
 ARG DASH_HASH_VERSION=1.4.0
 RUN set -ex; \
+    apt-get update && apt-get install -y --no-install-recommends \
+        git \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*; \
     cd /tmp; \
     git clone --depth 1 --no-tags --branch=${DASH_HASH_VERSION} https://github.com/dashpay/dash_hash; \
     cd dash_hash && pip3 install -r requirements.txt .; \
     cd .. && rm -rf dash_hash
 
+# Main image
+FROM ubuntu:noble
+
+# Include built assets
+COPY --from=cppcheck-builder /src/cppcheck/build/bin/cppcheck /usr/local/bin/cppcheck
+COPY --from=cppcheck-builder /src/cppcheck/cfg /usr/local/share/Cppcheck/cfg
+
+# Copy Python installation from python-builder
+COPY --from=python-builder /usr/local /usr/local
+
+# Ensure Python shared libraries are found
+ENV LD_LIBRARY_PATH="/usr/local/lib:${LD_LIBRARY_PATH}"
+ENV PATH="/usr/local/bin:${PATH}"
+
+# Needed to prevent tzdata hanging while expecting user input
+ENV DEBIAN_FRONTEND="noninteractive" TZ="Europe/London"
+
+# Build and base stuff
+ENV APT_ARGS="-y --no-install-recommends --no-upgrade"
+
+# Packages needed for runtime and CI operations
+RUN set -ex; \
+    apt-get update && apt-get install ${APT_ARGS} \
+    build-essential \
+    ca-certificates \
+    curl \
+    g++ \
+    git \
+    libsqlite3-0 \
+    libssl3 \
+    make \
+    xz-utils \
+    zstd \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python is already installed via COPY from python-builder stage
+
 ARG SHELLCHECK_VERSION=v0.7.1
 RUN set -ex; \
-    curl -fL "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" -o /tmp/shellcheck.tar.xz; \
+    ARCH=$(uname -m); \
+    case ${ARCH} in \
+        x86_64) SHELLCHECK_ARCH="x86_64" ;; \
+        aarch64) SHELLCHECK_ARCH="aarch64" ;; \
+        *) echo "Unsupported architecture: ${ARCH}" && exit 1 ;; \
+    esac; \
+    curl -fL "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.${SHELLCHECK_ARCH}.tar.xz" -o /tmp/shellcheck.tar.xz; \
     mkdir -p /opt/shellcheck && tar -xf /tmp/shellcheck.tar.xz -C /opt/shellcheck --strip-components=1 && rm /tmp/shellcheck.tar.xz
 ENV PATH="/opt/shellcheck:${PATH}"
 
