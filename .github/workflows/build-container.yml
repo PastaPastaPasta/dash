@@ -15,15 +15,20 @@ on:
         description: "Container name"
         required: true
         type: string
+      runner-architecture:
+        description: "Runner architecture (x86 or arm)"
+        required: false
+        type: string
+        default: "x86"
     outputs:
       path:
         description: "Path to built container"
-        value: ghcr.io/${{ jobs.build.outputs.repo }}/${{ inputs.name }}:${{ jobs.build.outputs.tag }}
+        value: ghcr.io/${{ jobs.build.outputs.repo }}/${{ inputs.name }}:${{ jobs.build.outputs.tag }}-${{ inputs.runner-architecture }}
 
 jobs:
   build:
     name: Build container
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.runner-architecture == 'arm' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     outputs:
       tag: ${{ steps.prepare.outputs.tag }}
       repo: ${{ steps.prepare.outputs.repo }}
@@ -56,13 +61,14 @@ jobs:
         with:
           context: ${{ inputs.context }}
           file: ${{ inputs.file }}
+          platforms: ${{ inputs.runner-architecture == 'arm' && 'linux/arm64' || 'linux/amd64' }}
           push: true
           tags: |
-            ghcr.io/${{ steps.prepare.outputs.repo }}/${{ inputs.name }}:${{ hashFiles(inputs.file) }}
-            ghcr.io/${{ steps.prepare.outputs.repo }}/${{ inputs.name }}:${{ steps.prepare.outputs.tag }}
-            ghcr.io/${{ steps.prepare.outputs.repo }}/${{ inputs.name }}:latest
+            ghcr.io/${{ steps.prepare.outputs.repo }}/${{ inputs.name }}:${{ hashFiles(inputs.file) }}-${{ inputs.runner-architecture }}
+            ghcr.io/${{ steps.prepare.outputs.repo }}/${{ inputs.name }}:${{ steps.prepare.outputs.tag }}-${{ inputs.runner-architecture }}
+            ghcr.io/${{ steps.prepare.outputs.repo }}/${{ inputs.name }}:latest-${{ inputs.runner-architecture }}
           cache-from: |
-            type=registry,ref=ghcr.io/${{ steps.prepare.outputs.repo }}/${{ inputs.name }}:${{ hashFiles(inputs.file) }}
-            type=registry,ref=ghcr.io/${{ steps.prepare.outputs.repo }}/${{ inputs.name }}:${{ steps.prepare.outputs.tag }}
-            type=registry,ref=ghcr.io/${{ steps.prepare.outputs.repo }}/${{ inputs.name }}:latest
+            type=registry,ref=ghcr.io/${{ steps.prepare.outputs.repo }}/${{ inputs.name }}:${{ hashFiles(inputs.file) }}-${{ inputs.runner-architecture }}
+            type=registry,ref=ghcr.io/${{ steps.prepare.outputs.repo }}/${{ inputs.name }}:${{ steps.prepare.outputs.tag }}-${{ inputs.runner-architecture }}
+            type=registry,ref=ghcr.io/${{ steps.prepare.outputs.repo }}/${{ inputs.name }}:latest-${{ inputs.runner-architecture }}
           cache-to: type=inline

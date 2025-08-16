@@ -17,6 +17,11 @@ concurrency:
     }}
   cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
+env:
+  # Runner architecture control
+  ENABLE_ARM_RUNNERS: ${{ vars.ENABLE_ARM_RUNNERS || 'false' }}
+  RUNNER_ARCH_STRATEGY: ${{ vars.RUNNER_ARCH_STRATEGY || 'x86-only' }}  # balanced, native-preferred, x86-only, arm-only
+
 jobs:
   check-skip:
     name: Check skip conditions
@@ -46,6 +51,7 @@ jobs:
       context: ./contrib/containers/ci
       file: ./contrib/containers/ci/ci.Dockerfile
       name: dashcore-ci-runner
+      runner-architecture: ${{ (env.ENABLE_ARM_RUNNERS == 'true' && env.RUNNER_ARCH_STRATEGY == 'arm-only') && 'arm' || 'x86' }}
 
   container-slim:
     name: Build slim container
@@ -56,15 +62,44 @@ jobs:
       context: ./contrib/containers/ci
       file: ./contrib/containers/ci/ci-slim.Dockerfile
       name: dashcore-ci-slim
+      runner-architecture: ${{ (env.ENABLE_ARM_RUNNERS == 'true' && env.RUNNER_ARCH_STRATEGY == 'arm-only') && 'arm' || 'x86' }}
+
+  container-arm:
+    name: Build container (ARM)
+    needs: [check-skip]
+    if: ${{ needs.check-skip.outputs.skip == 'false' && env.ENABLE_ARM_RUNNERS == 'true' && env.RUNNER_ARCH_STRATEGY != 'x86-only' }}
+    uses: ./.github/workflows/build-container.yml
+    with:
+      context: ./contrib/containers/ci
+      file: ./contrib/containers/ci/ci.Dockerfile
+      name: dashcore-ci-runner
+      runner-architecture: arm
+
+  container-slim-arm:
+    name: Build slim container (ARM)
+    needs: [check-skip]
+    if: ${{ needs.check-skip.outputs.skip == 'false' && env.ENABLE_ARM_RUNNERS == 'true' && env.RUNNER_ARCH_STRATEGY != 'x86-only' }}
+    uses: ./.github/workflows/build-container.yml
+    with:
+      context: ./contrib/containers/ci
+      file: ./contrib/containers/ci/ci-slim.Dockerfile
+      name: dashcore-ci-slim
+      runner-architecture: arm
 
   depends-arm-linux:
     name: arm-linux-gnueabihf
     uses: ./.github/workflows/build-depends.yml
-    needs: [container]
-    if: ${{ vars.SKIP_ARM_LINUX == '' }}
+    needs: [container, container-arm]
+    if: ${{ vars.SKIP_ARM_LINUX == '' && always() && (needs.container.result == 'success' || needs.container-arm.result == 'success') }}
     with:
       build-target: arm-linux
-      container-path: ${{ needs.container.outputs.path }}
+      container-path: ${{
+        (env.RUNNER_ARCH_STRATEGY == 'native-preferred' && env.ENABLE_ARM_RUNNERS == 'true' && needs.container-arm.outputs.path) ||
+        needs.container.outputs.path
+      }}
+      runner-architecture: ${{
+        (env.RUNNER_ARCH_STRATEGY == 'native-preferred' && env.ENABLE_ARM_RUNNERS == 'true') && 'arm' || 'x86'
+      }}
 
   depends-linux64:
     name: x86_64-pc-linux-gnu
@@ -78,6 +113,7 @@ jobs:
     with:
       build-target: linux64
       container-path: ${{ needs.container.outputs.path }}
+      runner-architecture: x86
 
   depends-linux64_multiprocess:
     name: x86_64-pc-linux-gnu_multiprocess
@@ -89,6 +125,7 @@ jobs:
     with:
       build-target: linux64_multiprocess
       container-path: ${{ needs.container.outputs.path }}
+      runner-architecture: x86
 
   depends-linux64_nowallet:
     name: x86_64-pc-linux-gnu_nowallet
@@ -98,6 +135,7 @@ jobs:
     with:
       build-target: linux64_nowallet
       container-path: ${{ needs.container.outputs.path }}
+      runner-architecture: x86
 
   depends-mac:
     name: x86_64-apple-darwin
@@ -107,6 +145,7 @@ jobs:
     with:
       build-target: mac
       container-path: ${{ needs.container.outputs.path }}
+      runner-architecture: x86
 
   depends-win64:
     name: x86_64-w64-mingw32
@@ -116,6 +155,7 @@ jobs:
     with:
       build-target: win64
       container-path: ${{ needs.container.outputs.path }}
+      runner-architecture: x86
 
   lint:
     name: Lint
@@ -123,15 +163,22 @@ jobs:
     needs: [container]
     with:
       container-path: ${{ needs.container.outputs.path }}
+      runner-architecture: x86
 
   src-arm-linux:
     name: arm-linux-build
     uses: ./.github/workflows/build-src.yml
-    needs: [container, depends-arm-linux]
+    needs: [container, container-arm, depends-arm-linux]
     with:
       build-target: arm-linux
-      container-path: ${{ needs.container.outputs.path }}
+      container-path: ${{
+        (env.RUNNER_ARCH_STRATEGY == 'native-preferred' && env.ENABLE_ARM_RUNNERS == 'true' && needs.container-arm.outputs.path) ||
+        needs.container.outputs.path
+      }}
       depends-key: ${{ needs.depends-arm-linux.outputs.key }}
+      runner-architecture: ${{
+        (env.RUNNER_ARCH_STRATEGY == 'native-preferred' && env.ENABLE_ARM_RUNNERS == 'true') && 'arm' || 'x86'
+      }}
 
   src-linux64:
     name: linux64-build
@@ -142,6 +189,7 @@ jobs:
       build-target: linux64
       container-path: ${{ needs.container.outputs.path }}
       depends-key: ${{ needs.depends-linux64.outputs.key }}
+      runner-architecture: x86
 
   src-linux64_fuzz:
     name: linux64_fuzz-build
@@ -162,6 +210,7 @@ jobs:
       build-target: linux64_multiprocess
       container-path: ${{ needs.container.outputs.path }}
       depends-key: ${{ needs.depends-linux64_multiprocess.outputs.key }}
+      runner-architecture: x86
 
   src-linux64_nowallet:
     name: linux64_nowallet-build
@@ -210,6 +259,7 @@ jobs:
       build-target: mac
       container-path: ${{ needs.container.outputs.path }}
       depends-key: ${{ needs.depends-mac.outputs.key }}
+      runner-architecture: x86
 
   src-win64:
     name: win64-build
@@ -228,6 +278,7 @@ jobs:
       bundle-key: ${{ needs.src-linux64.outputs.key }}
       build-target: linux64
       container-path: ${{ needs.container-slim.outputs.path }}
+      runner-architecture: x86
 
   test-linux64_multiprocess:
     name: linux64_multiprocess-test
@@ -237,6 +288,7 @@ jobs:
       bundle-key: ${{ needs.src-linux64_multiprocess.outputs.key }}
       build-target: linux64_multiprocess
       container-path: ${{ needs.container-slim.outputs.path }}
+      runner-architecture: x86
 
   test-linux64_nowallet:
     name: linux64_nowallet-test
