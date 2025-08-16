@@ -90,11 +90,11 @@ jobs:
     name: arm-linux-gnueabihf
     uses: ./.github/workflows/build-depends.yml
     needs: [container, container-arm]
-    if: ${{ vars.SKIP_ARM_LINUX == '' && always() && (needs.container.result == 'success' || needs.container-arm.result == 'success') }}
+    if: ${{ vars.SKIP_ARM_LINUX == '' && always() && (needs.container.result == 'success' || needs['container-arm'].result == 'success') }}
     with:
       build-target: arm-linux
       container-path: ${{
-        (env.RUNNER_ARCH_STRATEGY == 'native-preferred' && env.ENABLE_ARM_RUNNERS == 'true' && needs.container-arm.outputs.path) ||
+        (env.RUNNER_ARCH_STRATEGY == 'native-preferred' && env.ENABLE_ARM_RUNNERS == 'true' && needs['container-arm'].outputs.path) ||
         needs.container.outputs.path
       }}
       runner-architecture: ${{
@@ -172,7 +172,7 @@ jobs:
     with:
       build-target: arm-linux
       container-path: ${{
-        (env.RUNNER_ARCH_STRATEGY == 'native-preferred' && env.ENABLE_ARM_RUNNERS == 'true' && needs.container-arm.outputs.path) ||
+        (env.RUNNER_ARCH_STRATEGY == 'native-preferred' && env.ENABLE_ARM_RUNNERS == 'true' && needs['container-arm'].outputs.path) ||
         needs.container.outputs.path
       }}
       depends-key: ${{ needs.depends-arm-linux.outputs.key }}
