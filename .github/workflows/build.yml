@@ -51,7 +51,7 @@ jobs:
       context: ./contrib/containers/ci
       file: ./contrib/containers/ci/ci.Dockerfile
       name: dashcore-ci-runner
-      runner-architecture: ${{ (env.ENABLE_ARM_RUNNERS == 'true' && env.RUNNER_ARCH_STRATEGY == 'arm-only') && 'arm' || 'x86' }}
+      runner-architecture: x86
 
   container-slim:
     name: Build slim container
@@ -62,7 +62,7 @@ jobs:
       context: ./contrib/containers/ci
       file: ./contrib/containers/ci/ci-slim.Dockerfile
       name: dashcore-ci-slim
-      runner-architecture: ${{ (env.ENABLE_ARM_RUNNERS == 'true' && env.RUNNER_ARCH_STRATEGY == 'arm-only') && 'arm' || 'x86' }}
+      runner-architecture: x86
 
   container-arm:
     name: Build container (ARM)
@@ -94,9 +94,7 @@ jobs:
     with:
       build-target: arm-linux
       container-path: ${{ needs.container.outputs.path }}
-      runner-architecture: ${{
-        (env.RUNNER_ARCH_STRATEGY == 'native-preferred' && env.ENABLE_ARM_RUNNERS == 'true') && 'arm' || 'x86'
-      }}
+      runner-architecture: x86
 
   depends-linux64:
     name: x86_64-pc-linux-gnu
@@ -170,9 +168,7 @@ jobs:
       build-target: arm-linux
       container-path: ${{ needs.container.outputs.path }}
       depends-key: ${{ needs.depends-arm-linux.outputs.key }}
-      runner-architecture: ${{
-        (env.RUNNER_ARCH_STRATEGY == 'native-preferred' && env.ENABLE_ARM_RUNNERS == 'true') && 'arm' || 'x86'
-      }}
+      runner-architecture: x86
 
   src-linux64:
     name: linux64-build
