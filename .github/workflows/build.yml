@@ -17,10 +17,6 @@ concurrency:
     }}
   cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
-env:
-  # Runner architecture control
-  ENABLE_ARM_RUNNERS: ${{ vars.ENABLE_ARM_RUNNERS || 'false' }}
-  RUNNER_ARCH_STRATEGY: ${{ vars.RUNNER_ARCH_STRATEGY || 'x86-only' }}  # balanced, native-preferred, x86-only, arm-only
 
 jobs:
   check-skip:
@@ -64,27 +60,6 @@ jobs:
       name: dashcore-ci-slim
       runner-architecture: x86
 
-  container-arm:
-    name: Build container (ARM)
-    needs: [check-skip]
-    if: ${{ needs.check-skip.outputs.skip == 'false' && env.ENABLE_ARM_RUNNERS == 'true' && env.RUNNER_ARCH_STRATEGY != 'x86-only' }}
-    uses: ./.github/workflows/build-container.yml
-    with:
-      context: ./contrib/containers/ci
-      file: ./contrib/containers/ci/ci.Dockerfile
-      name: dashcore-ci-runner
-      runner-architecture: arm
-
-  container-slim-arm:
-    name: Build slim container (ARM)
-    needs: [check-skip]
-    if: ${{ needs.check-skip.outputs.skip == 'false' && env.ENABLE_ARM_RUNNERS == 'true' && env.RUNNER_ARCH_STRATEGY != 'x86-only' }}
-    uses: ./.github/workflows/build-container.yml
-    with:
-      context: ./contrib/containers/ci
-      file: ./contrib/containers/ci/ci-slim.Dockerfile
-      name: dashcore-ci-slim
-      runner-architecture: arm
 
   depends-arm-linux:
     name: arm-linux-gnueabihf
