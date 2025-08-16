@@ -89,14 +89,11 @@ jobs:
   depends-arm-linux:
     name: arm-linux-gnueabihf
     uses: ./.github/workflows/build-depends.yml
-    needs: [container, container-arm]
-    if: ${{ vars.SKIP_ARM_LINUX == '' && always() && (needs.container.result == 'success' || needs['container-arm'].result == 'success') }}
+    needs: [container]
+    if: ${{ vars.SKIP_ARM_LINUX == '' }}
     with:
       build-target: arm-linux
-      container-path: ${{
-        (env.RUNNER_ARCH_STRATEGY == 'native-preferred' && env.ENABLE_ARM_RUNNERS == 'true' && needs['container-arm'].outputs.path) ||
-        needs.container.outputs.path
-      }}
+      container-path: ${{ needs.container.outputs.path }}
       runner-architecture: ${{
         (env.RUNNER_ARCH_STRATEGY == 'native-preferred' && env.ENABLE_ARM_RUNNERS == 'true') && 'arm' || 'x86'
       }}
@@ -168,13 +165,10 @@ jobs:
   src-arm-linux:
     name: arm-linux-build
     uses: ./.github/workflows/build-src.yml
-    needs: [container, container-arm, depends-arm-linux]
+    needs: [container, depends-arm-linux]
     with:
       build-target: arm-linux
-      container-path: ${{
-        (env.RUNNER_ARCH_STRATEGY == 'native-preferred' && env.ENABLE_ARM_RUNNERS == 'true' && needs['container-arm'].outputs.path) ||
-        needs.container.outputs.path
-      }}
+      container-path: ${{ needs.container.outputs.path }}
       depends-key: ${{ needs.depends-arm-linux.outputs.key }}
       runner-architecture: ${{
         (env.RUNNER_ARCH_STRATEGY == 'native-preferred' && env.ENABLE_ARM_RUNNERS == 'true') && 'arm' || 'x86'
