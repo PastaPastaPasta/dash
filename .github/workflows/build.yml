@@ -129,13 +129,13 @@ jobs:
       container-path: ${{ needs.container.outputs.path }}
       runner-architecture: x86
 
-  depends-linux64_nowallet-arm:
-    name: aarch64-linux-gnu_nowallet
+  depends-linux64_sqlite-arm:
+    name: aarch64-linux-gnu_sqlite
     uses: ./.github/workflows/build-depends.yml
     needs: [container-arm]
-    if: ${{ vars.SKIP_LINUX64_NOWALLET == '' }}
+    if: ${{ vars.SKIP_LINUX64_SQLITE == '' }}
     with:
-      build-target: linux64_nowallet
+      build-target: linux64_sqlite
       container-path: ${{ needs.container-arm.outputs.path }}
       runner-architecture: arm
 
@@ -219,14 +219,14 @@ jobs:
       depends-key: ${{ needs.depends-linux64_nowallet.outputs.key }}
       runner-architecture: x86
 
-  src-linux64_nowallet-arm:
-    name: linux64_nowallet-build-arm
+  src-linux64_sqlite-arm:
+    name: linux64_sqlite-build-arm
     uses: ./.github/workflows/build-src.yml
-    needs: [container-arm, depends-linux64_nowallet-arm]
+    needs: [container-arm, depends-linux64_sqlite-arm]
     with:
-      build-target: linux64_nowallet
+      build-target: linux64_sqlite
       container-path: ${{ needs.container-arm.outputs.path }}
-      depends-key: ${{ needs.depends-linux64_nowallet-arm.outputs.key }}
+      depends-key: ${{ needs.depends-linux64_sqlite-arm.outputs.key }}
       runner-architecture: arm
 
   src-linux64_sqlite:
@@ -308,13 +308,13 @@ jobs:
       container-path: ${{ needs.container-slim.outputs.path }}
       runner-architecture: x86
 
-  test-linux64_nowallet-arm:
-    name: linux64_nowallet-test-arm
+  test-linux64_sqlite-arm:
+    name: linux64_sqlite-test-arm
     uses: ./.github/workflows/test-src.yml
-    needs: [container-slim-arm, src-linux64_nowallet-arm, lint]
+    needs: [container-slim-arm, src-linux64_sqlite-arm, lint]
     with:
-      bundle-key: ${{ needs.src-linux64_nowallet-arm.outputs.key }}
-      build-target: linux64_nowallet
+      bundle-key: ${{ needs.src-linux64_sqlite-arm.outputs.key }}
+      build-target: linux64_sqlite
       container-path: ${{ needs.container-slim-arm.outputs.path }}
       runner-architecture: arm
 
