@@ -60,16 +60,27 @@ jobs:
       name: dashcore-ci-slim
       runner-architecture: x86
 
+  container-arm:
+    name: Build container (ARM)
+    needs: [check-skip]
+    if: ${{ needs.check-skip.outputs.skip == 'false' }}
+    uses: ./.github/workflows/build-container.yml
+    with:
+      context: ./contrib/containers/ci
+      file: ./contrib/containers/ci/ci.Dockerfile
+      name: dashcore-ci-runner
+      runner-architecture: arm
+
 
   depends-arm-linux:
     name: arm-linux-gnueabihf
     uses: ./.github/workflows/build-depends.yml
-    needs: [container]
+    needs: [container-arm]
     if: ${{ vars.SKIP_ARM_LINUX == '' }}
     with:
       build-target: arm-linux
-      container-path: ${{ needs.container.outputs.path }}
-      runner-architecture: x86
+      container-path: ${{ needs.container-arm.outputs.path }}
+      runner-architecture: arm
 
   depends-linux64:
     name: x86_64-pc-linux-gnu
@@ -138,12 +149,12 @@ jobs:
   src-arm-linux:
     name: arm-linux-build
     uses: ./.github/workflows/build-src.yml
-    needs: [container, depends-arm-linux]
+    needs: [container-arm, depends-arm-linux]
     with:
       build-target: arm-linux
-      container-path: ${{ needs.container.outputs.path }}
+      container-path: ${{ needs.container-arm.outputs.path }}
       depends-key: ${{ needs.depends-arm-linux.outputs.key }}
-      runner-architecture: x86
+      runner-architecture: arm
 
   src-linux64:
     name: linux64-build
