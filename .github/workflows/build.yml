@@ -71,6 +71,17 @@ jobs:
       name: dashcore-ci-runner
       runner-architecture: arm
 
+  container-slim-arm:
+    name: Build slim container (ARM)
+    needs: [check-skip]
+    if: ${{ needs.check-skip.outputs.skip == 'false' }}
+    uses: ./.github/workflows/build-container.yml
+    with:
+      context: ./contrib/containers/ci
+      file: ./contrib/containers/ci/ci-slim.Dockerfile
+      name: dashcore-ci-slim
+      runner-architecture: arm
+
 
   depends-arm-linux:
     name: arm-linux-gnueabihf
@@ -117,6 +128,16 @@ jobs:
       build-target: linux64_nowallet
       container-path: ${{ needs.container.outputs.path }}
       runner-architecture: x86
+
+  depends-linux64_nowallet-arm:
+    name: aarch64-linux-gnu_nowallet
+    uses: ./.github/workflows/build-depends.yml
+    needs: [container-arm]
+    if: ${{ vars.SKIP_LINUX64_NOWALLET == '' }}
+    with:
+      build-target: linux64_nowallet
+      container-path: ${{ needs.container-arm.outputs.path }}
+      runner-architecture: arm
 
   depends-mac:
     name: x86_64-apple-darwin
@@ -196,6 +217,17 @@ jobs:
       build-target: linux64_nowallet
       container-path: ${{ needs.container.outputs.path }}
       depends-key: ${{ needs.depends-linux64_nowallet.outputs.key }}
+      runner-architecture: x86
+
+  src-linux64_nowallet-arm:
+    name: linux64_nowallet-build-arm
+    uses: ./.github/workflows/build-src.yml
+    needs: [container-arm, depends-linux64_nowallet-arm]
+    with:
+      build-target: linux64_nowallet
+      container-path: ${{ needs.container-arm.outputs.path }}
+      depends-key: ${{ needs.depends-linux64_nowallet-arm.outputs.key }}
+      runner-architecture: arm
 
   src-linux64_sqlite:
     name: linux64_sqlite-build
@@ -274,6 +306,17 @@ jobs:
       bundle-key: ${{ needs.src-linux64_nowallet.outputs.key }}
       build-target: linux64_nowallet
       container-path: ${{ needs.container-slim.outputs.path }}
+      runner-architecture: x86
+
+  test-linux64_nowallet-arm:
+    name: linux64_nowallet-test-arm
+    uses: ./.github/workflows/test-src.yml
+    needs: [container-slim-arm, src-linux64_nowallet-arm, lint]
+    with:
+      bundle-key: ${{ needs.src-linux64_nowallet-arm.outputs.key }}
+      build-target: linux64_nowallet
+      container-path: ${{ needs.container-slim-arm.outputs.path }}
+      runner-architecture: arm
 
   test-linux64_sqlite:
     name: linux64_sqlite-test
