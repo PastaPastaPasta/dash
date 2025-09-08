@@ -12,10 +12,12 @@
 #include <memory>
 
 class CActiveMasternodeManager;
+class CConnman;
 class CDeterministicMNManager;
 class ChainstateManager;
 class CMasternodeMetaMan;
 class CMasternodeSync;
+class CScheduler;
 class CTxMemPool;
 namespace llmq {
 class CInstantSendManager;
@@ -27,6 +29,7 @@ class CoinJoinWalletManager;
 #endif // ENABLE_WALLET
 
 struct CJContext {
+public:
     CJContext() = delete;
     CJContext(const CJContext&) = delete;
     CJContext(ChainstateManager& chainman, CDeterministicMNManager& dmnman, CMasternodeMetaMan& mn_metaman,
@@ -34,7 +37,13 @@ struct CJContext {
               const llmq::CInstantSendManager& isman, bool relay_txes);
     ~CJContext();
 
+    void Schedule(CConnman& connman, CScheduler& scheduler);
+
 #ifdef ENABLE_WALLET
+private:
+    const bool m_relay_txes;
+
+public:
     // The main object for accessing mixing
     const std::unique_ptr<CoinJoinWalletManager> walletman;
     const std::unique_ptr<CCoinJoinClientQueueManager> queueman;

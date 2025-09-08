@@ -4,6 +4,8 @@
 
 #include <coinjoin/context.h>
 
+#include <scheduler.h>
+
 #ifdef ENABLE_WALLET
 #include <coinjoin/client.h>
 #endif // ENABLE_WALLET
@@ -13,12 +15,24 @@ CJContext::CJContext(ChainstateManager& chainman, CDeterministicMNManager& dmnma
                      const CMasternodeSync& mn_sync, const llmq::CInstantSendManager& isman, bool relay_txes)
 #ifdef ENABLE_WALLET
     :
+    m_relay_txes{relay_txes},
     walletman{std::make_unique<CoinJoinWalletManager>(chainman, dmnman, mn_metaman, mempool, mn_sync, isman, queueman,
                                                       /*is_masternode=*/mn_activeman != nullptr)},
-    queueman{relay_txes ? std::make_unique<CCoinJoinClientQueueManager>(*walletman, dmnman, mn_metaman, mn_sync,
-                                                                        /*is_masternode=*/mn_activeman != nullptr)
-                        : nullptr}
+    queueman{m_relay_txes ? std::make_unique<CCoinJoinClientQueueManager>(*walletman, dmnman, mn_metaman, mn_sync,
+                                                                          /*is_masternode=*/mn_activeman != nullptr)
+                          : nullptr}
 #endif // ENABLE_WALLET
 {}
 
-CJContext::~CJContext() {}
+CJContext::~CJContext() = default;
+
+void CJContext::Schedule(CConnman& connman, CScheduler& scheduler)
+{
+#ifdef ENABLE_WALLET
+    if (!m_relay_txes) return;
+    scheduler.scheduleEvery(std::bind(&CCoinJoinClientQueueManager::DoMaintenance, std::ref(*queueman)),
+                            std::chrono::seconds{1});
+    scheduler.scheduleEvery(std::bind(&CoinJoinWalletManager::DoMaintenance, std::ref(*walletman), std::ref(connman)),
+                            std::chrono::seconds{1});
+#endif // ENABLE_WALLET
+}
