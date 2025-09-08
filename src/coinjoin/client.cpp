@@ -44,8 +44,6 @@ MessageProcessingResult CCoinJoinClientQueueManager::ProcessMessage(NodeId from,
     if (msg_type != NetMsgType::DSQUEUE) {
         return {};
     }
-
-    if (m_is_masternode) return {};
     if (!m_mn_sync.IsBlockchainSynced()) return {};
 
     assert(m_mn_metaman.IsValid());
@@ -1839,8 +1837,6 @@ void CCoinJoinClientManager::UpdatedBlockTip(const CBlockIndex* pindex)
 
 void CCoinJoinClientQueueManager::DoMaintenance()
 {
-    if (m_is_masternode) return; // no client-side mixing on masternodes
-
     if (!m_mn_sync.IsBlockchainSynced() || ShutdownRequested()) return;
 
     CheckQueue();

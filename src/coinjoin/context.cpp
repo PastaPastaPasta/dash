@@ -61,9 +61,7 @@ CJContextImpl::CJContextImpl(ChainstateManager& chainman, CDeterministicMNManage
     m_relay_txes{relay_txes},
     walletman{std::make_unique<CoinJoinWalletManager>(chainman, dmnman, mn_metaman, mempool, mn_sync, isman, queueman,
                                                       /*is_masternode=*/false)},
-    queueman{m_relay_txes ? std::make_unique<CCoinJoinClientQueueManager>(*walletman, dmnman, mn_metaman, mn_sync,
-                                                                          /*is_masternode=*/false)
-                          : nullptr}
+    queueman{m_relay_txes ? std::make_unique<CCoinJoinClientQueueManager>(*walletman, dmnman, mn_metaman, mn_sync) : nullptr}
 {
 }
 

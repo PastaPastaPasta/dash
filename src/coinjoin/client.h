@@ -239,17 +239,16 @@ private:
     const CMasternodeSync& m_mn_sync;
 
     mutable Mutex cs_ProcessDSQueue;
-    const bool m_is_masternode;
 
 public:
     explicit CCoinJoinClientQueueManager(CoinJoinWalletManager& walletman, CDeterministicMNManager& dmnman,
-                                         CMasternodeMetaMan& mn_metaman, const CMasternodeSync& mn_sync,
-                                         bool is_masternode) :
+                                         CMasternodeMetaMan& mn_metaman, const CMasternodeSync& mn_sync) :
         m_walletman(walletman),
         m_dmnman(dmnman),
         m_mn_metaman(mn_metaman),
-        m_mn_sync(mn_sync),
-        m_is_masternode{is_masternode} {};
+        m_mn_sync(mn_sync)
+    {
+    }
 
     [[nodiscard]] MessageProcessingResult ProcessMessage(NodeId from, CConnman& connman, std::string_view msg_type,
                                                          CDataStream& vRecv)
