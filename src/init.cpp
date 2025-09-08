@@ -326,6 +326,15 @@ void PrepareShutdown(NodeContext& node)
         g_active_notification_interface.reset();
     }
 
+    if (node.cj_ctx) {
+        UnregisterValidationInterface(node.cj_ctx.get());
+    }
+
+    if (g_ds_notification_interface) {
+        UnregisterValidationInterface(g_ds_notification_interface.get());
+        g_ds_notification_interface.reset();
+    }
+
     // After all scheduled tasks have been flushed, destroy pointers
     // and reset all to nullptr.
     node.active_ctx.reset();
@@ -376,11 +385,6 @@ void PrepareShutdown(NodeContext& node)
         g_zmq_notification_interface.reset();
     }
 #endif
-
-    if (g_ds_notification_interface) {
-        UnregisterValidationInterface(g_ds_notification_interface.get());
-        g_ds_notification_interface.reset();
-    }
 
     node.mn_activeman.reset();
 
@@ -2131,6 +2135,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     node.cj_ctx = std::make_unique<CJContext>(chainman, *node.dmnman, *node.mn_metaman, *node.mempool,
                                               node.mn_activeman.get(), *node.mn_sync, *node.llmq_ctx->isman,
                                               !ignores_incoming_txs);
+    RegisterValidationInterface(node.cj_ctx.get());
 
     assert(!node.peerman);
     node.peerman = PeerManager::make(chainparams, *node.connman, *node.addrman, node.banman.get(), *node.dstxman,
@@ -2140,7 +2145,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     RegisterValidationInterface(node.peerman.get());
 
     g_ds_notification_interface = std::make_unique<CDSNotificationInterface>(
-        *node.connman, *node.dstxman, *node.mn_sync, *node.govman, *node.peerman, chainman, node.mn_activeman.get(), node.dmnman, node.llmq_ctx, node.cj_ctx
+        *node.connman, *node.dstxman, *node.mn_sync, *node.govman, *node.peerman, chainman, node.mn_activeman.get(), node.dmnman, node.llmq_ctx
     );
     RegisterValidationInterface(g_ds_notification_interface.get());
 

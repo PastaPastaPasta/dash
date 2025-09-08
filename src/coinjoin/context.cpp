@@ -36,3 +36,14 @@ void CJContext::Schedule(CConnman& connman, CScheduler& scheduler)
                             std::chrono::seconds{1});
 #endif // ENABLE_WALLET
 }
+
+void CJContext::UpdatedBlockTip(const CBlockIndex* pindexNew, const CBlockIndex* pindexFork, bool fInitialDownload)
+{
+#ifdef ENABLE_WALLET
+    if (fInitialDownload || pindexNew == pindexFork) // In IBD or blocks were disconnected without any new ones
+        return;
+
+    walletman->ForEachCJClientMan(
+        [&pindexNew](std::unique_ptr<CCoinJoinClientManager>& clientman) { clientman->UpdatedBlockTip(pindexNew); });
+#endif // ENABLE_WALLET
+}

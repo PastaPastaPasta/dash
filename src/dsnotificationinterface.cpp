@@ -10,7 +10,6 @@
 
 #include <chainlock/chainlock.h>
 #include <coinjoin/coinjoin.h>
-#include <coinjoin/context.h>
 #include <evo/deterministicmns.h>
 #include <evo/mnauth.h>
 #include <governance/governance.h>
@@ -21,17 +20,12 @@
 #include <llmq/quorums.h>
 #include <masternode/sync.h>
 
-#ifdef ENABLE_WALLET
-#include <coinjoin/client.h>
-#endif // ENABLE_WALLET
-
 CDSNotificationInterface::CDSNotificationInterface(CConnman& connman, CDSTXManager& dstxman, CMasternodeSync& mn_sync,
                                                    CGovernanceManager& govman, PeerManager& peerman,
                                                    const ChainstateManager& chainman,
                                                    const CActiveMasternodeManager* const mn_activeman,
                                                    const std::unique_ptr<CDeterministicMNManager>& dmnman,
-                                                   const std::unique_ptr<LLMQContext>& llmq_ctx,
-                                                   const std::unique_ptr<CJContext>& cj_ctx) :
+                                                   const std::unique_ptr<LLMQContext>& llmq_ctx) :
     m_connman(connman),
     m_dstxman(dstxman),
     m_mn_sync(mn_sync),
@@ -40,8 +34,7 @@ CDSNotificationInterface::CDSNotificationInterface(CConnman& connman, CDSTXManag
     m_chainman(chainman),
     m_mn_activeman(mn_activeman),
     m_dmnman(dmnman),
-    m_llmq_ctx(llmq_ctx),
-    m_cj_ctx(cj_ctx)
+    m_llmq_ctx(llmq_ctx)
 {
 }
 
@@ -81,16 +74,11 @@ void CDSNotificationInterface::UpdatedBlockTip(const CBlockIndex *pindexNew, con
         return;
 
     m_dstxman.UpdatedBlockTip(pindexNew, *Assert(m_llmq_ctx)->clhandler, m_mn_sync);
-#ifdef ENABLE_WALLET
-    Assert(m_cj_ctx)->walletman->ForEachCJClientMan(
-        [&pindexNew](std::unique_ptr<CCoinJoinClientManager>& clientman) { clientman->UpdatedBlockTip(pindexNew); });
-#endif // ENABLE_WALLET
 
     m_llmq_ctx->isman->UpdatedBlockTip(pindexNew);
     m_llmq_ctx->clhandler->UpdatedBlockTip(*m_llmq_ctx->isman);
-
-    m_llmq_ctx->qman->UpdatedBlockTip(pindexNew, m_connman, fInitialDownload);
     m_llmq_ctx->qdkgsman->UpdatedBlockTip(pindexNew, fInitialDownload);
+    m_llmq_ctx->qman->UpdatedBlockTip(pindexNew, m_connman, fInitialDownload);
 
     if (m_govman.IsValid()) {
         m_govman.UpdatedBlockTip(pindexNew, m_connman, m_peerman, m_mn_activeman);

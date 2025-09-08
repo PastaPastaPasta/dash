@@ -15,7 +15,6 @@ class CGovernanceManager;
 class ChainstateManager;
 class CMasternodeSync;
 class PeerManager;
-struct CJContext;
 struct LLMQContext;
 
 class CDSNotificationInterface : public CValidationInterface
@@ -25,8 +24,7 @@ public:
                                       CGovernanceManager& govman, PeerManager& peerman, const ChainstateManager& chainman,
                                       const CActiveMasternodeManager* const mn_activeman,
                                       const std::unique_ptr<CDeterministicMNManager>& dmnman,
-                                      const std::unique_ptr<LLMQContext>& llmq_ctx,
-                                      const std::unique_ptr<CJContext>& cj_ctx);
+                                      const std::unique_ptr<LLMQContext>& llmq_ctx);
     virtual ~CDSNotificationInterface() = default;
 
     // a small helper to initialize current block height in sub-modules on startup
@@ -56,7 +54,6 @@ private:
     const CActiveMasternodeManager* const m_mn_activeman;
     const std::unique_ptr<CDeterministicMNManager>& m_dmnman;
     const std::unique_ptr<LLMQContext>& m_llmq_ctx;
-    const std::unique_ptr<CJContext>& m_cj_ctx;
 };
 
 extern std::unique_ptr<CDSNotificationInterface> g_ds_notification_interface;

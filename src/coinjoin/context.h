@@ -9,9 +9,12 @@
 #include <config/bitcoin-config.h>
 #endif
 
+#include <validationinterface.h>
+
 #include <memory>
 
 class CActiveMasternodeManager;
+class CBlockIndex;
 class CConnman;
 class CDeterministicMNManager;
 class ChainstateManager;
@@ -28,16 +31,20 @@ class CCoinJoinClientQueueManager;
 class CoinJoinWalletManager;
 #endif // ENABLE_WALLET
 
-struct CJContext {
+struct CJContext final : public CValidationInterface {
 public:
     CJContext() = delete;
     CJContext(const CJContext&) = delete;
     CJContext(ChainstateManager& chainman, CDeterministicMNManager& dmnman, CMasternodeMetaMan& mn_metaman,
               CTxMemPool& mempool, const CActiveMasternodeManager* const mn_activeman, const CMasternodeSync& mn_sync,
               const llmq::CInstantSendManager& isman, bool relay_txes);
-    ~CJContext();
+    virtual ~CJContext();
 
     void Schedule(CConnman& connman, CScheduler& scheduler);
+
+protected:
+    // CValidationInterface
+    void UpdatedBlockTip(const CBlockIndex* pindexNew, const CBlockIndex* pindexFork, bool fInitialDownload) override;
 
 #ifdef ENABLE_WALLET
 private:
