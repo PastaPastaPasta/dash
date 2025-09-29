@@ -10,6 +10,8 @@
 #include <validationinterface.h>
 #include <version.h>
 
+#include <msg_processing.h>
+
 #include <atomic>
 
 class CActiveMasternodeManager;

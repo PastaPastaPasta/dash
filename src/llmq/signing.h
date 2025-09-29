@@ -9,10 +9,10 @@
 #include <llmq/params.h>
 #include <llmq/signhash.h>
 #include <llmq/types.h>
+#include <msg_processing.h>
 #include <unordered_lru_cache.h>
 
 #include <net_types.h>
-#include <protocol.h>
 #include <random.h>
 #include <saltedhasher.h>
 #include <sync.h>

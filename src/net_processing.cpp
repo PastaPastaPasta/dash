@@ -14,11 +14,11 @@
 #include <consensus/validation.h>
 #include <hash.h>
 #include <index/blockfilterindex.h>
-#include <validation.h>
+#include <index/txindex.h>
 #include <merkleblock.h>
-#include <netmessagemaker.h>
-#include <netbase.h>
 #include <net_types.h>
+#include <netbase.h>
+#include <netmessagemaker.h>
 #include <node/blockstorage.h>
 #include <node/txreconciliation.h>
 #include <policy/policy.h>
@@ -31,42 +31,24 @@
 #include <sync.h>
 #include <timedata.h>
 #include <tinyformat.h>
-#include <index/txindex.h>
 #include <txmempool.h>
 #include <txorphanage.h>
 #include <util/check.h>
-#include <util/system.h>
 #include <util/strencodings.h>
-#include <util/underlying.h>
+#include <util/system.h>
 #include <util/trace.h>
-
-#include <algorithm>
-#include <atomic>
-#include <chrono>
-#include <future>
-#include <list>
-#include <memory>
-#include <optional>
-#include <ranges>
-#include <typeinfo>
-
-#include <spork.h>
-#include <governance/governance.h>
-#include <masternode/active/context.h>
-#include <masternode/sync.h>
-#include <masternode/meta.h>
-#ifdef ENABLE_WALLET
-#include <coinjoin/client.h>
-#endif // ENABLE_WALLET
-#include <coinjoin/context.h>
-#include <coinjoin/server.h>
+#include <util/underlying.h>
+#include <validation.h>
 
 #include <chainlock/chainlock.h>
+#include <coinjoin/context.h>
+#include <coinjoin/server.h>
 #include <evo/deterministicmns.h>
 #include <evo/mnauth.h>
 #include <evo/smldiff.h>
-#include <instantsend/lock.h>
+#include <governance/governance.h>
 #include <instantsend/instantsend.h>
+#include <instantsend/lock.h>
 #include <llmq/blockprocessor.h>
 #include <llmq/commitment.h>
 #include <llmq/context.h>
@@ -77,8 +59,26 @@
 #include <llmq/signing.h>
 #include <llmq/signing_shares.h>
 #include <llmq/snapshot.h>
-
+#include <masternode/active/context.h>
+#include <masternode/meta.h>
+#include <masternode/sync.h>
+#include <msg_processing.h>
+#include <spork.h>
 #include <stats/client.h>
+
+#ifdef ENABLE_WALLET
+#include <coinjoin/client.h>
+#endif // ENABLE_WALLET
+
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <future>
+#include <list>
+#include <memory>
+#include <optional>
+#include <ranges>
+#include <typeinfo>
 
 using node::ReadBlockFromDisk;
 using node::fImporting;

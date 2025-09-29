@@ -8,6 +8,7 @@
 #include <coinjoin/coinjoin.h>
 #include <coinjoin/util.h>
 #include <evo/types.h>
+#include <msg_processing.h>
 
 #include <net_types.h>
 #include <protocol.h>

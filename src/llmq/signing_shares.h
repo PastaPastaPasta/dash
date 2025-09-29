@@ -5,10 +5,10 @@
 #ifndef BITCOIN_LLMQ_SIGNING_SHARES_H
 #define BITCOIN_LLMQ_SIGNING_SHARES_H
 
-#include <llmq/signing.h>
-
 #include <bls/bls.h>
 #include <evo/types.h>
+#include <llmq/signing.h>
+#include <msg_processing.h>
 
 #include <random.h>
 #include <saltedhasher.h>

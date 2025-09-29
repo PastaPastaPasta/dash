@@ -291,6 +291,7 @@ BITCOIN_CORE_H = \
   memusage.h \
   merkleblock.h \
   messagesigner.h \
+  msg_processing.h \
   net.h \
   net_permissions.h \
   net_processing.h \
