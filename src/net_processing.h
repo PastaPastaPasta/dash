@@ -17,6 +17,7 @@ class AddrMan;
 class CTxMemPool;
 class CCoinJoinQueue;
 class CDeterministicMNManager;
+class CDSTXManager;
 class CMasternodeMetaMan;
 class CMasternodeSync;
 class ChainstateManager;
@@ -56,7 +57,7 @@ class PeerManager : public CValidationInterface, public NetEventsInterface
 {
 public:
     static std::unique_ptr<PeerManager> make(const CChainParams& chainparams, CConnman& connman, AddrMan& addrman,
-                                             BanMan* banman, ChainstateManager& chainman,
+                                             BanMan* banman, CDSTXManager& dstxman, ChainstateManager& chainman,
                                              CTxMemPool& pool, CMasternodeMetaMan& mn_metaman, CMasternodeSync& mn_sync,
                                              CGovernanceManager& govman, CSporkManager& sporkman,
                                              const CActiveMasternodeManager* const mn_activeman,

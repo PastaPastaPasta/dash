@@ -39,7 +39,7 @@ static CCoinJoinBroadcastTx MakeDSTX(int vin_vout_count = 3)
 BOOST_AUTO_TEST_CASE(add_get_dstx)
 {
     CCoinJoinBroadcastTx dstx = MakeDSTX();
-    auto& man = *Assert(Assert(m_node.cj_ctx)->dstxman);
+    auto& man = *Assert(m_node.dstxman);
     // Not present initially
     BOOST_CHECK(!man.GetDSTX(dstx.tx->GetHash()));
     // Add
@@ -53,7 +53,7 @@ BOOST_AUTO_TEST_CASE(add_get_dstx)
 BOOST_AUTO_TEST_CASE(update_heights_block_connect_disconnect)
 {
     CCoinJoinBroadcastTx dstx = MakeDSTX();
-    auto& man = *Assert(Assert(m_node.cj_ctx)->dstxman);
+    auto& man = *Assert(m_node.dstxman);
     man.AddDSTX(dstx);
 
     // Create a fake block containing the tx

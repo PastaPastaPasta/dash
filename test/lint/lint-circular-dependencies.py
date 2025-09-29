@@ -32,7 +32,6 @@ EXPECTED_CIRCULAR_DEPENDENCIES = (
     "chainlock/signing -> instantsend/instantsend -> net_processing -> masternode/active/context -> chainlock/signing",
     "coinjoin/client -> net_processing -> coinjoin/client",
     "coinjoin/client -> net_processing -> coinjoin/context -> coinjoin/client",
-    "coinjoin/coinjoin -> instantsend/instantsend -> net_processing -> coinjoin/context -> coinjoin/coinjoin",
     "coinjoin/server -> net_processing -> coinjoin/server",
     "coinjoin/server -> net_processing -> masternode/active/context -> coinjoin/server",
     "common/bloom -> evo/assetlocktx -> llmq/commitment -> evo/deterministicmns -> evo/simplifiedmns -> merkleblock -> common/bloom",

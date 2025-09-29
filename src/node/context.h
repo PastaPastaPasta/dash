@@ -18,6 +18,7 @@ class CBlockPolicyEstimator;
 class CConnman;
 class CCreditPoolManager;
 class CDeterministicMNManager;
+class CDSTXManager;
 class CChainstateHelper;
 class ChainstateManager;
 class CEvoDB;
@@ -80,6 +81,7 @@ struct NodeContext {
     //! Dash managers
     std::unique_ptr<CActiveMasternodeManager> mn_activeman;
     std::unique_ptr<CCreditPoolManager> cpoolman;
+    std::unique_ptr<CDSTXManager> dstxman;
     std::unique_ptr<CEvoDB> evodb;
     std::unique_ptr<CChainstateHelper> chain_helper;
     std::unique_ptr<CDeterministicMNManager> dmnman;

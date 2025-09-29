@@ -7,19 +7,18 @@
 #ifdef ENABLE_WALLET
 #include <coinjoin/client.h>
 #endif // ENABLE_WALLET
-#include <coinjoin/coinjoin.h>
 
 CJContext::CJContext(ChainstateManager& chainman, CDeterministicMNManager& dmnman, CMasternodeMetaMan& mn_metaman,
                      CTxMemPool& mempool, const CActiveMasternodeManager* const mn_activeman,
-                     const CMasternodeSync& mn_sync, const llmq::CInstantSendManager& isman, bool relay_txes) :
+                     const CMasternodeSync& mn_sync, const llmq::CInstantSendManager& isman, bool relay_txes)
 #ifdef ENABLE_WALLET
+    :
     walletman{std::make_unique<CoinJoinWalletManager>(chainman, dmnman, mn_metaman, mempool, mn_sync, isman, queueman,
                                                       /*is_masternode=*/mn_activeman != nullptr)},
     queueman{relay_txes ? std::make_unique<CCoinJoinClientQueueManager>(*walletman, dmnman, mn_metaman, mn_sync,
                                                                         /*is_masternode=*/mn_activeman != nullptr)
-                        : nullptr},
+                        : nullptr}
 #endif // ENABLE_WALLET
-    dstxman{std::make_unique<CDSTXManager>()}
 {}
 
 CJContext::~CJContext() {}

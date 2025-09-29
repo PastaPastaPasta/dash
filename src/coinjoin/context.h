@@ -13,7 +13,6 @@
 
 class CActiveMasternodeManager;
 class CDeterministicMNManager;
-class CDSTXManager;
 class ChainstateManager;
 class CMasternodeMetaMan;
 class CMasternodeSync;
@@ -40,7 +39,6 @@ struct CJContext {
     const std::unique_ptr<CoinJoinWalletManager> walletman;
     const std::unique_ptr<CCoinJoinClientQueueManager> queueman;
 #endif // ENABLE_WALLET
-    const std::unique_ptr<CDSTXManager> dstxman;
 };
 
 #endif // BITCOIN_COINJOIN_CONTEXT_H

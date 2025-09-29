@@ -389,6 +389,7 @@ void PrepareShutdown(NodeContext& node)
     // After all wallets are removed, destroy all CoinJoin objects
     // and reset them to nullptr
     node.cj_ctx.reset();
+    node.dstxman.reset();
 
     UnregisterAllValidationInterfaces();
     GetMainSignals().UnregisterBackgroundSignalScheduler();
@@ -2126,36 +2127,35 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
     ChainstateManager& chainman = *Assert(node.chainman);
 
+    node.dstxman = std::make_unique<CDSTXManager>();
+    node.cj_ctx = std::make_unique<CJContext>(chainman, *node.dmnman, *node.mn_metaman, *node.mempool,
+                                              node.mn_activeman.get(), *node.mn_sync, *node.llmq_ctx->isman,
+                                              !ignores_incoming_txs);
+
     assert(!node.peerman);
-    node.peerman = PeerManager::make(chainparams, *node.connman, *node.addrman, node.banman.get(),
+    node.peerman = PeerManager::make(chainparams, *node.connman, *node.addrman, node.banman.get(), *node.dstxman,
                                      chainman, *node.mempool, *node.mn_metaman, *node.mn_sync,
                                      *node.govman, *node.sporkman, node.mn_activeman.get(), node.dmnman,
                                      node.active_ctx, node.cj_ctx, node.llmq_ctx, ignores_incoming_txs);
     RegisterValidationInterface(node.peerman.get());
 
     g_ds_notification_interface = std::make_unique<CDSNotificationInterface>(
-        *node.connman, *node.mn_sync, *node.govman, *node.peerman, chainman, node.mn_activeman.get(), node.dmnman, node.llmq_ctx, node.cj_ctx
+        *node.connman, *node.dstxman, *node.mn_sync, *node.govman, *node.peerman, chainman, node.mn_activeman.get(), node.dmnman, node.llmq_ctx, node.cj_ctx
     );
     RegisterValidationInterface(g_ds_notification_interface.get());
 
-    // ********************************************************* Step 7c: Setup CoinJoin
-
-    node.cj_ctx = std::make_unique<CJContext>(chainman, *node.dmnman, *node.mn_metaman, *node.mempool,
-                                              node.mn_activeman.get(), *node.mn_sync, *node.llmq_ctx->isman,
-                                              !ignores_incoming_txs);
-
-    // ********************************************************* Step 7d: Setup masternode mode
+    // ********************************************************* Step 7c: Setup masternode mode
     assert(!node.active_ctx);
     assert(!g_active_notification_interface);
     if (node.mn_activeman) {
-        node.active_ctx = std::make_unique<ActiveContext>(chainman, *node.connman, *node.dmnman, *node.cj_ctx->dstxman, *node.mn_metaman, *node.mnhf_manager,
+        node.active_ctx = std::make_unique<ActiveContext>(chainman, *node.connman, *node.dmnman, *node.dstxman, *node.mn_metaman, *node.mnhf_manager,
                                                           *node.llmq_ctx, *node.sporkman, *node.mempool, *node.peerman, *node.mn_activeman,
                                                           *node.mn_sync);
         g_active_notification_interface = std::make_unique<ActiveNotificationInterface>(*node.active_ctx, *node.mn_activeman);
         RegisterValidationInterface(g_active_notification_interface.get());
     }
 
-    // ********************************************************* Step 7e: Setup other Dash services
+    // ********************************************************* Step 7d: Setup other Dash services
 
     bool fLoadCacheFiles = !(fReindex || fReindexChainState) && (chainman.ActiveChain().Tip() != nullptr);
 
