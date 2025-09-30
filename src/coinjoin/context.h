@@ -13,7 +13,6 @@
 #include <optional>
 #include <string_view>
 
-class CActiveMasternodeManager;
 class CBlockIndex;
 class CChainState;
 class CCoinJoinClientManager;
@@ -39,7 +38,6 @@ class CJContext : public CValidationInterface
 public:
     static std::unique_ptr<CJContext> make(ChainstateManager& chainman, CDeterministicMNManager& dmnman,
                                            CMasternodeMetaMan& mn_metaman, CTxMemPool& mempool,
-                                           const CActiveMasternodeManager* const mn_activeman,
                                            const CMasternodeSync& mn_sync, const llmq::CInstantSendManager& isman,
                                            bool relay_txes);
     virtual ~CJContext() = default;

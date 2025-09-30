@@ -25,8 +25,8 @@ class CJContextImpl final : public CJContext
 {
 public:
     CJContextImpl(ChainstateManager& chainman, CDeterministicMNManager& dmnman, CMasternodeMetaMan& mn_metaman,
-                  CTxMemPool& mempool, const CActiveMasternodeManager* const mn_activeman,
-                  const CMasternodeSync& mn_sync, const llmq::CInstantSendManager& isman, bool relay_txes);
+                  CTxMemPool& mempool, const CMasternodeSync& mn_sync, const llmq::CInstantSendManager& isman,
+                  bool relay_txes);
     virtual ~CJContextImpl() = default;
 
 public:
@@ -55,14 +55,14 @@ private:
     const std::unique_ptr<CCoinJoinClientQueueManager> queueman;
 };
 
-CJContextImpl::CJContextImpl(ChainstateManager& chainman, CDeterministicMNManager& dmnman, CMasternodeMetaMan& mn_metaman,
-                             CTxMemPool& mempool, const CActiveMasternodeManager* const mn_activeman,
-                             const CMasternodeSync& mn_sync, const llmq::CInstantSendManager& isman, bool relay_txes) :
+CJContextImpl::CJContextImpl(ChainstateManager& chainman, CDeterministicMNManager& dmnman,
+                             CMasternodeMetaMan& mn_metaman, CTxMemPool& mempool, const CMasternodeSync& mn_sync,
+                             const llmq::CInstantSendManager& isman, bool relay_txes) :
     m_relay_txes{relay_txes},
     walletman{std::make_unique<CoinJoinWalletManager>(chainman, dmnman, mn_metaman, mempool, mn_sync, isman, queueman,
-                                                      /*is_masternode=*/mn_activeman != nullptr)},
+                                                      /*is_masternode=*/false)},
     queueman{m_relay_txes ? std::make_unique<CCoinJoinClientQueueManager>(*walletman, dmnman, mn_metaman, mn_sync,
-                                                                          /*is_masternode=*/mn_activeman != nullptr)
+                                                                          /*is_masternode=*/false)
                           : nullptr}
 {
 }
@@ -152,12 +152,11 @@ void CJContextImpl::removeWallet(const std::string& name)
 
 std::unique_ptr<CJContext> CJContext::make(ChainstateManager& chainman, CDeterministicMNManager& dmnman,
                                            CMasternodeMetaMan& mn_metaman, CTxMemPool& mempool,
-                                           const CActiveMasternodeManager* const mn_activeman,
                                            const CMasternodeSync& mn_sync, const llmq::CInstantSendManager& isman,
                                            bool relay_txes)
 {
 #ifdef ENABLE_WALLET
-    return std::make_unique<CJContextImpl>(chainman, dmnman, mn_metaman, mempool, mn_activeman, mn_sync, isman, relay_txes);
+    return std::make_unique<CJContextImpl>(chainman, dmnman, mn_metaman, mempool, mn_sync, isman, relay_txes);
 #else
     // Cannot be constructed if wallet support isn't built
     return nullptr;

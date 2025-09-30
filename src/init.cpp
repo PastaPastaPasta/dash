@@ -2135,8 +2135,10 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     node.dstxman = std::make_unique<CDSTXManager>();
 
     assert(!node.cj_ctx);
-    node.cj_ctx = CJContext::make(chainman, *node.dmnman, *node.mn_metaman, *node.mempool, node.mn_activeman.get(),
-                                  *node.mn_sync, *node.llmq_ctx->isman, !ignores_incoming_txs);
+    if (!node.mn_activeman) {
+        node.cj_ctx = CJContext::make(chainman, *node.dmnman, *node.mn_metaman, *node.mempool, *node.mn_sync,
+                                      *node.llmq_ctx->isman, !ignores_incoming_txs);
+    }
     if (node.cj_ctx) {
         RegisterValidationInterface(node.cj_ctx.get());
     }
@@ -2145,7 +2147,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     node.peerman = PeerManager::make(chainparams, *node.connman, *node.addrman, node.banman.get(), *node.dstxman,
                                      chainman, *node.mempool, *node.mn_metaman, *node.mn_sync,
                                      *node.govman, *node.sporkman, node.mn_activeman.get(), node.dmnman,
-                                     node.active_ctx, node.cj_ctx, node.llmq_ctx, ignores_incoming_txs);
+                                     node.active_ctx, node.cj_ctx.get(), node.llmq_ctx, ignores_incoming_txs);
     RegisterValidationInterface(node.peerman.get());
 
     g_ds_notification_interface = std::make_unique<CDSNotificationInterface>(

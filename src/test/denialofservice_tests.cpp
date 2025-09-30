@@ -151,7 +151,7 @@ BOOST_AUTO_TEST_CASE(stale_tip_peer_management)
     auto peerLogic = PeerManager::make(chainparams, *connman, *m_node.addrman, /*banman=*/nullptr, *m_node.dstxman,
                                        *m_node.chainman, *m_node.mempool, *m_node.mn_metaman, *m_node.mn_sync,
                                        *m_node.govman, *m_node.sporkman, /*mn_activeman=*/ nullptr, m_node.dmnman,
-                                       /*active_ctx=*/nullptr, m_node.cj_ctx, m_node.llmq_ctx, /*ignore_incoming_txs=*/false);
+                                       /*active_ctx=*/nullptr, /*cj_ctx=*/nullptr, m_node.llmq_ctx, /*ignore_incoming_txs=*/false);
 
     constexpr int max_outbound_full_relay = MAX_OUTBOUND_FULL_RELAY_CONNECTIONS;
     CConnman::Options options;
@@ -254,8 +254,8 @@ BOOST_AUTO_TEST_CASE(block_relay_only_eviction)
     auto connman = std::make_unique<ConnmanTestMsg>(0x1337, 0x1337, *m_node.addrman, *m_node.netgroupman);
     auto peerLogic = PeerManager::make(chainparams, *connman, *m_node.addrman, /*banman=*/nullptr, *m_node.dstxman,
                                        *m_node.chainman, *m_node.mempool, *m_node.mn_metaman, *m_node.mn_sync,
-                                       *m_node.govman, *m_node.sporkman, /*mn_activeman=*/ nullptr, m_node.dmnman,
-                                       /*active_ctx=*/nullptr, m_node.cj_ctx, m_node.llmq_ctx, /*ignore_incoming_txs=*/false);
+                                       *m_node.govman, *m_node.sporkman, /*mn_activeman=*/nullptr, m_node.dmnman,
+                                       /*active_ctx=*/nullptr, /*cj_ctx=*/nullptr, m_node.llmq_ctx, /*ignore_incoming_txs=*/false);
 
     constexpr int max_outbound_block_relay{MAX_BLOCK_RELAY_ONLY_CONNECTIONS};
     constexpr int64_t MINIMUM_CONNECT_TIME{30};
@@ -322,7 +322,7 @@ BOOST_AUTO_TEST_CASE(peer_discouragement)
     auto peerLogic = PeerManager::make(chainparams, *connman, *m_node.addrman, banman.get(), *m_node.dstxman,
                                        *m_node.chainman, *m_node.mempool, *m_node.mn_metaman, *m_node.mn_sync,
                                        *m_node.govman, *m_node.sporkman, /*mn_activeman=*/nullptr, m_node.dmnman,
-                                       /*active_ctx=*/nullptr, m_node.cj_ctx, m_node.llmq_ctx, /*ignore_incoming_txs=*/false);
+                                       /*active_ctx=*/nullptr, /*cj_ctx=*/nullptr, m_node.llmq_ctx, /*ignore_incoming_txs=*/false);
 
     CNetAddr tor_netaddr;
     BOOST_REQUIRE(
@@ -427,7 +427,7 @@ BOOST_AUTO_TEST_CASE(DoS_bantime)
     auto peerLogic = PeerManager::make(chainparams, *connman, *m_node.addrman, banman.get(), *m_node.dstxman,
                                        *m_node.chainman, *m_node.mempool, *m_node.mn_metaman, *m_node.mn_sync,
                                        *m_node.govman, *m_node.sporkman, /*mn_activeman=*/nullptr, m_node.dmnman,
-                                       /*active_ctx=*/nullptr, m_node.cj_ctx, m_node.llmq_ctx, /*ignore_incoming_txs=*/false);
+                                       /*active_ctx=*/nullptr, /*cj_ctx=*/nullptr, m_node.llmq_ctx, /*ignore_incoming_txs=*/false);
 
     banman->ClearBanned();
     int64_t nStartTime = GetTime();
