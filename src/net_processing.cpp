@@ -2278,11 +2278,7 @@ bool PeerManagerImpl::AlreadyHave(const CInv& inv)
     case MSG_ISDLOCK:
         return m_llmq_ctx->isman->AlreadyHave(inv);
     case MSG_DSQ:
-        return
-#ifdef ENABLE_WALLET
-                (m_cj_ctx->queueman && m_cj_ctx->queueman->HasQueue(inv.hash)) ||
-#endif // ENABLE_WALLET
-                (m_active_ctx && m_active_ctx->cj_server->HasQueue(inv.hash));
+        return (m_cj_ctx && m_cj_ctx->hasQueue(inv.hash)) || (m_active_ctx && m_active_ctx->cj_server->HasQueue(inv.hash));
     case MSG_PLATFORM_BAN:
         return m_mn_metaman.AlreadyHavePlatformBan(inv.hash);
     }
@@ -2888,11 +2884,9 @@ void PeerManagerImpl::ProcessGetData(CNode& pfrom, Peer& peer, const std::atomic
         }
         if (!push && inv.type == MSG_DSQ) {
             auto opt_dsq = m_active_ctx ? m_active_ctx->cj_server->GetQueueFromHash(inv.hash) : std::nullopt;
-#ifdef ENABLE_WALLET
-            if (m_cj_ctx->queueman && !opt_dsq.has_value()) {
-                opt_dsq = m_cj_ctx->queueman->GetQueueFromHash(inv.hash);
+            if (m_cj_ctx && !opt_dsq.has_value()) {
+                opt_dsq = m_cj_ctx->getQueueFromHash(inv.hash);
             }
-#endif
             if (opt_dsq.has_value()) {
                 m_connman.PushMessage(&pfrom, msgMaker.Make(NetMsgType::DSQUEUE, *opt_dsq));
                 push = true;
@@ -5363,12 +5357,9 @@ void PeerManagerImpl::ProcessMessage(
     {
         //probably one the extensions
 #ifdef ENABLE_WALLET
-        if (m_cj_ctx->queueman) {
-            PostProcessMessage(m_cj_ctx->queueman->ProcessMessage(pfrom.GetId(), m_connman, msg_type, vRecv), pfrom.GetId());
+        if (m_cj_ctx) {
+            PostProcessMessage(m_cj_ctx->processMessage(pfrom, m_chainman.ActiveChainstate(), m_connman, m_mempool, msg_type, vRecv), pfrom.GetId());
         }
-        m_cj_ctx->walletman->ForEachCJClientMan([this, &pfrom, &msg_type, &vRecv](std::unique_ptr<CCoinJoinClientManager>& clientman) {
-            clientman->ProcessMessage(pfrom, m_chainman.ActiveChainstate(), m_connman, m_mempool, msg_type, vRecv);
-        });
 #endif // ENABLE_WALLET
         if (m_active_ctx) {
             PostProcessMessage(m_active_ctx->cj_server->ProcessMessage(pfrom, msg_type, vRecv), pfrom.GetId());

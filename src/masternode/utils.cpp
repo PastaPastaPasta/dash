@@ -3,29 +3,24 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <masternode/utils.h>
+
+#include <net.h>
+#include <shutdown.h>
+#include <util/ranges.h>
+
+#include <coinjoin/context.h>
 #include <evo/deterministicmns.h>
+#include <masternode/sync.h>
 
 #ifdef ENABLE_WALLET
 #include <coinjoin/client.h>
 #endif
-#include <masternode/sync.h>
-#include <net.h>
-#include <shutdown.h>
-#include <util/ranges.h>
-#include <coinjoin/context.h>
 
-void CMasternodeUtils::DoMaintenance(CConnman& connman, CDeterministicMNManager& dmnman,
-                                     const CMasternodeSync& mn_sync, const CJContext& cj_ctx)
+void CMasternodeUtils::DoMaintenance(CConnman& connman, CDeterministicMNManager& dmnman, const CMasternodeSync& mn_sync,
+                                     const CJContext* const cj_ctx)
 {
     if (!mn_sync.IsBlockchainSynced()) return;
     if (ShutdownRequested()) return;
-
-    std::vector<CDeterministicMNCPtr> vecDmns; // will be empty when no wallet
-#ifdef ENABLE_WALLET
-    cj_ctx.walletman->ForEachCJClientMan([&vecDmns](const std::unique_ptr<CCoinJoinClientManager>& clientman) {
-        clientman->GetMixingMasternodesInfo(vecDmns);
-    });
-#endif // ENABLE_WALLET
 
     // Don't disconnect masternode connections when we have less then the desired amount of outbound nodes
     int nonMasternodeCount = 0;
@@ -45,6 +40,7 @@ void CMasternodeUtils::DoMaintenance(CConnman& connman, CDeterministicMNManager&
         return;
     }
 
+    auto mixing_masternodes = cj_ctx ? cj_ctx->getMixingMasternodes() : std::vector<CDeterministicMNCPtr>{};
     connman.ForEachNode(CConnman::AllNodes, [&](CNode* pnode) {
         if (pnode->m_masternode_probe_connection) {
             // we're not disconnecting masternode probes for at least PROBE_WAIT_INTERVAL seconds
@@ -75,12 +71,10 @@ void CMasternodeUtils::DoMaintenance(CConnman& connman, CDeterministicMNManager&
             }
         }
 
-#ifdef ENABLE_WALLET
-        bool fFound = ranges::any_of(vecDmns, [&pnode](const auto& dmn) {
+        bool fFound = ranges::any_of(mixing_masternodes, [&pnode](const auto& dmn) {
             return pnode->addr == dmn->pdmnState->netInfo->GetPrimary();
         });
         if (fFound) return; // do NOT disconnect mixing masternodes
-#endif // ENABLE_WALLET
         if (fLogIPs) {
             LogPrint(BCLog::NET_NETCONN, "Closing Masternode connection: peer=%d, addr=%s\n", pnode->GetId(),
                      pnode->addr.ToStringAddrPort());

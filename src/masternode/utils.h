@@ -13,8 +13,8 @@ struct CJContext;
 class CMasternodeUtils
 {
 public:
-    static void DoMaintenance(CConnman &connman, CDeterministicMNManager& dmnman,
-                              const CMasternodeSync& mn_sync, const CJContext& cj_ctx);
+    static void DoMaintenance(CConnman& connman, CDeterministicMNManager& dmnman, const CMasternodeSync& mn_sync,
+                              const CJContext* const cj_ctx);
 };
 
 #endif // BITCOIN_MASTERNODE_UTILS_H

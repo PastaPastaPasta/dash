@@ -9,22 +9,34 @@
 #include <config/bitcoin-config.h>
 #endif
 
+#include <evo/types.h>
+#include <msg_processing.h>
+
 #include <validationinterface.h>
 
 #include <memory>
+#include <optional>
+#include <string_view>
 
 class CActiveMasternodeManager;
 class CBlockIndex;
+class CChainState;
+class CCoinJoinClientManager;
+class CCoinJoinQueue;
 class CConnman;
 class CDeterministicMNManager;
 class ChainstateManager;
 class CMasternodeMetaMan;
 class CMasternodeSync;
+class CNode;
 class CScheduler;
 class CTxMemPool;
 namespace llmq {
 class CInstantSendManager;
-};
+} // namespace llmq
+namespace wallet {
+class CWallet;
+} // namespace wallet
 
 #ifdef ENABLE_WALLET
 class CCoinJoinClientQueueManager;
@@ -42,6 +54,17 @@ public:
 
     void Schedule(CConnman& connman, CScheduler& scheduler);
 
+    bool hasQueue(const uint256& hash) const;
+    CCoinJoinClientManager* getClient(const std::string& name);
+    MessageProcessingResult processMessage(CNode& peer, CChainState& chainstate, CConnman& connman, CTxMemPool& mempool,
+                                           std::string_view msg_type, CDataStream& vRecv);
+    std::optional<CCoinJoinQueue> getQueueFromHash(const uint256& hash) const;
+    std::optional<int> getQueueSize() const;
+    std::vector<CDeterministicMNCPtr> getMixingMasternodes() const;
+    void addWallet(const std::shared_ptr<wallet::CWallet>& wallet);
+    void removeWallet(const std::string& name);
+    void flushWallet(const std::string& name);
+
 protected:
     // CValidationInterface
     void UpdatedBlockTip(const CBlockIndex* pindexNew, const CBlockIndex* pindexFork, bool fInitialDownload) override;
@@ -50,7 +73,6 @@ protected:
 private:
     const bool m_relay_txes;
 
-public:
     // The main object for accessing mixing
     const std::unique_ptr<CoinJoinWalletManager> walletman;
     const std::unique_ptr<CCoinJoinClientQueueManager> queueman;
