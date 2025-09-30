@@ -29,7 +29,6 @@ class CMasternodeSync;
 class CNode;
 class CoinJoinWalletManager;
 class CTxMemPool;
-class PeerManager;
 
 class UniValue;
 
@@ -251,7 +250,7 @@ public:
         m_mn_sync(mn_sync),
         m_is_masternode{is_masternode} {};
 
-    [[nodiscard]] MessageProcessingResult ProcessMessage(NodeId from, CConnman& connman, PeerManager& peerman, std::string_view msg_type,
+    [[nodiscard]] MessageProcessingResult ProcessMessage(NodeId from, CConnman& connman, std::string_view msg_type,
                                                          CDataStream& vRecv)
         EXCLUSIVE_LOCKS_REQUIRED(!cs_vecqueue);
     void DoMaintenance();

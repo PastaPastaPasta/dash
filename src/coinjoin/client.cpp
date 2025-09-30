@@ -12,7 +12,6 @@
 #include <masternode/meta.h>
 #include <masternode/sync.h>
 #include <net.h>
-#include <net_processing.h>
 #include <netmessagemaker.h>
 #include <rpc/evo_util.h>
 #include <shutdown.h>
@@ -39,7 +38,7 @@ using wallet::CoinType;
 using wallet::CWallet;
 using wallet::ReserveDestination;
 
-MessageProcessingResult CCoinJoinClientQueueManager::ProcessMessage(NodeId from, CConnman& connman, PeerManager& peerman,
+MessageProcessingResult CCoinJoinClientQueueManager::ProcessMessage(NodeId from, CConnman& connman,
                                                                     std::string_view msg_type, CDataStream& vRecv)
 {
     if (msg_type != NetMsgType::DSQUEUE) {
@@ -138,7 +137,7 @@ MessageProcessingResult CCoinJoinClientQueueManager::ProcessMessage(NodeId from,
             WITH_LOCK(cs_vecqueue, vecCoinJoinQueue.push_back(dsq));
         }
     } // cs_ProcessDSQueue
-    peerman.RelayDSQ(dsq);
+    ret.m_dsq.push_back(dsq);
     return ret;
 }
 

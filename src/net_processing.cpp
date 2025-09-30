@@ -3520,6 +3520,9 @@ void PeerManagerImpl::PostProcessMessage(MessageProcessingResult&& result, NodeI
     for (const auto& inv : result.m_inventory) {
         RelayInv(inv);
     }
+    for (const auto& dsq : result.m_dsq) {
+        RelayDSQ(dsq);
+    }
     if (result.m_inv_filter) {
         const auto& [inv, filter] = result.m_inv_filter.value();
         if (std::holds_alternative<CTransactionRef>(filter)) {
@@ -5361,7 +5364,7 @@ void PeerManagerImpl::ProcessMessage(
         //probably one the extensions
 #ifdef ENABLE_WALLET
         if (m_cj_ctx->queueman) {
-            PostProcessMessage(m_cj_ctx->queueman->ProcessMessage(pfrom.GetId(), m_connman, *this, msg_type, vRecv), pfrom.GetId());
+            PostProcessMessage(m_cj_ctx->queueman->ProcessMessage(pfrom.GetId(), m_connman, msg_type, vRecv), pfrom.GetId());
         }
         m_cj_ctx->walletman->ForEachCJClientMan([this, &pfrom, &msg_type, &vRecv](std::unique_ptr<CCoinJoinClientManager>& clientman) {
             clientman->ProcessMessage(pfrom, m_chainman.ActiveChainstate(), m_connman, m_mempool, msg_type, vRecv);

@@ -13,10 +13,14 @@
 #include <uint256.h>
 #include <util/time.h>
 
+#include <coinjoin/coinjoin.h>
+
 #include <cstdint>
 #include <limits>
 #include <string>
 #include <variant>
+
+class CCoinJoinQueue;
 
 /** Message header.
  * (4) message start.
@@ -601,6 +605,9 @@ struct MessageProcessingResult
 
     //! @m_inventory will relay these inventories to connected peers
     std::vector<CInv> m_inventory;
+
+    //! @m_dsq will relay DSQs to connected peers
+    std::vector<CCoinJoinQueue> m_dsq;
 
     //! @m_inv_filter will relay this inventory if filter matches to connected peers if not nullopt
     std::optional<std::pair<CInv, std::variant<CTransactionRef, uint256>>> m_inv_filter;
