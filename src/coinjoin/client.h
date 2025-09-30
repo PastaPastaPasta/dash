@@ -77,15 +77,14 @@ public:
 public:
     CoinJoinWalletManager(ChainstateManager& chainman, CDeterministicMNManager& dmnman, CMasternodeMetaMan& mn_metaman,
                           const CTxMemPool& mempool, const CMasternodeSync& mn_sync, const llmq::CInstantSendManager& isman,
-                          const std::unique_ptr<CCoinJoinClientQueueManager>& queueman, bool is_masternode) :
+                          const std::unique_ptr<CCoinJoinClientQueueManager>& queueman) :
         m_chainman(chainman),
         m_dmnman(dmnman),
         m_mn_metaman(mn_metaman),
         m_mempool(mempool),
         m_mn_sync(mn_sync),
         m_isman{isman},
-        m_queueman(queueman),
-        m_is_masternode{is_masternode}
+        m_queueman(queueman)
     {}
 
     ~CoinJoinWalletManager() {
@@ -128,8 +127,6 @@ private:
     const llmq::CInstantSendManager& m_isman;
     const std::unique_ptr<CCoinJoinClientQueueManager>& m_queueman;
 
-    const bool m_is_masternode;
-
     mutable Mutex cs_wallet_manager_map;
     wallet_name_cjman_map m_wallet_manager_map GUARDED_BY(cs_wallet_manager_map);
 };
@@ -144,9 +141,6 @@ private:
     const CMasternodeSync& m_mn_sync;
     const llmq::CInstantSendManager& m_isman;
     const std::unique_ptr<CCoinJoinClientQueueManager>& m_queueman;
-
-    // Track node type
-    const bool m_is_masternode;
 
     std::vector<COutPoint> vecOutPointLocked;
 
@@ -202,7 +196,7 @@ public:
     explicit CCoinJoinClientSession(const std::shared_ptr<wallet::CWallet>& wallet, CCoinJoinClientManager& clientman,
                                     CDeterministicMNManager& dmnman, CMasternodeMetaMan& mn_metaman,
                                     const CMasternodeSync& mn_sync, const llmq::CInstantSendManager& isman,
-                                    const std::unique_ptr<CCoinJoinClientQueueManager>& queueman, bool is_masternode);
+                                    const std::unique_ptr<CCoinJoinClientQueueManager>& queueman);
 
     void ProcessMessage(CNode& peer, CChainState& active_chainstate, CConnman& connman, const CTxMemPool& mempool, std::string_view msg_type, CDataStream& vRecv);
 
@@ -268,9 +262,6 @@ private:
     const llmq::CInstantSendManager& m_isman;
     const std::unique_ptr<CCoinJoinClientQueueManager>& m_queueman;
 
-    // Track node type
-    const bool m_is_masternode;
-
     // Keep track of the used Masternodes
     std::vector<COutPoint> vecMasternodesUsed;
 
@@ -303,14 +294,13 @@ public:
     explicit CCoinJoinClientManager(const std::shared_ptr<wallet::CWallet>& wallet, CDeterministicMNManager& dmnman,
                                     CMasternodeMetaMan& mn_metaman, const CMasternodeSync& mn_sync,
                                     const llmq::CInstantSendManager& isman,
-                                    const std::unique_ptr<CCoinJoinClientQueueManager>& queueman, bool is_masternode) :
+                                    const std::unique_ptr<CCoinJoinClientQueueManager>& queueman) :
         m_wallet(wallet),
         m_dmnman(dmnman),
         m_mn_metaman(mn_metaman),
         m_mn_sync(mn_sync),
         m_isman{isman},
-        m_queueman(queueman),
-        m_is_masternode{is_masternode}
+        m_queueman(queueman)
     {
     }
 

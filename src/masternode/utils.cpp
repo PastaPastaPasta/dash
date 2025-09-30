@@ -17,7 +17,7 @@
 #endif
 
 void CMasternodeUtils::DoMaintenance(CConnman& connman, CDeterministicMNManager& dmnman, const CMasternodeSync& mn_sync,
-                                     const CJContext* const cj_ctx)
+                                     CJContext* const cj_ctx)
 {
     if (!mn_sync.IsBlockchainSynced()) return;
     if (ShutdownRequested()) return;

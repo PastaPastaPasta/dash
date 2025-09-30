@@ -39,7 +39,7 @@ public:
                                            std::string_view msg_type, CDataStream& vRecv) override;
     std::optional<CCoinJoinQueue> getQueueFromHash(const uint256& hash) const override;
     std::optional<int> getQueueSize() const override;
-    std::vector<CDeterministicMNCPtr> getMixingMasternodes() const override;
+    std::vector<CDeterministicMNCPtr> getMixingMasternodes() override;
     void addWallet(const std::shared_ptr<wallet::CWallet>& wallet) override;
     void removeWallet(const std::string& name) override;
     void flushWallet(const std::string& name) override;
@@ -51,7 +51,7 @@ protected:
 private:
     const bool m_relay_txes;
 
-    const std::unique_ptr<CoinJoinWalletManager> walletman;
+    CoinJoinWalletManager walletman;
     const std::unique_ptr<CCoinJoinClientQueueManager> queueman;
 };
 
@@ -59,9 +59,8 @@ CJContextImpl::CJContextImpl(ChainstateManager& chainman, CDeterministicMNManage
                              CMasternodeMetaMan& mn_metaman, CTxMemPool& mempool, const CMasternodeSync& mn_sync,
                              const llmq::CInstantSendManager& isman, bool relay_txes) :
     m_relay_txes{relay_txes},
-    walletman{std::make_unique<CoinJoinWalletManager>(chainman, dmnman, mn_metaman, mempool, mn_sync, isman, queueman,
-                                                      /*is_masternode=*/false)},
-    queueman{m_relay_txes ? std::make_unique<CCoinJoinClientQueueManager>(*walletman, dmnman, mn_metaman, mn_sync) : nullptr}
+    walletman{chainman, dmnman, mn_metaman, mempool, mn_sync, isman, queueman},
+    queueman{m_relay_txes ? std::make_unique<CCoinJoinClientQueueManager>(walletman, dmnman, mn_metaman, mn_sync) : nullptr}
 {
 }
 
@@ -70,7 +69,7 @@ void CJContextImpl::Schedule(CConnman& connman, CScheduler& scheduler)
     if (!m_relay_txes) return;
     scheduler.scheduleEvery(std::bind(&CCoinJoinClientQueueManager::DoMaintenance, std::ref(*queueman)),
                             std::chrono::seconds{1});
-    scheduler.scheduleEvery(std::bind(&CoinJoinWalletManager::DoMaintenance, std::ref(*walletman), std::ref(connman)),
+    scheduler.scheduleEvery(std::bind(&CoinJoinWalletManager::DoMaintenance, std::ref(walletman), std::ref(connman)),
                             std::chrono::seconds{1});
 }
 
@@ -79,7 +78,7 @@ void CJContextImpl::UpdatedBlockTip(const CBlockIndex* pindexNew, const CBlockIn
     if (fInitialDownload || pindexNew == pindexFork) // In IBD or blocks were disconnected without any new ones
         return;
 
-    walletman->ForEachCJClientMan(
+    walletman.ForEachCJClientMan(
         [&pindexNew](std::unique_ptr<CCoinJoinClientManager>& clientman) { clientman->UpdatedBlockTip(pindexNew); });
 }
 
@@ -93,13 +92,13 @@ bool CJContextImpl::hasQueue(const uint256& hash) const
 
 CCoinJoinClientManager* CJContextImpl::getClient(const std::string& name)
 {
-    return walletman->Get(name);
+    return walletman.Get(name);
 }
 
 MessageProcessingResult CJContextImpl::processMessage(CNode& pfrom, CChainState& chainstate, CConnman& connman,
                                                       CTxMemPool& mempool, std::string_view msg_type, CDataStream& vRecv)
 {
-    walletman->ForEachCJClientMan([&](std::unique_ptr<CCoinJoinClientManager>& clientman) {
+    walletman.ForEachCJClientMan([&](std::unique_ptr<CCoinJoinClientManager>& clientman) {
         clientman->ProcessMessage(pfrom, chainstate, connman, mempool, msg_type, vRecv);
     });
     if (queueman) {
@@ -124,27 +123,27 @@ std::optional<int> CJContextImpl::getQueueSize() const
     return std::nullopt;
 }
 
-std::vector<CDeterministicMNCPtr> CJContextImpl::getMixingMasternodes() const
+std::vector<CDeterministicMNCPtr> CJContextImpl::getMixingMasternodes()
 {
     std::vector<CDeterministicMNCPtr> ret{};
-    walletman->ForEachCJClientMan(
+    walletman.ForEachCJClientMan(
         [&](const std::unique_ptr<CCoinJoinClientManager>& clientman) { clientman->GetMixingMasternodesInfo(ret); });
     return ret;
 }
 
 void CJContextImpl::addWallet(const std::shared_ptr<wallet::CWallet>& wallet)
 {
-    walletman->Add(wallet);
+    walletman.Add(wallet);
 }
 
 void CJContextImpl::flushWallet(const std::string& name)
 {
-    walletman->Flush(name);
+    walletman.Flush(name);
 }
 
 void CJContextImpl::removeWallet(const std::string& name)
 {
-    walletman->Remove(name);
+    walletman.Remove(name);
 }
 #endif // ENABLE_WALLET
 

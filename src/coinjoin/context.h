@@ -52,7 +52,7 @@ public:
                                                    CTxMemPool& mempool, std::string_view msg_type, CDataStream& vRecv) = 0;
     virtual std::optional<CCoinJoinQueue> getQueueFromHash(const uint256& hash) const = 0;
     virtual std::optional<int> getQueueSize() const = 0;
-    virtual std::vector<CDeterministicMNCPtr> getMixingMasternodes() const = 0;
+    virtual std::vector<CDeterministicMNCPtr> getMixingMasternodes() = 0;
     virtual void addWallet(const std::shared_ptr<wallet::CWallet>& wallet) = 0;
     virtual void removeWallet(const std::string& name) = 0;
     virtual void flushWallet(const std::string& name) = 0;
