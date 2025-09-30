@@ -348,9 +348,9 @@ TestingSetup::TestingSetup(const std::string& chainName, const std::vector<const
         m_node.connman->Init(options);
     }
 
-    m_node.cj_ctx = std::make_unique<CJContext>(*m_node.chainman, *m_node.dmnman, *m_node.mn_metaman, *m_node.mempool,
-                                                /*mn_activeman=*/nullptr, *m_node.mn_sync, *m_node.llmq_ctx->isman,
-                                                /*relay_txes=*/true);
+    m_node.cj_ctx = CJContext::make(*m_node.chainman, *m_node.dmnman, *m_node.mn_metaman, *m_node.mempool,
+                                    /*mn_activeman=*/nullptr, *m_node.mn_sync, *m_node.llmq_ctx->isman,
+                                    /*relay_txes=*/true);
 
 #ifdef ENABLE_WALLET
     // WalletInit::Construct()-like logic needed for wallet tests that run on

@@ -14,22 +14,22 @@
 
 #include <atomic>
 
-class CActiveMasternodeManager;
 class AddrMan;
-class CTxMemPool;
+class CActiveMasternodeManager;
 class CCoinJoinQueue;
+class CCoinJoinServer;
 class CDeterministicMNManager;
 class CDSTXManager;
+class CGovernanceManager;
+class ChainstateManager;
+class CInv;
+class CJContext;
 class CMasternodeMetaMan;
 class CMasternodeSync;
-class ChainstateManager;
-class CCoinJoinServer;
-class CGovernanceManager;
-class CInv;
 class CSporkManager;
 class CTransaction;
+class CTxMemPool;
 struct ActiveContext;
-struct CJContext;
 struct LLMQContext;
 
 /** Default for -maxorphantxsize, maximum size in megabytes the orphan map can grow before entries are removed */

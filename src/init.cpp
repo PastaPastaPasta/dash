@@ -2131,11 +2131,15 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
     ChainstateManager& chainman = *Assert(node.chainman);
 
+    assert(!node.dstxman);
     node.dstxman = std::make_unique<CDSTXManager>();
-    node.cj_ctx = std::make_unique<CJContext>(chainman, *node.dmnman, *node.mn_metaman, *node.mempool,
-                                              node.mn_activeman.get(), *node.mn_sync, *node.llmq_ctx->isman,
-                                              !ignores_incoming_txs);
-    RegisterValidationInterface(node.cj_ctx.get());
+
+    assert(!node.cj_ctx);
+    node.cj_ctx = CJContext::make(chainman, *node.dmnman, *node.mn_metaman, *node.mempool, node.mn_activeman.get(),
+                                  *node.mn_sync, *node.llmq_ctx->isman, !ignores_incoming_txs);
+    if (node.cj_ctx) {
+        RegisterValidationInterface(node.cj_ctx.get());
+    }
 
     assert(!node.peerman);
     node.peerman = PeerManager::make(chainparams, *node.connman, *node.addrman, node.banman.get(), *node.dstxman,

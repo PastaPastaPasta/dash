@@ -23,6 +23,7 @@ class CChainstateHelper;
 class ChainstateManager;
 class CEvoDB;
 class CGovernanceManager;
+class CJContext;
 class CMasternodeMetaMan;
 class CMasternodeSync;
 class CNetFulfilledRequestManager;
@@ -33,7 +34,6 @@ class CMNHFManager;
 class NetGroupManager;
 class PeerManager;
 struct ActiveContext;
-struct CJContext;
 struct LLMQContext;
 
 namespace interfaces {

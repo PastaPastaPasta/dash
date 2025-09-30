@@ -8,7 +8,7 @@
 class CConnman;
 class CDeterministicMNManager;
 class CMasternodeSync;
-struct CJContext;
+class CJContext;
 
 class CMasternodeUtils
 {

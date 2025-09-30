@@ -5,16 +5,11 @@
 #ifndef BITCOIN_COINJOIN_CONTEXT_H
 #define BITCOIN_COINJOIN_CONTEXT_H
 
-#if defined(HAVE_CONFIG_H)
-#include <config/bitcoin-config.h>
-#endif
-
 #include <evo/types.h>
 #include <msg_processing.h>
 
 #include <validationinterface.h>
 
-#include <memory>
 #include <optional>
 #include <string_view>
 
@@ -24,6 +19,7 @@ class CChainState;
 class CCoinJoinClientManager;
 class CCoinJoinQueue;
 class CConnman;
+class CDataStream;
 class CDeterministicMNManager;
 class ChainstateManager;
 class CMasternodeMetaMan;
@@ -38,45 +34,35 @@ namespace wallet {
 class CWallet;
 } // namespace wallet
 
-#ifdef ENABLE_WALLET
-class CCoinJoinClientQueueManager;
-class CoinJoinWalletManager;
-#endif // ENABLE_WALLET
-
-struct CJContext final : public CValidationInterface {
+class CJContext : public CValidationInterface
+{
 public:
-    CJContext() = delete;
-    CJContext(const CJContext&) = delete;
-    CJContext(ChainstateManager& chainman, CDeterministicMNManager& dmnman, CMasternodeMetaMan& mn_metaman,
-              CTxMemPool& mempool, const CActiveMasternodeManager* const mn_activeman, const CMasternodeSync& mn_sync,
-              const llmq::CInstantSendManager& isman, bool relay_txes);
-    virtual ~CJContext();
+    static std::unique_ptr<CJContext> make(ChainstateManager& chainman, CDeterministicMNManager& dmnman,
+                                           CMasternodeMetaMan& mn_metaman, CTxMemPool& mempool,
+                                           const CActiveMasternodeManager* const mn_activeman,
+                                           const CMasternodeSync& mn_sync, const llmq::CInstantSendManager& isman,
+                                           bool relay_txes);
+    virtual ~CJContext() = default;
 
-    void Schedule(CConnman& connman, CScheduler& scheduler);
+public:
+    virtual void Schedule(CConnman& connman, CScheduler& scheduler) = 0;
 
-    bool hasQueue(const uint256& hash) const;
-    CCoinJoinClientManager* getClient(const std::string& name);
-    MessageProcessingResult processMessage(CNode& peer, CChainState& chainstate, CConnman& connman, CTxMemPool& mempool,
-                                           std::string_view msg_type, CDataStream& vRecv);
-    std::optional<CCoinJoinQueue> getQueueFromHash(const uint256& hash) const;
-    std::optional<int> getQueueSize() const;
-    std::vector<CDeterministicMNCPtr> getMixingMasternodes() const;
-    void addWallet(const std::shared_ptr<wallet::CWallet>& wallet);
-    void removeWallet(const std::string& name);
-    void flushWallet(const std::string& name);
+public:
+    virtual bool hasQueue(const uint256& hash) const = 0;
+    virtual CCoinJoinClientManager* getClient(const std::string& name) = 0;
+    virtual MessageProcessingResult processMessage(CNode& peer, CChainState& chainstate, CConnman& connman,
+                                                   CTxMemPool& mempool, std::string_view msg_type, CDataStream& vRecv) = 0;
+    virtual std::optional<CCoinJoinQueue> getQueueFromHash(const uint256& hash) const = 0;
+    virtual std::optional<int> getQueueSize() const = 0;
+    virtual std::vector<CDeterministicMNCPtr> getMixingMasternodes() const = 0;
+    virtual void addWallet(const std::shared_ptr<wallet::CWallet>& wallet) = 0;
+    virtual void removeWallet(const std::string& name) = 0;
+    virtual void flushWallet(const std::string& name) = 0;
 
 protected:
     // CValidationInterface
-    void UpdatedBlockTip(const CBlockIndex* pindexNew, const CBlockIndex* pindexFork, bool fInitialDownload) override;
-
-#ifdef ENABLE_WALLET
-private:
-    const bool m_relay_txes;
-
-    // The main object for accessing mixing
-    const std::unique_ptr<CoinJoinWalletManager> walletman;
-    const std::unique_ptr<CCoinJoinClientQueueManager> queueman;
-#endif // ENABLE_WALLET
+    virtual void UpdatedBlockTip(const CBlockIndex* pindexNew, const CBlockIndex* pindexFork,
+                                 bool fInitialDownload) override = 0;
 };
 
 #endif // BITCOIN_COINJOIN_CONTEXT_H

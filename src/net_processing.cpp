@@ -66,10 +66,6 @@
 #include <spork.h>
 #include <stats/client.h>
 
-#ifdef ENABLE_WALLET
-#include <coinjoin/client.h>
-#endif // ENABLE_WALLET
-
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -5356,11 +5352,9 @@ void PeerManagerImpl::ProcessMessage(
     if (found)
     {
         //probably one the extensions
-#ifdef ENABLE_WALLET
         if (m_cj_ctx) {
             PostProcessMessage(m_cj_ctx->processMessage(pfrom, m_chainman.ActiveChainstate(), m_connman, m_mempool, msg_type, vRecv), pfrom.GetId());
         }
-#endif // ENABLE_WALLET
         if (m_active_ctx) {
             PostProcessMessage(m_active_ctx->cj_server->ProcessMessage(pfrom, msg_type, vRecv), pfrom.GetId());
         }
