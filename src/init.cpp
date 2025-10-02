@@ -78,8 +78,8 @@
 
 #include <bls/bls.h>
 #include <coinjoin/coinjoin.h>
-#include <coinjoin/context.h>
 #include <coinjoin/server.h>
+#include <coinjoin/walletman.h>
 #include <dsnotificationinterface.h>
 #include <evo/deterministicmns.h>
 #include <evo/evodb.h>
@@ -326,8 +326,8 @@ void PrepareShutdown(NodeContext& node)
         g_active_notification_interface.reset();
     }
 
-    if (node.cj_ctx) {
-        UnregisterValidationInterface(node.cj_ctx.get());
+    if (node.cj_walletman) {
+        UnregisterValidationInterface(node.cj_walletman.get());
     }
 
     if (g_ds_notification_interface) {
@@ -392,7 +392,7 @@ void PrepareShutdown(NodeContext& node)
 
     // After all wallets are removed, destroy all CoinJoin objects
     // and reset them to nullptr
-    node.cj_ctx.reset();
+    node.cj_walletman.reset();
     node.dstxman.reset();
 
     UnregisterAllValidationInterfaces();
@@ -2134,20 +2134,20 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     assert(!node.dstxman);
     node.dstxman = std::make_unique<CDSTXManager>();
 
-    assert(!node.cj_ctx);
+    assert(!node.cj_walletman);
     if (!node.mn_activeman) {
-        node.cj_ctx = CJContext::make(chainman, *node.dmnman, *node.mn_metaman, *node.mempool, *node.mn_sync,
-                                      *node.llmq_ctx->isman, !ignores_incoming_txs);
+        node.cj_walletman = CJWalletManager::make(chainman, *node.dmnman, *node.mn_metaman, *node.mempool, *node.mn_sync,
+                                                  *node.llmq_ctx->isman, !ignores_incoming_txs);
     }
-    if (node.cj_ctx) {
-        RegisterValidationInterface(node.cj_ctx.get());
+    if (node.cj_walletman) {
+        RegisterValidationInterface(node.cj_walletman.get());
     }
 
     assert(!node.peerman);
     node.peerman = PeerManager::make(chainparams, *node.connman, *node.addrman, node.banman.get(), *node.dstxman,
                                      chainman, *node.mempool, *node.mn_metaman, *node.mn_sync,
                                      *node.govman, *node.sporkman, node.mn_activeman.get(), node.dmnman,
-                                     node.active_ctx, node.cj_ctx.get(), node.llmq_ctx, ignores_incoming_txs);
+                                     node.active_ctx, node.cj_walletman.get(), node.llmq_ctx, ignores_incoming_txs);
     RegisterValidationInterface(node.peerman.get());
 
     g_ds_notification_interface = std::make_unique<CDSNotificationInterface>(
@@ -2267,7 +2267,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
     node.scheduler->scheduleEvery(std::bind(&CNetFulfilledRequestManager::DoMaintenance, std::ref(*node.netfulfilledman)), std::chrono::minutes{1});
     node.scheduler->scheduleEvery(std::bind(&CMasternodeSync::DoMaintenance, std::ref(*node.mn_sync), std::cref(*node.peerman), std::cref(*node.govman)), std::chrono::seconds{1});
-    node.scheduler->scheduleEvery(std::bind(&CMasternodeUtils::DoMaintenance, std::ref(*node.connman), std::ref(*node.dmnman), std::ref(*node.mn_sync), node.cj_ctx.get()), std::chrono::minutes{1});
+    node.scheduler->scheduleEvery(std::bind(&CMasternodeUtils::DoMaintenance, std::ref(*node.connman), std::ref(*node.dmnman), std::ref(*node.mn_sync), node.cj_walletman.get()), std::chrono::minutes{1});
     node.scheduler->scheduleEvery(std::bind(&CDeterministicMNManager::DoMaintenance, std::ref(*node.dmnman)), std::chrono::seconds{10});
 
     if (node.govman->IsValid()) {
@@ -2279,8 +2279,8 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         node.scheduler->scheduleEvery(std::bind(&llmq::CDKGSessionManager::CleanupOldContributions, std::ref(*node.llmq_ctx->qdkgsman)), std::chrono::hours{1});
     }
 
-    if (node.cj_ctx) {
-        node.cj_ctx->Schedule(*node.connman, *node.scheduler);
+    if (node.cj_walletman) {
+        node.cj_walletman->Schedule(*node.connman, *node.scheduler);
     }
 
     if (::g_stats_client->active()) {

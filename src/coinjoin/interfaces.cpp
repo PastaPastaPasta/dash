@@ -5,8 +5,8 @@
 #include <interfaces/coinjoin.h>
 
 #include <coinjoin/client.h>
-#include <coinjoin/context.h>
 #include <coinjoin/options.h>
+#include <coinjoin/walletman.h>
 #include <node/context.h>
 #include <util/check.h>
 #include <walletinitinterface.h>
@@ -77,9 +77,9 @@ public:
 class CoinJoinLoaderImpl : public interfaces::CoinJoin::Loader
 {
 private:
-    CJContext& manager()
+    CJWalletManager& manager()
     {
-        return *Assert(m_node.cj_ctx);
+        return *Assert(m_node.cj_walletman);
     }
 
     interfaces::WalletLoader& wallet_loader()

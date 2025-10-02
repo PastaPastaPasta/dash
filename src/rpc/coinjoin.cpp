@@ -2,8 +2,8 @@
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <coinjoin/context.h>
 #include <coinjoin/server.h>
+#include <coinjoin/walletman.h>
 #include <masternode/active/context.h>
 #include <node/context.h>
 #include <rpc/server.h>
@@ -15,7 +15,6 @@
 #include <walletinitinterface.h>
 
 #ifdef ENABLE_WALLET
-#include <coinjoin/client.h>
 #include <coinjoin/options.h>
 #include <interfaces/coinjoin.h>
 #endif // ENABLE_WALLET
@@ -473,8 +472,8 @@ static RPCHelpMan getcoinjoininfo()
 #ifdef ENABLE_WALLET
     CCoinJoinClientOptions::GetJsonInfo(obj);
 
-    if (node.cj_ctx) {
-        if (auto queue_size = node.cj_ctx->getQueueSize()) {
+    if (node.cj_walletman) {
+        if (auto queue_size = node.cj_walletman->getQueueSize()) {
             obj.pushKV("queue_size", queue_size.value());
         }
     }

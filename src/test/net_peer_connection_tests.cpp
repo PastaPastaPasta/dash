@@ -88,7 +88,8 @@ BOOST_AUTO_TEST_CASE(test_addnode_getaddednodeinfo_and_connection_detection)
     auto peerman = PeerManager::make(chainparams, *connman, *m_node.addrman, /*banman=*/nullptr, *m_node.dstxman,
                                      *m_node.chainman, *m_node.mempool, *m_node.mn_metaman, *m_node.mn_sync,
                                      *m_node.govman, *m_node.sporkman, /*mn_activeman=*/nullptr, m_node.dmnman,
-                                     /*active_ctx=*/nullptr, /*cj_ctx=*/nullptr, m_node.llmq_ctx, /*ignore_incoming_txs=*/false);
+                                     /*active_ctx=*/nullptr, /*cj_walletman=*/nullptr, m_node.llmq_ctx,
+                                     /*ignore_incoming_txs=*/false);
     NodeId id{0};
     std::vector<CNode*> nodes;
 

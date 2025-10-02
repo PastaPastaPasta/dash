@@ -8,16 +8,12 @@
 #include <shutdown.h>
 #include <util/ranges.h>
 
-#include <coinjoin/context.h>
+#include <coinjoin/walletman.h>
 #include <evo/deterministicmns.h>
 #include <masternode/sync.h>
 
-#ifdef ENABLE_WALLET
-#include <coinjoin/client.h>
-#endif
-
 void CMasternodeUtils::DoMaintenance(CConnman& connman, CDeterministicMNManager& dmnman, const CMasternodeSync& mn_sync,
-                                     CJContext* const cj_ctx)
+                                     CJWalletManager* const cj_walletman)
 {
     if (!mn_sync.IsBlockchainSynced()) return;
     if (ShutdownRequested()) return;
@@ -40,7 +36,7 @@ void CMasternodeUtils::DoMaintenance(CConnman& connman, CDeterministicMNManager&
         return;
     }
 
-    auto mixing_masternodes = cj_ctx ? cj_ctx->getMixingMasternodes() : std::vector<CDeterministicMNCPtr>{};
+    auto mixing_masternodes = cj_walletman ? cj_walletman->getMixingMasternodes() : std::vector<CDeterministicMNCPtr>{};
     connman.ForEachNode(CConnman::AllNodes, [&](CNode* pnode) {
         if (pnode->m_masternode_probe_connection) {
             // we're not disconnecting masternode probes for at least PROBE_WAIT_INTERVAL seconds

@@ -7,7 +7,6 @@
 #include <chain.h>
 #include <coinjoin/coinjoin.h>
 #include <coinjoin/common.h>
-#include <coinjoin/context.h>
 #include <script/script.h>
 #include <uint256.h>
 

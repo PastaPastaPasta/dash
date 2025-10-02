@@ -31,7 +31,7 @@ EXPECTED_CIRCULAR_DEPENDENCIES = (
     "chainlock/chainlock -> validation -> chainlock/chainlock",
     "chainlock/chainlock -> validation -> evo/chainhelper -> chainlock/chainlock",
     "chainlock/signing -> instantsend/instantsend -> net_processing -> masternode/active/context -> chainlock/signing",
-    "coinjoin/client -> coinjoin/coinjoin -> instantsend/instantsend -> net_processing -> coinjoin/context -> coinjoin/client",
+    "coinjoin/client -> coinjoin/coinjoin -> instantsend/instantsend -> net_processing -> coinjoin/walletman -> coinjoin/client",
     "coinjoin/coinjoin -> instantsend/instantsend -> llmq/quorums -> msg_processing -> coinjoin/coinjoin",
     "coinjoin/server -> net_processing -> coinjoin/server",
     "coinjoin/server -> net_processing -> masternode/active/context -> coinjoin/server",

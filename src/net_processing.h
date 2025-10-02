@@ -23,7 +23,7 @@ class CDSTXManager;
 class CGovernanceManager;
 class ChainstateManager;
 class CInv;
-class CJContext;
+class CJWalletManager;
 class CMasternodeMetaMan;
 class CMasternodeSync;
 class CSporkManager;
@@ -65,8 +65,8 @@ public:
                                              const CActiveMasternodeManager* const mn_activeman,
                                              const std::unique_ptr<CDeterministicMNManager>& dmnman,
                                              const std::unique_ptr<ActiveContext>& active_ctx,
-                                             CJContext* const cj_ctx, const std::unique_ptr<LLMQContext>& llmq_ctx,
-                                             bool ignore_incoming_txs);
+                                             CJWalletManager* const cj_walletman,
+                                             const std::unique_ptr<LLMQContext>& llmq_ctx, bool ignore_incoming_txs);
     virtual ~PeerManager() { }
 
     /**

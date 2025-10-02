@@ -49,7 +49,7 @@
 
 #include <bls/bls.h>
 #include <coinjoin/coinjoin.h>
-#include <coinjoin/context.h>
+#include <coinjoin/walletman.h>
 #include <evo/cbtx.h>
 #include <evo/chainhelper.h>
 #include <evo/creditpool.h>
@@ -338,9 +338,9 @@ TestingSetup::TestingSetup(const std::string& chainName, const std::vector<const
     m_node.dstxman = std::make_unique<CDSTXManager>();
 #ifdef ENABLE_WALLET
     // The test suite doesn't use masternode mode, so we may initialize it
-    m_node.cj_ctx = CJContext::make(*m_node.chainman, *m_node.dmnman, *m_node.mn_metaman, *m_node.mempool,
-                                    *m_node.mn_sync, *m_node.llmq_ctx->isman, /*relay_txes=*/true);
-    assert(m_node.cj_ctx);
+    m_node.cj_walletman = CJWalletManager::make(*m_node.chainman, *m_node.dmnman, *m_node.mn_metaman, *m_node.mempool,
+                                                *m_node.mn_sync, *m_node.llmq_ctx->isman, /*relay_txes=*/true);
+    assert(m_node.cj_walletman);
 
     // WalletInit::Construct()-like logic needed for wallet tests that run on
     // TestingSetup and its children (e.g. TestChain100Setup) instead of
@@ -356,7 +356,8 @@ TestingSetup::TestingSetup(const std::string& chainName, const std::vector<const
     m_node.peerman = PeerManager::make(chainparams, *m_node.connman, *m_node.addrman, m_node.banman.get(), *m_node.dstxman,
                                        *m_node.chainman, *m_node.mempool, *m_node.mn_metaman, *m_node.mn_sync,
                                        *m_node.govman, *m_node.sporkman, /*mn_activeman=*/nullptr, m_node.dmnman,
-                                       /*active_ctx=*/nullptr, m_node.cj_ctx.get(), m_node.llmq_ctx, /*ignore_incoming_txs=*/false);
+                                       /*active_ctx=*/nullptr, m_node.cj_walletman.get(), m_node.llmq_ctx,
+                                       /*ignore_incoming_txs=*/false);
     {
         CConnman::Options options;
         options.m_msgproc = m_node.peerman.get();
@@ -380,7 +381,7 @@ TestingSetup::~TestingSetup()
     }
     m_node.wallet_loader = nullptr;
     m_node.coinjoin_loader.reset();
-    m_node.cj_ctx.reset();
+    m_node.cj_walletman.reset();
 #endif // ENABLE_WALLET
     m_node.dstxman.reset();
 

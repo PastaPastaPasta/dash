@@ -6,7 +6,7 @@
 
 #include <coinjoin/client.h>
 #include <coinjoin/coinjoin.h>
-#include <coinjoin/context.h>
+#include <coinjoin/walletman.h>
 #include <coinjoin/options.h>
 #include <coinjoin/util.h>
 #include <consensus/amount.h>
@@ -221,7 +221,7 @@ public:
 
 BOOST_FIXTURE_TEST_CASE(coinjoin_manager_start_stop_tests, CTransactionBuilderTestSetup)
 {
-    auto& cj_man = *Assert(m_node.cj_ctx->getClient(""));
+    auto& cj_man = *Assert(m_node.cj_walletman->getClient(""));
     BOOST_CHECK_EQUAL(cj_man.IsMixing(), false);
     BOOST_CHECK_EQUAL(cj_man.StartMixing(), true);
     BOOST_CHECK_EQUAL(cj_man.IsMixing(), true);

@@ -2,8 +2,8 @@
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_COINJOIN_CONTEXT_H
-#define BITCOIN_COINJOIN_CONTEXT_H
+#ifndef BITCOIN_COINJOIN_WALLETMAN_H
+#define BITCOIN_COINJOIN_WALLETMAN_H
 
 #include <evo/types.h>
 #include <msg_processing.h>
@@ -33,14 +33,14 @@ namespace wallet {
 class CWallet;
 } // namespace wallet
 
-class CJContext : public CValidationInterface
+class CJWalletManager : public CValidationInterface
 {
 public:
-    static std::unique_ptr<CJContext> make(ChainstateManager& chainman, CDeterministicMNManager& dmnman,
-                                           CMasternodeMetaMan& mn_metaman, CTxMemPool& mempool,
-                                           const CMasternodeSync& mn_sync, const llmq::CInstantSendManager& isman,
-                                           bool relay_txes);
-    virtual ~CJContext() = default;
+    static std::unique_ptr<CJWalletManager> make(ChainstateManager& chainman, CDeterministicMNManager& dmnman,
+                                                 CMasternodeMetaMan& mn_metaman, CTxMemPool& mempool,
+                                                 const CMasternodeSync& mn_sync, const llmq::CInstantSendManager& isman,
+                                                 bool relay_txes);
+    virtual ~CJWalletManager() = default;
 
 public:
     virtual void Schedule(CConnman& connman, CScheduler& scheduler) = 0;
@@ -63,4 +63,4 @@ protected:
                                  bool fInitialDownload) override = 0;
 };
 
-#endif // BITCOIN_COINJOIN_CONTEXT_H
+#endif // BITCOIN_COINJOIN_WALLETMAN_H
