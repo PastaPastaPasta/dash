@@ -5,7 +5,7 @@
 #ifndef BITCOIN_MSG_PROCESSING_H
 #define BITCOIN_MSG_PROCESSING_H
 
-#include <coinjoin/coinjoin.h>
+#include <coinjoin/queue.h>
 
 #include <primitives/transaction.h>
 #include <protocol.h>

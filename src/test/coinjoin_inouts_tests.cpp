@@ -12,6 +12,7 @@
 #include <chain.h>
 #include <chainlock/chainlock.h>
 #include <coinjoin/coinjoin.h>
+#include <coinjoin/queue.h>
 #include <coinjoin/common.h>
 #include <llmq/context.h>
 #include <script/script.h>

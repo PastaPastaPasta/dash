@@ -5,6 +5,7 @@
 #include <test/util/setup_common.h>
 
 #include <bls/bls.h>
+#include <coinjoin/queue.h>
 #include <coinjoin/coinjoin.h>
 #include <masternode/node.h>
 #include <uint256.h>

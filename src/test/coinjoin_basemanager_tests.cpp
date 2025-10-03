@@ -5,6 +5,7 @@
 #include <test/util/setup_common.h>
 
 #include <coinjoin/coinjoin.h>
+#include <coinjoin/queue.h>
 #include <cstddef>
 #include <uint256.h>
 

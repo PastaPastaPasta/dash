@@ -177,6 +177,8 @@ BITCOIN_CORE_H = \
   checkqueue.h \
   clientversion.h \
   coinjoin/coinjoin.h \
+  coinjoin/queue.h \
+  coinjoin/params.h \
   coinjoin/client.h \
   coinjoin/common.h \
   coinjoin/options.h \
@@ -485,6 +487,7 @@ libbitcoin_node_a_SOURCES = \
   chainlock/clsig.cpp \
   chainlock/signing.cpp \
   coinjoin/coinjoin.cpp \
+  coinjoin/queue.cpp \
   coinjoin/server.cpp \
   coinjoin/walletman.cpp \
   consensus/tx_verify.cpp \
