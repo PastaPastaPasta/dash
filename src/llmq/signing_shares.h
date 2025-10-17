@@ -209,12 +209,9 @@ public:
 
     T& GetOrAdd(const SigShareKey& k)
     {
-        T* v = Get(k);
-        if (!v) {
-            Add(k, T());
-            v = Get(k);
-        }
-        return *v;
+        auto& m = internalMap[k.first];
+        auto result = m.try_emplace(k.second);
+        return result.first->second;
     }
 
     const T* GetFirst() const
