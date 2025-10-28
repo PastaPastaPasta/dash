@@ -65,6 +65,7 @@ jobs:
     with:
       build-target: arm-linux
       container-path: ${{ needs.container.outputs.path }}
+      runs-on: ubuntu-24.04-arm
 
   depends-linux64:
     name: x86_64-pc-linux-gnu
@@ -132,6 +133,7 @@ jobs:
       build-target: arm-linux
       container-path: ${{ needs.container.outputs.path }}
       depends-key: ${{ needs.depends-arm-linux.outputs.key }}
+      runs-on: ubuntu-24.04-arm
 
   src-linux64:
     name: linux64-build

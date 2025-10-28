@@ -19,6 +19,7 @@ RUN set -ex; \
 
 # Main image
 FROM ubuntu:noble
+ARG TARGETARCH
 
 # Include built assets
 COPY --from=cppcheck-builder /src/cppcheck/build/bin/cppcheck /usr/local/bin/cppcheck
@@ -88,7 +89,23 @@ RUN set -ex; \
 
 ARG SHELLCHECK_VERSION=v0.8.0
 RUN set -ex; \
-    curl -fL "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" -o /tmp/shellcheck.tar.xz; \
+    : "${TARGETARCH:=}"; \
+    if [ -z "${TARGETARCH}" ]; then \
+        # Fallback for non-buildx contexts: detect via dpkg
+        DETECTED_ARCH=$(dpkg --print-architecture || true); \
+        case "${DETECTED_ARCH}" in \
+            amd64) SC_ARCH="x86_64" ;; \
+            arm64) SC_ARCH="aarch64" ;; \
+            *) echo "Unsupported architecture: ${DETECTED_ARCH}"; exit 1 ;; \
+        esac; \
+    else \
+        case "${TARGETARCH}" in \
+            amd64) SC_ARCH="x86_64" ;; \
+            arm64) SC_ARCH="aarch64" ;; \
+            *) echo "Unsupported TARGETARCH: ${TARGETARCH}"; exit 1 ;; \
+        esac; \
+    fi; \
+    curl -fL "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.${SC_ARCH}.tar.xz" -o /tmp/shellcheck.tar.xz; \
     mkdir -p /opt/shellcheck && tar -xf /tmp/shellcheck.tar.xz -C /opt/shellcheck --strip-components=1 && rm /tmp/shellcheck.tar.xz
 ENV PATH="/opt/shellcheck:${PATH}"
 
