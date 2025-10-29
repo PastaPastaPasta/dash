@@ -15,6 +15,11 @@ on:
         description: "Container name"
         required: true
         type: string
+      runs-on:
+        description: "Runner label to use (e.g., ubuntu-24.04 or ubuntu-24.04-arm)"
+        required: false
+        default: ubuntu-24.04
+        type: string
     outputs:
       path:
         description: "Path to built container"
@@ -23,7 +28,7 @@ on:
 jobs:
   build:
     name: Build container
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.runs-on }}
     outputs:
       tag: ${{ steps.prepare.outputs.tag }}
       repo: ${{ steps.prepare.outputs.repo }}

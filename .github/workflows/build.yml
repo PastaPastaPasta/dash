@@ -46,6 +46,7 @@ jobs:
       context: ./contrib/containers/ci
       file: ./contrib/containers/ci/ci.Dockerfile
       name: dashcore-ci-runner
+      runs-on: ubuntu-24.04-arm
 
   container-slim:
     name: Build slim container
@@ -56,6 +57,7 @@ jobs:
       context: ./contrib/containers/ci
       file: ./contrib/containers/ci/ci-slim.Dockerfile
       name: dashcore-ci-slim
+      runs-on: ubuntu-24.04-arm
 
   depends-arm-linux:
     name: arm-linux-gnueabihf
@@ -108,6 +110,7 @@ jobs:
     with:
       build-target: mac
       container-path: ${{ needs.container.outputs.path }}
+      runs-on: ubuntu-24.04-arm
 
   depends-win64:
     name: x86_64-w64-mingw32
@@ -124,6 +127,7 @@ jobs:
     needs: [container]
     with:
       container-path: ${{ needs.container.outputs.path }}
+      runs-on: ubuntu-24.04-arm
 
   src-arm-linux:
     name: arm-linux-build
@@ -212,6 +216,7 @@ jobs:
       build-target: mac
       container-path: ${{ needs.container.outputs.path }}
       depends-key: ${{ needs.depends-mac.outputs.key }}
+      runs-on: ubuntu-24.04-arm
 
   src-win64:
     name: win64-build

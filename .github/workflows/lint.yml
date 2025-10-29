@@ -7,11 +7,16 @@ on:
         description: "Path to built container at registry"
         required: true
         type: string
+      runs-on:
+        description: "Runner label to use (e.g., ubuntu-24.04 or ubuntu-24.04-arm)"
+        required: false
+        default: ubuntu-24.04
+        type: string
 
 jobs:
   lint:
     name: Run linters
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.runs-on }}
     container:
       image: ${{ inputs.container-path }}
       options: --user root
