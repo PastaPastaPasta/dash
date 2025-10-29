@@ -105,7 +105,7 @@ jobs:
       container-path: ${{ needs.container.outputs.path }}
 
   depends-mac:
-    name: x86_64-apple-darwin
+    name: aarch64-apple-darwin
     uses: ./.github/workflows/build-depends.yml
     needs: [container]
     if: ${{ vars.SKIP_MAC == '' }}
@@ -217,7 +217,7 @@ jobs:
       runs-on: ubuntu-24.04-arm
 
   src-mac:
-    name: mac-build
+    name: mac-arm64-build
     uses: ./.github/workflows/build-src.yml
     needs: [container, depends-mac]
     with:

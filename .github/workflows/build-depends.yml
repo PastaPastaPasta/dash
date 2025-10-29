@@ -43,6 +43,7 @@ jobs:
           source ./ci/dash/matrix.sh
           echo "DEP_OPTS=${DEP_OPTS}" >> "${GITHUB_OUTPUT}"
           echo "HOST=${HOST}" >> "${GITHUB_OUTPUT}"
+          echo "RUNNER_ARCH=$(uname -m)" >> "${GITHUB_OUTPUT}"
           DEP_HASH="$(echo -n "${BUILD_TARGET}" "${DEP_OPTS}" "${HOST}" | sha256sum | head -c 64)"
           echo "\"${BUILD_TARGET}\" has HOST=\"${HOST}\" and DEP_OPTS=\"${DEP_OPTS}\" with hash \"${DEP_HASH}\""
           echo "DEP_HASH=${DEP_HASH}" >> "${GITHUB_OUTPUT}"
@@ -75,15 +76,15 @@ jobs:
           path: |
             depends/built
             depends/${{ steps.setup.outputs.HOST }}
-          key: depends-${{ hashFiles('contrib/containers/ci/ci.Dockerfile') }}-${{ inputs.build-target }}-${{ steps.setup.outputs.DEP_HASH }}-${{ hashFiles('depends/packages/*') }}
+          key: depends-${{ hashFiles('contrib/containers/ci/ci.Dockerfile') }}-${{ inputs.build-target }}-${{ steps.setup.outputs.DEP_HASH }}-${{ hashFiles('depends/packages/*') }}-${{ steps.setup.outputs.RUNNER_ARCH }}
           restore-keys: |
-            depends-${{ hashFiles('contrib/containers/ci/ci.Dockerfile') }}-${{ inputs.build-target }}-${{ steps.setup.outputs.DEP_HASH }}-
-            depends-${{ hashFiles('contrib/containers/ci/ci.Dockerfile') }}-${{ inputs.build-target }}-
+            depends-${{ hashFiles('contrib/containers/ci/ci.Dockerfile') }}-${{ inputs.build-target }}-${{ steps.setup.outputs.DEP_HASH }}-${{ steps.setup.outputs.RUNNER_ARCH }}-
+            depends-${{ hashFiles('contrib/containers/ci/ci.Dockerfile') }}-${{ inputs.build-target }}-${{ steps.setup.outputs.RUNNER_ARCH }}-
 
       - name: Build depends
         run: |
           export HOST="${{ steps.setup.outputs.HOST  }}"
-          if [ "${HOST}" = "x86_64-apple-darwin" ]; then
+          if [[ "${HOST}" = "x86_64-apple-darwin" || "${HOST}" = "aarch64-apple-darwin" ]]; then
             ./contrib/containers/guix/scripts/setup-sdk
           fi
           env ${{ steps.setup.outputs.DEP_OPTS }} make -j$(nproc) -C depends
@@ -95,4 +96,4 @@ jobs:
           path: |
             depends/built
             depends/${{ steps.setup.outputs.HOST }}
-          key: ${{ steps.restore.outputs.cache-primary-key }}
+          key: depends-${{ hashFiles('contrib/containers/ci/ci.Dockerfile') }}-${{ inputs.build-target }}-${{ steps.setup.outputs.DEP_HASH }}-${{ hashFiles('depends/packages/*') }}-${{ steps.setup.outputs.RUNNER_ARCH }}
