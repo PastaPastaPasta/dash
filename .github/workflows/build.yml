@@ -81,6 +81,7 @@ jobs:
     with:
       build-target: linux64
       container-path: ${{ needs.container.outputs.path }}
+      runs-on: ubuntu-24.04-arm
 
   depends-linux64_multiprocess:
     name: x86_64-pc-linux-gnu_multiprocess
@@ -92,6 +93,7 @@ jobs:
     with:
       build-target: linux64_multiprocess
       container-path: ${{ needs.container.outputs.path }}
+      runs-on: ubuntu-24.04-arm
 
   depends-linux64_nowallet:
     name: x86_64-pc-linux-gnu_nowallet
@@ -148,6 +150,7 @@ jobs:
       build-target: linux64
       container-path: ${{ needs.container.outputs.path }}
       depends-key: ${{ needs.depends-linux64.outputs.key }}
+      runs-on: ubuntu-24.04-arm
 
   src-linux64_fuzz:
     name: linux64_fuzz-build
@@ -158,6 +161,7 @@ jobs:
       build-target: linux64_fuzz
       container-path: ${{ needs.container.outputs.path }}
       depends-key: ${{ needs.depends-linux64.outputs.key }}
+      runs-on: ubuntu-24.04-arm
 
   src-linux64_multiprocess:
     name: linux64_multiprocess-build
@@ -168,6 +172,7 @@ jobs:
       build-target: linux64_multiprocess
       container-path: ${{ needs.container.outputs.path }}
       depends-key: ${{ needs.depends-linux64_multiprocess.outputs.key }}
+      runs-on: ubuntu-24.04-arm
 
   src-linux64_nowallet:
     name: linux64_nowallet-build
@@ -187,6 +192,7 @@ jobs:
       build-target: linux64_sqlite
       container-path: ${{ needs.container.outputs.path }}
       depends-key: ${{ needs.depends-linux64.outputs.key }}
+      runs-on: ubuntu-24.04-arm
 
   src-linux64_tsan:
     name: linux64_tsan-build
@@ -197,6 +203,7 @@ jobs:
       build-target: linux64_tsan
       container-path: ${{ needs.container.outputs.path }}
       depends-key: ${{ needs.depends-linux64_multiprocess.outputs.key }}
+      runs-on: ubuntu-24.04-arm
 
   src-linux64_ubsan:
     name: linux64_ubsan-build
@@ -207,6 +214,7 @@ jobs:
       build-target: linux64_ubsan
       container-path: ${{ needs.container.outputs.path }}
       depends-key: ${{ needs.depends-linux64.outputs.key }}
+      runs-on: ubuntu-24.04-arm
 
   src-mac:
     name: mac-build
@@ -235,6 +243,7 @@ jobs:
       bundle-key: ${{ needs.src-linux64.outputs.key }}
       build-target: linux64
       container-path: ${{ needs.container-slim.outputs.path }}
+      runs-on: ubuntu-24.04-arm
 
   test-linux64_multiprocess:
     name: linux64_multiprocess-test
@@ -244,6 +253,7 @@ jobs:
       bundle-key: ${{ needs.src-linux64_multiprocess.outputs.key }}
       build-target: linux64_multiprocess
       container-path: ${{ needs.container-slim.outputs.path }}
+      runs-on: ubuntu-24.04-arm
 
   test-linux64_nowallet:
     name: linux64_nowallet-test
@@ -262,6 +272,7 @@ jobs:
       bundle-key: ${{ needs.src-linux64_sqlite.outputs.key }}
       build-target: linux64_sqlite
       container-path: ${{ needs.container-slim.outputs.path }}
+      runs-on: ubuntu-24.04-arm
 
   test-linux64_tsan:
     name: linux64_tsan-test
@@ -271,6 +282,7 @@ jobs:
       bundle-key: ${{ needs.src-linux64_tsan.outputs.key }}
       build-target: linux64_tsan
       container-path: ${{ needs.container-slim.outputs.path }}
+      runs-on: ubuntu-24.04-arm
 
   test-linux64_ubsan:
     name: linux64_ubsan-test
@@ -280,3 +292,4 @@ jobs:
       bundle-key: ${{ needs.src-linux64_ubsan.outputs.key }}
       build-target: linux64_ubsan
       container-path: ${{ needs.container-slim.outputs.path }}
+      runs-on: ubuntu-24.04-arm

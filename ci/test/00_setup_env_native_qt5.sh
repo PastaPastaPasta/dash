@@ -7,7 +7,25 @@
 export LC_ALL=C.UTF-8
 
 export CONTAINER_NAME=ci_native_qt5
-export HOST=x86_64-pc-linux-gnu
+case "$(uname -m)" in
+  aarch64)
+    export HOST=aarch64-linux-gnu
+    ;;
+  x86_64)
+    export HOST=x86_64-pc-linux-gnu
+    ;;
+  *)
+    # Fallback to GNU triple based on dpkg if available
+    if command -v dpkg >/dev/null 2>&1; then
+      arch="$(dpkg --print-architecture)"
+      if [ "${arch}" = "arm64" ]; then
+        export HOST=aarch64-linux-gnu
+      elif [ "${arch}" = "amd64" ]; then
+        export HOST=x86_64-pc-linux-gnu
+      fi
+    fi
+    ;;
+esac
 export PACKAGES="python3-zmq qtbase5-dev qttools5-dev-tools libdbus-1-dev libharfbuzz-dev"
 export DEP_OPTS=""
 export TEST_RUNNER_EXTRA="--previous-releases --coverage --extended --exclude feature_pruning,feature_dbcrash"  # Run extended tests so that coverage does not fail, but exclude the very slow dbcrash
