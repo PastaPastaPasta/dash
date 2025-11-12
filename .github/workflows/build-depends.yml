@@ -26,7 +26,7 @@ jobs:
     name: Build depends
     runs-on: ${{ inputs.runs-on }}
     outputs:
-      key:  ${{ steps.restore.outputs.cache-primary-key }}
+      key: depends-${{ hashFiles('contrib/containers/ci/ci.Dockerfile') }}-${{ inputs.build-target }}-${{ steps.setup.outputs.DEP_HASH }}-${{ hashFiles('depends/packages/*') }}-${{ steps.setup.outputs.RUNNER_ARCH }}
     container:
       image: ${{ inputs.container-path }}
       options: --user root
