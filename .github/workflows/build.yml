@@ -273,3 +273,12 @@ jobs:
       bundle-key: ${{ needs.src-linux64_ubsan.outputs.key }}
       build-target: linux64_ubsan
       container-path: ${{ needs.container-slim.outputs.path }}
+
+  test-benchmarks:
+    name: linux64-benchmarks
+    uses: ./.github/workflows/bench-src.yml
+    needs: [container-slim, src-linux64, lint]
+    with:
+      bundle-key: ${{ needs.src-linux64.outputs.key }}
+      build-target: linux64
+      container-path: ${{ needs.container-slim.outputs.path }}

@@ -1,0 +1,52 @@
+name: Benchmarks
+
+on:
+  workflow_call:
+    inputs:
+      bundle-key:
+        description: "Key needed to access bundle of artifacts"
+        required: true
+        type: string
+      build-target:
+        description: "Target name as defined by inputs.sh"
+        required: true
+        type: string
+      container-path:
+        description: "Path to built container at registry"
+        required: true
+        type: string
+
+jobs:
+  bench-src:
+    name: Run benchmarks
+    runs-on: ubuntu-24.04
+    container:
+      image: ${{ inputs.container-path }}
+      options: --user root
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.bundle-key }}
+
+      - name: Run benchmarks
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$PWD"
+          export BUILD_TARGET="${{ inputs.build-target }}"
+          export BUNDLE_KEY="${{ inputs.bundle-key }}"
+          ./ci/dash/bundle-artifacts.sh extract
+          BENCH_BINARY="./build-ci/dashcore-${BUILD_TARGET}/src/bench/bench_dash"
+          if [[ ! -x "${BENCH_BINARY}" ]]; then
+            echo "Benchmark binary not found at ${BENCH_BINARY}" >&2
+            exit 1
+          fi
+          "${BENCH_BINARY}" -sanity-check
+        shell: bash
+
