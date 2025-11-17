@@ -346,6 +346,9 @@ std::string ConsumeRPCArgument(FuzzedDataProvider& fuzzed_data_provider)
 RPCFuzzTestingSetup* InitializeRPCFuzzTestingSetup()
 {
     static const auto setup = MakeNoLogFileContext<RPCFuzzTestingSetup>();
+    // Force full initialization by accessing a member that requires chain params
+    // This ensures the TestingSetup constructor has fully completed
+    (void)setup->m_node;
     SetRPCWarmupFinished();
     return setup.get();
 }
