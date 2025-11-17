@@ -72,6 +72,7 @@ const std::vector<std::string> RPC_COMMANDS_NOT_SAFE_FOR_FUZZING{
     "addpeeraddress", // avoid DNS lookups
     "getblockfrompeer", // avoid network activity (fetches blocks from peers)
     "gobject",        // some gobject commands modify state (submit, vote)
+    "mnauth",         // modifies peer connection state (regtest only)
     "mnsync",         // has "next" and "reset" modes that modify state
     "dumptxoutset",   // avoid writing to disk
     "dumpwallet", // avoid writing to disk
