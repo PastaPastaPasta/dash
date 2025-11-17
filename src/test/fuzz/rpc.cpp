@@ -172,6 +172,7 @@ const std::vector<std::string> RPC_COMMANDS_SAFE_FOR_FUZZING{
     "logging",
     "mockscheduler",
     "masternode",
+    "masternodelist",
     "ping",
     "preciousblock",
     "prioritisetransaction",
