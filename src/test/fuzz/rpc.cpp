@@ -111,6 +111,7 @@ const std::vector<std::string> RPC_COMMANDS_SAFE_FOR_FUZZING{
     "getaddednodeinfo",
     "getaddressbalance",
     "getaddressdeltas",
+    "getaddressmempool",
     "getbestblockhash",
     "getblock",
     "getblockchaininfo",
