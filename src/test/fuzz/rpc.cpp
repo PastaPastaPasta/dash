@@ -71,6 +71,8 @@ const std::vector<std::string> RPC_COMMANDS_NOT_SAFE_FOR_FUZZING{
     "addnode",        // avoid DNS lookups
     "addpeeraddress", // avoid DNS lookups
     "getblockfrompeer", // avoid network activity (fetches blocks from peers)
+    "gobject",        // some gobject commands modify state (submit, vote)
+    "mnsync",         // has "next" and "reset" modes that modify state
     "dumptxoutset",   // avoid writing to disk
     "dumpwallet", // avoid writing to disk
     "echoipc",              // avoid assertion failure (Assertion `"EnsureAnyNodeContext(request.context).init" && check' failed.)
@@ -81,7 +83,10 @@ const std::vector<std::string> RPC_COMMANDS_NOT_SAFE_FOR_FUZZING{
     "loadwallet",   // avoid reading from disk
     "savemempool",           // disabled as a precautionary measure: may take a file path argument in the future
     "setban",                // avoid DNS lookups
+    "sporkupdate",           // modifies spork state
     "stop",                  // avoid shutdown state
+    "submitchainlock",       // submits chainlock (modifies state)
+    "voteraw",               // submits governance votes (modifies state)
 };
 
 // RPC commands which are safe for fuzzing.
@@ -166,10 +171,13 @@ const std::vector<std::string> RPC_COMMANDS_SAFE_FOR_FUZZING{
     "listbanned",
     "logging",
     "mockscheduler",
+    "masternode",
     "ping",
     "preciousblock",
     "prioritisetransaction",
+    "protx",
     "pruneblockchain",
+    "quorum",
     "reconsiderblock",
     "scantxoutset",
     "sendmsgtopeer", // when no peers are connected, no p2p message is sent
@@ -179,6 +187,7 @@ const std::vector<std::string> RPC_COMMANDS_SAFE_FOR_FUZZING{
     "setnetworkactive",
     "signmessagewithprivkey",
     "signrawtransactionwithkey",
+    "spork",
     "submitblock",
     "submitheader",
     "syncwithvalidationinterfacequeue",
@@ -187,6 +196,8 @@ const std::vector<std::string> RPC_COMMANDS_SAFE_FOR_FUZZING{
     "utxoupdatepsbt",
     "validateaddress",
     "verifychain",
+    "verifychainlock",
+    "verifyislock",
     "verifymessage",
     "verifytxoutproof",
     "waitforblock",
