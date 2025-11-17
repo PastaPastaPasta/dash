@@ -125,6 +125,7 @@ const std::vector<std::string> RPC_COMMANDS_SAFE_FOR_FUZZING{
     "getblockfilter",
     "getblockhash",
     "getblockheader",
+    "getblockheaders",
     "getblockstats",
     "getblocktemplate",
     "getchaintips",
