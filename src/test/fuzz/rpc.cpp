@@ -318,13 +318,56 @@ RPCFuzzTestingSetup* InitializeRPCFuzzTestingSetup()
 }
 }; // namespace
 
+// Helper function to check if a command is safe for fuzzing, handling nested commands
+// (e.g., "bls fromsecret" is safe if "bls" is in the safe list)
+bool IsRPCSafeForFuzzing(const std::string& rpc_command, const std::vector<std::string>& safe_commands, const std::vector<std::string>& unsafe_commands)
+{
+    // First check for exact match
+    const bool exact_safe = std::find(safe_commands.begin(), safe_commands.end(), rpc_command) != safe_commands.end();
+    const bool exact_unsafe = std::find(unsafe_commands.begin(), unsafe_commands.end(), rpc_command) != unsafe_commands.end();
+    
+    if (exact_safe) return true;
+    if (exact_unsafe) return false;
+    
+    // For nested commands (containing spaces), check if the base command is safe/unsafe
+    const size_t space_pos = rpc_command.find(' ');
+    if (space_pos != std::string::npos) {
+        const std::string base_command = rpc_command.substr(0, space_pos);
+        const bool base_safe = std::find(safe_commands.begin(), safe_commands.end(), base_command) != safe_commands.end();
+        const bool base_unsafe = std::find(unsafe_commands.begin(), unsafe_commands.end(), base_command) != unsafe_commands.end();
+        
+        if (base_safe) return true;
+        if (base_unsafe) return false;
+    }
+    
+    return false;
+}
+
+// Helper function to check if a command is explicitly marked as unsafe (for validation)
+bool IsRPCUnsafeForFuzzing(const std::string& rpc_command, const std::vector<std::string>& safe_commands, const std::vector<std::string>& unsafe_commands)
+{
+    // First check for exact match
+    const bool exact_unsafe = std::find(unsafe_commands.begin(), unsafe_commands.end(), rpc_command) != unsafe_commands.end();
+    if (exact_unsafe) return true;
+    
+    // For nested commands, check if the base command is unsafe
+    const size_t space_pos = rpc_command.find(' ');
+    if (space_pos != std::string::npos) {
+        const std::string base_command = rpc_command.substr(0, space_pos);
+        const bool base_unsafe = std::find(unsafe_commands.begin(), unsafe_commands.end(), base_command) != unsafe_commands.end();
+        if (base_unsafe) return true;
+    }
+    
+    return false;
+}
+
 void initialize_rpc()
 {
     rpc_testing_setup = InitializeRPCFuzzTestingSetup();
     const std::vector<std::string> supported_rpc_commands = rpc_testing_setup->GetRPCCommands();
     for (const std::string& rpc_command : supported_rpc_commands) {
-        const bool safe_for_fuzzing = std::find(RPC_COMMANDS_SAFE_FOR_FUZZING.begin(), RPC_COMMANDS_SAFE_FOR_FUZZING.end(), rpc_command) != RPC_COMMANDS_SAFE_FOR_FUZZING.end();
-        const bool not_safe_for_fuzzing = std::find(RPC_COMMANDS_NOT_SAFE_FOR_FUZZING.begin(), RPC_COMMANDS_NOT_SAFE_FOR_FUZZING.end(), rpc_command) != RPC_COMMANDS_NOT_SAFE_FOR_FUZZING.end();
+        const bool safe_for_fuzzing = IsRPCSafeForFuzzing(rpc_command, RPC_COMMANDS_SAFE_FOR_FUZZING, RPC_COMMANDS_NOT_SAFE_FOR_FUZZING);
+        const bool not_safe_for_fuzzing = IsRPCUnsafeForFuzzing(rpc_command, RPC_COMMANDS_SAFE_FOR_FUZZING, RPC_COMMANDS_NOT_SAFE_FOR_FUZZING);
         if (!(safe_for_fuzzing || not_safe_for_fuzzing)) {
             std::cerr << "Error: RPC command \"" << rpc_command << "\" not found in RPC_COMMANDS_SAFE_FOR_FUZZING or RPC_COMMANDS_NOT_SAFE_FOR_FUZZING. Please update " << __FILE__ << ".\n";
             std::terminate();
@@ -348,7 +391,7 @@ FUZZ_TARGET(rpc, .init = initialize_rpc)
     if (!g_limit_to_rpc_command.empty() && rpc_command != g_limit_to_rpc_command) {
         return;
     }
-    const bool safe_for_fuzzing = std::find(RPC_COMMANDS_SAFE_FOR_FUZZING.begin(), RPC_COMMANDS_SAFE_FOR_FUZZING.end(), rpc_command) != RPC_COMMANDS_SAFE_FOR_FUZZING.end();
+    const bool safe_for_fuzzing = IsRPCSafeForFuzzing(rpc_command, RPC_COMMANDS_SAFE_FOR_FUZZING, RPC_COMMANDS_NOT_SAFE_FOR_FUZZING);
     if (!safe_for_fuzzing) {
         return;
     }
