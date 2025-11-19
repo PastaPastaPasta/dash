@@ -375,6 +375,14 @@ test_fuzz_fuzz_SOURCES = \
  test/fuzz/tx_out.cpp \
  test/fuzz/tx_pool.cpp \
  test/fuzz/txorphan.cpp \
+ test/fuzz/instantsend_lock.cpp \
+ test/fuzz/instantsend_signer.cpp \
+ test/fuzz/llmq_quorum_data_request.cpp \
+ test/fuzz/llmq_final_commitment.cpp \
+ test/fuzz/llmq_recovered_sig.cpp \
+ test/fuzz/llmq_quorum_rotation_info.cpp \
+ test/fuzz/spork_message.cpp \
+ test/fuzz/chainlock_clsig.cpp \
  test/fuzz/utxo_snapshot.cpp \
  test/fuzz/validation_load_mempool.cpp \
  test/fuzz/versionbits.cpp
