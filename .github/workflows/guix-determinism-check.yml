@@ -1,0 +1,360 @@
+name: Guix Determinism Check
+
+# Checks that Guix builds are deterministic across ARM and x86 runners.
+# Runs on develop branch every 12 hours, rotating through 6 shipped hosts.
+# Creates a GitHub issue if non-determinism is detected.
+
+permissions:
+  packages: write
+  id-token: write
+  attestations: write
+  issues: write
+
+on:
+  schedule:
+    - cron: '0 0 * * *'   # 00:00 UTC daily
+    - cron: '0 12 * * *'  # 12:00 UTC daily
+  workflow_dispatch:
+    inputs:
+      host_index:
+        description: 'Host index (0-5) to build, or leave empty for rotation'
+        type: string
+        required: false
+
+concurrency:
+  group: guix-determinism
+  cancel-in-progress: false
+
+env:
+  HOSTS_JSON: '["x86_64-linux-gnu", "aarch64-linux-gnu", "riscv64-linux-gnu", "x86_64-w64-mingw32", "x86_64-apple-darwin", "arm64-apple-darwin"]'
+
+jobs:
+  select-host:
+    if: vars.RUN_GUIX_DETERMINISM_CHECK != 'false'
+    runs-on: ubuntu-latest
+    outputs:
+      host: ${{ steps.select.outputs.host }}
+      host_index: ${{ steps.select.outputs.host_index }}
+    steps:
+      - name: Select host for this run
+        id: select
+        run: |
+          HOSTS=("x86_64-linux-gnu" "aarch64-linux-gnu" "riscv64-linux-gnu" "x86_64-w64-mingw32" "x86_64-apple-darwin" "arm64-apple-darwin")
+          if [ -n "${{ github.event.inputs.host_index }}" ]; then
+            INDEX=${{ github.event.inputs.host_index }}
+          else
+            INDEX=$(( ${{ github.run_number }} % 6 ))
+          fi
+          HOST="${HOSTS[$INDEX]}"
+          echo "host_index=${INDEX}" >> $GITHUB_OUTPUT
+          echo "host=${HOST}" >> $GITHUB_OUTPUT
+          echo "Selected host: ${HOST} (index ${INDEX})"
+
+  build-image:
+    needs: select-host
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      image-tag: ${{ steps.prepare.outputs.image-tag }}
+      repo-name: ${{ steps.prepare.outputs.repo-name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          path: dash
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Commit variables
+        id: prepare
+        run: |
+          echo "hash=$(sha256sum ./dash/contrib/containers/guix/Dockerfile | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
+          echo "host_user_id=$(id -u)" >> $GITHUB_OUTPUT
+          echo "host_group_id=$(id -g)" >> $GITHUB_OUTPUT
+          REPO_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "image-tag=determinism-check" >> $GITHUB_OUTPUT
+          echo "repo-name=${REPO_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ github.workspace }}/dash
+          build-args: |
+            USER_ID=${{ steps.prepare.outputs.host_user_id }}
+            GROUP_ID=${{ steps.prepare.outputs.host_group_id }}
+          build-contexts: |
+            docker_root=${{ github.workspace }}/dash/contrib/containers/guix
+          file: ./dash/contrib/containers/guix/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.prepare.outputs.repo-name }}/dashcore-guix-builder:${{ steps.prepare.outputs.image-tag }}
+          cache-from: type=registry,ref=ghcr.io/${{ steps.prepare.outputs.repo-name }}/dashcore-guix-builder:latest
+          cache-to: type=inline,mode=max
+
+  build-arm:
+    needs: [select-host, build-image]
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 480
+    outputs:
+      sha256sums: ${{ steps.checksums.outputs.sha256sums }}
+    steps:
+      - name: Disable apparmor user namespace restrictions
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          path: dash
+          fetch-depth: 0
+
+      - name: Cache depends sources
+        uses: actions/cache@v4
+        with:
+          path: dash/depends/sources
+          key: depends-sources-${{ hashFiles('dash/depends/packages/*') }}
+          restore-keys: |
+            depends-sources-
+
+      - name: Cache Guix and depends
+        id: guix-cache-restore
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/.cache
+            ${{ github.workspace }}/dash/depends/built
+            ${{ github.workspace }}/dash/depends/work
+          key: ${{ runner.os }}-${{ runner.arch }}-guix-determinism-${{ needs.select-host.outputs.host }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-guix-determinism-${{ needs.select-host.outputs.host }}
+            ${{ runner.os }}-${{ runner.arch }}-guix-determinism-
+
+      - name: Create .cache folder if missing
+        if: steps.guix-cache-restore.outputs.cache-hit != 'true'
+        run: mkdir -p .cache
+
+      - name: Run Guix build
+        timeout-minutes: 480
+        run: |
+          docker run --privileged -d --rm -t \
+            --name guix-daemon \
+            -v ${{ github.workspace }}/dash:/src/dash \
+            -v ${{ github.workspace }}/.cache:/home/ubuntu/.cache \
+            -w /src/dash \
+            ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-guix-builder:${{ needs.build-image.outputs.image-tag }} && \
+          docker exec guix-daemon bash -c 'HOSTS=${{ needs.select-host.outputs.host }} /usr/local/bin/guix-start /src/dash'
+
+      - name: Compute SHA256 checksums
+        id: checksums
+        run: |
+          HOSTS=${{ needs.select-host.outputs.host }} ./dash/contrib/containers/guix/scripts/guix-check ${{ github.workspace }}/dash > sha256sums.txt 2>&1 || true
+          cat sha256sums.txt
+          # Store checksums in output for comparison
+          {
+            echo 'sha256sums<<EOF'
+            cat sha256sums.txt
+            echo 'EOF'
+          } >> $GITHUB_OUTPUT
+
+      - name: Upload SHA256SUMS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sha256sums-arm-${{ needs.select-host.outputs.host }}
+          path: sha256sums.txt
+          retention-days: 7
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: guix-artifacts-arm-${{ needs.select-host.outputs.host }}
+          path: |
+            ${{ github.workspace }}/dash/guix-build*/output/${{ needs.select-host.outputs.host }}/
+          retention-days: 7
+
+  build-x86:
+    needs: [select-host, build-image]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 480
+    outputs:
+      sha256sums: ${{ steps.checksums.outputs.sha256sums }}
+    steps:
+      - name: Disable apparmor user namespace restrictions
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          path: dash
+          fetch-depth: 0
+
+      - name: Cache depends sources
+        uses: actions/cache@v4
+        with:
+          path: dash/depends/sources
+          key: depends-sources-${{ hashFiles('dash/depends/packages/*') }}
+          restore-keys: |
+            depends-sources-
+
+      - name: Cache Guix and depends
+        id: guix-cache-restore
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/.cache
+            ${{ github.workspace }}/dash/depends/built
+            ${{ github.workspace }}/dash/depends/work
+          key: ${{ runner.os }}-${{ runner.arch }}-guix-determinism-${{ needs.select-host.outputs.host }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-guix-determinism-${{ needs.select-host.outputs.host }}
+            ${{ runner.os }}-${{ runner.arch }}-guix-determinism-
+
+      - name: Create .cache folder if missing
+        if: steps.guix-cache-restore.outputs.cache-hit != 'true'
+        run: mkdir -p .cache
+
+      - name: Run Guix build
+        timeout-minutes: 480
+        run: |
+          docker run --privileged -d --rm -t \
+            --name guix-daemon \
+            -v ${{ github.workspace }}/dash:/src/dash \
+            -v ${{ github.workspace }}/.cache:/home/ubuntu/.cache \
+            -w /src/dash \
+            ghcr.io/${{ needs.build-image.outputs.repo-name }}/dashcore-guix-builder:${{ needs.build-image.outputs.image-tag }} && \
+          docker exec guix-daemon bash -c 'HOSTS=${{ needs.select-host.outputs.host }} /usr/local/bin/guix-start /src/dash'
+
+      - name: Compute SHA256 checksums
+        id: checksums
+        run: |
+          HOSTS=${{ needs.select-host.outputs.host }} ./dash/contrib/containers/guix/scripts/guix-check ${{ github.workspace }}/dash > sha256sums.txt 2>&1 || true
+          cat sha256sums.txt
+          # Store checksums in output for comparison
+          {
+            echo 'sha256sums<<EOF'
+            cat sha256sums.txt
+            echo 'EOF'
+          } >> $GITHUB_OUTPUT
+
+      - name: Upload SHA256SUMS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sha256sums-x86-${{ needs.select-host.outputs.host }}
+          path: sha256sums.txt
+          retention-days: 7
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: guix-artifacts-x86-${{ needs.select-host.outputs.host }}
+          path: |
+            ${{ github.workspace }}/dash/guix-build*/output/${{ needs.select-host.outputs.host }}/
+          retention-days: 7
+
+  compare-and-report:
+    needs: [select-host, build-arm, build-x86]
+    runs-on: ubuntu-latest
+    if: always() && needs.build-arm.result == 'success' && needs.build-x86.result == 'success'
+    steps:
+      - name: Download ARM SHA256SUMS
+        uses: actions/download-artifact@v4
+        with:
+          name: sha256sums-arm-${{ needs.select-host.outputs.host }}
+          path: arm-checksums
+
+      - name: Download x86 SHA256SUMS
+        uses: actions/download-artifact@v4
+        with:
+          name: sha256sums-x86-${{ needs.select-host.outputs.host }}
+          path: x86-checksums
+
+      - name: Compare checksums
+        id: compare
+        run: |
+          echo "=== ARM checksums ==="
+          cat arm-checksums/sha256sums.txt
+          echo ""
+          echo "=== x86 checksums ==="
+          cat x86-checksums/sha256sums.txt
+          echo ""
+          echo "=== Comparing ==="
+
+          # Sort both files to ensure consistent comparison
+          sort arm-checksums/sha256sums.txt > arm-sorted.txt
+          sort x86-checksums/sha256sums.txt > x86-sorted.txt
+
+          if diff -q arm-sorted.txt x86-sorted.txt > /dev/null 2>&1; then
+            echo "Checksums match! Build is deterministic."
+            echo "mismatch=false" >> $GITHUB_OUTPUT
+          else
+            echo "MISMATCH DETECTED! Build is NOT deterministic."
+            echo "mismatch=true" >> $GITHUB_OUTPUT
+            echo ""
+            echo "=== Differences ==="
+            diff arm-sorted.txt x86-sorted.txt || true
+
+            # Save diff for issue body
+            {
+              echo 'diff_output<<EOF'
+              diff arm-sorted.txt x86-sorted.txt || true
+              echo 'EOF'
+            } >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create issue on non-determinism
+        if: steps.compare.outputs.mismatch == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const host = '${{ needs.select-host.outputs.host }}';
+            const runUrl = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}';
+            const diffOutput = `${{ steps.compare.outputs.diff_output }}`;
+
+            // Check for existing open issues with the same title
+            const existingIssues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'bug,guix'
+            });
+
+            const issueTitle = `[CI] Guix non-determinism detected for ${host}`;
+            const existingIssue = existingIssues.data.find(issue => issue.title === issueTitle);
+
+            if (existingIssue) {
+              // Add a comment to existing issue
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existingIssue.number,
+                body: `## Non-determinism still present\n\n**Run:** ${runUrl}\n**Date:** ${new Date().toISOString()}\n\n\`\`\`diff\n${diffOutput}\n\`\`\``
+              });
+              console.log(`Added comment to existing issue #${existingIssue.number}`);
+            } else {
+              // Create new issue
+              const issue = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: issueTitle,
+                body: `## Guix Build Non-Determinism Detected\n\n**Host:** \`${host}\`\n**Branch:** \`develop\`\n**Workflow Run:** ${runUrl}\n**Date:** ${new Date().toISOString()}\n\n### Description\n\nThe Guix determinism check detected that builds on ARM (\`ubuntu-24.04-arm\`) and x86 (\`ubuntu-24.04\`) runners produced different SHA256 checksums for the same host target.\n\nThis indicates a non-determinism issue in the build process that needs investigation.\n\n### Differences\n\n\`\`\`diff\n${diffOutput}\n\`\`\`\n\n### Next Steps\n\n1. Review the build logs in the workflow run\n2. Compare the build artifacts between ARM and x86 runners\n3. Investigate any sources of non-determinism (timestamps, random values, etc.)\n`,
+                labels: ['bug', 'guix']
+              });
+              console.log(`Created new issue #${issue.data.number}`);
+            }
+
+      - name: Fail if non-deterministic
+        if: steps.compare.outputs.mismatch == 'true'
+        run: |
+          echo "Build is non-deterministic!"
+          exit 1
