@@ -11,14 +11,14 @@ if [[ $QEMU_USER_CMD == qemu-s390* ]]; then
 fi
 
 # Create folders that are mounted into the docker
-mkdir -p "${CCACHE_DIR}"
+mkdir -p "${SCCACHE_DIR}"
 mkdir -p "${PREVIOUS_RELEASES_DIR}"
 
 export ASAN_OPTIONS="detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1"
 export LSAN_OPTIONS="suppressions=${BASE_BUILD_DIR}/test/sanitizer_suppressions/lsan"
 export TSAN_OPTIONS="suppressions=${BASE_BUILD_DIR}/test/sanitizer_suppressions/tsan:halt_on_error=1"
 export UBSAN_OPTIONS="suppressions=${BASE_BUILD_DIR}/test/sanitizer_suppressions/ubsan:print_stacktrace=1:halt_on_error=1:report_error_type=1"
-env | grep -E '^(BASE_|QEMU_|CCACHE_|LC_ALL|BOOST_TEST_RANDOM|DEBIAN_FRONTEND|CONFIG_SHELL|(ASAN|LSAN|TSAN|UBSAN)_OPTIONS|PREVIOUS_RELEASES_DIR))' | tee /tmp/env
+env | grep -E '^(BASE_|QEMU_|SCCACHE_|LC_ALL|BOOST_TEST_RANDOM|DEBIAN_FRONTEND|CONFIG_SHELL|(ASAN|LSAN|TSAN|UBSAN)_OPTIONS|PREVIOUS_RELEASES_DIR|ACTIONS_RESULTS_URL|ACTIONS_RUNTIME_TOKEN)' | tee /tmp/env
 if [[ $BITCOIN_CONFIG = *--with-sanitizers=*address* ]]; then # If ran with (ASan + LSan), Docker needs access to ptrace (https://github.com/google/sanitizers/issues/764)
   DOCKER_ADMIN="--cap-add SYS_PTRACE"
 fi
@@ -38,7 +38,7 @@ if [ -z "$DANGER_RUN_CI_ON_HOST" ]; then
   # shellcheck disable=SC2086
   DOCKER_ID=$(docker run $DOCKER_ADMIN -idt \
                   --mount type=bind,src=$BASE_ROOT_DIR,dst=/ro_base,readonly \
-                  --mount type=bind,src=$CCACHE_DIR,dst=$CCACHE_DIR \
+                  --mount type=bind,src=$SCCACHE_DIR,dst=$SCCACHE_DIR \
                   --mount type=bind,src=$DEPENDS_DIR,dst=$DEPENDS_DIR \
                   --mount type=bind,src=$PREVIOUS_RELEASES_DIR,dst=$PREVIOUS_RELEASES_DIR \
                   -w $BASE_ROOT_DIR \

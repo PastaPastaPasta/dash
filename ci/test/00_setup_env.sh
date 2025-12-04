@@ -55,12 +55,10 @@ export BOOST_TEST_RANDOM=${BOOST_TEST_RANDOM:-1}
 export DEBIAN_FRONTEND=noninteractive
 export HOST_CACHE_DIR=${HOST_CACHE_DIR:-$BASE_ROOT_DIR/ci-cache-$BUILD_TARGET}
 export CACHE_DIR=${CACHE_DIR:-$HOST_CACHE_DIR}
-export CCACHE_MAXSIZE=${CCACHE_MAXSIZE:-100M}
-export CCACHE_TEMPDIR=${CCACHE_TEMPDIR:-/tmp/.ccache-temp}
-export CCACHE_COMPRESS=${CCACHE_COMPRESS:-1}
-# The cache dir.
-# This folder exists on the ci host and ci guest. Changes are propagated back and forth.
-export CCACHE_DIR=${CCACHE_DIR:-$CACHE_DIR/ccache}
+# sccache configuration for CI builds
+# SCCACHE_GHA_ENABLED is set by GitHub Actions workflow when using GHA backend
+export SCCACHE_DIR=${SCCACHE_DIR:-$CACHE_DIR/sccache}
+export SCCACHE_CACHE_SIZE=${SCCACHE_CACHE_SIZE:-500M}
 # The depends dir.
 # This folder exists on the ci host and ci guest. Changes are propagated back and forth.
 export DEPENDS_DIR=${DEPENDS_DIR:-$BASE_ROOT_DIR/depends}
@@ -70,7 +68,7 @@ export BASE_OUTDIR=${BASE_OUTDIR:-$BASE_SCRATCH_DIR/out/$HOST}
 export BASE_BUILD_DIR=${BASE_BUILD_DIR:-$BASE_SCRATCH_DIR/build-ci}
 export PREVIOUS_RELEASES_DIR=${PREVIOUS_RELEASES_DIR:-$BASE_ROOT_DIR/releases/$HOST}
 export SDK_URL=${SDK_URL:-https://bitcoincore.org/depends-sources/sdks}
-export DOCKER_PACKAGES=${DOCKER_PACKAGES:-build-essential libtool autotools-dev automake pkg-config bsdmainutils curl ca-certificates ccache python3 rsync git procps}
+export DOCKER_PACKAGES=${DOCKER_PACKAGES:-build-essential libtool autotools-dev automake pkg-config bsdmainutils curl ca-certificates python3 rsync git procps}
 export GOAL=${GOAL:-install}
 export DIR_QA_ASSETS=${DIR_QA_ASSETS:-${BASE_SCRATCH_DIR}/qa-assets}
 export PATH=${BASE_ROOT_DIR}/ci/retry:$PATH

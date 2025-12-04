@@ -15,7 +15,6 @@ RUN set -ex; \
     bc \
     bear \
     bison \
-    ccache \
     cmake \
     g++-11 \
     g++-14 \
@@ -30,6 +29,21 @@ RUN set -ex; \
     wine64 \
     zip \
     && rm -rf /var/lib/apt/lists/*
+
+# Install sccache from GitHub releases (apt version 0.7.7 is outdated, need 0.10.0+ for GHA backend)
+ARG SCCACHE_VERSION=0.10.0
+RUN set -ex; \
+    ARCH=$(dpkg --print-architecture); \
+    case "${ARCH}" in \
+        amd64) SCCACHE_ARCH="x86_64-unknown-linux-musl" ;; \
+        arm64) SCCACHE_ARCH="aarch64-unknown-linux-musl" ;; \
+        *) echo "Unsupported architecture: ${ARCH}" && exit 1 ;; \
+    esac; \
+    curl -fL "https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/sccache-v${SCCACHE_VERSION}-${SCCACHE_ARCH}.tar.gz" -o /tmp/sccache.tar.gz; \
+    tar -xzf /tmp/sccache.tar.gz -C /tmp; \
+    mv /tmp/sccache-v${SCCACHE_VERSION}-${SCCACHE_ARCH}/sccache /usr/local/bin/sccache; \
+    chmod +x /usr/local/bin/sccache; \
+    rm -rf /tmp/sccache*
 
 # Install Clang + LLVM and set it as default
 RUN set -ex; \
@@ -66,7 +80,7 @@ RUN set -ex; \
     cd /opt && rm -rf /opt/iwyu;
 
 RUN \
-  mkdir -p /cache/ccache && \
+  mkdir -p /cache/sccache && \
   mkdir /cache/depends && \
   mkdir /cache/sdk-sources && \
   chown ${USER_ID}:${GROUP_ID} /cache && \

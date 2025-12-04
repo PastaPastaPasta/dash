@@ -65,26 +65,28 @@ jobs:
           key: ${{ inputs.depends-key }}
           fail-on-cache-miss: true
 
-      - name: Manage ccache
-        uses: actions/cache@v4
+      - name: Setup sccache environment
+        uses: actions/github-script@v7
         with:
-          path: |
-            /cache
-          key: ccache-${{ hashFiles('contrib/containers/ci/ci.Dockerfile', 'depends/packages/*') }}-${{ inputs.build-target }}-${{ github.sha }}
-          restore-keys: |
-            ccache-${{ hashFiles('contrib/containers/ci/ci.Dockerfile', 'depends/packages/*') }}-${{ inputs.build-target }}-
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env['ACTIONS_RESULTS_URL']);
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env['ACTIONS_RUNTIME_TOKEN']);
 
       - name: Build source
+        env:
+          SCCACHE_GHA_ENABLED: "true"
         run: |
-          CCACHE_MAXSIZE="400M"
           CACHE_DIR="/cache"
           mkdir /output
           BASE_OUTDIR="/output"
           BUILD_TARGET="${{ inputs.build-target }}"
           source ./ci/dash/matrix.sh
           ./ci/dash/build_src.sh
-          ccache -X 9
-          ccache -c
+        shell: bash
+
+      - name: Show sccache stats
+        if: always()
+        run: sccache --show-stats || true
         shell: bash
 
       - name: Run linters

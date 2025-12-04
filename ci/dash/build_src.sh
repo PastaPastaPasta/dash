@@ -13,7 +13,12 @@ source ./ci/dash/matrix.sh
 
 unset CC CXX DISPLAY;
 
-ccache --zero-stats
+# Set sccache as compiler wrapper when GHA backend is enabled
+if command -v sccache &> /dev/null && [ "${SCCACHE_GHA_ENABLED:-}" = "true" ]; then
+    export CC="sccache ${CC:-gcc}"
+    export CXX="sccache ${CXX:-g++}"
+    sccache --zero-stats 2>/dev/null || true
+fi
 
 if [ -n "$CONFIG_SHELL" ]; then
   export CONFIG_SHELL="$CONFIG_SHELL"
@@ -45,7 +50,10 @@ fi
 
 bash -c "${MAYBE_BEAR} ${MAYBE_TOKEN} make ${MAKEJOBS} ${GOAL}" || ( echo "Build failure. Verbose build follows." && make "$GOAL" V=1 ; false )
 
-ccache --version | head -n 1 && ccache --show-stats
+# Show sccache statistics if enabled
+if [ "${SCCACHE_GHA_ENABLED:-}" = "true" ]; then
+    sccache --show-stats 2>/dev/null || true
+fi
 
 if [ -n "$USE_VALGRIND" ]; then
     echo "valgrind in USE!"
