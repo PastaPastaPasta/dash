@@ -134,6 +134,7 @@ jobs:
     name: arm-linux-build
     uses: ./.github/workflows/build-src.yml
     needs: [container, depends-arm-linux]
+    secrets: inherit
     with:
       build-target: arm-linux
       container-path: ${{ needs.container.outputs.path }}
@@ -143,6 +144,7 @@ jobs:
     name: linux64-build
     uses: ./.github/workflows/build-src.yml
     needs: [container, depends-linux64]
+    secrets: inherit
     if: ${{ vars.SKIP_LINUX64 == '' }}
     with:
       build-target: linux64
@@ -153,6 +155,7 @@ jobs:
     name: linux64_fuzz-build
     uses: ./.github/workflows/build-src.yml
     needs: [container, depends-linux64]
+    secrets: inherit
     if: ${{ vars.SKIP_LINUX64_FUZZ == '' }}
     with:
       build-target: linux64_fuzz
@@ -163,6 +166,7 @@ jobs:
     name: linux64_multiprocess-build
     uses: ./.github/workflows/build-src.yml
     needs: [container, depends-linux64_multiprocess, lint]
+    secrets: inherit
     if: ${{ vars.SKIP_LINUX64_MULTIPROCESS == '' }}
     with:
       build-target: linux64_multiprocess
@@ -173,6 +177,7 @@ jobs:
     name: linux64_nowallet-build
     uses: ./.github/workflows/build-src.yml
     needs: [container, depends-linux64_nowallet]
+    secrets: inherit
     with:
       build-target: linux64_nowallet
       container-path: ${{ needs.container.outputs.path }}
@@ -182,6 +187,7 @@ jobs:
     name: linux64_sqlite-build
     uses: ./.github/workflows/build-src.yml
     needs: [container, depends-linux64]
+    secrets: inherit
     if: ${{ vars.SKIP_LINUX64_SQLITE == '' }}
     with:
       build-target: linux64_sqlite
@@ -192,6 +198,7 @@ jobs:
     name: linux64_tsan-build
     uses: ./.github/workflows/build-src.yml
     needs: [container, depends-linux64_multiprocess]
+    secrets: inherit
     if: ${{ vars.SKIP_LINUX64_TSAN == '' }}
     with:
       build-target: linux64_tsan
@@ -202,6 +209,7 @@ jobs:
     name: linux64_ubsan-build
     uses: ./.github/workflows/build-src.yml
     needs: [container, depends-linux64]
+    secrets: inherit
     if: ${{ vars.SKIP_LINUX64_UBSAN == '' }}
     with:
       build-target: linux64_ubsan
@@ -212,6 +220,7 @@ jobs:
     name: mac-build
     uses: ./.github/workflows/build-src.yml
     needs: [container, depends-mac]
+    secrets: inherit
     with:
       build-target: mac
       container-path: ${{ needs.container.outputs.path }}
@@ -221,6 +230,7 @@ jobs:
     name: win64-build
     uses: ./.github/workflows/build-src.yml
     needs: [container, depends-win64]
+    secrets: inherit
     with:
       build-target: win64
       container-path: ${{ needs.container.outputs.path }}
