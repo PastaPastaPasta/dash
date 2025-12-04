@@ -13,47 +13,9 @@ source ./ci/dash/matrix.sh
 
 unset CC CXX DISPLAY;
 
-# Set sccache as compiler wrapper when GHA backend is enabled
-# For depends-based builds, derive compiler from HOST; for NO_DEPENDS builds, compiler is set in BITCOIN_CONFIG
-if command -v sccache &> /dev/null && [ "${SCCACHE_GHA_ENABLED:-}" = "true" ]; then
+# Reset sccache stats at start of build (if sccache is available)
+if command -v sccache &> /dev/null; then
     sccache --zero-stats 2>/dev/null || true
-
-    # Only set CC/CXX for depends-based builds
-    # NO_DEPENDS builds (asan, fuzz, etc.) set compiler in BITCOIN_CONFIG which overrides env vars
-    if [ "${NO_DEPENDS}" != "1" ] && [ -n "$HOST" ]; then
-        case "$HOST" in
-            x86_64-pc-linux-gnu)
-                export CC="sccache gcc"
-                export CXX="sccache g++"
-                ;;
-            arm-linux-gnueabihf)
-                export CC="sccache arm-linux-gnueabihf-gcc"
-                export CXX="sccache arm-linux-gnueabihf-g++"
-                ;;
-            x86_64-w64-mingw32)
-                export CC="sccache x86_64-w64-mingw32-gcc"
-                export CXX="sccache x86_64-w64-mingw32-g++"
-                ;;
-            *-apple-darwin*)
-                export CC="sccache clang"
-                export CXX="sccache clang++"
-                ;;
-            s390x-linux-gnu)
-                export CC="sccache s390x-linux-gnu-gcc"
-                export CXX="sccache s390x-linux-gnu-g++"
-                ;;
-            *)
-                # Unknown host, try HOST-prefixed compiler or fall back to gcc
-                if command -v "${HOST}-gcc" &> /dev/null; then
-                    export CC="sccache ${HOST}-gcc"
-                    export CXX="sccache ${HOST}-g++"
-                else
-                    export CC="sccache gcc"
-                    export CXX="sccache g++"
-                fi
-                ;;
-        esac
-    fi
 fi
 
 if [ -n "$CONFIG_SHELL" ]; then
@@ -63,6 +25,11 @@ fi
 BITCOIN_CONFIG_ALL="--enable-external-signer --disable-dependency-tracking --prefix=$DEPENDS_DIR/$HOST --bindir=$BASE_OUTDIR/bin --libdir=$BASE_OUTDIR/lib"
 if [ -z "$NO_WERROR" ]; then
   BITCOIN_CONFIG_ALL="${BITCOIN_CONFIG_ALL} --enable-werror"
+fi
+
+# Use sccache instead of ccache for CI builds when enabled
+if [ "${SCCACHE_GHA_ENABLED:-}" = "true" ]; then
+  BITCOIN_CONFIG_ALL="${BITCOIN_CONFIG_ALL} --disable-ccache --enable-sccache"
 fi
 
 ( test -n "$CONFIG_SHELL" && eval '"$CONFIG_SHELL" -c "./autogen.sh"' ) || ./autogen.sh
@@ -86,8 +53,8 @@ fi
 
 bash -c "${MAYBE_BEAR} ${MAYBE_TOKEN} make ${MAKEJOBS} ${GOAL}" || ( echo "Build failure. Verbose build follows." && make "$GOAL" V=1 ; false )
 
-# Show sccache statistics if enabled
-if [ "${SCCACHE_GHA_ENABLED:-}" = "true" ]; then
+# Show sccache statistics (if sccache is available)
+if command -v sccache &> /dev/null; then
     sccache --show-stats 2>/dev/null || true
 fi
 

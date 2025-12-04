@@ -115,6 +115,7 @@ AC_PATH_PROGS([PYTHON], [python3.9 python3.10 python3.11 python3.12 python3 pyth
 AC_PATH_PROG([GENHTML], [genhtml])
 AC_PATH_PROG([GIT], [git])
 AC_PATH_PROG([CCACHE], [ccache])
+AC_PATH_PROG([SCCACHE], [sccache])
 AC_PATH_PROG([XGETTEXT], [xgettext])
 AC_PATH_PROG([HEXDUMP], [hexdump])
 AC_PATH_TOOL([OBJCOPY], [objcopy])
@@ -214,6 +215,12 @@ AC_ARG_ENABLE([ccache],
   [do not use ccache for building (default is to use if found)])],
   [use_ccache=$enableval],
   [use_ccache=auto])
+
+AC_ARG_ENABLE([sccache],
+  [AS_HELP_STRING([--enable-sccache],
+  [use sccache for building (default is no, use --disable-ccache --enable-sccache to prefer sccache)])],
+  [use_sccache=$enableval],
+  [use_sccache=no])
 
 dnl Suppress warnings from external headers (e.g. Boost, Qt).
 dnl May be useful if warnings from external headers clutter the build output
@@ -1773,7 +1780,19 @@ AC_MSG_RESULT($build_bitcoin_libs)
 
 AC_LANG_POP
 
-if test "$use_ccache" != "no"; then
+dnl Handle compiler caching (sccache takes priority if explicitly enabled)
+use_compiler_cache=no
+if test "$use_sccache" = "yes"; then
+  AC_MSG_CHECKING([if sccache should be used])
+  if test "$SCCACHE" = ""; then
+    AC_MSG_ERROR([sccache not found.]);
+  else
+    use_compiler_cache=sccache
+    CC="$ac_cv_path_SCCACHE $CC"
+    CXX="$ac_cv_path_SCCACHE $CXX"
+  fi
+  AC_MSG_RESULT($use_compiler_cache)
+elif test "$use_ccache" != "no"; then
   AC_MSG_CHECKING([if ccache should be used])
   if test "$CCACHE" = ""; then
     if test "$use_ccache" = "yes"; then
@@ -1783,14 +1802,15 @@ if test "$use_ccache" != "no"; then
     fi
   else
     use_ccache=yes
+    use_compiler_cache=ccache
     CC="$ac_cv_path_CCACHE $CC"
     CXX="$ac_cv_path_CCACHE $CXX"
   fi
   AC_MSG_RESULT($use_ccache)
-  if test "$use_ccache" = "yes"; then
-    AX_CHECK_COMPILE_FLAG([-fdebug-prefix-map=A=B], [DEBUG_CXXFLAGS="$DEBUG_CXXFLAGS -fdebug-prefix-map=\$(abs_top_srcdir)=."], [], [$CXXFLAG_WERROR])
-    AX_CHECK_PREPROC_FLAG([-fmacro-prefix-map=A=B], [DEBUG_CPPFLAGS="$DEBUG_CPPFLAGS -fmacro-prefix-map=\$(abs_top_srcdir)=."], [], [$CXXFLAG_WERROR])
-  fi
+fi
+if test "$use_compiler_cache" != "no"; then
+  AX_CHECK_COMPILE_FLAG([-fdebug-prefix-map=A=B], [DEBUG_CXXFLAGS="$DEBUG_CXXFLAGS -fdebug-prefix-map=\$(abs_top_srcdir)=."], [], [$CXXFLAG_WERROR])
+  AX_CHECK_PREPROC_FLAG([-fmacro-prefix-map=A=B], [DEBUG_CPPFLAGS="$DEBUG_CPPFLAGS -fmacro-prefix-map=\$(abs_top_srcdir)=."], [], [$CXXFLAG_WERROR])
 fi
 
 dnl enable wallet
