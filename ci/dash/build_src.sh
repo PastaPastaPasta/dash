@@ -27,8 +27,8 @@ if [ -z "$NO_WERROR" ]; then
   BITCOIN_CONFIG_ALL="${BITCOIN_CONFIG_ALL} --enable-werror"
 fi
 
-# Use sccache instead of ccache for CI builds when enabled
-if [ "${SCCACHE_GHA_ENABLED:-}" = "true" ]; then
+# Use sccache instead of ccache for CI builds when a remote backend is configured
+if [ "${SCCACHE_GHA_ENABLED:-}" = "true" ] || [ -n "${SCCACHE_BUCKET:-}" ]; then
   BITCOIN_CONFIG_ALL="${BITCOIN_CONFIG_ALL} --disable-ccache --enable-sccache"
 fi
 

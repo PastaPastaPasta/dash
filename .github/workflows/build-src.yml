@@ -65,17 +65,13 @@ jobs:
           key: ${{ inputs.depends-key }}
           fail-on-cache-miss: true
 
-      - name: Setup sccache environment
-        uses: actions/github-script@v7
-        with:
-          script: |
-            core.exportVariable('ACTIONS_CACHE_SERVICE_V2', 'on');
-            core.exportVariable('ACTIONS_RESULTS_URL', process.env['ACTIONS_RESULTS_URL'] || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env['ACTIONS_RUNTIME_TOKEN'] || '');
-
       - name: Build source
         env:
-          SCCACHE_GHA_ENABLED: "true"
+          SCCACHE_BUCKET: "dash-test-sccache"
+          SCCACHE_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          SCCACHE_REGION: "auto"
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
           CACHE_DIR="/cache"
           mkdir /output
