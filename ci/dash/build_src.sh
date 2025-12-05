@@ -13,7 +13,10 @@ source ./ci/dash/matrix.sh
 
 unset CC CXX DISPLAY;
 
-# Reset sccache stats at start of build (if sccache is available)
+# Reset compiler cache stats at start of build
+if command -v buildcache &> /dev/null; then
+    buildcache -z 2>/dev/null || true
+fi
 if command -v sccache &> /dev/null; then
     sccache --zero-stats 2>/dev/null || true
 fi
@@ -27,8 +30,10 @@ if [ -z "$NO_WERROR" ]; then
   BITCOIN_CONFIG_ALL="${BITCOIN_CONFIG_ALL} --enable-werror"
 fi
 
-# Use sccache instead of ccache for CI builds when a remote backend is configured
-if [ "${SCCACHE_GHA_ENABLED:-}" = "true" ] || [ -n "${SCCACHE_BUCKET:-}" ]; then
+# Use buildcache (preferred) or sccache for CI builds when a remote backend is configured
+if [ -n "${BUILDCACHE_REMOTE:-}" ]; then
+  BITCOIN_CONFIG_ALL="${BITCOIN_CONFIG_ALL} --disable-ccache --disable-sccache --enable-buildcache"
+elif [ "${SCCACHE_GHA_ENABLED:-}" = "true" ] || [ -n "${SCCACHE_BUCKET:-}" ]; then
   BITCOIN_CONFIG_ALL="${BITCOIN_CONFIG_ALL} --disable-ccache --enable-sccache"
 fi
 
@@ -53,7 +58,10 @@ fi
 
 bash -c "${MAYBE_BEAR} ${MAYBE_TOKEN} make ${MAKEJOBS} ${GOAL}" || ( echo "Build failure. Verbose build follows." && make "$GOAL" V=1 ; false )
 
-# Show sccache statistics (if sccache is available)
+# Show compiler cache statistics
+if command -v buildcache &> /dev/null; then
+    buildcache -s 2>/dev/null || true
+fi
 if command -v sccache &> /dev/null; then
     sccache --show-stats 2>/dev/null || true
 fi

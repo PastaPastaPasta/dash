@@ -116,6 +116,7 @@ AC_PATH_PROG([GENHTML], [genhtml])
 AC_PATH_PROG([GIT], [git])
 AC_PATH_PROG([CCACHE], [ccache])
 AC_PATH_PROG([SCCACHE], [sccache])
+AC_PATH_PROG([BUILDCACHE], [buildcache])
 AC_PATH_PROG([XGETTEXT], [xgettext])
 AC_PATH_PROG([HEXDUMP], [hexdump])
 AC_PATH_TOOL([OBJCOPY], [objcopy])
@@ -221,6 +222,12 @@ AC_ARG_ENABLE([sccache],
   [use sccache for building (default is no, use --disable-ccache --enable-sccache to prefer sccache)])],
   [use_sccache=$enableval],
   [use_sccache=no])
+
+AC_ARG_ENABLE([buildcache],
+  [AS_HELP_STRING([--enable-buildcache],
+  [use buildcache for building (default is no, supports tiered local+remote caching)])],
+  [use_buildcache=$enableval],
+  [use_buildcache=no])
 
 dnl Suppress warnings from external headers (e.g. Boost, Qt).
 dnl May be useful if warnings from external headers clutter the build output
@@ -1780,9 +1787,19 @@ AC_MSG_RESULT($build_bitcoin_libs)
 
 AC_LANG_POP
 
-dnl Handle compiler caching (sccache takes priority if explicitly enabled)
+dnl Handle compiler caching (buildcache > sccache > ccache priority)
 use_compiler_cache=no
-if test "$use_sccache" = "yes"; then
+if test "$use_buildcache" = "yes"; then
+  AC_MSG_CHECKING([if buildcache should be used])
+  if test "$BUILDCACHE" = ""; then
+    AC_MSG_ERROR([buildcache not found.]);
+  else
+    use_compiler_cache=buildcache
+    CC="$ac_cv_path_BUILDCACHE $CC"
+    CXX="$ac_cv_path_BUILDCACHE $CXX"
+  fi
+  AC_MSG_RESULT($use_compiler_cache)
+elif test "$use_sccache" = "yes"; then
   AC_MSG_CHECKING([if sccache should be used])
   if test "$SCCACHE" = ""; then
     AC_MSG_ERROR([sccache not found.]);

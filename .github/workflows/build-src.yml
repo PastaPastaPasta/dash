@@ -65,14 +65,26 @@ jobs:
           key: ${{ inputs.depends-key }}
           fail-on-cache-miss: true
 
+      - name: Restore buildcache from R2
+        uses: tespkg/actions-cache/restore@v1
+        with:
+          endpoint: ${{ secrets.R2_ENDPOINT }}
+          accessKey: ${{ secrets.R2_ACCESS_KEY_ID }}
+          secretKey: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          bucket: dash-test-sccache
+          key: buildcache-${{ inputs.build-target }}
+          path: /cache/buildcache
+
       - name: Build source
         env:
-          SCCACHE_BUCKET: "dash-test-sccache"
-          SCCACHE_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
-          SCCACHE_REGION: "auto"
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          BUILDCACHE_DIR: /cache/buildcache
+          BUILDCACHE_MAX_CACHE_SIZE: "104857600"
+          BUILDCACHE_REMOTE: s3://dash-test-sccache/objects
+          BUILDCACHE_S3_ACCESS: ${{ secrets.R2_ACCESS_KEY_ID }}
+          BUILDCACHE_S3_SECRET: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          BUILDCACHE_S3_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
         run: |
+          mkdir -p /cache/buildcache
           CACHE_DIR="/cache"
           mkdir /output
           BASE_OUTDIR="/output"
@@ -81,10 +93,21 @@ jobs:
           ./ci/dash/build_src.sh
         shell: bash
 
-      - name: Show sccache stats
+      - name: Show buildcache stats
         if: always()
-        run: sccache --show-stats || true
+        run: buildcache -s || true
         shell: bash
+
+      - name: Save buildcache to R2
+        uses: tespkg/actions-cache/save@v1
+        if: github.ref == 'refs/heads/develop' && always()
+        with:
+          endpoint: ${{ secrets.R2_ENDPOINT }}
+          accessKey: ${{ secrets.R2_ACCESS_KEY_ID }}
+          secretKey: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          bucket: dash-test-sccache
+          key: buildcache-${{ inputs.build-target }}
+          path: /cache/buildcache
 
       - name: Run linters
         if: inputs.build-target == 'linux64_multiprocess'

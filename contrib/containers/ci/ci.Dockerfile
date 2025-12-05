@@ -45,6 +45,33 @@ RUN set -ex; \
     chmod +x /usr/local/bin/sccache; \
     rm -rf /tmp/sccache*
 
+# Install libssl1.1 from Ubuntu 22.04 (required by buildcache binary release)
+RUN set -ex; \
+    ARCH=$(dpkg --print-architecture); \
+    case "${ARCH}" in \
+        amd64) LIBSSL_URL="http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2.24_amd64.deb" ;; \
+        arm64) LIBSSL_URL="http://ports.ubuntu.com/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2.24_arm64.deb" ;; \
+        *) echo "Unsupported architecture: ${ARCH}" && exit 1 ;; \
+    esac; \
+    curl -fL "${LIBSSL_URL}" -o /tmp/libssl1.1.deb; \
+    dpkg -i /tmp/libssl1.1.deb; \
+    rm /tmp/libssl1.1.deb
+
+# Install buildcache from GitLab releases (supports tiered local+remote caching)
+ARG BUILDCACHE_VERSION=0.31.5
+RUN set -ex; \
+    ARCH=$(dpkg --print-architecture); \
+    case "${ARCH}" in \
+        amd64) BUILDCACHE_ARCH="linux-amd64" ;; \
+        arm64) BUILDCACHE_ARCH="linux-arm64" ;; \
+        *) echo "Unsupported architecture: ${ARCH}" && exit 1 ;; \
+    esac; \
+    curl -fL "https://gitlab.com/bits-n-bites/buildcache/-/releases/v${BUILDCACHE_VERSION}/downloads/buildcache-${BUILDCACHE_ARCH}.tar.gz" -o /tmp/buildcache.tar.gz; \
+    tar -xzf /tmp/buildcache.tar.gz -C /tmp; \
+    mv /tmp/buildcache/bin/buildcache /usr/local/bin/buildcache; \
+    chmod +x /usr/local/bin/buildcache; \
+    rm -rf /tmp/buildcache*
+
 # Install Clang + LLVM and set it as default
 RUN set -ex; \
     apt-get update && apt-get install ${APT_ARGS} \
@@ -81,6 +108,7 @@ RUN set -ex; \
 
 RUN \
   mkdir -p /cache/sccache && \
+  mkdir -p /cache/buildcache && \
   mkdir /cache/depends && \
   mkdir /cache/sdk-sources && \
   chown ${USER_ID}:${GROUP_ID} /cache && \
