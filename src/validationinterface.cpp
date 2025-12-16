@@ -9,6 +9,7 @@
 #include <chain.h>
 #include <consensus/validation.h>
 #include <kernel/chain.h>
+#include <kernel/types.h>
 #include <logging.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
@@ -19,6 +20,7 @@
 #include <utility>
 
 std::string RemovalReasonToString(const MemPoolRemovalReason& r) noexcept;
+using kernel::ChainstateRole;
 
 /**
  * MainSignalsImpl manages a list of shared_ptr<CValidationInterface> callbacks.
@@ -230,7 +232,8 @@ void CMainSignals::TransactionRemovedFromMempool(const CTransactionRef& tx, MemP
                           RemovalReasonToString(reason));
 }
 
-void CMainSignals::BlockConnected(ChainstateRole role, const std::shared_ptr<const CBlock> &pblock, const CBlockIndex *pindex) {
+void CMainSignals::BlockConnected(const ChainstateRole& role, const std::shared_ptr<const CBlock>& pblock, const CBlockIndex* pindex)
+{
     auto event = [role, pblock, pindex, this] {
         m_internals->Iterate([&](CValidationInterface& callbacks) { callbacks.BlockConnected(role, pblock, pindex); });
     };
@@ -248,7 +251,8 @@ void CMainSignals::BlockDisconnected(const std::shared_ptr<const CBlock> &pblock
                           pindex->nHeight);
 }
 
-void CMainSignals::ChainStateFlushed(ChainstateRole role, const CBlockLocator &locator) {
+void CMainSignals::ChainStateFlushed(const ChainstateRole& role, const CBlockLocator& locator)
+{
     auto event = [role, locator, this] {
         m_internals->Iterate([&](CValidationInterface& callbacks) { callbacks.ChainStateFlushed(role, locator); });
     };

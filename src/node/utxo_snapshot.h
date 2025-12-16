@@ -116,7 +116,7 @@ constexpr std::string_view SNAPSHOT_CHAINSTATE_SUFFIX = "_snapshot";
 
 
 //! Return a path to the snapshot-based chainstate dir, if one exists.
-std::optional<fs::path> FindSnapshotChainstateDir();
+std::optional<fs::path> FindAssumeutxoChainstateDir(const fs::path& data_dir);
 
 } // namespace node
 

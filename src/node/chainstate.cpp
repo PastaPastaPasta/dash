@@ -229,23 +229,24 @@ static ChainstateLoadResult CompleteChainstateInitialization(ChainstateManager& 
         return {ChainstateLoadStatus::FAILURE, _("Error initializing block database")};
     }
 
-    auto is_coinsview_empty = [&](Chainstate* chainstate) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
-        return options.reindex || options.reindex_chainstate || chainstate->CoinsTip().GetBestBlock().IsNull();
+    auto is_coinsview_empty = [&](Chainstate& chainstate) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
+        return options.reindex || options.reindex_chainstate || chainstate.CoinsTip().GetBestBlock().IsNull();
     };
 
     assert(chainman.m_total_coinstip_cache > 0);
     assert(chainman.m_total_coinsdb_cache > 0);
 
-    // Conservative value which is arbitrarily chosen, as it will ultimately be changed
-    // by a call to `chainman.MaybeRebalanceCaches()`. We just need to make sure
-    // that the sum of the two caches (40%) does not exceed the allowable amount
-    // during this temporary initialization state.
-    double init_cache_fraction = 0.2;
+    // If running with multiple chainstates, limit the cache sizes with a
+    // discount factor. If discounted the actual cache size will be
+    // recalculated by `chainman.MaybeRebalanceCaches()`. The discount factor
+    // is conservatively chosen such that the sum of the caches does not exceed
+    // the allowable amount during this temporary initialization state.
+    double init_cache_fraction = chainman.HistoricalChainstate() ? 0.2 : 1.0;
 
     // At this point we're either in reindex or we've loaded a useful
     // block tree into BlockIndex()!
 
-    for (Chainstate* chainstate : chainman.GetAll()) {
+    for (const auto& chainstate : chainman.m_chainstates) {
         LogPrintf("Initializing chainstate %s\n", chainstate->ToString());
 
         chainstate->InitCoinsDB(
@@ -287,7 +288,7 @@ static ChainstateLoadResult CompleteChainstateInitialization(ChainstateManager& 
             return {ChainstateLoadStatus::FAILURE, _("Failed to commit Evo database")};
         }
 
-        if (!is_coinsview_empty(chainstate)) {
+        if (!is_coinsview_empty(*chainstate)) {
             // LoadChainTip initializes the chain based on CoinsTip()'s best block
             if (!chainstate->LoadChainTip()) {
                 return {ChainstateLoadStatus::FAILURE, _("Error initializing block database")};
@@ -304,7 +305,6 @@ static ChainstateLoadResult CompleteChainstateInitialization(ChainstateManager& 
     if (dmnman->IsMigrationRequired() && !dmnman->MigrateLegacyDiffs(chainman.ActiveChainstate().m_chain.Tip())) {
         return {ChainstateLoadStatus::FAILURE, _("Failed to upgrade Evo database")};
     }
-
     // Now that chainstates are loaded and we're able to flush to
     // disk, rebalance the coins caches to desired levels based
     // on the condition of each chainstate.
@@ -348,12 +348,23 @@ ChainstateLoadResult LoadChainstate(ChainstateManager& chainman, const CacheSize
     chainman.m_total_coinsdb_cache = cache_sizes.coins_db;
 
     // Load the fully validated chainstate.
-    chainman.InitializeChainstate(options.mempool, *evodb, chain_helper);
+    Chainstate& validated_cs{chainman.InitializeChainstate(options.mempool, *evodb, chain_helper)};
 
     // Load a chain created from a UTXO snapshot, if any exist.
     bilingual_str snapshot_error;
-    if (!chainman.DetectSnapshotChainstate(options.mempool, snapshot_error)) {
+    Chainstate* assumeutxo_cs{chainman.LoadAssumeutxoChainstate(options.mempool, snapshot_error)};
+    if (!snapshot_error.empty()) {
         return {ChainstateLoadStatus::FAILURE, snapshot_error};
+    }
+
+    if (assumeutxo_cs && (options.reindex || options.reindex_chainstate)) {
+        // Reset chainstate target to network tip instead of snapshot block.
+        validated_cs.SetTargetBlock(nullptr);
+        LogInfo("[snapshot] deleting snapshot chainstate due to reindexing");
+        if (!chainman.DeleteChainstate(*assumeutxo_cs)) {
+            return {ChainstateLoadStatus::FAILURE_FATAL, Untranslated("Couldn't remove snapshot chainstate.")};
+        }
+        assumeutxo_cs = nullptr;
     }
 
     auto [init_status, init_error] = CompleteChainstateInitialization(chainman, cache_sizes, options, *evodb, dmnman,
@@ -378,7 +389,9 @@ ChainstateLoadResult LoadChainstate(ChainstateManager& chainman, const CacheSize
     // snapshot is actually validated? Because this entails unusual
     // filesystem operations to move leveldb data directories around, and that seems
     // too risky to do in the middle of normal runtime.
-    const auto snapshot_completion = chainman.MaybeCompleteSnapshotValidation();
+    auto snapshot_completion{assumeutxo_cs
+                              ? chainman.MaybeValidateSnapshot(validated_cs, *assumeutxo_cs)
+                              : SnapshotCompletionResult::SKIPPED};
 
     if (snapshot_completion == SnapshotCompletionResult::SKIPPED) {
         // Do nothing; expected case.
@@ -392,16 +405,14 @@ ChainstateLoadResult LoadChainstate(ChainstateManager& chainman, const CacheSize
         chain_helper.reset();
         llmq_ctx.reset();
         dmnman.reset();
-        if (!chainman.ValidatedSnapshotCleanup()) {
+        if (!chainman.ValidatedSnapshotCleanup(validated_cs, *assumeutxo_cs)) {
             return {ChainstateLoadStatus::FAILURE_FATAL, Untranslated("Background chainstate cleanup failed unexpectedly.")};
         }
 
         // Because ValidatedSnapshotCleanup() has torn down chainstates with
         // ChainstateManager::ResetChainstates(), reinitialize them here without
         // duplicating the blockindex work above.
-        assert(chainman.GetAll().empty());
-        assert(!chainman.IsSnapshotActive());
-        assert(!chainman.IsSnapshotValidated());
+        assert(chainman.m_chainstates.empty());
 
         chainman.InitializeChainstate(options.mempool, *evodb, chain_helper);
 
@@ -426,14 +437,14 @@ ChainstateLoadResult LoadChainstate(ChainstateManager& chainman, const CacheSize
 ChainstateLoadResult VerifyLoadedChainstate(ChainstateManager& chainman, const ChainstateLoadOptions& options, CEvoDB& evodb,
                                             std::function<void(bool)> notify_bls_state)
 {
-    auto is_coinsview_empty = [&](Chainstate* chainstate) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
-        return options.reindex || options.reindex_chainstate || chainstate->CoinsTip().GetBestBlock().IsNull();
+    auto is_coinsview_empty = [&](Chainstate& chainstate) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
+        return options.reindex || options.reindex_chainstate || chainstate.CoinsTip().GetBestBlock().IsNull();
     };
 
     LOCK(cs_main);
 
-    for (Chainstate* chainstate : chainman.GetAll()) {
-        if (!is_coinsview_empty(chainstate)) {
+    for (auto& chainstate : chainman.m_chainstates) {
+        if (!is_coinsview_empty(*chainstate)) {
             const CBlockIndex* tip = chainstate->m_chain.Tip();
             if (tip && tip->nTime > GetTime() + MAX_FUTURE_BLOCK_TIME) {
                 return {ChainstateLoadStatus::FAILURE, _("The block database contains a block which appears to be from the future. "
@@ -470,7 +481,7 @@ ChainstateLoadResult VerifyLoadedChainstate(ChainstateManager& chainman, const C
             // TODO: CEvoDB instance should probably be a part of Chainstate
             // (for multiple chainstates to actually work in parallel)
             // and not a global
-            if (&chainman.ActiveChainstate() == chainstate && !evodb.IsEmpty()) {
+            if (&chainman.ActiveChainstate() == chainstate.get() && !evodb.IsEmpty()) {
                 // EvoDB processed some blocks earlier but we have no blocks anymore, something is wrong
                 return {ChainstateLoadStatus::FAILURE, _("Error initializing block database")};
             }

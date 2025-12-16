@@ -142,8 +142,8 @@ FUZZ_TARGET(wallet_notifications, .init = initialize_setup)
                 info.height = chain.size();
                 info.data = &block;
                 info.chain_time_max = std::numeric_limits<unsigned int>::max();
-                a.wallet->blockConnected(ChainstateRole::NORMAL, info);
-                b.wallet->blockConnected(ChainstateRole::NORMAL, info);
+                a.wallet->blockConnected(kernel::ChainstateRole{}, info);
+                b.wallet->blockConnected(kernel::ChainstateRole{}, info);
                 // Store the coins for the next block
                 Coins coins_new;
                 for (const auto& tx : block.vtx) {

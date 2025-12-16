@@ -353,7 +353,7 @@ void PrepareShutdown(NodeContext& node)
     // FlushStateToDisk generates a ChainStateFlushed callback, which we should avoid missing
     if (node.chainman) {
         LOCK(cs_main);
-        for (Chainstate* chainstate : node.chainman->GetAll()) {
+        for (const auto& chainstate : node.chainman->m_chainstates) {
             if (chainstate->CanFlushToDisk()) {
                 chainstate->ForceFlushStateToDisk();
             }
@@ -423,7 +423,7 @@ void PrepareShutdown(NodeContext& node)
 
     if (node.chainman) {
         LOCK(cs_main);
-        for (Chainstate* chainstate : node.chainman->GetAll()) {
+        for (const auto& chainstate : node.chainman->m_chainstates) {
             if (chainstate->CanFlushToDisk()) {
                 chainstate->ForceFlushStateToDisk();
                 chainstate->ResetCoinsViews();
@@ -2008,7 +2008,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         // This is defined and set here instead of inline in validation.h to avoid a hard
         // dependency on index/base from libdashconsensus-facing validation code.
         chainman.snapshot_download_completed = [&node]() {
-            if (!node.chainman->m_blockman.IsPruneMode()) {
+            if (!node::fPruneMode) {
                 LogPrintf("[snapshot] re-enabling NODE_NETWORK services\n");
                 node.connman->AddLocalServices(NODE_NETWORK);
             }
@@ -2332,14 +2332,14 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     if (fPruneMode) {
         if (!fReindex) {
             LOCK(cs_main);
-            for (Chainstate* chainstate : chainman.GetAll()) {
+            for (const auto& chainstate : chainman.m_chainstates) {
                 uiInterface.InitMessage(_("Pruning blockstore…").translated);
                 chainstate->PruneAndFlush();
             }
         }
     } else {
         // Prior to setting NODE_NETWORK, check if we can provide historical blocks.
-        if (!WITH_LOCK(chainman.GetMutex(), return chainman.BackgroundSyncInProgress())) {
+        if (!WITH_LOCK(chainman.GetMutex(), return chainman.HistoricalChainstate())) {
             LogPrintf("Setting NODE_NETWORK on non-prune mode\n");
             nLocalServices = ServiceFlags(nLocalServices | NODE_NETWORK);
         } else {

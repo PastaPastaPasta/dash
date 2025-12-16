@@ -36,17 +36,17 @@ public:
     int background_block_connected{0};
     int background_chainstate_flushed{0};
 
-    void BlockConnected(ChainstateRole role, const std::shared_ptr<const CBlock>&, const CBlockIndex*) override
+    void BlockConnected(const kernel::ChainstateRole& role, const std::shared_ptr<const CBlock>&, const CBlockIndex*) override
     {
         ++block_connected;
-        if (role == ChainstateRole::BACKGROUND) ++background_block_connected;
+        if (role.historical) ++background_block_connected;
     }
     void UpdatedBlockTip(const CBlockIndex*, const CBlockIndex*, bool) override { ++updated_tip; }
     void NotifyMasternodeListChanged(bool, const CDeterministicMNList&, const CDeterministicMNListDiff&) override { ++mn_list_changed; }
-    void ChainStateFlushed(ChainstateRole role, const CBlockLocator&) override
+    void ChainStateFlushed(const kernel::ChainstateRole& role, const CBlockLocator&) override
     {
         ++chainstate_flushed;
-        if (role == ChainstateRole::BACKGROUND) ++background_chainstate_flushed;
+        if (role.historical) ++background_chainstate_flushed;
     }
 };
 
@@ -122,7 +122,7 @@ BOOST_FIXTURE_TEST_CASE(chainstate_update_tip, TestChain100Setup)
         this, NoMalleation, /*reset_chainstate=*/ true));
 
     // Ensure our active chain is the snapshot chainstate.
-    BOOST_CHECK(WITH_LOCK(::cs_main, return chainman.IsSnapshotActive()));
+    BOOST_CHECK(WITH_LOCK(::cs_main, return chainman.CurrentChainstate().m_from_snapshot_blockhash));
 
     curr_tip = ::g_best_block;
 
@@ -134,16 +134,7 @@ BOOST_FIXTURE_TEST_CASE(chainstate_update_tip, TestChain100Setup)
 
     curr_tip = ::g_best_block;
 
-    BOOST_CHECK_EQUAL(chainman.GetAll().size(), 2);
-
-    Chainstate& background_cs{*[&] {
-        for (Chainstate* cs : chainman.GetAll()) {
-            if (cs != &chainman.ActiveChainstate()) {
-                return cs;
-            }
-        }
-        assert(false);
-    }()};
+    Chainstate& background_cs{*Assert(WITH_LOCK(::cs_main, return chainman.HistoricalChainstate()))};
 
     // Append the first block to the background chain.
     BlockValidationState state;

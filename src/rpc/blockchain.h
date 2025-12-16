@@ -21,6 +21,7 @@ extern RecursiveMutex cs_main; // NOLINT(readability-redundant-declaration)
 
 class CBlock;
 class CBlockIndex;
+class CChain;
 class Chainstate;
 class CCoinsView;
 namespace chainlock { class Chainlocks; }
@@ -69,6 +70,9 @@ UniValue CreateUTXOSnapshot(
     AutoFile& afile,
     const fs::path& path,
     const fs::path& tmppath);
+
+//! Return height of highest block that has been pruned, or std::nullopt if no blocks have been pruned.
+std::optional<int> GetPruneHeight(const node::BlockManager& blockman, const CChain& chain) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
 /**
  * Calculate statistics about the unspent transaction output set

@@ -16,6 +16,7 @@
 #include <interfaces/chain.h>
 #include <interfaces/wallet.h>
 #include <kernel/chain.h>
+#include <kernel/types.h>
 #include <key.h>
 #include <key_io.h>
 #include <policy/fees.h>
@@ -57,6 +58,7 @@
 #include <ranges>
 
 using interfaces::FoundBlock;
+using kernel::ChainstateRole;
 
 namespace wallet {
 static isminetype InputIsMine(const CWallet& wallet, const CTxIn& txin) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet)
@@ -628,11 +630,11 @@ bool CWallet::ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase,
     return false;
 }
 
-void CWallet::chainStateFlushed(ChainstateRole role, const CBlockLocator& loc)
+void CWallet::chainStateFlushed(const ChainstateRole& role, const CBlockLocator& loc)
 {
     // Don't update the best block until the chain is attached so that in case of a shutdown,
     // the rescan will be restarted at next startup.
-    if (m_attaching_chain || role == ChainstateRole::BACKGROUND) {
+    if (m_attaching_chain || role.historical) {
         return;
     }
     WalletBatch batch(GetDatabase());
@@ -1474,9 +1476,9 @@ void CWallet::transactionRemovedFromMempool(const CTransactionRef& tx, MemPoolRe
     }
 }
 
-void CWallet::blockConnected(ChainstateRole role, const interfaces::BlockInfo& block)
+void CWallet::blockConnected(const ChainstateRole& role, const interfaces::BlockInfo& block)
 {
-    if (role == ChainstateRole::BACKGROUND) {
+    if (role.historical) {
         return;
     }
     assert(block.data);
@@ -3235,7 +3237,7 @@ std::shared_ptr<CWallet> CWallet::Create(WalletContext& context, const std::stri
         }
 
         if (chain) {
-            walletInstance->chainStateFlushed(ChainstateRole::NORMAL, chain->getTipLocator());
+            walletInstance->chainStateFlushed(ChainstateRole{}, chain->getTipLocator());
         }
 
         // Try to create wallet backup right after new wallet was created
@@ -3539,7 +3541,7 @@ bool CWallet::AttachChain(const std::shared_ptr<CWallet>& walletInstance, interf
             }
         }
         walletInstance->m_attaching_chain = false;
-        walletInstance->chainStateFlushed(ChainstateRole::NORMAL, chain.getTipLocator());
+        walletInstance->chainStateFlushed(ChainstateRole{}, chain.getTipLocator());
         walletInstance->GetDatabase().IncrementUpdateCounter();
     }
     walletInstance->m_attaching_chain = false;

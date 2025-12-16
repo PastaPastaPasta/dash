@@ -11,6 +11,7 @@
 #include <flatfile.h>
 #include <hash.h>
 #include <kernel/chain.h>
+#include <kernel/types.h>
 #include <logging.h>
 #include <pow.h>
 #include <shutdown.h>
@@ -167,8 +168,7 @@ void BlockManager::PruneOneBlockFile(const int fileNumber)
 void BlockManager::FindFilesToPruneManual(
     std::set<int>& setFilesToPrune,
     int nManualPruneHeight,
-    const Chainstate& chain,
-    ChainstateManager& chainman)
+    const Chainstate& chain)
 {
     assert(fPruneMode && nManualPruneHeight > 0);
 
@@ -177,7 +177,7 @@ void BlockManager::FindFilesToPruneManual(
         return;
     }
 
-    const auto [min_block_to_prune, last_block_can_prune] = chainman.GetPruneRange(chain, nManualPruneHeight);
+    const auto [min_block_to_prune, last_block_can_prune] = chain.GetPruneRange(nManualPruneHeight);
 
     int count = 0;
     for (int fileNumber = 0; fileNumber < this->MaxBlockfileNum(); fileNumber++) {
@@ -204,12 +204,20 @@ void BlockManager::FindFilesToPrune(
     if (chain.m_chain.Height() < 0 || nPruneTarget == 0) {
         return;
     }
+    // Compute `target` value with maximum size (in bytes) of blocks below the
+    // `last_prune` height which should be preserved and not pruned. The
+    // `target` value will be derived from the -prune preference provided by the
+    // user. If there is a historical chainstate being used to populate indexes
+    // and validate the snapshot, the target is divided by two so half of the
+    // block storage will be reserved for the historical chainstate, and the
+    // other half will be reserved for the most-work chainstate.
+    const int num_chainstates{chainman.HistoricalChainstate() ? 2 : 1};
 
     // Distribute our -prune budget over all chainstates. On regtest, preserve
     // the lower configured target used by pruning tests.
     const auto target = std::max(
         std::min(MIN_DISK_SPACE_FOR_BLOCK_FILES, nPruneTarget),
-        nPruneTarget / chainman.GetAll().size());
+        nPruneTarget / num_chainstates);
 
     if (target == 0) {
         return;
@@ -218,7 +226,7 @@ void BlockManager::FindFilesToPrune(
         return;
     }
 
-    const auto [min_block_to_prune, last_block_can_prune] = chainman.GetPruneRange(chain, last_prune);
+    const auto [min_block_to_prune, last_block_can_prune] = chain.GetPruneRange(last_prune);
 
     uint64_t nCurrentUsage = CalculateCurrentUsage();
     // We don't check to prune until after we've allocated new space for files
@@ -519,7 +527,7 @@ bool BlockManager::IsBlockPruned(const CBlockIndex* pblockindex)
     return (m_have_pruned && !(pblockindex->nStatus & BLOCK_HAVE_DATA) && pblockindex->nTx > 0);
 }
 
-const CBlockIndex* BlockManager::GetFirstStoredBlock(const CBlockIndex& start_block)
+const CBlockIndex* BlockManager::GetFirstStoredBlock(const CBlockIndex& start_block) const
 {
     AssertLockHeld(::cs_main);
     const CBlockIndex* last_block = &start_block;
@@ -1075,15 +1083,10 @@ void ThreadImport(ChainstateManager& chainman, std::vector<fs::path> vImportFile
 
         // scan for better chains in the block chain database, that are not yet connected in the active best chain
 
-        // We can't hold cs_main during ActivateBestChain even though we're accessing
-        // the chainman unique_ptrs since ABC requires us not to be holding cs_main, so retrieve
-        // the relevant pointers before the ABC call.
-        for (Chainstate* chainstate : WITH_LOCK(::cs_main, return chainman.GetAll())) {
-            BlockValidationState state;
-            if (!chainstate->ActivateBestChain(state, nullptr)) {
-                AbortNode(strprintf("Failed to connect best block (%s)", state.ToString()));
-                return;
-            }
+        if (auto result{chainman.ActivateBestChains()}; !result) {
+            LogPrintf("Failed to connect best block (%s)\n", util::ErrorString(result).original);
+            StartShutdown();
+            return;
         }
 
         if (args.GetBoolArg("-stopafterblockimport", DEFAULT_STOPAFTERBLOCKIMPORT)) {
