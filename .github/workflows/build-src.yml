@@ -32,7 +32,7 @@ on:
 jobs:
   build-src:
     name: Build source
-    runs-on: self-hosted
+    runs-on: ${{ vars.RUNNER_TYPE || 'ubuntu-24.04' }}
     outputs:
       key:  ${{ steps.bundle.outputs.key }}
     container:

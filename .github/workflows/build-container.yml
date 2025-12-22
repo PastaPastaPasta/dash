@@ -23,7 +23,7 @@ on:
 jobs:
   build:
     name: Build container
-    runs-on: self-hosted
+    runs-on: ${{ vars.RUNNER_TYPE || 'ubuntu-24.04' }}
     outputs:
       tag: ${{ steps.prepare.outputs.tag }}
       repo: ${{ steps.prepare.outputs.repo }}

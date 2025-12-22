@@ -20,7 +20,7 @@ concurrency:
 jobs:
   check-skip:
     name: Check skip conditions
-    runs-on: self-hosted
+    runs-on: ubuntu-24.04
     outputs:
       skip: ${{ steps.skip-check.outputs.skip }}
     steps:
