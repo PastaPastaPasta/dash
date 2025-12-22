@@ -25,7 +25,7 @@ on:
 jobs:
   check-cache:
     name: Check cache
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       cache-hit: ${{ steps.cache-check.outputs.cache-hit }}
       cache-key: ${{ steps.setup.outputs.cache-key }}
@@ -73,7 +73,7 @@ jobs:
     name: Build depends
     needs: [check-cache]
     if: needs.check-cache.outputs.cache-hit != 'true'
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     container:
       image: ${{ inputs.container-path }}
       options: --user root

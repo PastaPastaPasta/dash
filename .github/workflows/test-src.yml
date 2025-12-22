@@ -23,7 +23,7 @@ env:
 jobs:
   test-src:
     name: Test source
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     container:
       image: ${{ inputs.container-path }}
       options: --user root
