@@ -65,6 +65,45 @@ RUN set -ex; \
     make install -j "$(( $(nproc) - 1 ))"; \
     cd /opt && rm -rf /opt/iwyu;
 
+# ===========================================================================
+# Rust toolchain for GroveDB
+# ===========================================================================
+
+# Install Rust via rustup (stable toolchain, minimal profile)
+RUN set -ex; \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+        --default-toolchain stable \
+        --profile minimal; \
+    rm -rf /root/.cargo/registry/cache
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Add cross-compilation targets for all supported platforms
+RUN set -ex; \
+    rustup target add \
+        x86_64-unknown-linux-gnu \
+        aarch64-unknown-linux-gnu \
+        armv7-unknown-linux-gnueabihf \
+        x86_64-pc-windows-gnu \
+        i686-pc-windows-gnu
+
+# Configure cargo for cross-compilation linkers
+RUN set -ex; \
+    mkdir -p /root/.cargo; \
+    printf '%s\n' \
+        '[target.x86_64-pc-windows-gnu]' \
+        'linker = "x86_64-w64-mingw32-gcc"' \
+        '' \
+        '[target.aarch64-unknown-linux-gnu]' \
+        'linker = "aarch64-linux-gnu-gcc"' \
+        '' \
+        '[target.armv7-unknown-linux-gnueabihf]' \
+        'linker = "arm-linux-gnueabihf-gcc"' \
+        > /root/.cargo/config.toml
+
+# Verify Rust installation
+RUN cargo --version && rustc --version
+
 RUN \
   mkdir -p /cache/ccache && \
   mkdir /cache/depends && \

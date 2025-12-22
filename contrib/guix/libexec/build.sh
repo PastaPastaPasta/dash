@@ -166,6 +166,40 @@ esac
 export TAR_OPTIONS="--owner=0 --group=0 --numeric-owner --mtime='@${SOURCE_DATE_EPOCH}' --sort=name"
 export TZ="UTC"
 
+###################################
+# Cargo/Rust environment for GroveDB
+###################################
+
+# Set Cargo home directory for caching
+export CARGO_HOME="${DISTSRC}/.cargo"
+mkdir -p "${CARGO_HOME}"
+
+# For cross-compilation, set target-specific linker
+case "$HOST" in
+    x86_64-linux-gnu)
+        export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER="${HOST}-gcc"
+        ;;
+    aarch64-linux-gnu)
+        export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER="${HOST}-gcc"
+        ;;
+    arm-linux-gnueabihf)
+        export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER="${HOST}-gcc"
+        ;;
+    x86_64-w64-mingw32)
+        export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER="${HOST}-gcc"
+        ;;
+    riscv64-linux-gnu)
+        export CARGO_TARGET_RISCV64GC_UNKNOWN_LINUX_GNU_LINKER="${HOST}-gcc"
+        ;;
+    powerpc64-linux-gnu)
+        export CARGO_TARGET_POWERPC64_UNKNOWN_LINUX_GNU_LINKER="${HOST}-gcc"
+        ;;
+esac
+
+# Ensure reproducible builds
+export CARGO_INCREMENTAL=0
+export RUSTFLAGS="-C embed-bitcode=yes"
+
 ####################
 # Depends Building #
 ####################

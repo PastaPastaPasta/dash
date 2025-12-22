@@ -19,6 +19,7 @@
              ((gnu packages python) #:select (python-minimal))
              ((gnu packages python-build) #:select (python-tomli))
              ((gnu packages python-crypto) #:select (python-asn1crypto))
+             ((gnu packages rust) #:select (rust))
              ((gnu packages tls) #:select (openssl))
              ((gnu packages version-control) #:select (git-minimal))
              (guix build-system cmake)
@@ -520,6 +521,8 @@ inspecting signatures in Mach-O binaries.")
         autoconf-2.71
         automake
         pkg-config
+        ;; Rust toolchain for GroveDB
+        rust
         ;; Scripting
         python-minimal ;; (3.10)
         ;; Git

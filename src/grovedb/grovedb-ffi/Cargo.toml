@@ -1,0 +1,28 @@
+[package]
+name = "grovedb-ffi"
+version = "3.0.0"
+edition = "2021"
+license = "MIT"
+description = "C FFI bindings for GroveDB"
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+grovedb = { version = "3.0.0", path = "../grovedb", features = ["full", "estimated_costs"] }
+grovedb-version = { version = "3.0.0", path = "../grovedb-version" }
+grovedb-path = { version = "3.0.0", path = "../path" }
+grovedb-merk = { version = "3.0.0", path = "../merk" }
+grovedb-costs = { version = "3.0.0", path = "../costs" }
+libc = "0.2"
+once_cell = "1.19"
+
+[build-dependencies]
+cbindgen = "0.26"
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+default = ["full"]
+full = ["grovedb/full"]

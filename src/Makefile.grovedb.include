@@ -1,0 +1,48 @@
+# Copyright (c) 2024 Dash Core Developers
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+# GroveDB build integration
+# Builds the Rust FFI library and provides include/link paths
+
+GROVEDB_DIST_DIR = $(srcdir)/grovedb
+
+# Include paths for C and C++ headers (-isystem suppresses warnings from external code)
+GROVEDB_CPPFLAGS = -isystem$(GROVEDB_DIST_DIR)/grovedb-ffi/include
+GROVEDB_CPPFLAGS += -isystem$(GROVEDB_DIST_DIR)/grovedb-cpp/include
+
+# Rust build configuration
+CARGO ?= cargo
+CARGO_BUILD_FLAGS = --release -p grovedb-ffi
+
+# Library output path (native builds)
+GROVEDB_TARGET_DIR = $(GROVEDB_DIST_DIR)/target/release
+
+# Platform-specific library name and link flags
+if TARGET_DARWIN
+GROVEDB_LIB = $(GROVEDB_TARGET_DIR)/libgrovedb_ffi.a
+GROVEDB_LDFLAGS = -framework Security -framework CoreFoundation -lpthread -liconv
+endif
+
+if TARGET_WINDOWS
+GROVEDB_LIB = $(GROVEDB_TARGET_DIR)/grovedb_ffi.lib
+GROVEDB_LDFLAGS = -lbcrypt -lntdll -lws2_32 -luserenv -lcrypt32
+endif
+
+if TARGET_LINUX
+GROVEDB_LIB = $(GROVEDB_TARGET_DIR)/libgrovedb_ffi.a
+GROVEDB_LDFLAGS = -lpthread -ldl -lm
+endif
+
+# Build rule for the FFI library
+$(GROVEDB_LIB):
+	@echo "Building GroveDB FFI library..."
+	cd $(GROVEDB_DIST_DIR) && \
+	CARGO_TARGET_DIR=$(abs_srcdir)/grovedb/target \
+	$(CARGO) build $(CARGO_BUILD_FLAGS)
+
+# Clean rule
+clean-grovedb:
+	rm -rf $(GROVEDB_DIST_DIR)/target
+
+.PHONY: clean-grovedb
