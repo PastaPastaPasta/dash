@@ -37,6 +37,14 @@ jobs:
             echo "skip=false" >> $GITHUB_OUTPUT
           fi
 
+  show-cpu-info:
+    name: Show CPU information
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Show CPU
+        run: |
+          lscpu | egrep 'Model name|MHz|CPU max MHz'
+
   cache-sources:
     name: Cache depends sources
     needs: [check-skip]
