@@ -2,3 +2,4 @@ src/clientversion.cpp export-subst
 
 # Makefiles require tabs for recipe indentation
 *.am whitespace=-indent-with-non-tab
+*.include whitespace=-tab-in-indent

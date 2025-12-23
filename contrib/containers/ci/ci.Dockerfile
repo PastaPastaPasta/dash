@@ -83,6 +83,8 @@ RUN set -ex; \
     rm -rf /opt/cargo/registry/cache
 
 # Add cross-compilation targets for all supported platforms
+# Note: macOS cross-compilation requires passing CC/linker from the depends system
+# via environment variables at build time (handled in Makefile.grovedb.include)
 RUN set -ex; \
     rustup target add \
         x86_64-unknown-linux-gnu \
@@ -93,7 +95,9 @@ RUN set -ex; \
         x86_64-apple-darwin \
         aarch64-apple-darwin
 
-# Configure cargo for cross-compilation linkers
+# Configure cargo for cross-compilation linkers (Linux/Windows only)
+# macOS linkers are configured dynamically via Makefile.grovedb.include
+# since they come from the depends/ build system
 RUN set -ex; \
     printf '%s\n' \
         '[target.x86_64-pc-windows-gnu]' \
@@ -104,12 +108,6 @@ RUN set -ex; \
         '' \
         '[target.armv7-unknown-linux-gnueabihf]' \
         'linker = "arm-linux-gnueabihf-gcc"' \
-        '' \
-        '[target.x86_64-apple-darwin]' \
-        'linker = "x86_64-apple-darwin-clang"' \
-        '' \
-        '[target.aarch64-apple-darwin]' \
-        'linker = "aarch64-apple-darwin-clang"' \
         > /opt/cargo/config.toml
 
 # Verify Rust installation

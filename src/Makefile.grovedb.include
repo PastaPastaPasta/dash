@@ -20,6 +20,9 @@ CARGO_BUILD_FLAGS = --release -p grovedb-ffi
 if HAVE_RUST_TARGET
 CARGO_BUILD_FLAGS += --target $(RUST_TARGET)
 GROVEDB_TARGET_DIR = $(GROVEDB_DIST_DIR)/target/$(RUST_TARGET)/release
+# Convert RUST_TARGET to underscored form for environment variables
+# e.g., x86_64-apple-darwin -> x86_64_apple_darwin
+RUST_TARGET_UNDERSCORED = $(subst -,_,$(RUST_TARGET))
 else
 GROVEDB_TARGET_DIR = $(GROVEDB_DIST_DIR)/target/release
 endif
@@ -40,15 +43,27 @@ GROVEDB_LIB = $(GROVEDB_TARGET_DIR)/libgrovedb_ffi.a
 GROVEDB_LDFLAGS = -lpthread -ldl -lm
 endif
 
+# Cross-compilation environment for cargo
+# The cc crate (used by lz4-sys, zstd-sys, etc.) looks for CC_<target> and CFLAGS_<target>
+# We pass the cross-compiler from the depends/ build system via these variables
+if HAVE_RUST_TARGET
+# Generate cargo config for linker and set CC/CFLAGS for the cc crate
+GROVEDB_CARGO_CONFIG_SETUP = mkdir -p $(GROVEDB_DIST_DIR)/.cargo && printf '[target.%s]\nlinker = "%s"\n' "$(RUST_TARGET)" "$(CC)" > $(GROVEDB_DIST_DIR)/.cargo/config.toml
+
+GROVEDB_CARGO_ENV = CC_$(RUST_TARGET_UNDERSCORED)="$(CC)" CXX_$(RUST_TARGET_UNDERSCORED)="$(CXX)" AR_$(RUST_TARGET_UNDERSCORED)="$(AR)" CFLAGS_$(RUST_TARGET_UNDERSCORED)="$(CFLAGS)" CXXFLAGS_$(RUST_TARGET_UNDERSCORED)="$(CXXFLAGS)"
+else
+GROVEDB_CARGO_CONFIG_SETUP = true
+GROVEDB_CARGO_ENV =
+endif
+
 # Build rule for the FFI library
 $(GROVEDB_LIB):
 	@echo "Building GroveDB FFI library..."
-	cd $(GROVEDB_DIST_DIR) && \
-	CARGO_TARGET_DIR=$(abs_srcdir)/grovedb/target \
-	$(CARGO) build $(CARGO_BUILD_FLAGS)
+	@$(GROVEDB_CARGO_CONFIG_SETUP)
+	cd $(GROVEDB_DIST_DIR) && $(GROVEDB_CARGO_ENV) CARGO_TARGET_DIR=$(abs_srcdir)/grovedb/target $(CARGO) build $(CARGO_BUILD_FLAGS)
 
 # Clean rule
 clean-grovedb:
-	rm -rf $(GROVEDB_DIST_DIR)/target
+	rm -rf $(GROVEDB_DIST_DIR)/target $(GROVEDB_DIST_DIR)/.cargo
 
 .PHONY: clean-grovedb
