@@ -31,6 +31,13 @@ RUN set -ex; \
     zip \
     && rm -rf /var/lib/apt/lists/*
 
+# Configure MinGW to use POSIX threading model (required for std::condition_variable)
+# RocksDB (used by GroveDB) needs POSIX threads for condition variables.
+# The win32 threading model lacks __gthread_cond_t support.
+RUN set -ex; \
+    update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix; \
+    update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
+
 # Install Clang + LLVM and set it as default
 RUN set -ex; \
     apt-get update && apt-get install ${APT_ARGS} \
