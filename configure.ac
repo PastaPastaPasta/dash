@@ -132,7 +132,7 @@ if test -z "$CARGO"; then
   AC_MSG_ERROR([cargo is required to build GroveDB. Install Rust from https://rustup.rs/])
 fi
 
-dnl Check Rust version (1.74+ required for GroveDB)
+dnl Check Rust version (1.82+ required for GroveDB dependencies)
 AC_MSG_CHECKING([Rust version])
 RUST_VERSION=`$CARGO --version 2>&1 | head -n 1 | cut -d' ' -f2`
 if test -z "$RUST_VERSION"; then
@@ -143,8 +143,8 @@ AC_MSG_RESULT([$RUST_VERSION])
 dnl Extract major.minor for version check
 RUST_MAJOR=`echo $RUST_VERSION | cut -d. -f1`
 RUST_MINOR=`echo $RUST_VERSION | cut -d. -f2`
-if test "$RUST_MAJOR" -lt 1 2>/dev/null || { test "$RUST_MAJOR" -eq 1 2>/dev/null && test "$RUST_MINOR" -lt 74 2>/dev/null; }; then
-  AC_MSG_ERROR([Rust 1.74 or later is required for GroveDB. Found $RUST_VERSION])
+if test "$RUST_MAJOR" -lt 1 2>/dev/null || { test "$RUST_MAJOR" -eq 1 2>/dev/null && test "$RUST_MINOR" -lt 82 2>/dev/null; }; then
+  AC_MSG_ERROR([Rust 1.82 or later is required for GroveDB. Found $RUST_VERSION])
 fi
 AC_SUBST([CARGO])
 AC_SUBST([RUST_VERSION])

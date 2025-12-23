@@ -66,17 +66,21 @@ RUN set -ex; \
     cd /opt && rm -rf /opt/iwyu;
 
 # ===========================================================================
-# Rust toolchain for GroveDB
+# Rust toolchain for GroveDB (requires Rust 1.82+ for dependencies)
 # ===========================================================================
+
+# Install Rust to a shared location accessible by all users
+ENV RUSTUP_HOME=/opt/rustup
+ENV CARGO_HOME=/opt/cargo
+ENV PATH="/opt/cargo/bin:${PATH}"
 
 # Install Rust via rustup (stable toolchain, minimal profile)
 RUN set -ex; \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
         --default-toolchain stable \
         --profile minimal; \
-    rm -rf /root/.cargo/registry/cache
-
-ENV PATH="/root/.cargo/bin:${PATH}"
+    chmod -R a+rX /opt/rustup /opt/cargo; \
+    rm -rf /opt/cargo/registry/cache
 
 # Add cross-compilation targets for all supported platforms
 RUN set -ex; \
@@ -89,7 +93,6 @@ RUN set -ex; \
 
 # Configure cargo for cross-compilation linkers
 RUN set -ex; \
-    mkdir -p /root/.cargo; \
     printf '%s\n' \
         '[target.x86_64-pc-windows-gnu]' \
         'linker = "x86_64-w64-mingw32-gcc"' \
@@ -99,7 +102,7 @@ RUN set -ex; \
         '' \
         '[target.armv7-unknown-linux-gnueabihf]' \
         'linker = "arm-linux-gnueabihf-gcc"' \
-        > /root/.cargo/config.toml
+        > /opt/cargo/config.toml
 
 # Verify Rust installation
 RUN cargo --version && rustc --version
