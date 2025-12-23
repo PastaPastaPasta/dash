@@ -89,7 +89,9 @@ RUN set -ex; \
         aarch64-unknown-linux-gnu \
         armv7-unknown-linux-gnueabihf \
         x86_64-pc-windows-gnu \
-        i686-pc-windows-gnu
+        i686-pc-windows-gnu \
+        x86_64-apple-darwin \
+        aarch64-apple-darwin
 
 # Configure cargo for cross-compilation linkers
 RUN set -ex; \
@@ -102,6 +104,12 @@ RUN set -ex; \
         '' \
         '[target.armv7-unknown-linux-gnueabihf]' \
         'linker = "arm-linux-gnueabihf-gcc"' \
+        '' \
+        '[target.x86_64-apple-darwin]' \
+        'linker = "x86_64-apple-darwin-clang"' \
+        '' \
+        '[target.aarch64-apple-darwin]' \
+        'linker = "aarch64-apple-darwin-clang"' \
         > /opt/cargo/config.toml
 
 # Verify Rust installation
