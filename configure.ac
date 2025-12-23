@@ -90,11 +90,6 @@ case $host in
 esac
 
 dnl Require C++20 compiler (no GNU extensions)
-dnl Strip any -std= flags from CXXFLAGS before testing, as AX_CXX_COMPILE_STDCXX
-dnl will set the appropriate standard flag. This prevents conflicts when CXXFLAGS
-dnl is pre-set by the depends system with -std=c++20 (which would override the
-dnl -std=c++11 test flag and cause char8_t compatibility issues).
-CXXFLAGS=$(echo "$CXXFLAGS" | sed 's/-std=[[^[:space:]]]*//g')
 AX_CXX_COMPILE_STDCXX([20], [noext], [mandatory])
 
 dnl Unless the user specified OBJCXX, force it to be the same as CXX. This ensures
