@@ -1195,11 +1195,13 @@ CLEANFILES += obj/build.h
 
 IMMER_DIST = immer/immer
 LIBDASHBLS_DIST = dashbls
+GROVEDB_DIST = grovedb
 
 EXTRA_DIST = \
   $(CTAES_DIST)   \
   $(IMMER_DIST)   \
-  $(LIBDASHBLS_DIST)
+  $(LIBDASHBLS_DIST) \
+  $(GROVEDB_DIST)
 
 config/bitcoin-config.h: config/stamp-h1
 	@$(MAKE) -C $(top_builddir) $(subdir)/$(@)
