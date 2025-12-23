@@ -13,6 +13,7 @@ import re
 from subprocess import check_output, CalledProcessError
 
 EXCLUDED_DIRS = ["src/crc32c/",
+                 "src/grovedb/",
                  "src/secp256k1/"]
 
 
