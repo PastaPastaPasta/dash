@@ -15,8 +15,14 @@ GROVEDB_CPPFLAGS += -isystem$(GROVEDB_DIST_DIR)/grovedb-cpp/include
 CARGO ?= cargo
 CARGO_BUILD_FLAGS = --release -p grovedb-ffi
 
-# Library output path (native builds)
+# Cross-compilation: Map host triplet to Rust target
+# RUST_TARGET is set by configure.ac based on --host
+if HAVE_RUST_TARGET
+CARGO_BUILD_FLAGS += --target $(RUST_TARGET)
+GROVEDB_TARGET_DIR = $(GROVEDB_DIST_DIR)/target/$(RUST_TARGET)/release
+else
 GROVEDB_TARGET_DIR = $(GROVEDB_DIST_DIR)/target/release
+endif
 
 # Platform-specific library name and link flags
 if TARGET_DARWIN

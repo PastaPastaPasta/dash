@@ -146,8 +146,25 @@ RUST_MINOR=`echo $RUST_VERSION | cut -d. -f2`
 if test "$RUST_MAJOR" -lt 1 2>/dev/null || { test "$RUST_MAJOR" -eq 1 2>/dev/null && test "$RUST_MINOR" -lt 82 2>/dev/null; }; then
   AC_MSG_ERROR([Rust 1.82 or later is required for GroveDB. Found $RUST_VERSION])
 fi
+
+dnl Map host triplet to Rust target for cross-compilation
+RUST_TARGET=""
+case $host in
+  arm-*-linux-gnueabihf)     RUST_TARGET="armv7-unknown-linux-gnueabihf" ;;
+  aarch64-*-linux-*)         RUST_TARGET="aarch64-unknown-linux-gnu" ;;
+  x86_64-*-linux-*)          RUST_TARGET="x86_64-unknown-linux-gnu" ;;
+  x86_64-*-mingw* | x86_64-*-windows*) RUST_TARGET="x86_64-pc-windows-gnu" ;;
+  i?86-*-mingw* | i?86-*-windows*)     RUST_TARGET="i686-pc-windows-gnu" ;;
+  x86_64-apple-darwin*)      RUST_TARGET="x86_64-apple-darwin" ;;
+  aarch64-apple-darwin* | arm64-apple-darwin*) RUST_TARGET="aarch64-apple-darwin" ;;
+esac
+if test -n "$RUST_TARGET"; then
+  AC_MSG_NOTICE([Rust cross-compilation target: $RUST_TARGET])
+fi
 AC_SUBST([CARGO])
 AC_SUBST([RUST_VERSION])
+AC_SUBST([RUST_TARGET])
+AM_CONDITIONAL([HAVE_RUST_TARGET], [test -n "$RUST_TARGET"])
 
 AC_ARG_ENABLE([wallet],
   [AS_HELP_STRING([--disable-wallet],
