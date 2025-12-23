@@ -127,32 +127,27 @@ AM_CONDITIONAL([HAVE_DOXYGEN], [test -n "$DOXYGEN"])
 dnl =====================================================================
 dnl GroveDB requires Rust toolchain (mandatory)
 dnl =====================================================================
-AC_MSG_CHECKING([for cargo (Rust package manager)])
 AC_PATH_PROG([CARGO], [cargo], [])
 if test -z "$CARGO"; then
-  AC_MSG_RESULT([no])
   AC_MSG_ERROR([cargo is required to build GroveDB. Install Rust from https://rustup.rs/])
-else
-  AC_MSG_RESULT([$CARGO])
 fi
 
 dnl Check Rust version (1.74+ required for GroveDB)
 AC_MSG_CHECKING([Rust version])
-RUST_VERSION=$($CARGO --version 2>/dev/null | cut -d' ' -f2)
+RUST_VERSION=`$CARGO --version 2>&1 | head -n 1 | cut -d' ' -f2`
 if test -z "$RUST_VERSION"; then
   AC_MSG_RESULT([unknown])
   AC_MSG_ERROR([Could not determine Rust version. Ensure cargo is correctly installed.])
-else
-  AC_MSG_RESULT([$RUST_VERSION])
-  dnl Extract major.minor for version check
-  RUST_MAJOR=`echo $RUST_VERSION | cut -d. -f1`
-  RUST_MINOR=`echo $RUST_VERSION | cut -d. -f2`
-  if test "$RUST_MAJOR" -lt 1 2>/dev/null || { test "$RUST_MAJOR" -eq 1 2>/dev/null && test "$RUST_MINOR" -lt 74 2>/dev/null; }; then
-    AC_MSG_ERROR([Rust 1.74 or later is required for GroveDB. Found $RUST_VERSION])
-  fi
 fi
-AC_SUBST(CARGO)
-AC_SUBST(RUST_VERSION)
+AC_MSG_RESULT([$RUST_VERSION])
+dnl Extract major.minor for version check
+RUST_MAJOR=`echo $RUST_VERSION | cut -d. -f1`
+RUST_MINOR=`echo $RUST_VERSION | cut -d. -f2`
+if test "$RUST_MAJOR" -lt 1 2>/dev/null || { test "$RUST_MAJOR" -eq 1 2>/dev/null && test "$RUST_MINOR" -lt 74 2>/dev/null; }; then
+  AC_MSG_ERROR([Rust 1.74 or later is required for GroveDB. Found $RUST_VERSION])
+fi
+AC_SUBST([CARGO])
+AC_SUBST([RUST_VERSION])
 
 AC_ARG_ENABLE([wallet],
   [AS_HELP_STRING([--disable-wallet],
