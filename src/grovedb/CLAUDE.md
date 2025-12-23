@@ -46,7 +46,6 @@ GroveDB is a hierarchical authenticated data structure optimized for efficient s
 - **grovedb-version** - Versioning types (`GroveVersion`)
 - **visualize** - Visualization trait implementations
 - **grovedbg-types** - Types for the debugger tool
-- **node-grove** - Node.js bindings
 
 ### Core Concepts
 

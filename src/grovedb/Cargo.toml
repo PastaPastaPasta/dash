@@ -6,7 +6,6 @@ members = [
     "grovedb",
     "grovedb-ffi",
     "merk",
-    "node-grove",
     "storage",
     "visualize",
     "path",
