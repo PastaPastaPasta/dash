@@ -48,7 +48,10 @@ endif
 # We pass the cross-compiler from the depends/ build system via these variables
 if HAVE_RUST_TARGET
 # Generate cargo config for linker and set CC/CFLAGS for the cc crate
-GROVEDB_CARGO_CONFIG_SETUP = mkdir -p $(GROVEDB_DIST_DIR)/.cargo && printf '[target.%s]\nlinker = "%s"\n' "$(RUST_TARGET)" "$(CC)" > $(GROVEDB_DIST_DIR)/.cargo/config.toml
+# Note: CC may include "ccache" prefix (e.g., "ccache arm-linux-gnueabihf-gcc").
+# The cc crate handles this fine, but cargo's linker config needs just the compiler path.
+# We use awk to extract the actual compiler: if first word is "ccache", use second word.
+GROVEDB_CARGO_CONFIG_SETUP = mkdir -p $(GROVEDB_DIST_DIR)/.cargo && linker=$$(echo "$(CC)" | awk '{if ($$1 == "ccache") print $$2; else print $$1}') && printf '[target.%s]\nlinker = "%s"\n' "$(RUST_TARGET)" "$$linker" > $(GROVEDB_DIST_DIR)/.cargo/config.toml
 
 GROVEDB_CARGO_ENV = CC_$(RUST_TARGET_UNDERSCORED)="$(CC)" CXX_$(RUST_TARGET_UNDERSCORED)="$(CXX)" AR_$(RUST_TARGET_UNDERSCORED)="$(AR)" CFLAGS_$(RUST_TARGET_UNDERSCORED)="$(CFLAGS)" CXXFLAGS_$(RUST_TARGET_UNDERSCORED)="$(CXXFLAGS)"
 else
