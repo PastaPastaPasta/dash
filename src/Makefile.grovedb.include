@@ -34,7 +34,8 @@ GROVEDB_LDFLAGS = -framework Security -framework CoreFoundation -lpthread -licon
 endif
 
 if TARGET_WINDOWS
-GROVEDB_LIB = $(GROVEDB_TARGET_DIR)/grovedb_ffi.lib
+# Note: Using GNU toolchain (mingw), so library is libXXX.a, not XXX.lib (MSVC style)
+GROVEDB_LIB = $(GROVEDB_TARGET_DIR)/libgrovedb_ffi.a
 GROVEDB_LDFLAGS = -lbcrypt -lntdll -lws2_32 -luserenv -lcrypt32
 endif
 
@@ -53,7 +54,12 @@ if HAVE_RUST_TARGET
 # We use awk to extract the actual compiler: if first word contains "ccache", use second word.
 GROVEDB_CARGO_CONFIG_SETUP = mkdir -p $(GROVEDB_DIST_DIR)/.cargo && linker=$$(echo "$(CC)" | awk '{if ($$1 ~ /ccache/) print $$2; else print $$1}') && printf '[target.%s]\nlinker = "%s"\n' "$(RUST_TARGET)" "$$linker" > $(GROVEDB_DIST_DIR)/.cargo/config.toml
 
+# Base environment for cc crate
 GROVEDB_CARGO_ENV = CC_$(RUST_TARGET_UNDERSCORED)="$(CC)" CXX_$(RUST_TARGET_UNDERSCORED)="$(CXX)" AR_$(RUST_TARGET_UNDERSCORED)="$(AR)" CFLAGS_$(RUST_TARGET_UNDERSCORED)="$(CFLAGS)" CXXFLAGS_$(RUST_TARGET_UNDERSCORED)="$(CXXFLAGS)"
+
+# Bindgen needs extra clang args for cross-compilation (esp. for macOS sysroot)
+# Pass target and any sysroot/include flags from CFLAGS to bindgen
+GROVEDB_CARGO_ENV += BINDGEN_EXTRA_CLANG_ARGS_$(RUST_TARGET_UNDERSCORED)="--target=$(RUST_TARGET) $(CFLAGS)"
 else
 GROVEDB_CARGO_CONFIG_SETUP = true
 GROVEDB_CARGO_ENV =
