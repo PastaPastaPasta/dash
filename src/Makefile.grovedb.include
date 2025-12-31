@@ -58,8 +58,11 @@ GROVEDB_CARGO_CONFIG_SETUP = mkdir -p $(GROVEDB_DIST_DIR)/.cargo && linker=$$(ec
 GROVEDB_CARGO_ENV = CC_$(RUST_TARGET_UNDERSCORED)="$(CC)" CXX_$(RUST_TARGET_UNDERSCORED)="$(CXX)" AR_$(RUST_TARGET_UNDERSCORED)="$(AR)" CFLAGS_$(RUST_TARGET_UNDERSCORED)="$(CFLAGS)" CXXFLAGS_$(RUST_TARGET_UNDERSCORED)="$(CXXFLAGS)"
 
 # Bindgen needs extra clang args for cross-compilation (esp. for macOS sysroot)
-# Pass target and any sysroot/include flags from CFLAGS to bindgen
-GROVEDB_CARGO_ENV += BINDGEN_EXTRA_CLANG_ARGS_$(RUST_TARGET_UNDERSCORED)="--target=$(RUST_TARGET) $(CFLAGS)"
+# The sysroot flags (-isysroot, -iwithsysroot, etc.) are in CC, not CFLAGS.
+# Extract flags from CC: skip ccache (if present) and compiler path, keep the rest.
+# awk: if $1 contains ccache, start from $3; else start from $2
+GROVEDB_BINDGEN_FLAGS = $(shell echo "$(CC)" | awk '{if ($$1 ~ /ccache/) {for(i=3;i<=NF;i++) printf "%s ", $$i} else {for(i=2;i<=NF;i++) printf "%s ", $$i}}')
+GROVEDB_CARGO_ENV += BINDGEN_EXTRA_CLANG_ARGS_$(RUST_TARGET_UNDERSCORED)="$(GROVEDB_BINDGEN_FLAGS) $(CFLAGS)"
 else
 GROVEDB_CARGO_CONFIG_SETUP = true
 GROVEDB_CARGO_ENV =
