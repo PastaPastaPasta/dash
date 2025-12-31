@@ -48,11 +48,17 @@ endif
 # The cc crate (used by lz4-sys, zstd-sys, etc.) looks for CC_<target> and CFLAGS_<target>
 # We pass the cross-compiler from the depends/ build system via these variables
 if HAVE_RUST_TARGET
-# Generate cargo config for linker and set CC/CFLAGS for the cc crate
-# Note: CC may include ccache (e.g., "/usr/bin/ccache gcc -m64" or "ccache gcc").
-# The cc crate handles this fine, but cargo's linker config needs just the compiler path.
-# We use awk to extract the actual compiler: if first word contains "ccache", use second word.
-GROVEDB_CARGO_CONFIG_SETUP = mkdir -p $(GROVEDB_DIST_DIR)/.cargo && linker=$$(echo "$(CC)" | awk '{if ($$1 ~ /ccache/) print $$2; else print $$1}') && printf '[target.%s]\nlinker = "%s"\n' "$(RUST_TARGET)" "$$linker" > $(GROVEDB_DIST_DIR)/.cargo/config.toml
+# For the linker, we need the full CC command (with --target, -isysroot, etc.), not just
+# the compiler path. Create a wrapper script that invokes CC with all its flags.
+# Strip ccache if present since it's not needed for linking.
+GROVEDB_CC_WITHOUT_CCACHE = $(shell echo "$(CC)" | awk '{if ($$1 ~ /ccache/) {for(i=2;i<=NF;i++) printf "%s ", $$i} else {print}}')
+
+# Create wrapper script and cargo config
+GROVEDB_CARGO_CONFIG_SETUP = mkdir -p $(GROVEDB_DIST_DIR)/.cargo && \
+	wrapper=$(GROVEDB_DIST_DIR)/.cargo/linker-wrapper.sh && \
+	printf '%s\n' '#!/bin/sh' 'exec $(GROVEDB_CC_WITHOUT_CCACHE) "$$@"' > $$wrapper && \
+	chmod +x $$wrapper && \
+	printf '[target.%s]\nlinker = "%s"\n' "$(RUST_TARGET)" "$$wrapper" > $(GROVEDB_DIST_DIR)/.cargo/config.toml
 
 # Base environment for cc crate
 GROVEDB_CARGO_ENV = CC_$(RUST_TARGET_UNDERSCORED)="$(CC)" CXX_$(RUST_TARGET_UNDERSCORED)="$(CXX)" AR_$(RUST_TARGET_UNDERSCORED)="$(AR)" CFLAGS_$(RUST_TARGET_UNDERSCORED)="$(CFLAGS)" CXXFLAGS_$(RUST_TARGET_UNDERSCORED)="$(CXXFLAGS)"
