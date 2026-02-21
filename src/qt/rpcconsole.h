@@ -98,6 +98,7 @@ protected:
 private Q_SLOTS:
     /** custom tab buttons clicked */
     void showPage(int index);
+    void showInfoView(int index);
     void on_lineEdit_returnPressed();
     void on_stackedWidgetRPC_currentChanged(int index);
     /** open the debug.log from the current datadir */
@@ -192,6 +193,7 @@ private:
     ClientModel *clientModel = nullptr;
     WalletController* m_wallet_controller{nullptr};
     QButtonGroup* pageButtons = nullptr;
+    QButtonGroup* infoViewButtons = nullptr;
     QStringList history;
     int historyPtr = 0;
     QString cmdBeforeBrowsing;

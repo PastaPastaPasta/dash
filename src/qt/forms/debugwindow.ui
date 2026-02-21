@@ -102,7 +102,47 @@
       <number>0</number>
      </property>
      <widget class="QWidget" name="pageInfo">
-      <layout class="QVBoxLayout" name="verticalLayoutInfo">
+     <layout class="QVBoxLayout" name="verticalLayoutInfo">
+       <item>
+        <layout class="QHBoxLayout" name="horizontalLayoutInfoTabs">
+         <property name="spacing">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="QPushButton" name="btnInfoGeneral">
+           <property name="text">
+            <string>&amp;General</string>
+           </property>
+           <property name="checkable">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="btnInfoNetwork">
+           <property name="text">
+            <string>&amp;Network</string>
+           </property>
+           <property name="checkable">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="horizontalSpacerInfoTabs">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+        </layout>
+       </item>
        <item>
         <widget class="QStackedWidget" name="stackedWidgetInfo">
          <property name="currentIndex">
@@ -114,13 +154,6 @@
        </item>
        <item>
         <layout class="QHBoxLayout" name="horizontalLayoutInfoFooter">
-         <item>
-          <widget class="QComboBox" name="comboBoxViewSelector">
-           <property name="sizeAdjustPolicy">
-            <enum>QComboBox::AdjustToContents</enum>
-           </property>
-          </widget>
-         </item>
          <item>
           <spacer name="horizontalSpacerInfoFooter">
            <property name="orientation">

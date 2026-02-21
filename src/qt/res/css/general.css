@@ -624,6 +624,8 @@ QPushButton - Special case, tabbar replacement buttons
 #btnNetTraffic,
 #btnPeers,
 #btnRepair,
+#btnInfoGeneral,
+#btnInfoNetwork,
 /* Options dialog buttons */
 #btnMain,
 #btnWallet,
@@ -647,6 +649,8 @@ QPushButton - Special case, tabbar replacement buttons
 #btnNetTraffic:hover:checked,
 #btnPeers:hover:checked,
 #btnRepair:hover:checked,
+#btnInfoGeneral:hover:checked,
+#btnInfoNetwork:hover:checked,
 /* Options dialog buttons */
 #btnMain:hover:checked,
 #btnWallet:hover:checked,
@@ -670,6 +674,8 @@ QPushButton - Special case, tabbar replacement buttons
 #btnNetTraffic:hover:!checked,
 #btnPeers:hover:!checked,
 #btnRepair:hover:!checked,
+#btnInfoGeneral:hover:!checked,
+#btnInfoNetwork:hover:!checked,
 /* Options dialog buttons */
 #btnMain:hover:!checked,
 #btnWallet:hover:!checked,
@@ -693,6 +699,8 @@ QPushButton - Special case, tabbar replacement buttons
 #btnNetwork:checked,
 #btnPeers:checked,
 #btnRepair:checked,
+#btnInfoGeneral:checked,
+#btnInfoNetwork:checked,
 /* Options dialog buttons */
 #btnMain:checked,
 #btnWallet:checked,
@@ -715,6 +723,8 @@ QPushButton - Special case, tabbar replacement buttons
 #btnShowConsole:hover:pressed,
 #btnShowNetwork:hover:pressed,
 #btnShowPeers:hover:pressed,
+#btnInfoGeneral:hover:pressed,
+#btnInfoNetwork:hover:pressed,
 /* Options dialog buttons */
 #btnMain:hover:pressed,
 #btnWallet:hover:pressed,

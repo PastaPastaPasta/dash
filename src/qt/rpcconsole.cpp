@@ -72,6 +72,7 @@ using wallet::GetWalletDir;
 const int CONSOLE_HISTORY = 50;
 const QSize FONT_RANGE(4, 40);
 const char fontSizeSettingsKey[] = "consoleFontSize";
+const char rpcConsoleInfoViewSettingsKey[] = "RPCConsoleInfoView";
 
 const TrafficGraphData::GraphRange INITIAL_TRAFFIC_GRAPH_SETTING = TrafficGraphData::Range_30m;
 
@@ -564,16 +565,9 @@ RPCConsole::RPCConsole(interfaces::Node& node, QWidget* parent, Qt::WindowFlags 
     ui->messagesWidget->installEventFilter(this);
 
     connect(ui->clearButton, &QAbstractButton::clicked, [this] { clear(); });
-    connect(ui->comboBoxViewSelector, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int index) {
-        ui->stackedWidgetInfo->setCurrentIndex(ui->comboBoxViewSelector->itemData(index).toInt());
-    });
     connect(ui->fontBiggerButton, &QAbstractButton::clicked, this, &RPCConsole::fontBigger);
     connect(ui->fontSmallerButton, &QAbstractButton::clicked, this, &RPCConsole::fontSmaller);
     connect(ui->btnClearTrafficGraph, &QPushButton::clicked, ui->trafficGraph, &TrafficGraphWidget::clear);
-
-    // Populate entries
-    ui->comboBoxViewSelector->addItem(tr("General"), ToUnderlying(InfoView::General));
-    ui->comboBoxViewSelector->addItem(tr("Network"), ToUnderlying(InfoView::Network));
 
     // disable the wallet selector by default
     ui->WalletSelector->setVisible(false);
@@ -613,6 +607,16 @@ RPCConsole::RPCConsole(interfaces::Node& node, QWidget* parent, Qt::WindowFlags 
     connect(pageButtons, QOverload<int>::of(&QButtonGroup::buttonClicked), this, &RPCConsole::showPage);
 #endif
 
+    infoViewButtons = new QButtonGroup(this);
+    infoViewButtons->addButton(ui->btnInfoGeneral, ToUnderlying(InfoView::General));
+    infoViewButtons->addButton(ui->btnInfoNetwork, ToUnderlying(InfoView::Network));
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 15, 0))
+    connect(infoViewButtons, &QButtonGroup::idClicked, this, &RPCConsole::showInfoView);
+#else
+    connect(infoViewButtons, QOverload<int>::of(&QButtonGroup::buttonClicked), this, &RPCConsole::showInfoView);
+#endif
+
+    showInfoView(settings.value(rpcConsoleInfoViewSettingsKey, ToUnderlying(InfoView::General)).toInt());
     showPage(ToUnderlying(TabTypes::INFO));
 
     reloadThemedWidgets();
@@ -637,9 +641,13 @@ RPCConsole::~RPCConsole()
 
     settings.setValue("PeersTabPeerHeaderState", m_peer_widget_header_state);
     settings.setValue("PeersTabBanlistHeaderState", m_banlist_widget_header_state);
+    settings.setValue(rpcConsoleInfoViewSettingsKey, infoViewButtons && infoViewButtons->checkedId() != -1
+            ? infoViewButtons->checkedId()
+            : ToUnderlying(InfoView::General));
 
     m_node.rpcUnsetTimerInterface(rpcTimerInterface);
     delete rpcTimerInterface;
+    delete infoViewButtons;
     delete pageButtons;
     delete ui;
 }
@@ -1068,6 +1076,21 @@ void RPCConsole::showPage(int index)
 
     ui->stackedWidgetRPC->setCurrentIndex(index);
     btnActive->setChecked(true);
+}
+
+void RPCConsole::showInfoView(int index)
+{
+    const int general{ToUnderlying(InfoView::General)};
+    int selected{index};
+
+    if (selected < 0 || selected >= ui->stackedWidgetInfo->count() || !infoViewButtons->button(selected)) {
+        selected = general;
+    }
+
+    ui->stackedWidgetInfo->setCurrentIndex(selected);
+    if (QAbstractButton* const button{infoViewButtons->button(selected)}) {
+        button->setChecked(true);
+    }
 }
 
 void RPCConsole::on_lineEdit_returnPressed()
