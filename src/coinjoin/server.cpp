@@ -298,9 +298,12 @@ void CCoinJoinServer::CheckPool()
 
     // If we have an entry for each collateral, then create final tx
     if (nState == POOL_STATE_ACCEPTING_ENTRIES && size_t(GetEntriesCount()) == vecSessionCollaterals.size()) {
-        LogPrint(BCLog::COINJOIN, "CCoinJoinServer::CheckPool -- FINALIZE TRANSACTIONS\n");
-        CreateFinalTransaction();
-        return;
+        if (GetStandardEntriesCount() >= CoinJoin::GetMinPoolParticipants()) {
+            LogPrint(BCLog::COINJOIN, "CCoinJoinServer::CheckPool -- FINALIZE TRANSACTIONS\n");
+            CreateFinalTransaction();
+            return;
+        }
+        LogPrint(BCLog::COINJOIN, "CCoinJoinServer::CheckPool -- all entries received but insufficient standard mixers (%d), waiting for timeout\n", GetStandardEntriesCount());
     }
 
     // Check for Time Out
