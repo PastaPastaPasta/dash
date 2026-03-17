@@ -1209,6 +1209,10 @@ bool CCoinJoinClientSession::JoinExistingQueue(CAmount nBalanceNeedsAnonymized, 
                 const auto it = m_wallet->mapWallet.find(outpoint.hash);
                 if (it != m_wallet->mapWallet.end()) {
                     const wallet::CWalletTx& wtx = it->second;
+                    if (outpoint.n >= wtx.tx->vout.size()) {
+                        WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::JoinExistingQueue -- invalid outpoint index %u for tx %s\n", outpoint.n, outpoint.hash.ToString());
+                        continue;
+                    }
                     CTxDSIn txdsin(CTxIn(outpoint), wtx.tx->vout[outpoint.n].scriptPubKey,
                                    m_wallet->GetRealOutpointCoinJoinRounds(outpoint));
                     vecTxDSInTmp.push_back(txdsin);
@@ -1411,6 +1415,10 @@ bool CCoinJoinClientSession::StartNewQueue(CAmount nBalanceNeedsAnonymized, CCon
             const auto it = m_wallet->mapWallet.find(outpoint.hash);
             if (it != m_wallet->mapWallet.end()) {
                 const wallet::CWalletTx& wtx = it->second;
+                if (outpoint.n >= wtx.tx->vout.size()) {
+                    WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::StartNewQueue -- invalid outpoint index %u for tx %s\n", outpoint.n, outpoint.hash.ToString());
+                    continue;
+                }
                 CTxDSIn txdsin(CTxIn(outpoint), wtx.tx->vout[outpoint.n].scriptPubKey,
                                m_wallet->GetRealOutpointCoinJoinRounds(outpoint));
                 vecTxDSInTmp.push_back(txdsin);
