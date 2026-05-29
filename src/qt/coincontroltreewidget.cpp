@@ -49,26 +49,26 @@ static bool isLeafItem(QTreeWidgetItem* item)
     return item && item->data(COLUMN_ADDRESS, Qt::UserRole).toString().length() == 64;
 }
 
-static bool isCheckboxClick(QTreeWidget* tree, QTreeWidgetItem* item, const QPoint& pos)
+bool CoinControlTreeWidget::isCheckboxClick(QTreeWidgetItem* item, const QPoint& pos) const
 {
     int COLUMN_CHECKBOX = 0;
 
-    if (!tree || !item || tree->columnAt(pos.x()) != COLUMN_CHECKBOX) {
+    if (!item || columnAt(pos.x()) != COLUMN_CHECKBOX) {
         return false;
     }
 
-    const QModelIndex index = tree->indexFromItem(item, COLUMN_CHECKBOX);
+    const QModelIndex index = indexFromItem(item, COLUMN_CHECKBOX);
     if (!index.isValid()) {
         return false;
     }
 
     QStyleOptionViewItem option;
-    option.initFrom(tree);
-    option.rect = tree->visualRect(index);
+    option.initFrom(this);
+    option.rect = visualRect(index);
     option.features = QStyleOptionViewItem::HasCheckIndicator;
     option.checkState = item->checkState(COLUMN_CHECKBOX);
 
-    return tree->style()->subElementRect(QStyle::SE_ItemViewItemCheckIndicator, &option, tree).contains(pos);
+    return style()->subElementRect(QStyle::SE_ItemViewItemCheckIndicator, &option, this).contains(pos);
 }
 
 void CoinControlTreeWidget::mouseReleaseEvent(QMouseEvent *event)
@@ -76,7 +76,7 @@ void CoinControlTreeWidget::mouseReleaseEvent(QMouseEvent *event)
     int COLUMN_CHECKBOX = 0;
 
     QTreeWidgetItem* clickedItem = itemAt(event->pos());
-    const bool isCheckboxInteraction = isCheckboxClick(this, clickedItem, event->pos());
+    const bool isCheckboxInteraction = isCheckboxClick(clickedItem, event->pos());
 
     bool isShiftClick = (event->button() == Qt::LeftButton)
                         && (event->modifiers() & Qt::ShiftModifier)
