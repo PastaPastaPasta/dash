@@ -279,6 +279,15 @@ void NetDKG::ProcessMessage(CNode& pfrom, const std::string& msg_type, CDataStre
         return;
     }
 
+    // Pushed DKG messages (QCONTRIB/QCOMPLAINT/QJUSTIFICATION/QPCOMMITMENT) retain
+    // attacker-controlled payloads, so they must originate from an MNAuth-verified
+    // masternode. qwatch is unauthenticated (any peer can set it via QWATCH) and is
+    // only meaningful for pull/observation paths; it must not bypass this gate.
+    if (pfrom.GetVerifiedProRegTxHash().IsNull()) {
+        m_peer_manager->PeerMisbehaving(pfrom.GetId(), 10, "DKG message from non-verified peer");
+        return;
+    }
+
     if (vRecv.empty()) {
         m_peer_manager->PeerMisbehaving(pfrom.GetId(), 100);
         return;
