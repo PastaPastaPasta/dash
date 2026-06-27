@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <llmq/dkgsessionmgr.h>
+#include <llmq/dkgsession.h>
 #include <llmq/options.h>
 #include <llmq/params.h>
 #include <llmq/utils.h>
@@ -69,6 +70,42 @@ size_t MaxDKGMessageSize(std::string_view msg_type, const Consensus::LLMQParams&
     }
     cap += SLACK;
     return cap < HARD_CEILING ? cap : HARD_CEILING;
+}
+
+// Cheap, param-only structural validation of a pushed DKG message, run at intake
+// before retention. Deserializes a COPY of the payload (leaving the caller's bytes
+// intact for the pending queue and its inventory hash) and checks only invariants
+// derived from quorum params: no member-list lookup, no BLS point validation, and
+// no signature work, all of which remain on the DKG worker thread. Rejects
+// malformed or wrong-shaped payloads before they can be retained.
+bool CheckDKGMessageStructure(std::string_view msg_type, const CDataStream& vRecv, const Consensus::LLMQParams& params)
+{
+    const size_t size = params.size > 0 ? static_cast<size_t>(params.size) : 0;
+    const size_t threshold = params.threshold > 0 ? static_cast<size_t>(params.threshold) : 0;
+    try {
+        CDataStream s(vRecv); // copy; deserialization does not advance the caller's stream
+        if (msg_type == NetMsgType::QCONTRIB) {
+            CDKGContribution qc;
+            s >> qc;
+            return qc.vvec != nullptr && qc.vvec->size() == threshold &&
+                   qc.contributions != nullptr && qc.contributions->blobs.size() == size;
+        } else if (msg_type == NetMsgType::QCOMPLAINT) {
+            CDKGComplaint qc;
+            s >> qc;
+            return qc.badMembers.size() == size && qc.complainForMembers.size() == size;
+        } else if (msg_type == NetMsgType::QJUSTIFICATION) {
+            CDKGJustification qj;
+            s >> qj;
+            return qj.contributions.size() <= size;
+        } else if (msg_type == NetMsgType::QPCOMMITMENT) {
+            CDKGPrematureCommitment qc;
+            s >> qc;
+            return qc.validMembers.size() == size;
+        }
+        return false;
+    } catch (const std::exception&) {
+        return false;
+    }
 }
 } // anonymous namespace
 
@@ -221,6 +258,12 @@ MessageProcessingResult CDKGSessionManager::ProcessMessage(CNode& pfrom, bool is
     // amplification attempt against the per-peer pending queue (claude/F-014).
     if (vRecv.size() > MaxDKGMessageSize(msg_type, llmq_params)) {
         return MisbehavingError{100, "oversized DKG message"};
+    }
+
+    // Cheap structural pre-validation before retention. Validates a copy so the
+    // original bytes (and their inventory hash) are preserved for the worker.
+    if (!CheckDKGMessageStructure(msg_type, vRecv, llmq_params)) {
+        return MisbehavingError{100, "malformed DKG message"};
     }
 
     WITH_LOCK(cs_indexedQuorumsCache, indexedQuorumsCache[llmqType].insert(quorumHash, quorumIndex));
