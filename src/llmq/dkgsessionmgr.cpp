@@ -104,6 +104,14 @@ MessageProcessingResult CDKGSessionManager::ProcessMessage(CNode& pfrom, bool is
         return MisbehavingError{10};
     }
 
+    // Pushed DKG messages (QCONTRIB/QCOMPLAINT/QJUSTIFICATION/QPCOMMITMENT) retain
+    // attacker-controlled payloads, so they must originate from an MNAuth-verified
+    // masternode. qwatch is unauthenticated (any peer can set it via QWATCH) and is
+    // only meaningful for pull/observation paths; it must not bypass this gate.
+    if (pfrom.GetVerifiedProRegTxHash().IsNull()) {
+        return MisbehavingError{10, "DKG message from non-verified peer"};
+    }
+
     if (vRecv.empty()) {
         return MisbehavingError{100};
     }
