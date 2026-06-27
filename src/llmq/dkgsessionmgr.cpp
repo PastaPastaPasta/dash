@@ -29,6 +29,49 @@ static const std::string DB_VVEC = "qdkg_V";
 static const std::string DB_SKCONTRIB = "qdkg_S";
 static const std::string DB_ENC_CONTRIB = "qdkg_E";
 
+namespace {
+// Upper bound on the serialized size of a well-formed DKG message of the given
+// type for the given quorum params. Used to reject oversized payloads at intake
+// before any deserialization or retention, which closes the low-cost memory
+// amplification window (a legitimate message is bounded by quorum params, far
+// below the 3 MiB transport cap). Generous slack is added and the result is
+// clamped to a hard ceiling so a future params change can never silently re-open
+// the full transport window.
+size_t MaxDKGMessageSize(std::string_view msg_type, const Consensus::LLMQParams& params)
+{
+    constexpr size_t COMPACT = 5;          // max CompactSize for any realistic count
+    constexpr size_t PREFIX = 1 + 32 + 32; // llmqType + quorumHash + proTxHash
+    constexpr size_t PUBKEY = BLS_CURVE_PUBKEY_SIZE; // 48
+    constexpr size_t SIG = BLS_CURVE_SIG_SIZE;       // 96
+    constexpr size_t SECKEY = BLS_CURVE_SECKEY_SIZE; // 32
+    constexpr size_t BLOB = COMPACT + 128; // encrypted seckey blob, generous
+    constexpr size_t SLACK = 1024;
+    constexpr size_t HARD_CEILING = size_t{1} << 20; // 1 MiB
+
+    const size_t size = params.size > 0 ? static_cast<size_t>(params.size) : 0;
+    const size_t threshold = params.threshold > 0 ? static_cast<size_t>(params.threshold) : 0;
+
+    size_t cap = 0;
+    if (msg_type == NetMsgType::QCONTRIB) {
+        // llmqType/quorumHash/proTxHash + vvec + contributions(IES) + sig
+        cap = PREFIX + (COMPACT + threshold * PUBKEY) + (PUBKEY + 32 + COMPACT + size * BLOB) + SIG;
+    } else if (msg_type == NetMsgType::QJUSTIFICATION) {
+        // ... + contributions(index u32 + seckey) + sig
+        cap = PREFIX + (COMPACT + size * (4 + SECKEY)) + SIG;
+    } else if (msg_type == NetMsgType::QCOMPLAINT) {
+        // ... + 2 dynamic bitsets (badMembers, complainForMembers) + sig
+        cap = PREFIX + 2 * (COMPACT + (size + 7) / 8) + SIG;
+    } else if (msg_type == NetMsgType::QPCOMMITMENT) {
+        // ... + validMembers bitset + quorumPublicKey + quorumVvecHash + quorumSig + sig
+        cap = PREFIX + (COMPACT + (size + 7) / 8) + PUBKEY + 32 + 2 * SIG;
+    } else {
+        return HARD_CEILING;
+    }
+    cap += SLACK;
+    return cap < HARD_CEILING ? cap : HARD_CEILING;
+}
+} // anonymous namespace
+
 CDKGSessionManager::CDKGSessionManager(CDeterministicMNManager& dmnman, CQuorumSnapshotManager& qsnapman,
                                        const ChainstateManager& chainman, const CSporkManager& sporkman,
                                        const util::DbWrapperParams& db_params, bool quorums_watch) :
@@ -172,6 +215,14 @@ MessageProcessingResult CDKGSessionManager::ProcessMessage(CNode& pfrom, bool is
     }
 
     assert(quorumIndex != -1);
+
+    // Reject oversized payloads before any deserialization or retention. A
+    // well-formed DKG message is bounded by quorum params; anything larger is an
+    // amplification attempt against the per-peer pending queue (claude/F-014).
+    if (vRecv.size() > MaxDKGMessageSize(msg_type, llmq_params)) {
+        return MisbehavingError{100, "oversized DKG message"};
+    }
+
     WITH_LOCK(cs_indexedQuorumsCache, indexedQuorumsCache[llmqType].insert(quorumHash, quorumIndex));
     return Assert(dkgSessionHandlers.at({llmqType, quorumIndex}))->ProcessMessage(pfrom.GetId(), msg_type, vRecv);
 }
