@@ -75,6 +75,48 @@ size_t MaxDKGMessageSize(int inv_type, const Consensus::LLMQParams& params)
     return std::min(cap + SLACK, HARD_CEILING);
 }
 
+// Cheap, param-only structural validation of a pushed DKG message, run at intake
+// before retention. Deserializes a COPY of the payload (leaving the caller's bytes
+// intact for the pending queue and its inventory hash) and checks only invariants
+// derived from quorum params: no member-list lookup, no BLS point validation, and
+// no signature work, all of which remain on the DKG worker thread. Rejects
+// malformed or wrong-shaped payloads before they can be retained.
+bool CheckDKGMessageStructure(int inv_type, const CDataStream& vRecv, const Consensus::LLMQParams& params)
+{
+    const size_t size = static_cast<size_t>(std::max(0, params.size));
+    const size_t threshold = static_cast<size_t>(std::max(0, params.threshold));
+    try {
+        CDataStream s(vRecv); // copy; deserialization does not advance the caller's stream
+        switch (inv_type) {
+        case MSG_QUORUM_CONTRIB: {
+            CDKGContribution qc;
+            s >> qc;
+            return qc.vvec != nullptr && qc.vvec->size() == threshold &&
+                   qc.contributions != nullptr && qc.contributions->blobs.size() == size;
+        }
+        case MSG_QUORUM_COMPLAINT: {
+            CDKGComplaint qc;
+            s >> qc;
+            return qc.badMembers.size() == size && qc.complainForMembers.size() == size;
+        }
+        case MSG_QUORUM_JUSTIFICATION: {
+            CDKGJustification qj;
+            s >> qj;
+            return qj.contributions.size() <= size;
+        }
+        case MSG_QUORUM_PREMATURE_COMMITMENT: {
+            CDKGPrematureCommitment qc;
+            s >> qc;
+            return qc.validMembers.size() == size;
+        }
+        default:
+            return false;
+        }
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
 // returns a set of NodeIds which sent invalid messages
 template <typename Message>
 std::unordered_set<NodeId> BatchVerifyMessageSigs(CDKGSession& session,
@@ -403,6 +445,13 @@ void NetDKG::ProcessMessage(CNode& pfrom, const std::string& msg_type, CDataStre
     // amplification attempt against the per-peer pending queue (claude/F-014).
     if (vRecv.size() > MaxDKGMessageSize(inv_type, llmq_params)) {
         m_peer_manager->PeerMisbehaving(pfrom.GetId(), 100, "oversized DKG message");
+        return;
+    }
+
+    // Cheap structural pre-validation before retention. Validates a copy so the
+    // original bytes (and their inventory hash) are preserved for the worker.
+    if (!CheckDKGMessageStructure(inv_type, vRecv, llmq_params)) {
+        m_peer_manager->PeerMisbehaving(pfrom.GetId(), 100, "malformed DKG message");
         return;
     }
 
