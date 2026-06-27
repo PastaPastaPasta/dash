@@ -45,6 +45,13 @@ void CInstantSendManager::EnqueueInstantSendLock(NodeId from, const uint256& has
     }
 
     LOCK(cs_pendingLocks);
+    if (pendingInstantSendLocks.size() >= MAX_PENDING_INSTANTSEND_LOCKS) {
+        // Drop instead of growing the queue without bound. A peer cannot pin
+        // unbounded memory with unverified islocks; honest islocks are re-relayed.
+        LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- pending islock queue full (%d), dropping islock=%s peer=%d\n",
+                 __func__, pendingInstantSendLocks.size(), hash.ToString(), from);
+        return;
+    }
     pendingInstantSendLocks.emplace(hash, instantsend::PendingISLockFromPeer{from, std::move(islock)});
 }
 

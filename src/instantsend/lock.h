@@ -18,6 +18,13 @@ class COutPoint;
 namespace instantsend {
 struct InstantSendLock {
     static constexpr uint8_t CURRENT_VERSION{1};
+    // An islock mirrors the vin of the locked transaction. A consensus-valid Dash
+    // transaction must fit in a 2 MB block and each input is at least 41 bytes on
+    // the wire, so no valid transaction can have more than ~48,780 inputs. This
+    // ceiling can therefore never reject a valid islock, but it bounds the per-message
+    // hashing/dedup work and the size of each retained pending entry, preventing a
+    // ~3 MiB amplification per islock (codex/F-008, codex/F-028, codex/F-038).
+    static constexpr size_t MAX_INPUTS{50000};
 
     uint8_t nVersion{CURRENT_VERSION};
     std::vector<COutPoint> inputs;

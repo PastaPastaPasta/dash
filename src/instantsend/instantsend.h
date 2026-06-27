@@ -54,6 +54,13 @@ private:
     instantsend::CInstantSendDb db;
     CSporkManager& spork_manager;
 
+    // Hard ceiling on the number of unverified, peer-supplied InstantSend locks
+    // retained before BLS verification. The work thread drains continuously, so in
+    // normal operation only a handful are ever pending; this never triggers
+    // legitimately, but it bounds memory if a peer floods locks faster than they can
+    // be verified and scored (codex/F-008, codex/F-028, codex/F-038).
+    static constexpr size_t MAX_PENDING_INSTANTSEND_LOCKS{1024};
+
     mutable Mutex cs_pendingLocks;
     // Incoming and not verified yet
     Uint256HashMap<instantsend::PendingISLockFromPeer> pendingInstantSendLocks GUARDED_BY(cs_pendingLocks);
