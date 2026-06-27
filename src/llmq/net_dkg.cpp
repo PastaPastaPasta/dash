@@ -30,6 +30,51 @@
 namespace llmq {
 
 namespace {
+// Upper bound on the serialized size of a well-formed DKG message of the given
+// inventory type for the given quorum params. Used to reject oversized payloads
+// at intake before any deserialization or retention, which closes the low-cost
+// memory-amplification window (a legitimate message is bounded by quorum params,
+// far below the 3 MiB transport cap). Generous slack is added and the result is
+// clamped to a hard ceiling so a future params change can never silently re-open
+// the full transport window.
+size_t MaxDKGMessageSize(int inv_type, const Consensus::LLMQParams& params)
+{
+    constexpr size_t COMPACT = 5;          // max CompactSize for any realistic count
+    constexpr size_t PREFIX = 1 + 32 + 32; // llmqType + quorumHash + proTxHash
+    constexpr size_t PUBKEY = BLS_CURVE_PUBKEY_SIZE; // 48
+    constexpr size_t SIG = BLS_CURVE_SIG_SIZE;       // 96
+    constexpr size_t SECKEY = BLS_CURVE_SECKEY_SIZE; // 32
+    constexpr size_t BLOB = COMPACT + 128; // encrypted seckey blob, generous
+    constexpr size_t SLACK = 1024;
+    constexpr size_t HARD_CEILING = size_t{1} << 20; // 1 MiB
+
+    const size_t size = static_cast<size_t>(std::max(0, params.size));
+    const size_t threshold = static_cast<size_t>(std::max(0, params.threshold));
+
+    size_t cap = 0;
+    switch (inv_type) {
+    case MSG_QUORUM_CONTRIB:
+        // llmqType/quorumHash/proTxHash + vvec + contributions(IES) + sig
+        cap = PREFIX + (COMPACT + threshold * PUBKEY) + (PUBKEY + 32 + COMPACT + size * BLOB) + SIG;
+        break;
+    case MSG_QUORUM_JUSTIFICATION:
+        // ... + contributions(index u32 + seckey) + sig
+        cap = PREFIX + (COMPACT + size * (4 + SECKEY)) + SIG;
+        break;
+    case MSG_QUORUM_COMPLAINT:
+        // ... + 2 dynamic bitsets (badMembers, complainForMembers) + sig
+        cap = PREFIX + 2 * (COMPACT + (size + 7) / 8) + SIG;
+        break;
+    case MSG_QUORUM_PREMATURE_COMMITMENT:
+        // ... + validMembers bitset + quorumPublicKey + quorumVvecHash + quorumSig + sig
+        cap = PREFIX + (COMPACT + (size + 7) / 8) + PUBKEY + 32 + 2 * SIG;
+        break;
+    default:
+        return HARD_CEILING;
+    }
+    return std::min(cap + SLACK, HARD_CEILING);
+}
+
 // returns a set of NodeIds which sent invalid messages
 template <typename Message>
 std::unordered_set<NodeId> BatchVerifyMessageSigs(CDKGSession& session,
@@ -352,6 +397,14 @@ void NetDKG::ProcessMessage(CNode& pfrom, const std::string& msg_type, CDataStre
     else if (msg_type == NetMsgType::QPCOMMITMENT)
         inv_type = MSG_QUORUM_PREMATURE_COMMITMENT;
     Assume(inv_type != 0); // guarded by the early-return above
+
+    // Reject oversized payloads before any deserialization or retention. A
+    // well-formed DKG message is bounded by quorum params; anything larger is an
+    // amplification attempt against the per-peer pending queue (claude/F-014).
+    if (vRecv.size() > MaxDKGMessageSize(inv_type, llmq_params)) {
+        m_peer_manager->PeerMisbehaving(pfrom.GetId(), 100, "oversized DKG message");
+        return;
+    }
 
     auto pm = std::make_shared<CDataStream>(std::move(vRecv));
     CHashWriter hw(SER_GETHASH, 0);
