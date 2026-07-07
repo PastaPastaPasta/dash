@@ -253,14 +253,14 @@ class AssetLocksTest(DashTestFramework):
         except JSONRPCException as e:
             assert expected_error in e.error['message']
 
-    def generate_batch(self, count, sync_fun=None):
+    def generate_batch(self, count):
         self.log.info(f"Generate {count} blocks")
         while count > 0:
             self.log.info(f"Generating batch of blocks {count} left")
             batch = min(50, count)
             count -= batch
             self.bump_mocktime(10 * 60 + 1)
-            self.generate(self.nodes[1], batch, sync_fun=sync_fun)
+            self.generate(self.nodes[1], batch)
 
     # This functional test intentionally setup only 2 MN and only 2 Evo nodes
     # to ensure that corner case of quorum with minimum amount of nodes as possible
@@ -474,7 +474,7 @@ class AssetLocksTest(DashTestFramework):
         for inode in self.nodes:
             inode.invalidateblock(block_asset_unlock)
         self.validate_credit_pool_balance(locked)
-        self.generate_batch(25, sync_fun=lambda: self.sync_blocks())
+        self.generate_batch(25)
         self.validate_credit_pool_balance(locked)
         for inode in self.nodes:
             inode.reconsiderblock(block_to_reconsider)
