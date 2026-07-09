@@ -216,6 +216,11 @@ public:
     /** Whether this is a shared masternode registration (DIP: decentralized masternode shares) */
     [[nodiscard]] bool IsShared() const { return !shares.empty(); }
 
+    /** The digest each share owner signs (joinSigs) to consent to a shared registration. It binds
+     *  every participant to the exact funding inputs, all outputs, the full share table, the
+     *  penalty terms and the registrar configuration of the containing transaction. */
+    [[nodiscard]] uint256 MakeSharedRegConsentHash(const CTransaction& tx) const;
+
     // When signing with the collateral key, we don't sign the hash but a generated message instead
     // This is needed for HW wallet support which can only sign text messages as of now
     std::string MakeSignString() const;
@@ -411,6 +416,122 @@ public:
     /**
      * Note: this check validates only some trivial consensus rules
      * Use `CheckProUpRevTx` or GetValidatedPayload<T> helper for full validation
+     */
+    bool IsTriviallyValid(TxValidationState& state) const;
+};
+
+class CProDisTx
+{
+public:
+    static constexpr auto SPECIALTX_TYPE = TRANSACTION_PROVIDER_DISSOLVE;
+    static constexpr uint16_t CURRENT_VERSION = 1;
+
+    uint16_t nVersion{CURRENT_VERSION};
+    uint256 proTxHash;
+    uint16_t actorIndex{0};
+    // Exactly one signature (unilateral, by shares[actorIndex]) or one per share in share order
+    // (unanimous); the signature count defines the mode
+    std::vector<std::vector<unsigned char>> vchSigs;
+
+    SERIALIZE_METHODS(CProDisTx, obj)
+    {
+        READWRITE(obj.nVersion, obj.proTxHash, obj.actorIndex);
+        uint8_t sig_count{0};
+        SER_WRITE(obj, sig_count = static_cast<uint8_t>(obj.vchSigs.size()));
+        READWRITE(sig_count);
+        SER_READ(obj, obj.vchSigs.resize(sig_count));
+        for (auto& sig : obj.vchSigs) {
+            READWRITE(Using<CompactSignatureFormatter>(sig));
+        }
+    }
+
+    /** The digest every dissolution signature commits to. It covers the transaction's actual
+     *  input(s) and outputs directly, pinning every free byte of the transaction. */
+    [[nodiscard]] uint256 MakeSignHash(const CTransaction& tx) const;
+
+    std::string ToString() const;
+
+    [[nodiscard]] static RPCResult GetJsonHelp(const std::string& key, bool optional);
+    [[nodiscard]] UniValue ToJson() const;
+
+    /**
+     * Note: this check validates only some trivial consensus rules
+     * Use `Check*Tx` or GetValidatedPayload<T> helper for full validation
+     */
+    bool IsTriviallyValid(TxValidationState& state) const;
+};
+
+class CProUpShareTx
+{
+public:
+    static constexpr auto SPECIALTX_TYPE = TRANSACTION_PROVIDER_UPDATE_SHARE;
+    static constexpr uint16_t CURRENT_VERSION = 1;
+
+    uint16_t nVersion{CURRENT_VERSION};
+    uint256 proTxHash;
+    uint16_t shareIndex{0};
+    CScript scriptReward; //!< empty means "use the refund script"
+    uint256 inputsHash;   // replay protection
+    std::vector<unsigned char> vchSig;
+
+    SERIALIZE_METHODS(CProUpShareTx, obj)
+    {
+        READWRITE(obj.nVersion, obj.proTxHash, obj.shareIndex, obj.scriptReward, obj.inputsHash);
+        if (!(s.GetType() & SER_GETHASH)) {
+            READWRITE(obj.vchSig);
+        }
+    }
+
+    std::string ToString() const;
+
+    [[nodiscard]] static RPCResult GetJsonHelp(const std::string& key, bool optional);
+    [[nodiscard]] UniValue ToJson() const;
+
+    /**
+     * Note: this check validates only some trivial consensus rules
+     * Use `Check*Tx` or GetValidatedPayload<T> helper for full validation
+     */
+    bool IsTriviallyValid(TxValidationState& state) const;
+};
+
+class CProUpSharedRegTx
+{
+public:
+    static constexpr auto SPECIALTX_TYPE = TRANSACTION_PROVIDER_UPDATE_SHARED_REGISTRAR;
+    static constexpr uint16_t CURRENT_VERSION = 1;
+
+    uint16_t nVersion{CURRENT_VERSION};
+    uint256 proTxHash;
+    CBLSLazyPublicKey pubKeyOperator;
+    CKeyID keyIDVoting;
+    uint256 inputsHash; // replay protection
+    // One signature per share, in share order; a shared registrar update requires unanimity
+    std::vector<std::vector<unsigned char>> vchSigs;
+
+    SERIALIZE_METHODS(CProUpSharedRegTx, obj)
+    {
+        READWRITE(obj.nVersion, obj.proTxHash,
+                  CBLSLazyPublicKeyVersionWrapper(const_cast<CBLSLazyPublicKey&>(obj.pubKeyOperator), /*legacy=*/false),
+                  obj.keyIDVoting, obj.inputsHash);
+        if (!(s.GetType() & SER_GETHASH)) {
+            uint8_t sig_count{0};
+            SER_WRITE(obj, sig_count = static_cast<uint8_t>(obj.vchSigs.size()));
+            READWRITE(sig_count);
+            SER_READ(obj, obj.vchSigs.resize(sig_count));
+            for (auto& sig : obj.vchSigs) {
+                READWRITE(Using<CompactSignatureFormatter>(sig));
+            }
+        }
+    }
+
+    std::string ToString() const;
+
+    [[nodiscard]] static RPCResult GetJsonHelp(const std::string& key, bool optional);
+    [[nodiscard]] UniValue ToJson() const;
+
+    /**
+     * Note: this check validates only some trivial consensus rules
+     * Use `Check*Tx` or GetValidatedPayload<T> helper for full validation
      */
     bool IsTriviallyValid(TxValidationState& state) const;
 };
