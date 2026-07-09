@@ -647,5 +647,8 @@ uint256 WalletModel::getLastBlockProcessed() const
 
 CAmount WalletModel::getAvailableBalance(const CCoinControl* control)
 {
-    return control && control->HasSelected() ? wallet().getAvailableBalance(*control) : getCachedBalance().balance;
+    if (control && (control->HasSelected() || control->IsUsingCoinJoin())) {
+        return wallet().getAvailableBalance(*control);
+    }
+    return getCachedBalance().balance;
 }
