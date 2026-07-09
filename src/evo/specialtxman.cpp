@@ -572,18 +572,18 @@ bool CSpecialTxProcessor::RebuildListFromBlock(const CBlock& block, gsl::not_nul
 
             // Authoritative validation: newList at this position equals the previous block's list
             // plus earlier transactions in this block, so a masternode registered and dissolved
-            // within one block is handled per the DIP
+            // within one block is handled per the DIP.
+            //
+            // The masternode is NOT removed here. Removal is deferred to the collateral-spend
+            // sweep below, exactly as an ordinary collateral spend is handled. This keeps the
+            // effect of a dissolution independent of its position among the block's other provider
+            // transactions: a same-masternode ProUpShareTx / ProUpSharedRegTx placed after the
+            // ProDisTx still applies during this pass (the masternode is still present) and only
+            // then does the sweep remove it, so the block is valid regardless of ordering.
             if (TxValidationState tx_state;
                 !CheckProDisTxForList(tx, *opt_proTx, newList, nHeight, tx_state, /*check_sigs=*/true)) {
                 return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, tx_state.GetRejectReason(),
                                      tx_state.GetDebugMessage());
-            }
-
-            newList.RemoveMN(opt_proTx->proTxHash);
-
-            if (debugLogs) {
-                LogPrintf("%s -- MN %s dissolved at height %d: %s\n", __func__, opt_proTx->proTxHash.ToString(),
-                          nHeight, opt_proTx->ToString());
             }
         } else if (tx.nType == TRANSACTION_PROVIDER_UPDATE_SHARE) {
             const auto opt_proTx = GetTxPayload<CProUpShareTx>(tx);
@@ -685,12 +685,14 @@ bool CSpecialTxProcessor::RebuildListFromBlock(const CBlock& block, gsl::not_nul
         for (const auto& in : tx.vin) {
             auto dmn = newList.GetMNByCollateral(in.prevout);
             if (dmn && dmn->collateralOutpoint == in.prevout) {
-                if (dmn->pdmnState->IsShared()) {
-                    // Shared collateral may only be spent by a valid ProDisTx, which already
-                    // removed its masternode in the transaction loop above; any spend that still
-                    // sees a shared masternode here is not a valid dissolution
+                if (dmn->pdmnState->IsShared() && tx.nType != TRANSACTION_PROVIDER_DISSOLVE) {
+                    // Shared collateral may only be spent by a ProDisTx. Any other spender is
+                    // invalid (the ProDisTx that spends it was already validated in the loop above).
                     return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-shared-collateral-spend");
                 }
+                // A shared masternode's dissolution takes effect here, in the same collateral-spend
+                // phase as every other masternode removal, so its timing does not depend on where
+                // the ProDisTx sits among the block's other provider transactions.
                 newList.RemoveMN(dmn->proTxHash);
 
                 if (debugLogs) {

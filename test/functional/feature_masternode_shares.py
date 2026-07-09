@@ -306,10 +306,40 @@ class MasternodeSharesTest(DashTestFramework):
         self.generate(node, 1, sync_fun=self.no_op)
         assert_equal(node.masternodelist(), {})
 
+        self.log.info("A pending dissolution and a same-masternode update can be mined together")
+        # A ProDisTx removes the MN in the collateral-spend phase, after all other provider txs in
+        # the block are applied, so a same-MN update and the dissolution can share a block in
+        # either order. Regression guard: with the removal done mid-provider-loop instead, a block
+        # ordering the ProDisTx before the update would fail BuildNewListFromBlock and abort mining.
+        refund5, refund6 = node.getnewaddress(), node.getnewaddress()
+        owner5, owner6 = node.getnewaddress(), node.getnewaddress()
+        shares3 = [
+            {"amount": 700 * COIN, "refundAddress": refund5, "ownerAddress": owner5},
+            {"amount": 300 * COIN, "refundAddress": refund6, "ownerAddress": owner6},
+        ]
+        protx_hash3, _ = self.register_shared(node, shares3, port_offset=3)
+        fee_addr2 = node.getnewaddress()
+        node.sendtoaddress(fee_addr2, 1)
+        self.generate(node, 1, sync_fun=self.no_op)
+        # Both transactions coexist in the mempool (no false provider conflict). The dissolution
+        # pays a high feerate so the assembler tends to order it first — the ordering that used to
+        # abort BuildNewListFromBlock.
+        dissolve_txid = node.protx("dissolve", protx_hash3, 0, 500000)
+        update_txid = node.protx("update_share", protx_hash3, 1, node.getnewaddress(), fee_addr2)
+        mempool = node.getrawmempool()
+        assert dissolve_txid in mempool
+        assert update_txid in mempool
+        # Mining must not abort and must eventually confirm the dissolution (whether the pair lands
+        # in one block or the update mines first and the dissolution follows).
+        self.bump_mocktime(10 * 60 + 1)
+        self.generate(node, 2, sync_fun=self.no_op)
+        assert_equal(node.getrawmempool(), [])
+        assert_raises_rpc_error(None, None, node.protx, "info", protx_hash3)
+
         self.log.info("Every participant's principal was refunded by the dissolutions")
         # refund1/refund2 were refunded by the first MN's unilateral dissolution, refund3/refund4
         # by the second MN's unanimous dissolution (reward receipts are checked separately above)
-        for addr in (refund1, refund2, refund3, refund4):
+        for addr in (refund1, refund2, refund3, refund4, refund5, refund6):
             assert_greater_than(node.getreceivedbyaddress(addr, 1), Decimal(0))
 
 
