@@ -673,7 +673,15 @@ void CTxMemPool::addUncheckedProTx(CDeterministicMNManager& dmnman, indexed_tran
         for (const auto& entry : proTx.netInfo->GetEntries()) {
             mapProTxAddresses.emplace(entry, tx_hash);
         }
-        mapProTxPubKeyIDs.emplace(proTx.keyIDOwner, tx_hash);
+        if (proTx.IsShared()) {
+            // A shared registration has a null keyIDOwner (which must never enter the map, or two
+            // shared registrations would collide on it); the share owner keys take its place
+            for (const auto& share : proTx.shares) {
+                mapProTxPubKeyIDs.emplace(share.keyIDOwner, tx_hash);
+            }
+        } else {
+            mapProTxPubKeyIDs.emplace(proTx.keyIDOwner, tx_hash);
+        }
         mapProTxBlsPubKeyHashes.emplace(proTx.pubKeyOperator.GetHash(), tx_hash);
         if (proTx.nType == MnType::Evo && !proTx.platformNodeID.IsNull()) {
             mapProTxPlatformNodeIDs.emplace(proTx.platformNodeID, tx_hash);
@@ -714,6 +722,23 @@ void CTxMemPool::addUncheckedProTx(CDeterministicMNManager& dmnman, indexed_tran
         mapAssetUnlockExpiry.insert({tx_hash, assetUnlockTx.getHeightToExpiry()});
     } else if (tx.nType == TRANSACTION_MNHF_SIGNAL) {
         PrioritiseTransaction(tx_hash, 0.1 * COIN);
+    } else if (tx.nType == TRANSACTION_PROVIDER_DISSOLVE) {
+        // Registering in mapProTxRefs makes removeProTxSpentCollateralConflicts evict pending
+        // updates for the masternode (and any competing dissolution) when a ProDisTx confirms
+        auto proTx = *Assert(GetTxPayload<CProDisTx>(tx));
+        mapProTxRefs.emplace(proTx.proTxHash, tx_hash);
+    } else if (tx.nType == TRANSACTION_PROVIDER_UPDATE_SHARE) {
+        auto proTx = *Assert(GetTxPayload<CProUpShareTx>(tx));
+        mapProTxRefs.emplace(proTx.proTxHash, tx_hash);
+    } else if (tx.nType == TRANSACTION_PROVIDER_UPDATE_SHARED_REGISTRAR) {
+        auto proTx = *Assert(GetTxPayload<CProUpSharedRegTx>(tx));
+        mapProTxRefs.emplace(proTx.proTxHash, tx_hash);
+        mapProTxBlsPubKeyHashes.emplace(proTx.pubKeyOperator.GetHash(), tx_hash);
+        auto dmn = Assert(dmnman.GetListAtChainTip().GetMN(proTx.proTxHash));
+        newit->validForProTxKey = ::SerializeHash(dmn->pdmnState->pubKeyOperator);
+        if (dmn->pdmnState->pubKeyOperator != proTx.pubKeyOperator) {
+            newit->isKeyChangeProTx = true;
+        }
     }
 }
 
@@ -783,7 +808,13 @@ void CTxMemPool::removeUncheckedProTx(const CTransaction& tx)
         for (const auto& entry : proTx.netInfo->GetEntries()) {
             mapProTxAddresses.erase(entry);
         }
-        mapProTxPubKeyIDs.erase(proTx.keyIDOwner);
+        if (proTx.IsShared()) {
+            for (const auto& share : proTx.shares) {
+                mapProTxPubKeyIDs.erase(share.keyIDOwner);
+            }
+        } else {
+            mapProTxPubKeyIDs.erase(proTx.keyIDOwner);
+        }
         mapProTxBlsPubKeyHashes.erase(proTx.pubKeyOperator.GetHash());
         if (proTx.nType == MnType::Evo && !proTx.platformNodeID.IsNull()) {
             mapProTxPlatformNodeIDs.erase(proTx.platformNodeID);
@@ -808,6 +839,16 @@ void CTxMemPool::removeUncheckedProTx(const CTransaction& tx)
         eraseProTxRef(proTx.proTxHash, tx_hash);
     } else if (tx.nType == TRANSACTION_ASSET_UNLOCK) {
         mapAssetUnlockExpiry.erase(tx_hash);
+    } else if (tx.nType == TRANSACTION_PROVIDER_DISSOLVE) {
+        auto proTx = *Assert(GetTxPayload<CProDisTx>(tx));
+        eraseProTxRef(proTx.proTxHash, tx_hash);
+    } else if (tx.nType == TRANSACTION_PROVIDER_UPDATE_SHARE) {
+        auto proTx = *Assert(GetTxPayload<CProUpShareTx>(tx));
+        eraseProTxRef(proTx.proTxHash, tx_hash);
+    } else if (tx.nType == TRANSACTION_PROVIDER_UPDATE_SHARED_REGISTRAR) {
+        auto proTx = *Assert(GetTxPayload<CProUpSharedRegTx>(tx));
+        eraseProTxRef(proTx.proTxHash, tx_hash);
+        mapProTxBlsPubKeyHashes.erase(proTx.pubKeyOperator.GetHash());
     }
 }
 
@@ -1012,6 +1053,13 @@ void CTxMemPool::removeProTxKeyChangedConflicts(const CTransaction &tx, const ui
         if (txit == mapTx.end()) {
             continue;
         }
+        // ProDisTx and ProUpShareTx are authorized by share owner keys, not the operator key, so
+        // an operator-key change (or revocation) must not evict them. They carry the default
+        // zero validForProTxKey and would otherwise always be treated as stale here.
+        const uint16_t refType{txit->GetTx().nType};
+        if (refType == TRANSACTION_PROVIDER_DISSOLVE || refType == TRANSACTION_PROVIDER_UPDATE_SHARE) {
+            continue;
+        }
         if (txit->validForProTxKey != newKeyHash) {
             conflictingTxs.emplace(txit->GetTx().GetHash());
         }
@@ -1043,7 +1091,13 @@ void CTxMemPool::removeProTxConflicts(const CTransaction &tx)
                 }
             }
         }
-        removeProTxPubKeyConflicts(tx, proTx.keyIDOwner);
+        if (proTx.IsShared()) {
+            for (const auto& share : proTx.shares) {
+                removeProTxPubKeyConflicts(tx, share.keyIDOwner);
+            }
+        } else {
+            removeProTxPubKeyConflicts(tx, proTx.keyIDOwner);
+        }
         removeProTxPubKeyConflicts(tx, proTx.pubKeyOperator);
         if (proTx.nType == MnType::Evo && !proTx.platformNodeID.IsNull()) {
             removeProTxPlatformNodeIDConflicts(tx, proTx.platformNodeID);
@@ -1088,6 +1142,15 @@ void CTxMemPool::removeProTxConflicts(const CTransaction &tx)
         }
 
         removeProTxKeyChangedConflicts(tx, opt_proTx->proTxHash, ::SerializeHash(CBLSPublicKey()));
+    } else if (tx.nType == TRANSACTION_PROVIDER_UPDATE_SHARED_REGISTRAR) {
+        const auto opt_proTx = GetTxPayload<CProUpSharedRegTx>(tx);
+        if (!opt_proTx) {
+            LogPrint(BCLog::MEMPOOL, "%s: ERROR: Invalid transaction payload, tx: %s\n", __func__, tx_hash.ToString());
+            return;
+        }
+
+        removeProTxPubKeyConflicts(tx, opt_proTx->pubKeyOperator);
+        removeProTxKeyChangedConflicts(tx, opt_proTx->proTxHash, ::SerializeHash(opt_proTx->pubKeyOperator));
     }
 }
 
@@ -1407,7 +1470,18 @@ bool CTxMemPool::existsProviderTxConflict(const CTransaction &tx) const {
                 return true;
             }
         }
-        if (mapProTxPubKeyIDs.count(proTx.keyIDOwner) || mapProTxBlsPubKeyHashes.count(proTx.pubKeyOperator.GetHash())) {
+        if (proTx.IsShared()) {
+            // share owner keys occupy the same conflict namespace as keyIDOwner, in both
+            // directions between pending shared and non-shared registrations
+            for (const auto& share : proTx.shares) {
+                if (mapProTxPubKeyIDs.count(share.keyIDOwner)) {
+                    return true;
+                }
+            }
+            if (mapProTxBlsPubKeyHashes.count(proTx.pubKeyOperator.GetHash())) {
+                return true;
+            }
+        } else if (mapProTxPubKeyIDs.count(proTx.keyIDOwner) || mapProTxBlsPubKeyHashes.count(proTx.pubKeyOperator.GetHash())) {
             return true;
         }
         if (proTx.nType == MnType::Evo && !proTx.platformNodeID.IsNull() && mapProTxPlatformNodeIDs.count(proTx.platformNodeID)) {
@@ -1484,6 +1558,29 @@ bool CTxMemPool::existsProviderTxConflict(const CTransaction &tx) const {
                 return true;
             }
         }
+    } else if (tx.nType == TRANSACTION_PROVIDER_UPDATE_SHARED_REGISTRAR) {
+        const auto opt_proTx = GetTxPayload<CProUpSharedRegTx>(tx);
+        if (!opt_proTx) {
+            LogPrint(BCLog::MEMPOOL, "%s: ERROR: Invalid transaction payload, tx: %s\n", __func__, tx_hash.ToString());
+            return true; // i.e. can't decode payload == conflict
+        }
+        auto& proTx = *opt_proTx;
+
+        // this method should only be called with validated ProTxs
+        auto dmn = dmnman->GetListAtChainTip().GetMN(proTx.proTxHash);
+        if (!dmn) {
+            LogPrint(BCLog::MEMPOOL, "%s: ERROR: Masternode is not in the list, proTxHash: %s\n", __func__, proTx.proTxHash.ToString());
+            return true; // i.e. failed to find validated ProTx == conflict
+        }
+        // only allow one operator key change in the mempool
+        if (dmn->pdmnState->pubKeyOperator != proTx.pubKeyOperator) {
+            if (hasKeyChangeInMempool(proTx.proTxHash)) {
+                return true;
+            }
+        }
+
+        auto it = mapProTxBlsPubKeyHashes.find(proTx.pubKeyOperator.GetHash());
+        return it != mapProTxBlsPubKeyHashes.end() && it->second != proTx.proTxHash;
     }
     return false;
 }
