@@ -121,6 +121,10 @@ template<class T>
                                              TxValidationState& state);
 [[nodiscard]] std::string ShareListToString(const CollateralShares& shares);
 [[nodiscard]] UniValue ShareListToJson(const CollateralShares& shares);
+/** Split an amount across shares proportionally to their collateral amounts: sequential floor,
+ *  remainder to the last entry. The result always sums to total exactly. */
+[[nodiscard]] std::vector<CAmount> SplitAmountByShares(CAmount total, const CollateralShares& shares);
+
 class CProRegTx
 {
 public:
