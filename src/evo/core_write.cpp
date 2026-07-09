@@ -244,6 +244,9 @@ RPCResult CDeterministicMNState::GetJsonHelp(const std::string& key, bool option
         GetRpcResult("platformHTTPPort", /*optional=*/true),
         GetRpcResult("payoutAddress", /*optional=*/true),
         GetRpcResult("payouts", /*optional=*/true),
+        GetRpcResult("shares", /*optional=*/true),
+        GetRpcResult("earlyPeriodBlocks", /*optional=*/true),
+        GetRpcResult("earlyPenalty", /*optional=*/true),
         GetRpcResult("pubKeyOperator"),
         GetRpcResult("operatorPayoutAddress", /*optional=*/true),
     }};
@@ -275,7 +278,11 @@ UniValue CDeterministicMNState::ToJson(MnType nType) const
     }
 
     CTxDestination dest;
-    if (nVersion >= ProTxVersion::ExtAddr) {
+    if (IsShared()) {
+        obj.pushKV("shares", ShareListToJson(shares));
+        obj.pushKV("earlyPeriodBlocks", static_cast<int64_t>(nEarlyPeriodBlocks));
+        obj.pushKV("earlyPenalty", nEarlyPenalty);
+    } else if (nVersion >= ProTxVersion::ExtAddr) {
         obj.pushKV("payouts", PayoutListToJson(payouts));
     } else if (ExtractDestination(scriptPayout, dest)) {
         obj.pushKV("payoutAddress", EncodeDestination(dest));
@@ -305,6 +312,9 @@ RPCResult CDeterministicMNStateDiff::GetJsonHelp(const std::string& key, bool op
         GetRpcResult("votingAddress", /*optional=*/true),
         GetRpcResult("payoutAddress", /*optional=*/true),
         GetRpcResult("payouts", /*optional=*/true),
+        GetRpcResult("shares", /*optional=*/true),
+        GetRpcResult("earlyPeriodBlocks", /*optional=*/true),
+        GetRpcResult("earlyPenalty", /*optional=*/true),
         GetRpcResult("operatorPayoutAddress", /*optional=*/true),
         GetRpcResult("pubKeyOperator", /*optional=*/true),
         GetRpcResult("platformNodeID", /*optional=*/true),
@@ -423,6 +433,77 @@ UniValue CProUpRevTx::ToJson() const
     ret.pushKV("proTxHash", proTxHash.ToString());
     ret.pushKV("reason", nReason);
     ret.pushKV("inputsHash", inputsHash.ToString());
+    return ret;
+}
+
+RPCResult CProDisTx::GetJsonHelp(const std::string& key, bool optional)
+{
+    return {RPCResult::Type::OBJ, key, optional, key.empty() ? "" : "The shared masternode dissolution special transaction",
+    {
+        GetRpcResult("version"),
+        GetRpcResult("proTxHash"),
+        {RPCResult::Type::NUM, "actorIndex", "Index into the share table of the participant paying the penalty (if any) and the fee"},
+        {RPCResult::Type::NUM, "sigCount", "Number of signatures: 1 = unilateral, one per share = unanimous"},
+    }};
+}
+
+UniValue CProDisTx::ToJson() const
+{
+    UniValue ret(UniValue::VOBJ);
+    ret.pushKV("version", nVersion);
+    ret.pushKV("proTxHash", proTxHash.ToString());
+    ret.pushKV("actorIndex", actorIndex);
+    ret.pushKV("sigCount", static_cast<uint64_t>(vchSigs.size()));
+    return ret;
+}
+
+RPCResult CProUpShareTx::GetJsonHelp(const std::string& key, bool optional)
+{
+    return {RPCResult::Type::OBJ, key, optional, key.empty() ? "" : "The shared masternode share update special transaction",
+    {
+        GetRpcResult("version"),
+        GetRpcResult("proTxHash"),
+        {RPCResult::Type::NUM, "shareIndex", "Index into the share table of the share being updated"},
+        {RPCResult::Type::STR, "rewardAddress", /*optional=*/true, "New Dash address for this share's owner rewards; omitted when reverting to the refund script"},
+        GetRpcResult("inputsHash"),
+    }};
+}
+
+UniValue CProUpShareTx::ToJson() const
+{
+    UniValue ret(UniValue::VOBJ);
+    ret.pushKV("version", nVersion);
+    ret.pushKV("proTxHash", proTxHash.ToString());
+    ret.pushKV("shareIndex", shareIndex);
+    if (CTxDestination dest; !scriptReward.empty() && ExtractDestination(scriptReward, dest)) {
+        ret.pushKV("rewardAddress", EncodeDestination(dest));
+    }
+    ret.pushKV("inputsHash", inputsHash.ToString());
+    return ret;
+}
+
+RPCResult CProUpSharedRegTx::GetJsonHelp(const std::string& key, bool optional)
+{
+    return {RPCResult::Type::OBJ, key, optional, key.empty() ? "" : "The shared masternode registrar update special transaction",
+    {
+        GetRpcResult("version"),
+        GetRpcResult("proTxHash"),
+        GetRpcResult("votingAddress"),
+        GetRpcResult("pubKeyOperator"),
+        GetRpcResult("inputsHash"),
+        {RPCResult::Type::NUM, "sigCount", "Number of signatures; must equal the share count"},
+    }};
+}
+
+UniValue CProUpSharedRegTx::ToJson() const
+{
+    UniValue ret(UniValue::VOBJ);
+    ret.pushKV("version", nVersion);
+    ret.pushKV("proTxHash", proTxHash.ToString());
+    ret.pushKV("votingAddress", EncodeDestination(PKHash(keyIDVoting)));
+    ret.pushKV("pubKeyOperator", pubKeyOperator.ToString());
+    ret.pushKV("inputsHash", inputsHash.ToString());
+    ret.pushKV("sigCount", static_cast<uint64_t>(vchSigs.size()));
     return ret;
 }
 
@@ -577,6 +658,7 @@ RPCResult CSimplifiedMNListEntry::GetJsonHelp(const std::string& key, bool optio
         GetRpcResult("platformNodeID", /*optional=*/true),
         GetRpcResult("payoutAddress", /*optional=*/true),
         GetRpcResult("payouts", /*optional=*/true),
+        GetRpcResult("shares", /*optional=*/true),
         GetRpcResult("operatorPayoutAddress", /*optional=*/true),
     }};
 }
@@ -608,6 +690,9 @@ UniValue CSimplifiedMNListEntry::ToJson(bool extended) const
             obj.pushKV("payouts", PayoutListToJson(payouts));
         } else if (ExtractDestination(scriptPayout, dest)) {
             obj.pushKV("payoutAddress", EncodeDestination(dest));
+        }
+        if (!shares.empty()) {
+            obj.pushKV("shares", ShareListToJson(shares));
         }
         if (ExtractDestination(scriptOperatorPayout, dest)) {
             obj.pushKV("operatorPayoutAddress", EncodeDestination(dest));
