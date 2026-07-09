@@ -160,8 +160,13 @@ RPCHelpMan importprivkey()
         {
             pwallet->MarkDirty();
 
-            if (!request.params[1].isNull() || !pwallet->FindAddressBookEntry(vchAddress)) {
-                pwallet->SetAddressBook(vchAddress, strLabel, "receive");
+            // We don't know which corresponding address will be used;
+            // label all new addresses, and label existing addresses if a
+            // label was passed.
+            for (const auto& dest : GetAllDestinationsForKey(pubkey)) {
+                if (!request.params[1].isNull() || !pwallet->FindAddressBookEntry(dest)) {
+                    pwallet->SetAddressBook(dest, strLabel, AddressPurpose::RECEIVE);
+                }
             }
 
             // Use timestamp of 1 to scan the whole chain
@@ -614,7 +619,7 @@ RPCHelpMan importwallet()
                     continue;
                 }
                 if (has_label)
-                    pwallet->SetAddressBook(pkhash, label, "receive");
+                    pwallet->SetAddressBook(pkhash, label, AddressPurpose::RECEIVE);
 
                 nTimeBegin = std::min(nTimeBegin, time);
                 progress++;

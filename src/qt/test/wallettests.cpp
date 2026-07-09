@@ -144,7 +144,7 @@ void TestGUI(interfaces::Node& node)
         WalletDescriptor w_desc(std::move(desc), 0, 0, 1, 1);
         if (!wallet->AddWalletDescriptor(w_desc, provider, "", false)) assert(false);
         CTxDestination dest = PKHash(test.coinbaseKey.GetPubKey());
-        wallet->SetAddressBook(dest, "", "receive");
+        wallet->SetAddressBook(dest, "", wallet::AddressPurpose::RECEIVE);
         wallet->SetLastBlockProcessed(105, node.context()->chainman->ActiveChain().Tip()->GetBlockHash());
     }
     {

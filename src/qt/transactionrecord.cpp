@@ -8,8 +8,8 @@
 #include <chain.h>
 #include <interfaces/wallet.h>
 #include <interfaces/node.h>
-
-#include <wallet/ismine.h>
+#include <key_io.h>
+#include <wallet/types.h>
 
 #include <cstdint>
 
