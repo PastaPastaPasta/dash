@@ -2596,7 +2596,12 @@ static RPCHelpMan protx_register_shared_prepare()
         "transaction. The funding transaction must already contain every participant's contribution inputs\n"
         "and any change outputs; the consent digest binds all of them. Every share owner must sign the\n"
         "returned consent hash via \"protx shared_sign\"; combine with \"protx shared_combine\", then have the\n"
-        "funding inputs signed (signrawtransactionwithwallet) and broadcast with sendrawtransaction.\n",
+        "funding inputs signed (signrawtransactionwithwallet) and broadcast with sendrawtransaction.\n"
+        "\nIMPORTANT: once the registration confirms, every participant should create a standby dissolution\n"
+        "(\"protx dissolve <proTxHash> <shareIndex> <fee> false\") and store the returned hex with their\n"
+        "refund-key backup, separately from the share owner key. Dissolution validity is monotone, so a\n"
+        "standby never expires; if the owner key is later lost, broadcasting the standby recovers the\n"
+        "participant's principal without any other party's cooperation.\n",
         {
             {"fundingTx", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The serialized funding transaction with all participants' inputs and change outputs."},
             {"shares", RPCArg::Type::ARR, RPCArg::Optional::NO, "The collateral share table, in consensus-significant order. Amounts must sum to the collateral.",
@@ -2683,6 +2688,15 @@ static RPCHelpMan protx_register_shared_prepare()
     ptx.vchJoinSigs.assign(ptx.shares.size(), std::vector<unsigned char>(CPubKey::COMPACT_SIGNATURE_SIZE, 0));
 
     UpdateSpecialTxInputsHash(tx, ptx);
+
+    // Preflight the payload with the same stateless rules consensus applies, so consensus-invalid
+    // terms (bad share sums, penalty bounds, payee reuse, ...) fail here with a clear error
+    // instead of after every participant has signed and the funding inputs are finalized
+    if (TxValidationState state; !ptx.IsTriviallyValid(state)) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER,
+                           strprintf("invalid shared registration terms: %s", state.GetRejectReason()));
+    }
+
     SetTxPayload(tx, ptx);
 
     UniValue ret(UniValue::VOBJ);
