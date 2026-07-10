@@ -227,6 +227,15 @@ public:
         int& change_pos,
         CAmount& fee) = 0;
 
+    //! Create a signed (uncommitted) asset lock transaction converting
+    //! credit_amount duffs into Platform credits, with a single credit
+    //! output paying P2PKH to credit_pubkey (typically a registration
+    //! funding key from getPlatformPubKey). Broadcast the result with
+    //! commitTransaction(). Fails unless built with --enable-platform-gui.
+    virtual util::Result<CTransactionRef> createAssetLockTransaction(CAmount credit_amount,
+        const CPubKey& credit_pubkey,
+        const wallet::CCoinControl& coin_control) = 0;
+
     //! Commit transaction.
     virtual void commitTransaction(CTransactionRef tx,
         WalletValueMap value_map,
