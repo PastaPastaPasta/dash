@@ -1065,8 +1065,14 @@ void CTxMemPool::removeProTxKeyChangedConflicts(const CTransaction &tx, const ui
         }
     }
     for (const auto& txHash : conflictingTxs) {
-        auto& tx = mapTx.find(txHash)->GetTx();
-        removeRecursive(tx, MemPoolRemovalReason::CONFLICT);
+        // An earlier removeRecursive() may have already evicted this entry as a descendant of a
+        // previously-processed conflict, so it can be absent here; dereferencing mapTx.end() would
+        // crash. (Pre-existing hazard; guarded here to be safe.)
+        auto it = mapTx.find(txHash);
+        if (it == mapTx.end()) {
+            continue;
+        }
+        removeRecursive(it->GetTx(), MemPoolRemovalReason::CONFLICT);
     }
 }
 
