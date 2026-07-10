@@ -9,8 +9,10 @@
 #include <interfaces/wallet.h>
 #include <platform/statetransitions.h>
 #include <qt/clientmodel.h>
+#include <qt/platform/contactflow.h>
 #include <qt/platform/identityflow.h>
 #include <qt/walletmodel.h>
+#include <util/strencodings.h>
 #include <util/strencodings.h>
 
 #include <QMetaObject>
@@ -40,6 +42,8 @@ PlatformService::PlatformService(WalletModel& wallet_model, ClientModel& client_
     m_identity_flow = std::make_unique<IdentityFlow>(*this, this);
     connect(m_identity_flow.get(), &IdentityFlow::stateChanged, this, &PlatformService::identityStateChanged);
     connect(m_identity_flow.get(), &IdentityFlow::failed, this, &PlatformService::flowFailed);
+
+    m_contact_flow = std::make_unique<ContactFlow>(*this, this);
 
     m_tick_timer = new QTimer(this);
     m_tick_timer->setInterval(TICK_INTERVAL_MS);
@@ -144,6 +148,72 @@ std::vector<unsigned char> PlatformService::readRecord(const std::string& key) c
 void PlatformService::post(std::function<void()> fn)
 {
     QMetaObject::invokeMethod(this, [fn = std::move(fn)] { fn(); }, Qt::QueuedConnection);
+}
+
+void PlatformService::refreshContacts()
+{
+    const auto my_id{myIdentityId()};
+    if (!my_id) return;
+    QPointer<PlatformService> self{this};
+    auto collect = [self](bool to_me) {
+        if (!self) return;
+        self->m_client->getContactRequests(*self->myIdentityId(), to_me, 0,
+            [self, to_me](platform::Result<std::vector<platform::ContactRequest>> res) {
+            if (!self || !res.ok()) return;
+            QVector<QPair<QString, QString>> list;
+            for (const auto& cr : *res.value) {
+                const auto& other = to_me ? cr.owner_id : cr.to_user_id;
+                list.append({QString::fromStdString(HexStr(other)), QString{}});
+            }
+            self->post([self, to_me, list] {
+                if (!self) return;
+                if (to_me) Q_EMIT self->contactsUpdated(list, {});
+                else Q_EMIT self->contactsUpdated({}, list);
+            });
+        });
+    };
+    collect(true);
+    collect(false);
+}
+
+void PlatformService::updateProfile(const QString& display_name, const QString& public_message,
+                                    const QString& avatar_url)
+{
+    const auto my_id{myIdentityId()};
+    if (!my_id) { Q_EMIT profileUpdated(false, tr("register a username first")); return; }
+
+    platform::Profile profile;
+    profile.owner_id = *my_id;
+    profile.display_name = display_name.toStdString();
+    profile.public_message = public_message.toStdString();
+    profile.avatar_url = avatar_url.toStdString();
+
+    QPointer<PlatformService> self{this};
+    m_client->getIdentityContractNonce(*my_id, platform::DASHPAY_CONTRACT_ID,
+        [self, profile](platform::Result<uint64_t> nonce_res) {
+        if (!self) return;
+        self->post([self, profile, nonce_res] {
+            if (!self) return;
+            if (!nonce_res.ok()) { Q_EMIT self->profileUpdated(false, tr("could not fetch identity nonce")); return; }
+            interfaces::Wallet& wallet{self->m_wallet_model.wallet()};
+            const auto signer = [&wallet](const uint256& digest, std::vector<uint8_t>& sig) {
+                return wallet.signPlatformDigest(interfaces::Wallet::PlatformKeyType::IdentityAuth, 0, 1, digest, sig);
+            };
+            auto built{platform::st::BuildProfile(profile.owner_id, *nonce_res.value + 1, profile,
+                                                  /*revision=*/1, std::nullopt, /*signature_public_key_id=*/1, signer)};
+            if (!built.ok()) { Q_EMIT self->profileUpdated(false, QString::fromStdString(built.error)); return; }
+            QPointer<PlatformService> inner{self};
+            self->m_client->broadcastStateTransition(built.value->bytes,
+                [inner](platform::Result<platform::BroadcastResult> res) {
+                if (!inner) return;
+                inner->post([inner, res] {
+                    if (!inner) return;
+                    const bool ok = res.ok() && res.value->accepted;
+                    Q_EMIT inner->profileUpdated(ok, ok ? QString{} : (res.ok() ? QString::fromStdString(res.value->error) : tr("broadcast failed")));
+                });
+            });
+        });
+    });
 }
 
 void PlatformService::updateNodeContext()

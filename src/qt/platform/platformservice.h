@@ -21,6 +21,7 @@
 #include <vector>
 
 class ClientModel;
+class ContactFlow;
 class IdentityFlow;
 class WalletModel;
 
@@ -47,6 +48,15 @@ public:
     const platform::Params& params() const { return m_params; }
 
     IdentityFlow& identityFlow() { return *m_identity_flow; }
+    ContactFlow& contactFlow() { return *m_contact_flow; }
+
+    //! Fetch this identity's incoming + outgoing contact requests; emits
+    //! contactsUpdated().
+    void refreshContacts();
+
+    //! Broadcast a DashPay profile create/update. Requires an unlocked wallet.
+    void updateProfile(const QString& display_name, const QString& public_message,
+                       const QString& avatar_url);
 
     //! The registered username of this wallet's identity, if any.
     QString myUsername() const;
@@ -76,6 +86,10 @@ Q_SIGNALS:
     void profileLoaded(const QString& identity_hex, const QString& display_name, const QString& public_message, const QString& avatar_url);
     void identityStateChanged();
     void flowFailed(const QString& step, const QString& error);
+    //! (identity hex, username) pairs for incoming and outgoing requests.
+    void contactsUpdated(const QVector<QPair<QString, QString>>& incoming,
+                         const QVector<QPair<QString, QString>>& outgoing);
+    void profileUpdated(bool ok, const QString& error);
 
 private Q_SLOTS:
     void updateNodeContext();
@@ -87,6 +101,7 @@ private:
     platform::Params m_params;
 
     std::unique_ptr<IdentityFlow> m_identity_flow;
+    std::unique_ptr<ContactFlow> m_contact_flow;
     QTimer* m_tick_timer{nullptr};         //!< drives flow advance/retry
     QTimer* m_context_timer{nullptr};      //!< refreshes endpoints/quorum keys
 };

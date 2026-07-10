@@ -9,6 +9,7 @@
 #include <platform/params.h>
 #include <qt/clientmodel.h>
 #include <qt/guiutil.h>
+#include <qt/platform/contactspage.h>
 #include <qt/platform/createusernamewizard.h>
 #include <qt/platform/identityflow.h>
 #include <qt/platform/platformservice.h>
@@ -49,11 +50,10 @@ PlatformPage::PlatformPage(QWidget* parent) :
     GUIUtil::setFont({m_dashboard_username}, GUIUtil::FontWeight::Bold, 18);
     m_dashboard_status = new QLabel(dash_page);
     m_dashboard_status->setWordWrap(true);
-    dl->addStretch();
     dl->addWidget(m_dashboard_username, 0, Qt::AlignHCenter);
     dl->addWidget(m_dashboard_status, 0, Qt::AlignHCenter);
-    dl->addStretch();
     m_stack->addWidget(dash_page);
+    m_dashboard_layout = dl;
 
     if (!platform::GetParams(Params().NetworkIDString())) {
         m_welcome->setText(tr("Dash Platform is not available on this network."));
@@ -90,6 +90,11 @@ void PlatformPage::maybeCreateService()
     if (!client) return;
     m_service = std::make_unique<PlatformService>(*walletModel, *clientModel, std::move(client), this);
     connect(m_service.get(), &PlatformService::identityStateChanged, this, &PlatformPage::refresh);
+
+    // Embed the contacts UI in the dashboard once the service exists.
+    m_contacts_page = new ContactsPage(*m_service, this);
+    if (m_dashboard_layout) m_dashboard_layout->addWidget(m_contacts_page);
+
     refresh();
 }
 
