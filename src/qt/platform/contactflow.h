@@ -58,6 +58,7 @@ Q_SIGNALS:
     void contactAdded(const QString& identity_hex);
 
 private:
+    void confirmRequest(const platform::Identifier& to_identity, int attempts_left);
     //! ECDH+AES helpers (encrypt our xpub for them / decrypt theirs for us).
     bool encryptXpub(const platform::IdentityPublicKey& their_key, const std::vector<uint8_t>& our_xpub,
                      std::vector<uint8_t>& out) const;

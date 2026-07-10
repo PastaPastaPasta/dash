@@ -21,6 +21,12 @@ class ContactsModel : public QAbstractTableModel
 public:
     enum Column { Username = 0, DisplayName, Direction, COLUMN_COUNT };
     enum class Kind { Established, Incoming, Outgoing };
+    enum Roles {
+        UsernameRole = Qt::UserRole + 1, //!< QString: DPNS username (may be empty)
+        DisplayNameRole,                 //!< QString: profile display name
+        IdentityRole,                    //!< QString: identity id, hex
+        KindRole,                        //!< int: static_cast<int>(Kind)
+    };
 
     struct Row {
         QString identity_hex;

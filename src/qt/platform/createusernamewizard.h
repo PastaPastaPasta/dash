@@ -33,6 +33,10 @@ class CreateUsernameWizard : public QWizard
 public:
     CreateUsernameWizard(PlatformService& service, WalletModel& wallet_model, QWidget* parent = nullptr);
 
+    //! Open directly on the live progress page (used when a registration is
+    //! already underway and the user asks to see how it is going).
+    void startAtProgress();
+
 private:
     PlatformService& m_service;
     WalletModel& m_wallet_model;
@@ -54,6 +58,7 @@ public:
 private Q_SLOTS:
     void onTextChanged();
     void onAvailability(const QString& normalized_label, bool available, bool contested);
+    void onAvailabilityFailed(const QString& normalized_label, const QString& error);
 
 private:
     PlatformService& m_service;
@@ -102,6 +107,7 @@ private:
     PlatformService& m_service;
     QPlainTextEdit* m_log{nullptr};
     QLabel* m_headline{nullptr};
+    QString m_last_headline;
     bool m_done{false};
 };
 
