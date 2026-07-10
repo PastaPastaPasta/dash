@@ -43,6 +43,8 @@ src/platform/*.cpp
 src/platform/*.h
 src/platform/dpp/*.cpp
 src/platform/dpp/*.h
+src/platform/drive/*.cpp
+src/platform/drive/*.h
 src/platform/proof/*.cpp
 src/platform/proof/*.h
 src/qt/masternodelist.*

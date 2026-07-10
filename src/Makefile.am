@@ -738,6 +738,12 @@ libdash_platform_a_SOURCES = \
   platform/dpp/identity.cpp \
   platform/dpp/identity.h \
   platform/dpp/statetransitions.cpp \
+  platform/drive/queries.cpp \
+  platform/drive/queries.h \
+  platform/drive/quorumsig.cpp \
+  platform/drive/quorumsig.h \
+  platform/drive/verify.cpp \
+  platform/drive/verify.h \
   platform/params.cpp \
   platform/params.h \
   platform/proof/grovedb.cpp \
@@ -748,6 +754,7 @@ libdash_platform_a_SOURCES = \
   platform/serialize.h \
   platform/statetransitions.h \
   platform/transport/cbor.h \
+  platform/transport/client.cpp \
   platform/transport/grpcweb.cpp \
   platform/transport/grpcweb.h \
   platform/transport/protobuf.cpp \
