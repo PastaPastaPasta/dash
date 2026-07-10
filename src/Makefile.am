@@ -721,7 +721,7 @@ endif
 # platform (Dash Platform client, linked into dash-qt and test_dash only) #
 if ENABLE_PLATFORM_GUI
 libdash_platform_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(BOOST_CPPFLAGS) $(MBEDTLS_CFLAGS) \
-  -DBLAKE3_NO_SSE2 -DBLAKE3_NO_SSE41 -DBLAKE3_NO_AVX2 -DBLAKE3_NO_AVX512
+  -DBLAKE3_NO_SSE2 -DBLAKE3_NO_SSE41 -DBLAKE3_NO_AVX2 -DBLAKE3_NO_AVX512 -DBLAKE3_USE_NEON=0
 libdash_platform_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 libdash_platform_a_CFLAGS = $(AM_CFLAGS) $(PIE_FLAGS)
 libdash_platform_a_SOURCES = \
@@ -733,6 +733,12 @@ libdash_platform_a_SOURCES = \
   platform/client.h \
   platform/params.cpp \
   platform/params.h \
+  platform/proof/grovedb.cpp \
+  platform/proof/grovedb.h \
+  platform/proof/merk.cpp \
+  platform/proof/merk.h \
+  platform/serialize.cpp \
+  platform/serialize.h \
   platform/statetransitions.h \
   platform/types.h
 endif

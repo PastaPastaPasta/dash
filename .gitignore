@@ -205,3 +205,5 @@ perf.data.old
 
 # FFI bridge
 /rust/*/gen/
+
+src/qt/platform/moc_*.cpp

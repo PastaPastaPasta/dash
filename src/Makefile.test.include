@@ -222,6 +222,15 @@ BITCOIN_TESTS =\
   test/versionbits_tests.cpp \
   test/xoroshiro128plusplus_tests.cpp
 
+if ENABLE_PLATFORM_GUI
+BITCOIN_TESTS += \
+  test/platform_proof_tests.cpp
+JSON_TEST_FILES += \
+  test/data/platform/element_vectors.json \
+  test/data/platform/grovedb_proof_vectors.json \
+  test/data/platform/merk_proof_vectors.json
+endif
+
 if ENABLE_WALLET
 BITCOIN_TESTS += \
   wallet/test/bip39_tests.cpp \
