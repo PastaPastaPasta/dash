@@ -472,6 +472,7 @@ BITCOIN_CORE_H = \
   wallet/hdchain.h \
   wallet/ismine.h \
   wallet/load.h \
+  wallet/platformkeys.h \
   wallet/receive.h \
   wallet/rpc/util.h \
   wallet/rpc/wallet.h \
@@ -691,8 +692,10 @@ libdash_platform_a_SOURCES = \
   crypto/blake3/blake3_dispatch.c \
   crypto/blake3/blake3_impl.h \
   crypto/blake3/blake3_portable.c \
+  platform/client.h \
   platform/params.cpp \
-  platform/params.h
+  platform/params.h \
+  platform/types.h
 endif
 #
 
@@ -739,6 +742,9 @@ libbitcoin_wallet_a_SOURCES += wallet/sqlite.cpp
 endif
 if USE_BDB
 libbitcoin_wallet_a_SOURCES += wallet/bdb.cpp wallet/salvage.cpp
+endif
+if ENABLE_PLATFORM_GUI
+libbitcoin_wallet_a_SOURCES += wallet/platformkeys.cpp
 endif
 #
 

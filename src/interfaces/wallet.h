@@ -130,6 +130,38 @@ public:
     //! Sign special transaction payload
     virtual bool signSpecialTxPayload(const uint256& hash, const CKeyID& keyid, std::vector<unsigned char>& vchSig) = 0;
 
+    //! Dash Platform (DIP-13) key classes served by the platform key provider
+    //! methods below. Raw private keys never cross this interface; the wallet
+    //! derives keys from its HD seed on demand and only returns public keys,
+    //! signatures and ECDH secrets. All methods fail when the wallet is
+    //! locked or has no HD seed, and always fail unless the wallet was built
+    //! with --enable-platform-gui.
+    enum class PlatformKeyType {
+        IdentityAuth,        //!< m/9'/coin'/5'/0'/0'/<account>'/<index>'
+        RegistrationFunding, //!< m/9'/coin'/5'/1'/<index>'
+        TopupFunding,        //!< m/9'/coin'/5'/2'/<index>'
+        InvitationFunding,   //!< m/9'/coin'/5'/3'/<index>'
+    };
+
+    //! Derive and return the public key for a platform key. For
+    //! IdentityAuth, account is the identity index; for funding keys it is
+    //! ignored.
+    virtual bool getPlatformPubKey(PlatformKeyType type, uint32_t account, uint32_t index, CPubKey& pubkey_out) = 0;
+
+    //! Sign a 32-byte digest with a platform key (compact/recoverable ECDSA,
+    //! as used by Platform state transitions).
+    virtual bool signPlatformDigest(PlatformKeyType type, uint32_t account, uint32_t index, const uint256& digest, std::vector<unsigned char>& vchSig) = 0;
+
+    //! ECDH shared secret between the identity authentication key
+    //! (identity_index, key_index) and a counterparty public key, using the
+    //! libsecp256k1 ECDH KDF. Used for DashPay contact request encryption.
+    virtual bool platformECDHSecret(uint32_t identity_index, uint32_t key_index, const CPubKey& counterparty, SecureVector& secret_out) = 0;
+
+    //! DIP-15 friendship extended public key (pubkey + chain code) at
+    //! m/9'/coin'/15'/<account>'/<user_a>/<user_b>. For our receiving chain
+    //! user_a is our identity id and user_b the contact's.
+    virtual bool getFriendshipXpub(uint32_t account, const uint256& user_a_id, const uint256& user_b_id, CPubKey& pubkey_out, uint256& chaincode_out) = 0;
+
     //! Return whether wallet has private key.
     virtual bool isSpendable(const CScript& script) = 0;
     virtual bool isSpendable(const CTxDestination& dest) = 0;

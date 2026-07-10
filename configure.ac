@@ -2148,7 +2148,14 @@ CPPFLAGS_TEMP="$CPPFLAGS"
 unset CPPFLAGS
 CPPFLAGS="$CPPFLAGS_TEMP"
 
-ac_configure_args="${ac_configure_args} --disable-shared --with-pic --enable-benchmark=no --enable-module-recovery --disable-module-ecdh --disable-openssl-tests"
+dnl The ECDH module is required by the Dash Platform GUI (DashPay contact
+dnl request encryption, DIP-15); it is compiled but unused otherwise.
+if test "$enable_platform_gui" = "yes"; then
+  secp_ecdh_arg="--enable-module-ecdh"
+else
+  secp_ecdh_arg="--disable-module-ecdh"
+fi
+ac_configure_args="${ac_configure_args} --disable-shared --with-pic --enable-benchmark=no --enable-module-recovery ${secp_ecdh_arg} --disable-openssl-tests"
 AC_CONFIG_SUBDIRS([src/dashbls src/secp256k1])
 
 AC_OUTPUT
