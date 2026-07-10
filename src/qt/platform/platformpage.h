@@ -13,10 +13,13 @@ class ClientModel;
 class PlatformService;
 class WalletModel;
 
+class ContactsPage;
+
 QT_BEGIN_NAMESPACE
 class QLabel;
 class QPushButton;
 class QStackedWidget;
+class QVBoxLayout;
 QT_END_NAMESPACE
 
 /** DashPay (Dash Platform) page: usernames, profiles and contacts for a
@@ -54,6 +57,8 @@ private:
     QLabel* m_dashboard_username{nullptr};
     QLabel* m_dashboard_status{nullptr};
     QPushButton* m_create_button{nullptr};
+    QVBoxLayout* m_dashboard_layout{nullptr};
+    ContactsPage* m_contacts_page{nullptr};
 };
 
 #endif // BITCOIN_QT_PLATFORM_PLATFORMPAGE_H
