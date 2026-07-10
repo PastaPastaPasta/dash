@@ -39,8 +39,12 @@ src/qt/descriptiondialog.*
 src/qt/donutchart.*
 src/qt/guiutil_font.*
 src/qt/informationwidget.*
+src/platform/*.cpp
+src/platform/*.h
 src/qt/masternodelist.*
 src/qt/masternodemodel.*
+src/qt/platform/*.cpp
+src/qt/platform/*.h
 src/qt/mnemonicverificationdialog.*
 src/qt/networkwidget.*
 src/qt/test/providertransactiontests.cpp

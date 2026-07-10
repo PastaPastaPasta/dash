@@ -76,6 +76,9 @@ LIBSECP256K1=secp256k1/libsecp256k1.la
 if ENABLE_ZMQ
 LIBBITCOIN_ZMQ=libbitcoin_zmq.a
 endif
+if ENABLE_PLATFORM_GUI
+LIBDASH_PLATFORM=libdash_platform.a
+endif
 if BUILD_BITCOIN_LIBS
 LIBBITCOINCONSENSUS=libdashconsensus.la
 endif
@@ -147,7 +150,8 @@ EXTRA_LIBRARIES += \
   $(LIBBITCOIN_IPC) \
   $(LIBBITCOIN_WALLET) \
   $(LIBBITCOIN_WALLET_TOOL) \
-  $(LIBBITCOIN_ZMQ)
+  $(LIBBITCOIN_ZMQ) \
+  $(LIBDASH_PLATFORM)
 
 if ENABLE_RUST
 noinst_LTLIBRARIES += $(LIBCXXBRIDGE)
@@ -711,6 +715,23 @@ libbitcoin_zmq_a_SOURCES = \
   zmq/zmqpublishnotifier.cpp \
   zmq/zmqrpc.cpp \
   zmq/zmqutil.cpp
+endif
+#
+
+# platform (Dash Platform client, linked into dash-qt and test_dash only) #
+if ENABLE_PLATFORM_GUI
+libdash_platform_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(BOOST_CPPFLAGS) $(MBEDTLS_CFLAGS) \
+  -DBLAKE3_NO_SSE2 -DBLAKE3_NO_SSE41 -DBLAKE3_NO_AVX2 -DBLAKE3_NO_AVX512
+libdash_platform_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+libdash_platform_a_CFLAGS = $(AM_CFLAGS) $(PIE_FLAGS)
+libdash_platform_a_SOURCES = \
+  crypto/blake3/blake3.c \
+  crypto/blake3/blake3.h \
+  crypto/blake3/blake3_dispatch.c \
+  crypto/blake3/blake3_impl.h \
+  crypto/blake3/blake3_portable.c \
+  platform/params.cpp \
+  platform/params.h
 endif
 #
 

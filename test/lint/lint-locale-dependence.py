@@ -56,6 +56,8 @@ KNOWN_VIOLATIONS = [
 ]
 
 REGEXP_EXTERNAL_DEPENDENCIES_EXCLUSIONS = [
+    "rust/",
+    "src/crypto/blake3/",
     "src/crypto/ctaes/",
     "src/leveldb/",
     "src/secp256k1/",

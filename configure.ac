@@ -346,6 +346,16 @@ if test "$enable_miner" = "yes"; then
     AC_DEFINE(ENABLE_MINER, 1, [Define this symbol if in-wallet miner should be enabled])
 fi
 
+dnl Enable Dash Platform support (usernames / DashPay contacts) in the GUI.
+dnl This only affects dash-qt; dashd and the other binaries never link any of it.
+AC_ARG_ENABLE([platform-gui],
+    [AS_HELP_STRING([--enable-platform-gui],
+                    [enable Dash Platform (usernames/DashPay) support in the GUI (default is no)])],
+    [enable_platform_gui=$enableval],
+    [enable_platform_gui=no])
+AC_ARG_VAR([MBEDTLS_CFLAGS], [C compiler flags for mbedtls, bypasses autodetection])
+AC_ARG_VAR([MBEDTLS_LIBS], [Linker flags for mbedtls, bypasses autodetection])
+
 dnl Enable different -fsanitize options
 AC_ARG_WITH([sanitizers],
     [AS_HELP_STRING([--with-sanitizers],
@@ -924,6 +934,16 @@ case $host in
 
          if $BREW list --versions qt@5 >/dev/null; then
            export PKG_CONFIG_PATH="$($BREW --prefix qt@5 2>/dev/null)/lib/pkgconfig:$PKG_CONFIG_PATH"
+         fi
+
+         if test "$enable_platform_gui" = "yes" && $BREW list --versions mbedtls >/dev/null && test "$MBEDTLS_CFLAGS" = "" && test "$MBEDTLS_LIBS" = ""; then
+           mbedtls_prefix=$($BREW --prefix mbedtls 2>/dev/null)
+           if test "$suppress_external_warnings" != "no"; then
+             MBEDTLS_CFLAGS="-isystem $mbedtls_prefix/include"
+           else
+             MBEDTLS_CFLAGS="-I$mbedtls_prefix/include"
+           fi
+           MBEDTLS_LIBS="-L$mbedtls_prefix/lib -lmbedtls -lmbedx509 -lmbedcrypto"
          fi
 
         gmp_prefix=$($BREW --prefix gmp 2>/dev/null)
@@ -2168,6 +2188,28 @@ if test "$build_bitcoin_wallet$build_bitcoin_cli$build_bitcoin_tx$build_bitcoin_
   AC_MSG_ERROR([No targets! Please specify at least one of: --with-utils --with-libs --with-daemon --with-gui --enable-fuzz(-binary) --enable-bench or --enable-tests])
 fi
 
+dnl Dash Platform GUI support needs the GUI and the wallet, and mbedtls for the
+dnl DAPI TLS client. The platform client library is linked into dash-qt (and
+dnl test binaries) only.
+if test "$enable_platform_gui" = "yes"; then
+  if test "$bitcoin_enable_qt" != "yes"; then
+    AC_MSG_ERROR([--enable-platform-gui requires the GUI (--with-gui)])
+  fi
+  if test "$enable_wallet" != "yes"; then
+    AC_MSG_ERROR([--enable-platform-gui requires wallet support (--enable-wallet)])
+  fi
+  if test "$MBEDTLS_CFLAGS$MBEDTLS_LIBS" = ""; then
+    AC_CHECK_HEADER([mbedtls/ssl.h], [], [AC_MSG_ERROR([mbedtls headers not found (required by --enable-platform-gui)])])
+    AC_CHECK_LIB([mbedcrypto], [main], [MBEDTLS_LIBS="-lmbedcrypto"], [AC_MSG_ERROR([libmbedcrypto not found (required by --enable-platform-gui)])])
+    AC_CHECK_LIB([mbedx509], [main], [MBEDTLS_LIBS="-lmbedx509 $MBEDTLS_LIBS"], [AC_MSG_ERROR([libmbedx509 not found (required by --enable-platform-gui)])], [$MBEDTLS_LIBS])
+    AC_CHECK_LIB([mbedtls], [mbedtls_ssl_init], [MBEDTLS_LIBS="-lmbedtls $MBEDTLS_LIBS"], [AC_MSG_ERROR([libmbedtls not found (required by --enable-platform-gui)])], [$MBEDTLS_LIBS])
+  fi
+  AC_DEFINE([ENABLE_PLATFORM_GUI], [1], [Define this symbol to enable Dash Platform support in the GUI])
+fi
+AM_CONDITIONAL([ENABLE_PLATFORM_GUI], [test "$enable_platform_gui" = "yes"])
+AC_SUBST(MBEDTLS_CFLAGS)
+AC_SUBST(MBEDTLS_LIBS)
+
 AM_CONDITIONAL([TARGET_DARWIN], [test "$TARGET_OS" = "darwin"])
 AM_CONDITIONAL([BUILD_DARWIN], [test "$BUILD_OS" = "darwin"])
 AM_CONDITIONAL([TARGET_LINUX], [test "$TARGET_OS" = "linux"])
@@ -2378,6 +2420,7 @@ echo "  debug enabled   = $enable_debug"
 echo "  stacktraces     = $enable_stacktraces"
 echo "  crash hooks     = $enable_crashhooks"
 echo "  miner enabled   = $enable_miner"
+echo "  platform gui    = $enable_platform_gui"
 echo "  werror          = $enable_werror"
 echo
 echo "  target os       = $host_os"

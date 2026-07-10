@@ -17,7 +17,9 @@ from typing import List
 HEADER_ID_PREFIX = 'BITCOIN_'
 HEADER_ID_SUFFIX = '_H'
 
-EXCLUDE_FILES_WITH_PREFIX = ['src/crypto/ctaes',
+EXCLUDE_FILES_WITH_PREFIX = ['rust/',
+                             'src/crypto/blake3',
+                             'src/crypto/ctaes',
                              'src/leveldb',
                              'src/crc32c',
                              'src/secp256k1',
