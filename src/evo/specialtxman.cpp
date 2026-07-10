@@ -1694,7 +1694,7 @@ bool CheckProDisTxForList(const CTransaction& tx, const CProDisTx& ptx, const CD
     }
 
     if (check_sigs) {
-        const uint256 sign_hash{ptx.MakeSignHash(tx)};
+        const uint256 sign_hash{ptx.MakeSignHash(tx, static_cast<uint8_t>(ptx.vchSigs.size()))};
         if (unanimous) {
             for (size_t i = 0; i < shares.size(); i++) {
                 if (std::string strError; !CHashSigner::VerifyHashCanonical(sign_hash, shares[i].keyIDOwner,

@@ -450,8 +450,12 @@ public:
     }
 
     /** The digest every dissolution signature commits to. It covers the transaction's actual
-     *  input(s) and outputs directly, pinning every free byte of the transaction. */
-    [[nodiscard]] uint256 MakeSignHash(const CTransaction& tx) const;
+     *  input(s) and outputs directly, plus the signature count, which selects the mode
+     *  (1 = unilateral, sharesCount = unanimous). Committing the count is what stops a third party
+     *  from reinterpreting a penalty-free unanimous dissolution as a unilateral one (or vice
+     *  versa) by dropping/adding signatures, which would change the txid. Callers pass the count
+     *  the transaction will carry; verification passes the actual vchSigs.size(). */
+    [[nodiscard]] uint256 MakeSignHash(const CTransaction& tx, uint8_t sig_count) const;
 
     std::string ToString() const;
 

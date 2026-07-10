@@ -599,7 +599,8 @@ struct ProDisTestSetup {
 
     void Sign(const CMutableTransaction& tx, CProDisTx& ptx, bool unanimous) const
     {
-        const uint256 hash = ptx.MakeSignHash(CTransaction(tx));
+        const uint8_t sig_count{unanimous ? static_cast<uint8_t>(std::size(owner_keys)) : uint8_t{1}};
+        const uint256 hash = ptx.MakeSignHash(CTransaction(tx), sig_count);
         ptx.vchSigs.clear();
         if (unanimous) {
             for (const auto& key : owner_keys) {
@@ -707,7 +708,7 @@ BOOST_AUTO_TEST_CASE(prodis_validation)
         CProDisTx ptx;
         auto tx = t.BuildTx(2, ProDisTestSetup::PENALTY, false, ptx);
         std::vector<unsigned char> sig;
-        BOOST_REQUIRE(CHashSigner::SignHash(ptx.MakeSignHash(CTransaction(tx)), t.owner_keys[0], sig));
+        BOOST_REQUIRE(CHashSigner::SignHash(ptx.MakeSignHash(CTransaction(tx), /*sig_count=*/1), t.owner_keys[0], sig));
         ptx.vchSigs = {sig};
         t.Check(tx, ptx, IN_EARLY, "bad-prodis-sig");
     }
@@ -717,6 +718,16 @@ BOOST_AUTO_TEST_CASE(prodis_validation)
         auto tx = t.BuildTx(0, 0, true, ptx);
         std::swap(ptx.vchSigs[0], ptx.vchSigs[1]);
         t.Check(tx, ptx, IN_EARLY, "bad-prodis-sig");
+    }
+    // Non-malleable mode: a penalty-free unanimous dissolution cannot be stripped to just the
+    // actor's signature and re-interpreted as unilateral. Outputs are byte-identical to a valid
+    // unilateral penalty-free dissolution, but the retained signature committed to sigCount=3, so
+    // verifying it as a 1-signature transaction (which recomputes the digest with sigCount=1) fails.
+    {
+        CProDisTx ptx;
+        auto tx = t.BuildTx(0, 0, true, ptx); // unanimous, penalty 0, actor 0
+        ptx.vchSigs = {ptx.vchSigs[0]};       // keep only the actor share's signature
+        t.Check(tx, ptx, AFTER_EARLY, "bad-prodis-sig");
     }
     // Redirected refund output
     {

@@ -423,12 +423,14 @@ std::string CProUpRevTx::ToString() const
         nVersion, proTxHash.ToString(), nReason);
 }
 
-uint256 CProDisTx::MakeSignHash(const CTransaction& tx) const
+uint256 CProDisTx::MakeSignHash(const CTransaction& tx, uint8_t sig_count) const
 {
     // The digest commits to the transaction's actual input(s) and outputs directly; the payload
-    // deliberately carries no inputsHash/outputsHash copies. Together with the empty-scriptSig
-    // rule and the low-S requirement this pins every free byte of a ProDisTx, so its txid is
-    // non-malleable by third parties.
+    // deliberately carries no inputsHash/outputsHash copies. It also commits to the signature
+    // count, which selects the dissolution mode, so a third party cannot reinterpret a penalty-free
+    // unanimous dissolution as a unilateral one (or vice versa) by dropping/adding signatures.
+    // Together with the empty-scriptSig rule and the low-S requirement this pins every free byte of
+    // a ProDisTx, so its txid is non-malleable by third parties.
     CHashWriter hw(SER_GETHASH, CLIENT_VERSION);
     hw << std::string("DashSharedMNDissolve");
     hw << nVersion;
@@ -446,6 +448,7 @@ uint256 CProDisTx::MakeSignHash(const CTransaction& tx) const
     }
     hw << proTxHash;
     hw << actorIndex;
+    hw << sig_count;
     return hw.GetHash();
 }
 

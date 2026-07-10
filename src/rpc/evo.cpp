@@ -1597,7 +1597,9 @@ static RPCHelpMan protx_shared_sign()
             throw JSONRPCError(RPC_INVALID_PARAMETER, "shared masternode not found");
         }
         shares = dmn->pdmnState->shares;
-        sign_hash = opt_ptx->MakeSignHash(CTransaction(tx));
+        // shared_sign only ever signs unanimous dissolutions (built by dissolve_prepare); a
+        // unilateral dissolution is signed inline by "protx dissolve"
+        sign_hash = opt_ptx->MakeSignHash(CTransaction(tx), static_cast<uint8_t>(shares.size()));
     } else if (tx.nType == TRANSACTION_PROVIDER_UPDATE_SHARED_REGISTRAR) {
         const auto opt_ptx = GetTxPayload<CProUpSharedRegTx>(tx);
         if (!opt_ptx) {
@@ -1696,7 +1698,7 @@ static RPCHelpMan protx_dissolve()
                                            pay_penalty ? dmn->pdmnState->nEarlyPenalty : 0, fee, ptx);
 
     std::vector<unsigned char> vchSig;
-    if (!pwallet->SignSpecialTxPayload(ptx.MakeSignHash(CTransaction(tx)),
+    if (!pwallet->SignSpecialTxPayload(ptx.MakeSignHash(CTransaction(tx), /*sig_count=*/1),
                                        dmn->pdmnState->shares[actorIndex].keyIDOwner, vchSig)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY,
                            "private key for the actor share's owner address not found in this wallet");
@@ -2748,7 +2750,9 @@ static RPCHelpMan protx_dissolve_prepare()
 
     UniValue ret(UniValue::VOBJ);
     ret.pushKV("tx", EncodeHexTx(CTransaction(tx)));
-    ret.pushKV("signHash", ptx.MakeSignHash(CTransaction(tx)).ToString());
+    // Unanimous dissolution: every share owner signs, so the count is the share count
+    ret.pushKV("signHash",
+               ptx.MakeSignHash(CTransaction(tx), static_cast<uint8_t>(dmn->pdmnState->shares.size())).ToString());
     return ret;
 },
     };
