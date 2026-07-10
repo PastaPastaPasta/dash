@@ -224,8 +224,11 @@ BITCOIN_TESTS =\
 
 if ENABLE_PLATFORM_GUI
 BITCOIN_TESTS += \
+  test/platform_dpp_tests.cpp \
   test/platform_proof_tests.cpp
 JSON_TEST_FILES += \
+  test/data/platform/dpp_identity_vectors.json \
+  test/data/platform/dpp_st_vectors.json \
   test/data/platform/element_vectors.json \
   test/data/platform/grovedb_proof_vectors.json \
   test/data/platform/merk_proof_vectors.json

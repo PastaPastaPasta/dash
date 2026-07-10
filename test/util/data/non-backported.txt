@@ -41,6 +41,8 @@ src/qt/guiutil_font.*
 src/qt/informationwidget.*
 src/platform/*.cpp
 src/platform/*.h
+src/platform/dpp/*.cpp
+src/platform/dpp/*.h
 src/platform/proof/*.cpp
 src/platform/proof/*.h
 src/qt/masternodelist.*
@@ -79,6 +81,7 @@ src/test/llmq*.cpp
 src/test/masternode_payments_tests.cpp
 src/test/spork_tests.cpp
 src/test/unordered_lru_cache_tests.cpp
+src/test/platform_dpp_tests.cpp
 src/test/platform_proof_tests.cpp
 src/test/util/llmq_tests.h
 src/test/util/masternode.*

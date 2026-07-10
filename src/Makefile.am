@@ -731,6 +731,13 @@ libdash_platform_a_SOURCES = \
   crypto/blake3/blake3_impl.h \
   crypto/blake3/blake3_portable.c \
   platform/client.h \
+  platform/dpp/bincode.cpp \
+  platform/dpp/bincode.h \
+  platform/dpp/document.cpp \
+  platform/dpp/document.h \
+  platform/dpp/identity.cpp \
+  platform/dpp/identity.h \
+  platform/dpp/statetransitions.cpp \
   platform/params.cpp \
   platform/params.h \
   platform/proof/grovedb.cpp \
