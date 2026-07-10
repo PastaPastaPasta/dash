@@ -7,6 +7,7 @@
 
 #include <platform/dpp/bincode.h>
 #include <platform/params.h>
+#include <platform/types.h>
 
 #include <array>
 #include <cstdint>
@@ -100,6 +101,25 @@ Identifier GenerateDocumentId(const Identifier& contract_id,
                               const Identifier& owner_id,
                               const std::string& document_type_name,
                               Span<const uint8_t> entropy);
+
+//! Decode a stored (platform-serialized) document's common header:
+//! version byte, $id (32), $ownerId (32), revision (varint). Returns the
+//! offset just past the header, or 0 on malformed input.
+size_t DecodeDocumentHeader(Span<const uint8_t> doc, Identifier& id_out,
+                            Identifier& owner_out, uint64_t& revision_out);
+
+//! Decode the GUI-relevant fields of a DPNS `domain` document. This is a
+//! targeted decoder over the known DPNS v1 property order (label,
+//! normalizedLabel, parentDomainName, normalizedParentDomainName,
+//! preorderSalt, records.identity); it is not a general contract-schema
+//! driven decoder. Returns false on malformed input.
+bool DecodeDpnsDomain(Span<const uint8_t> doc, DpnsName& out);
+
+//! Decode the GUI-relevant fields of a DashPay `profile` document.
+bool DecodeDashPayProfile(Span<const uint8_t> doc, Profile& out);
+
+//! Decode a DashPay `contactRequest` document.
+bool DecodeDashPayContactRequest(Span<const uint8_t> doc, ContactRequest& out);
 
 } // namespace platform::dpp
 
