@@ -7,6 +7,7 @@
 #include <clientversion.h>
 #include <interfaces/node.h>
 #include <interfaces/wallet.h>
+#include <logging.h>
 #include <platform/client.h>
 #include <platform/statetransitions.h>
 #include <primitives/transaction.h>
@@ -114,6 +115,8 @@ void IdentityFlow::setState(State state)
     m_record.last_error.clear();
     m_retries = 0;
     save();
+    LogPrintf("Platform identity flow: state=%d name=%s\n", static_cast<int>(state),
+              m_record.normalized_label);
     Q_EMIT stateChanged();
 }
 
@@ -198,7 +201,6 @@ bool IdentityFlow::start(const QString& label, CAmount funding_amount, QString& 
     wallet.commitTransaction(tx, {}, {});
 
     Q_EMIT stateChanged();
-    advance();
     return true;
 }
 
@@ -232,6 +234,8 @@ void IdentityFlow::advance()
         broadcastPreorder();
         return;
     case State::PREORDER_BROADCAST:
+        broadcastPreorder();
+        return;
     case State::PREORDER_WAIT:
         broadcastDomain();
         return;
@@ -256,7 +260,6 @@ void IdentityFlow::checkFundingLock()
     }
     if (status.is_islocked || status.is_chainlocked || status.depth_in_main_chain >= 8) {
         setState(State::FUNDING_LOCKED);
-        advance();
     }
 }
 
@@ -345,7 +348,6 @@ void IdentityFlow::broadcastIdentityCreate()
                 self->fail(tr("identity"), QString::fromStdString(res.value->error), /*retryable=*/true);
                 return;
             }
-            self->advance();
         });
     });
 }
@@ -359,10 +361,20 @@ void IdentityFlow::confirmIdentity()
         self->m_service.post([self, res = std::move(res)] {
             if (!self) return;
             self->m_step_in_flight = false;
-            if (!res.ok()) return; // transient network error; retry on next tick
+            if (!res.ok()) {
+                LogPrintf("Platform identity flow: confirmation failed: %s\n", res.error);
+                if (++self->m_retries >= MAX_CONFIRM_POLLS) {
+                    // The transition may never have left this process (for
+                    // example, a crash immediately after persisting
+                    // IDENTITY_BROADCAST). Rebuild and rebroadcast it
+                    // idempotently after bounded failed/absent reads.
+                    self->m_retries = 0;
+                    self->setState(State::FUNDING_LOCKED);
+                }
+                return;
+            }
             if (res.value->has_value()) {
                 self->setState(State::IDENTITY_CONFIRMED);
-                self->advance();
             } else if (++self->m_retries >= MAX_CONFIRM_POLLS) {
                 // Broadcast may have been lost (e.g. crash between persist and
                 // send) — step back and rebroadcast.
@@ -397,6 +409,7 @@ void IdentityFlow::broadcastPreorder()
                 self->fail(tr("preorder"), QString::fromStdString(built.error), /*retryable=*/true);
                 return;
             }
+            self->setState(State::PREORDER_BROADCAST);
             self->m_step_in_flight = true;
             QPointer<IdentityFlow> inner{self};
             self->m_service.client().broadcastStateTransition(built.value->bytes, [inner](platform::Result<platform::BroadcastResult> res) {
@@ -451,7 +464,6 @@ void IdentityFlow::broadcastDomain()
                     if (res.value->accepted ||
                         res.value->error.find("already") != std::string::npos) {
                         inner->setState(State::DOMAIN_BROADCAST);
-                        inner->advance();
                     } else if (res.value->error.find("preorder") != std::string::npos) {
                         // Preorder not visible yet — wait and retry.
                     } else {

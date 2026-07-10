@@ -19,17 +19,33 @@ ProfileDialog::ProfileDialog(PlatformService& service, QWidget* parent) :
     m_service(service)
 {
     setWindowTitle(tr("Edit DashPay profile"));
-    resize(400, 320);
+    resize(400, 340);
     auto* layout = new QVBoxLayout(this);
+
+    auto* hint = new QLabel(tr("Your profile is public: anyone on Dash Platform can see it. "
+                               "It helps contacts recognize you."), this);
+    hint->setWordWrap(true);
+    layout->addWidget(hint);
+
     auto* form = new QFormLayout();
 
     m_display_name = new QLineEdit(this);
     m_display_name->setMaxLength(25);
+    m_display_name->setPlaceholderText(tr("e.g. your name or nickname"));
     form->addRow(tr("Display name"), m_display_name);
 
     m_public_message = new QPlainTextEdit(this);
     m_public_message->setFixedHeight(60);
     form->addRow(tr("Public message"), m_public_message);
+
+    auto* counter = new QLabel(QStringLiteral("0/140"), this);
+    counter->setAlignment(Qt::AlignRight);
+    form->addRow(QString{}, counter);
+    connect(m_public_message, &QPlainTextEdit::textChanged, this, [this, counter] {
+        const int length{m_public_message->toPlainText().size()};
+        counter->setText(QStringLiteral("%1/140").arg(length));
+        counter->setStyleSheet(length > 140 ? QStringLiteral("color: red;") : QString{});
+    });
 
     m_avatar_url = new QLineEdit(this);
     m_avatar_url->setPlaceholderText(tr("https://…"));
@@ -45,10 +61,21 @@ ProfileDialog::ProfileDialog(PlatformService& service, QWidget* parent) :
     connect(buttons, &QDialogButtonBox::accepted, this, &ProfileDialog::save);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(&m_service, &PlatformService::profileUpdated, this, &ProfileDialog::onProfileUpdated);
+    connect(&m_service, &PlatformService::profileLoaded, this,
+            [this](const QString&, const QString& display, const QString& message, const QString& avatar) {
+        m_display_name->setText(display);
+        m_public_message->setPlainText(message);
+        m_avatar_url->setText(avatar);
+    });
+    if (const auto id{m_service.myIdentityId()}) m_service.loadProfile(*id);
 }
 
 void ProfileDialog::save()
 {
+    if (m_public_message->toPlainText().size() > 140) {
+        m_status->setText(tr("Public message is limited to 140 characters."));
+        return;
+    }
     WalletModel::UnlockContext ctx{m_service.walletModel().requestUnlock()};
     if (!ctx.isValid()) return;
     m_status->setText(tr("Publishing profile…"));

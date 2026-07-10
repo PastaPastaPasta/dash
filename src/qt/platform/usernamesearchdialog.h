@@ -9,11 +9,17 @@
 #include <QString>
 #include <QVector>
 
+#include <qt/walletmodel.h>
+
+#include <memory>
+
 class PlatformService;
 
 QT_BEGIN_NAMESPACE
 class QLineEdit;
 class QListWidget;
+class QLabel;
+class QPushButton;
 class QTimer;
 QT_END_NAMESPACE
 
@@ -29,12 +35,18 @@ private Q_SLOTS:
     void onTextChanged();
     void onResults(const QString& prefix, const QVector<QPair<QString, QString>>& results);
     void addSelected();
+    void updateActions();
 
 private:
     PlatformService& m_service;
     QLineEdit* m_input{nullptr};
     QListWidget* m_list{nullptr};
+    QLabel* m_status{nullptr};
+    QPushButton* m_add{nullptr};
     QTimer* m_debounce{nullptr};
+    QString m_pending_identity;
+    bool m_searching{false};
+    std::unique_ptr<WalletModel::UnlockContext> m_unlock;
 };
 
 #endif // BITCOIN_QT_PLATFORM_USERNAMESEARCHDIALOG_H

@@ -24,6 +24,33 @@ constexpr int PAGE_ENTRY{0};
 constexpr int PAGE_COST{1};
 constexpr int PAGE_PROGRESS{2};
 constexpr int DEBOUNCE_MS{400};
+
+void ReserveWrappedLabelHeight(QLabel* label, int lines = 1)
+{
+    label->setWordWrap(true);
+    label->setMinimumHeight(label->fontMetrics().lineSpacing() * lines);
+    label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+}
+
+void AddPageHeader(QVBoxLayout* layout, QWidget* parent, const QString& title, const QString& subtitle = {})
+{
+    // QWizard's native ModernStyle header is repainted incorrectly by the
+    // macOS dark theme when a page emits completeChanged(). Keep the header
+    // in the page layout so its geometry and palette remain stable.
+    auto* heading = new QLabel(title, parent);
+    QFont heading_font{heading->font()};
+    heading_font.setBold(true);
+    heading->setFont(heading_font);
+    ReserveWrappedLabelHeight(heading);
+    layout->addWidget(heading);
+
+    if (!subtitle.isEmpty()) {
+        auto* description = new QLabel(subtitle, parent);
+        ReserveWrappedLabelHeight(description, 2);
+        layout->addWidget(description);
+    }
+    layout->addSpacing(16);
+}
 } // namespace
 
 // ---- Wizard -----------------------------------------------------------------
@@ -35,11 +62,18 @@ CreateUsernameWizard::CreateUsernameWizard(PlatformService& service, WalletModel
 {
     setWindowTitle(tr("Register a DashPay username"));
     setWizardStyle(QWizard::ModernStyle);
+    setMinimumSize(520, 400);
     setOption(QWizard::NoBackButtonOnStartPage, true);
+    setOption(QWizard::DisabledBackButtonOnLastPage, true);
 
     setPage(PAGE_ENTRY, new UsernameEntryPage(service, this));
     setPage(PAGE_COST, new UsernameCostPage(service, wallet_model, this));
     setPage(PAGE_PROGRESS, new UsernameProgressPage(service, this));
+}
+
+void CreateUsernameWizard::startAtProgress()
+{
+    setStartId(PAGE_PROGRESS);
 }
 
 // ---- Entry page -------------------------------------------------------------
@@ -48,10 +82,9 @@ UsernameEntryPage::UsernameEntryPage(PlatformService& service, QWidget* parent) 
     QWizardPage(parent),
     m_service(service)
 {
-    setTitle(tr("Choose your username"));
-    setSubTitle(tr("Your username is registered on Dash Platform and is unique across the network."));
-
     auto* layout = new QVBoxLayout(this);
+    AddPageHeader(layout, this, tr("Choose your username"),
+                  tr("Your username is registered on Dash Platform and is unique across the network."));
     m_input = new QLineEdit(this);
     m_input->setPlaceholderText(tr("username"));
     // DPNS labels: 3-63 chars, letters/digits/hyphens, no leading/trailing hyphen.
@@ -60,8 +93,9 @@ UsernameEntryPage::UsernameEntryPage(PlatformService& service, QWidget* parent) 
     layout->addWidget(m_input);
 
     m_status = new QLabel(this);
-    m_status->setWordWrap(true);
+    ReserveWrappedLabelHeight(m_status, 2);
     layout->addWidget(m_status);
+    layout->addStretch();
 
     m_debounce = new QTimer(this);
     m_debounce->setSingleShot(true);
@@ -73,6 +107,16 @@ UsernameEntryPage::UsernameEntryPage(PlatformService& service, QWidget* parent) 
         if (!name.isEmpty()) m_service.checkNameAvailability(name);
     });
     connect(&m_service, &PlatformService::nameAvailability, this, &UsernameEntryPage::onAvailability);
+    connect(&m_service, &PlatformService::nameAvailabilityFailed, this, &UsernameEntryPage::onAvailabilityFailed);
+}
+
+void UsernameEntryPage::onAvailabilityFailed(const QString& normalized_label, const QString& error)
+{
+    const std::string typed_norm{platform::st::NormalizeLabel(m_input->text().trimmed().toStdString())};
+    if (QString::fromStdString(typed_norm) != normalized_label) return;
+    m_available = false;
+    m_status->setText(tr("Could not verify availability: %1").arg(error));
+    Q_EMIT completeChanged();
 }
 
 void UsernameEntryPage::onTextChanged()
@@ -119,31 +163,35 @@ UsernameCostPage::UsernameCostPage(PlatformService& service, WalletModel& wallet
     m_service(service),
     m_wallet_model(wallet_model)
 {
-    setTitle(tr("Confirm registration"));
     auto* layout = new QVBoxLayout(this);
+    AddPageHeader(layout, this, tr("Confirm registration"));
     m_summary = new QLabel(this);
-    m_summary->setWordWrap(true);
+    ReserveWrappedLabelHeight(m_summary, 3);
     layout->addWidget(m_summary);
     m_warning = new QLabel(this);
-    m_warning->setWordWrap(true);
+    ReserveWrappedLabelHeight(m_warning, 3);
     m_warning->setStyleSheet("color:#c0392b;");
     layout->addWidget(m_warning);
+    layout->addStretch();
 }
 
 void UsernameCostPage::initializePage()
 {
-    m_funding_amount = m_service.params().default_identity_funding_amount;
+    auto* entry = qobject_cast<UsernameEntryPage*>(wizard()->page(PAGE_ENTRY));
+    m_funding_amount = entry && entry->contested()
+        ? m_service.params().contested_identity_funding_amount
+        : m_service.params().default_identity_funding_amount;
     const auto unit{m_wallet_model.getOptionsModel()->getDisplayUnit()};
     m_summary->setText(tr("Registering your username funds a Dash Platform identity with %1. "
                           "This creates an on-chain asset lock transaction and several Platform "
                           "state transitions.")
                            .arg(BitcoinUnits::formatWithUnit(unit, m_funding_amount)));
 
-    auto* entry = qobject_cast<UsernameEntryPage*>(wizard()->page(PAGE_ENTRY));
     m_warning->setVisible(entry && entry->contested());
     if (entry && entry->contested()) {
-        m_warning->setText(tr("This is a premium (contested) name: masternodes will vote on who "
-                              "receives it. The process can take weeks and you may not win it."));
+        m_warning->setText(tr("This is a premium (contested) name. The funding includes the 0.2 DASH "
+                              "vote reserve. Masternodes will vote on who receives it; the process "
+                              "can take weeks and you may not win it."));
     }
 }
 
@@ -170,11 +218,11 @@ UsernameProgressPage::UsernameProgressPage(PlatformService& service, QWidget* pa
     QWizardPage(parent),
     m_service(service)
 {
-    setTitle(tr("Registering…"));
-    setSubTitle(tr("You can close this window; registration continues in the background."));
     auto* layout = new QVBoxLayout(this);
+    AddPageHeader(layout, this, tr("Registering…"),
+                  tr("You can close this window; registration continues in the background."));
     m_headline = new QLabel(this);
-    m_headline->setWordWrap(true);
+    ReserveWrappedLabelHeight(m_headline, 2);
     layout->addWidget(m_headline);
     m_log = new QPlainTextEdit(this);
     m_log->setReadOnly(true);
@@ -206,8 +254,13 @@ void UsernameProgressPage::refresh()
     case State::FAILED:              label = tr("Registration failed: %1").arg(QString::fromStdString(rec.last_error)); break;
     case State::NONE:                label = tr("Starting…"); break;
     }
+    // Keep the current state prominent without repeating it immediately in
+    // the history. When the state advances, archive the previous headline.
+    if (!m_last_headline.isEmpty() && m_last_headline != label) {
+        m_log->appendPlainText(m_last_headline);
+    }
+    m_last_headline = label;
     m_headline->setText(label);
-    m_log->appendPlainText(label);
 
     const bool done{rec.state == State::REGISTERED || rec.state == State::FAILED ||
                     rec.state == State::CONTESTED_PENDING};

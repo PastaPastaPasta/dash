@@ -117,6 +117,7 @@ QT_MOC_CPP = \
 if ENABLE_PLATFORM_GUI
 QT_MOC_CPP += \
   qt/platform/moc_contactflow.cpp \
+  qt/platform/moc_contactpickerdialog.cpp \
   qt/platform/moc_contactsmodel.cpp \
   qt/platform/moc_contactspage.cpp \
   qt/platform/moc_createusernamewizard.cpp \
@@ -223,6 +224,7 @@ BITCOIN_QT_H = \
 if ENABLE_PLATFORM_GUI
 BITCOIN_QT_H += \
   qt/platform/contactflow.h \
+  qt/platform/contactpickerdialog.h \
   qt/platform/contactsmodel.h \
   qt/platform/contactspage.h \
   qt/platform/createusernamewizard.h \
@@ -359,6 +361,7 @@ BITCOIN_QT_WALLET_CPP = \
 
 BITCOIN_QT_PLATFORM_CPP = \
   qt/platform/contactflow.cpp \
+  qt/platform/contactpickerdialog.cpp \
   qt/platform/contactsmodel.cpp \
   qt/platform/contactspage.cpp \
   qt/platform/createusernamewizard.cpp \

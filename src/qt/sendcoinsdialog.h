@@ -17,6 +17,9 @@ static const int MAX_SEND_POPUP_ENTRIES = 10;
 
 class SendCoinsEntry;
 class SendCoinsRecipient;
+#ifdef ENABLE_PLATFORM_GUI
+class PlatformService;
+#endif
 enum class SynchronizationState;
 namespace wallet {
 class CCoinControl;
@@ -41,6 +44,9 @@ public:
 
     void setClientModel(ClientModel *clientModel);
     void setModel(WalletModel *model);
+#ifdef ENABLE_PLATFORM_GUI
+    void setPlatformService(PlatformService* service);
+#endif
 
     /** Set up the tab chain manually, as Qt messes up the tab chain by default in some cases (issue https://bugreports.qt-project.org/browse/QTBUG-10907).
      */
@@ -65,6 +71,9 @@ private:
     Ui::SendCoinsDialog *ui;
     ClientModel* clientModel{nullptr};
     WalletModel* model{nullptr};
+#ifdef ENABLE_PLATFORM_GUI
+    PlatformService* m_platform_service{nullptr};
+#endif
     std::unique_ptr<wallet::CCoinControl> m_coin_control;
     std::unique_ptr<WalletModelTransaction> m_current_transaction;
     bool fNewRecipientAllowed{true};

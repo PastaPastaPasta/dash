@@ -15,6 +15,9 @@
 #include <util/strencodings.h>
 
 #include <QPointer>
+#include <QTimer>
+
+#include <algorithm>
 
 using interfaces::Wallet;
 using PlatformKeyType = interfaces::Wallet::PlatformKeyType;
@@ -157,8 +160,14 @@ void ContactFlow::sendRequest(const platform::Identifier& to_identity, uint32_t 
                     if (!inner) return;
                     if (res.ok() && (res.value->accepted ||
                                      res.value->error.find("already") != std::string::npos)) {
-                        Q_EMIT inner->requestSent(id_hex);
-                        Q_EMIT inner->contactAdded(id_hex);
+                        platform::Identifier to{};
+                        const auto bytes{ParseHex(id_hex.toStdString())};
+                        if (bytes.size() != to.size()) {
+                            Q_EMIT inner->requestFailed(id_hex, tr("invalid contact identity"));
+                            return;
+                        }
+                        std::copy(bytes.begin(), bytes.end(), to.begin());
+                        inner->confirmRequest(to, /*attempts_left=*/12);
                     } else {
                         Q_EMIT inner->requestFailed(id_hex, res.ok() ? QString::fromStdString(res.value->error)
                                                                      : tr("broadcast failed"));
@@ -171,30 +180,112 @@ void ContactFlow::sendRequest(const platform::Identifier& to_identity, uint32_t 
 
 void ContactFlow::accept(const platform::ContactRequest& incoming)
 {
-    // Decrypt the sender's xpub (they encrypted to our key recipient_key_index),
-    // import it as a watch-only sending chain, then send a request back.
-    std::vector<uint8_t> their_xpub;
-    // The sender's identity authentication key is needed for the ECDH; the
-    // service resolves it before calling accept in the fuller implementation.
-    // Here we import using the decrypted material and reciprocate.
-    QString error;
-    if (!importKeychains(incoming.owner_id, their_xpub, error)) {
-        Q_EMIT requestFailed(QString::fromStdString(HexStr(incoming.owner_id)), error);
-        return;
-    }
-    // Reciprocate so the two-way friendship is established. recipient key id
-    // and key are resolved by the service from the sender's identity.
-    Q_EMIT contactAdded(QString::fromStdString(HexStr(incoming.owner_id)));
+    const QString id_hex{QString::fromStdString(HexStr(incoming.owner_id))};
+    QPointer<ContactFlow> self{this};
+    m_service.client().getIdentity(incoming.owner_id,
+        [self, incoming, id_hex](platform::Result<std::optional<platform::Identity>> result) {
+        if (!self) return;
+        self->m_service.post([self, incoming, id_hex, result = std::move(result)] {
+            if (!self) return;
+            if (!result.ok() || !result.value->has_value()) {
+                Q_EMIT self->requestFailed(id_hex, tr("could not verify the sender identity"));
+                return;
+            }
+            const auto& keys{(**result.value).public_keys};
+            const auto it{std::find_if(keys.begin(), keys.end(), [&incoming](const auto& key) {
+                return key.id == incoming.sender_key_index && !key.disabled_at &&
+                       key.type == platform::IdentityPublicKey::Type::ECDSA_SECP256K1;
+            })};
+            if (it == keys.end()) {
+                Q_EMIT self->requestFailed(id_hex, tr("the sender encryption key is unavailable"));
+                return;
+            }
+            std::vector<uint8_t> their_xpub;
+            if (!self->decryptXpub(incoming.recipient_key_index, it->data,
+                                   incoming.encrypted_public_key, their_xpub)) {
+                Q_EMIT self->requestFailed(id_hex, tr("could not decrypt the contact request"));
+                return;
+            }
+            QString import_error;
+            if (!self->importKeychains(incoming.owner_id, their_xpub, import_error)) {
+                Q_EMIT self->requestFailed(id_hex, import_error);
+                return;
+            }
+            self->m_service.writeRecord("contact/key/" + id_hex.toStdString(), their_xpub);
+            self->m_service.writeRecord("contact/in/" + id_hex.toStdString(),
+                                        std::vector<unsigned char>(incoming.document_id.begin(), incoming.document_id.end()));
+            self->sendRequest(incoming.owner_id, it->id, *it);
+        });
+    });
 }
 
 bool ContactFlow::importKeychains(const platform::Identifier& their_identity,
                                   const std::vector<uint8_t>& their_xpub_serialized, QString& error)
 {
-    // Friendship payment keychains are imported as ranged watch/spend
-    // descriptors. This requires descriptor wallet support; wired in the
-    // wallet interface addFriendshipKeychain method.
-    (void)their_identity;
-    (void)their_xpub_serialized;
-    error = tr("contact payments require a descriptor wallet");
-    return true; // messaging-level contact still succeeds
+    if (their_xpub_serialized.size() != 65) {
+        error = tr("invalid friendship public key in contact request");
+        return false;
+    }
+    const auto my_id{m_service.myIdentityId()};
+    if (!my_id) { error = tr("register a username first"); return false; }
+    // Validate the decrypted material before it is persisted; the contact's
+    // chain itself never enters the wallet (see importFriendshipKeychains).
+    const CPubKey pubkey{their_xpub_serialized.begin(), their_xpub_serialized.begin() + 33};
+    if (!pubkey.IsFullyValid()) {
+        error = tr("invalid friendship public key in contact request");
+        return false;
+    }
+    const uint256 my_hash{std::vector<uint8_t>(my_id->begin(), my_id->end())};
+    const uint256 their_hash{std::vector<uint8_t>(their_identity.begin(), their_identity.end())};
+    const std::string label{
+        m_service.contactAddressLabel(QString::fromStdString(HexStr(their_identity))).toStdString()};
+    Wallet& wallet{m_service.walletModel().wallet()};
+    std::string wallet_error;
+    if (!wallet.importFriendshipKeychains(/*account=*/0, my_hash, their_hash, label, wallet_error)) {
+        error = QString::fromStdString(wallet_error);
+        return false;
+    }
+    // Ranged descriptors cannot carry an address-book label, so label the
+    // receiving chain explicitly: incoming payments from this contact then
+    // show up in transaction history under their username.
+    CPubKey our_pubkey;
+    uint256 our_chaincode;
+    if (wallet.getFriendshipXpub(/*account=*/0, my_hash, their_hash, our_pubkey, our_chaincode)) {
+        for (uint32_t i = 0; i < 20; ++i) {
+            CTxDestination destination;
+            if (!wallet.getFriendshipPaymentDestination(our_pubkey, our_chaincode, i, destination)) break;
+            wallet.setAddressBook(destination, label, "receive");
+        }
+    }
+    return true;
+}
+
+void ContactFlow::confirmRequest(const platform::Identifier& to_identity, int attempts_left)
+{
+    const auto my_id{m_service.myIdentityId()};
+    if (!my_id) return;
+    const QString id_hex{QString::fromStdString(HexStr(to_identity))};
+    QPointer<ContactFlow> self{this};
+    m_service.client().getContactRequests(*my_id, /*to_me=*/false, 0,
+        [self, to_identity, id_hex, attempts_left](platform::Result<std::vector<platform::ContactRequest>> result) {
+        if (!self) return;
+        self->m_service.post([self, to_identity, id_hex, attempts_left, result = std::move(result)] {
+            if (!self) return;
+            if (result.ok() && std::any_of(result.value->begin(), result.value->end(),
+                    [&to_identity](const auto& request) { return request.to_user_id == to_identity; })) {
+                self->m_service.writeRecord("contact/out/" + id_hex.toStdString(), {1});
+                Q_EMIT self->requestSent(id_hex);
+                Q_EMIT self->contactAdded(id_hex);
+                return;
+            }
+            if (attempts_left <= 1) {
+                Q_EMIT self->requestFailed(id_hex, result.ok() ? tr("contact request was not confirmed")
+                                                               : QString::fromStdString(result.error));
+                return;
+            }
+            QTimer::singleShot(2500, self, [self, to_identity, attempts_left] {
+                if (self) self->confirmRequest(to_identity, attempts_left - 1);
+            });
+        });
+    });
 }

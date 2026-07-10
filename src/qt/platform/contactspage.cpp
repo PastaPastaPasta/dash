@@ -4,13 +4,15 @@
 
 #include <qt/platform/contactspage.h>
 
+#include <qt/guiutil.h>
 #include <qt/platform/contactsmodel.h>
 #include <qt/platform/platformservice.h>
-#include <qt/platform/profiledialog.h>
-#include <qt/platform/usernamesearchdialog.h>
 
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QItemSelectionModel>
+#include <QLabel>
+#include <QMenu>
 #include <QPushButton>
 #include <QTableView>
 #include <QVBoxLayout>
@@ -20,13 +22,20 @@ ContactsPage::ContactsPage(PlatformService& service, QWidget* parent) :
     m_service(service)
 {
     auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(0, 0, 0, 0);
+
+    auto* heading = new QLabel(tr("Contacts"), this);
+    GUIUtil::setFont({heading}, GUIUtil::FontWeight::Bold, 16);
+    layout->addWidget(heading);
 
     auto* buttons = new QHBoxLayout();
-    auto* add = new QPushButton(tr("Find contacts"), this);
-    auto* profile = new QPushButton(tr("Edit profile"), this);
+    m_send_button = new QPushButton(tr("Send Dash"), this);
+    m_send_button->setToolTip(tr("Pay the selected contact by username"));
+    m_accept_button = new QPushButton(tr("Accept request"), this);
+    m_accept_button->setToolTip(tr("Connect with this person so you can pay each other by username"));
     auto* refresh = new QPushButton(tr("Refresh"), this);
-    buttons->addWidget(add);
-    buttons->addWidget(profile);
+    buttons->addWidget(m_send_button);
+    buttons->addWidget(m_accept_button);
     buttons->addStretch();
     buttons->addWidget(refresh);
     layout->addLayout(buttons);
@@ -35,19 +44,116 @@ ContactsPage::ContactsPage(PlatformService& service, QWidget* parent) :
     m_view = new QTableView(this);
     m_view->setModel(m_model);
     m_view->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_view->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_view->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_view->setContextMenuPolicy(Qt::CustomContextMenu);
     m_view->horizontalHeader()->setStretchLastSection(true);
     m_view->verticalHeader()->hide();
     layout->addWidget(m_view);
 
-    connect(add, &QPushButton::clicked, this, &ContactsPage::openSearch);
-    connect(profile, &QPushButton::clicked, this, [this] { ProfileDialog(m_service, this).exec(); });
-    connect(refresh, &QPushButton::clicked, this, [this] { m_model->refresh(); });
+    m_empty = new QLabel(tr("No contacts yet.\nUse \"Find people\" above to look someone up by "
+                            "username and send them a contact request. Once they accept, you can "
+                            "pay each other by name."),
+                         this);
+    m_empty->setWordWrap(true);
+    m_empty->setAlignment(Qt::AlignCenter);
+    layout->addWidget(m_empty);
 
+    m_status = new QLabel(this);
+    m_status->setWordWrap(true);
+    layout->addWidget(m_status);
+
+    connect(refresh, &QPushButton::clicked, this, [this] { m_model->refresh(); });
+    connect(m_send_button, &QPushButton::clicked, this, &ContactsPage::sendToSelected);
+    connect(m_accept_button, &QPushButton::clicked, this, &ContactsPage::acceptSelected);
+    connect(m_view->selectionModel(), &QItemSelectionModel::currentChanged,
+            this, &ContactsPage::updateActions);
+    connect(m_view, &QTableView::doubleClicked, this, &ContactsPage::sendToSelected);
+    connect(m_view, &QTableView::customContextMenuRequested, this, &ContactsPage::showContextMenu);
+    connect(m_model, &QAbstractItemModel::modelReset, this, &ContactsPage::updateActions);
+    connect(&m_service, &PlatformService::contactRequestFinished, this,
+            [this](const QString& id, bool ok, const QString& error) {
+                m_unlock.reset();
+                if (ok) {
+                    m_status->setStyleSheet(QString{"QLabel { color: %1; }"}
+                        .arg(GUIUtil::getThemedQColor(GUIUtil::ThemedColor::GREEN).name()));
+                    m_status->setText(tr("You and %1 are now contacts.")
+                                          .arg(m_service.contactDisplayString(id)));
+                } else {
+                    m_status->setStyleSheet(QString{"QLabel { color: %1; }"}
+                        .arg(GUIUtil::getThemedQColor(GUIUtil::ThemedColor::RED).name()));
+                    m_status->setText(tr("Could not accept the request from %1: %2")
+                                          .arg(m_service.contactDisplayString(id), error));
+                }
+                updateActions();
+                m_model->refresh();
+            });
+
+    updateActions();
     m_model->refresh();
 }
 
-void ContactsPage::openSearch()
+void ContactsPage::updateActions()
 {
-    UsernameSearchDialog(m_service, this).exec();
-    m_model->refresh();
+    const auto* row{m_model->rowAt(m_view->currentIndex().row())};
+    m_accept_button->setEnabled(row && row->kind == ContactsModel::Kind::Incoming && !m_unlock);
+    m_send_button->setEnabled(row && row->kind == ContactsModel::Kind::Established &&
+                              !row->username.isEmpty());
+    const bool have_rows{m_model->rowCount() > 0};
+    m_view->setVisible(have_rows);
+    m_empty->setVisible(!have_rows);
+}
+
+void ContactsPage::acceptSelected()
+{
+    const auto* row{m_model->rowAt(m_view->currentIndex().row())};
+    if (!row || row->kind != ContactsModel::Kind::Incoming) return;
+    auto unlock{m_service.walletModel().requestUnlock()};
+    if (!unlock.isValid()) return;
+    m_unlock = std::make_unique<WalletModel::UnlockContext>(std::move(unlock));
+    m_status->setStyleSheet({});
+    m_status->setText(tr("Accepting the request from %1…").arg(m_service.contactDisplayString(row->identity_hex)));
+    updateActions();
+    m_service.acceptContact(row->identity_hex);
+}
+
+void ContactsPage::sendToSelected()
+{
+    const auto* row{m_model->rowAt(m_view->currentIndex().row())};
+    if (!row || row->kind != ContactsModel::Kind::Established || row->username.isEmpty()) return;
+    Q_EMIT sendToContact(row->username);
+}
+
+void ContactsPage::showContextMenu(const QPoint& pos)
+{
+    const QModelIndex index{m_view->indexAt(pos)};
+    if (!index.isValid()) return;
+    m_view->setCurrentIndex(index);
+    const auto* row{m_model->rowAt(index.row())};
+    if (!row) return;
+
+    QMenu menu(this);
+    switch (row->kind) {
+    case ContactsModel::Kind::Established: {
+        auto* send{menu.addAction(tr("Send Dash to %1").arg(row->username))};
+        send->setEnabled(!row->username.isEmpty());
+        connect(send, &QAction::triggered, this, &ContactsPage::sendToSelected);
+        break;
+    }
+    case ContactsModel::Kind::Incoming: {
+        auto* accept{menu.addAction(tr("Accept contact request"))};
+        accept->setEnabled(!m_unlock);
+        connect(accept, &QAction::triggered, this, &ContactsPage::acceptSelected);
+        break;
+    }
+    case ContactsModel::Kind::Outgoing: {
+        menu.addAction(tr("Waiting for them to accept your request"))->setEnabled(false);
+        break;
+    }
+    }
+    auto* copy{menu.addAction(tr("Copy identity ID"))};
+    connect(copy, &QAction::triggered, this, [row_id = row->identity_hex] {
+        GUIUtil::setClipboard(row_id);
+    });
+    menu.exec(m_view->viewport()->mapToGlobal(pos));
 }
