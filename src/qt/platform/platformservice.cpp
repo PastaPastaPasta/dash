@@ -13,7 +13,6 @@
 #include <qt/platform/identityflow.h>
 #include <qt/walletmodel.h>
 #include <util/strencodings.h>
-#include <util/strencodings.h>
 
 #include <QMetaObject>
 #include <QPointer>
