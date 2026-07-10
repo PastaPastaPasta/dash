@@ -1,0 +1,28 @@
+[package]
+name = "platform-dpp-vectors"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Generates DPP object / state transition test vectors for src/test/platform_dpp_tests.cpp"
+
+[dependencies]
+# Pinned to the dashpay/platform release the C++ port in src/platform/dpp/
+# mirrors (protocol version 12). When bumping the tag, regenerate the JSON
+# vectors and re-run test_dash --run_test=platform_dpp_tests.
+dpp = { git = "https://github.com/dashpay/platform", tag = "v4.0.0", package = "dpp", features = [
+  "state-transitions",
+  "state-transition-signing",
+  "identity-serialization",
+  "system_contracts",
+  "dpns-contract",
+  "dashpay-contract",
+] }
+platform-value = { git = "https://github.com/dashpay/platform", tag = "v4.0.0", package = "platform-value" }
+platform-version = { git = "https://github.com/dashpay/platform", tag = "v4.0.0", package = "platform-version" }
+
+async-trait = "0.1"
+futures = "0.3"
+hex = "0.4"
+serde_json = { version = "1", features = ["preserve_order"] }
+
+# This crate is a developer tool, not part of the Dash Core build. See README.md.
