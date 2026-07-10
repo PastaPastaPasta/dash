@@ -197,5 +197,37 @@
       "normalized": "name2",
       "contested": false
     }
-  ]
+  ],
+  "stored_documents": {
+    "domain": {
+      "serialized_hex": "028e59141aa8875fbe1b6a1089bef3366a9f8aeddb4debcea35905ced54228ba8715eccc3165b78a43d2a70bf8421d8e286bc6330790a4ef4ed09316f0eb0bc327000100070000018bcfe568000000018bcfe568640000018bcfe568c800097175616e74756d3432097175616e74756d3432010464617368046461736800210115eccc3165b78a43d2a70bf8421d8e286bc6330790a4ef4ed09316f0eb0bc3270100",
+      "id_hex": "8e59141aa8875fbe1b6a1089bef3366a9f8aeddb4debcea35905ced54228ba87",
+      "owner_id_hex": "15eccc3165b78a43d2a70bf8421d8e286bc6330790a4ef4ed09316f0eb0bc327",
+      "identity_id_hex": "15eccc3165b78a43d2a70bf8421d8e286bc6330790a4ef4ed09316f0eb0bc327",
+      "label": "quantum42",
+      "normalized_label": "quantum42"
+    },
+    "profile": {
+      "serialized_hex": "02a682c7dff71614a696c989e14a94f7841106620522ede675ef453238751a21d615eccc3165b78a43d2a70bf8421d8e286bc6330790a4ef4ed09316f0eb0bc3270200030000018bcfe568000000018bcfe5692c011968747470733a2f2f6578616d706c652e636f6d2f612e706e67018888888888888888888888888888888888888888888888888888888888888888019999999999999999010f75706461746564206d6573736167650113416c69636520d0b220576f6e6465726c616e64",
+      "id_hex": "a682c7dff71614a696c989e14a94f7841106620522ede675ef453238751a21d6",
+      "owner_id_hex": "15eccc3165b78a43d2a70bf8421d8e286bc6330790a4ef4ed09316f0eb0bc327",
+      "revision": 2,
+      "display_name": "Alice в Wonderland",
+      "public_message": "updated message",
+      "avatar_url": "https://example.com/a.png",
+      "created_at": 1700000000000,
+      "updated_at": 1700000000300
+    },
+    "contact": {
+      "serialized_hex": "0248880e37b469540c0b4b8a6489d21938726e53ce7d337febb1f101da351f57fd15eccc3165b78a43d2a70bf8421d8e286bc6330790a4ef4ed09316f0eb0bc32700410000018bcfe56990001e8480eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeabababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab00000000000000020000000000000003000000000badc0de0130cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd00",
+      "id_hex": "48880e37b469540c0b4b8a6489d21938726e53ce7d337febb1f101da351f57fd",
+      "owner_id_hex": "15eccc3165b78a43d2a70bf8421d8e286bc6330790a4ef4ed09316f0eb0bc327",
+      "to_user_id_hex": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "sender_key_index": 2,
+      "recipient_key_index": 3,
+      "account_reference": 195936478,
+      "created_at": 1700000000400,
+      "core_height_created_at": 2000000
+    }
+  }
 }

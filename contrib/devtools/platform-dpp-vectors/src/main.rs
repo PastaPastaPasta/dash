@@ -19,6 +19,7 @@ use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayloa
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
 use dpp::dashcore::{signer, InstantLock, OutPoint, ScriptBuf, Transaction, TxIn, Txid, TxOut};
 use dpp::document::{Document, DocumentV0};
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
@@ -609,6 +610,39 @@ fn main() {
         platform_version,
     );
 
+    // Ground-truth stored-document bytes returned by Drive getDocuments.
+    let mut stored_domain = document(domain2_id, owner, domain_properties(label2, &normalized_label2), Some(1));
+    let Document::V0(stored_domain_v0) = &mut stored_domain;
+    // Drive strips transient contract properties before persisting a
+    // document. Keep the stored-document vector faithful to bytes returned by
+    // getDocuments rather than serializing the create-transition input.
+    stored_domain_v0.properties.remove("preorderSalt");
+    stored_domain_v0.created_at = Some(1_700_000_000_000);
+    stored_domain_v0.updated_at = Some(1_700_000_000_100);
+    stored_domain_v0.transferred_at = Some(1_700_000_000_200);
+    let stored_domain_bytes = stored_domain.serialize(domain_type, &dpns, platform_version).expect("serialize stored domain");
+
+    let mut stored_profile = document(profile_id, owner, replace_properties.clone(), Some(2));
+    let Document::V0(stored_profile_v0) = &mut stored_profile;
+    stored_profile_v0.created_at = Some(1_700_000_000_000);
+    stored_profile_v0.updated_at = Some(1_700_000_000_300);
+    let stored_profile_bytes = stored_profile.serialize(profile_type, &dashpay, platform_version).expect("serialize stored profile");
+
+    let stored_contact_properties = BTreeMap::from([
+        ("toUserId".to_string(), Value::Identifier(to_user_id.to_buffer())),
+        ("encryptedPublicKey".to_string(), Value::Bytes(vec![0xab; 96])),
+        ("senderKeyIndex".to_string(), Value::U32(2)),
+        ("recipientKeyIndex".to_string(), Value::U32(3)),
+        ("accountReference".to_string(), Value::U32(0x0badc0de)),
+        ("encryptedAccountLabel".to_string(), Value::Bytes(vec![0xcd; 48])),
+    ]);
+    let mut stored_contact = document(contact_id, owner, stored_contact_properties, None);
+    let Document::V0(stored_contact_v0) = &mut stored_contact;
+    stored_contact_v0.created_at = Some(1_700_000_000_400);
+    stored_contact_v0.created_at_core_block_height = Some(2_000_000);
+    let contact_type = dashpay.document_type_for_name("contactRequest").expect("contact type");
+    let stored_contact_bytes = stored_contact.serialize(contact_type, &dashpay, platform_version).expect("serialize stored contact");
+
     let st_vectors = json!({
         "platform_repo_tag": "v4.0.0",
         "protocol_version": protocol_version,
@@ -698,6 +732,11 @@ fn main() {
             "encrypted_account_label_hex": hex_of(&[0xcd; 48]),
         })),
         "contested_labels": contested_cases,
+        "stored_documents": {
+            "domain": {"serialized_hex": hex_of(&stored_domain_bytes), "id_hex": hex_of(domain2_id.as_slice()), "owner_id_hex": hex_of(owner.as_slice()), "identity_id_hex": hex_of(owner.as_slice()), "label": label2, "normalized_label": normalized_label2},
+            "profile": {"serialized_hex": hex_of(&stored_profile_bytes), "id_hex": hex_of(profile_id.as_slice()), "owner_id_hex": hex_of(owner.as_slice()), "revision": 2, "display_name": "Alice в Wonderland", "public_message": "updated message", "avatar_url": "https://example.com/a.png", "created_at": 1_700_000_000_000u64, "updated_at": 1_700_000_000_300u64},
+            "contact": {"serialized_hex": hex_of(&stored_contact_bytes), "id_hex": hex_of(contact_id.as_slice()), "owner_id_hex": hex_of(owner.as_slice()), "to_user_id_hex": hex_of(to_user_id.as_slice()), "sender_key_index": 2, "recipient_key_index": 3, "account_reference": 0x0badc0deu32, "created_at": 1_700_000_000_400u64, "core_height_created_at": 2_000_000u32}
+        },
     });
 
     std::fs::create_dir_all(&out_dir).expect("create output dir");

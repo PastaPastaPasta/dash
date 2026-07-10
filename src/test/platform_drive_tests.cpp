@@ -11,6 +11,7 @@
 #include <test/data/platform/drive_query_vectors.json.h>
 #include <test/data/platform/quorum_sig_vectors.json.h>
 
+#include <platform/client.h>
 #include <platform/drive/queries.h>
 #include <platform/drive/quorumsig.h>
 #include <platform/drive/verify.h>
@@ -166,6 +167,18 @@ BOOST_AUTO_TEST_CASE(identity_revision_and_nonce)
         BOOST_REQUIRE(nonce.has_value());
         BOOST_CHECK_EQUAL(*nonce, q["expected"]["nonce"].getInt<uint64_t>());
     }
+    {
+        const UniValue q{FindQuery(doc, "identity_contract_nonce")};
+        const Bytes proof{ProofOf(q)};
+        const Identifier contract{IdFromHex(q["query"]["contract_id"].get_str())};
+        std::optional<uint64_t> nonce;
+        Hash256 root{};
+        std::string error;
+        BOOST_REQUIRE_MESSAGE(platform::drive::VerifyIdentityContractNonce(
+            Span<const uint8_t>(proof), id, contract, nonce, root, error), error);
+        BOOST_REQUIRE(nonce.has_value());
+        BOOST_CHECK_EQUAL(*nonce, q["expected"]["nonce"].getInt<uint64_t>());
+    }
 }
 
 BOOST_AUTO_TEST_CASE(identity_keys)
@@ -253,6 +266,43 @@ BOOST_AUTO_TEST_CASE(full_identity)
     BOOST_CHECK_EQUAL(identity->public_keys.size(), 3U);
 }
 
+BOOST_AUTO_TEST_CASE(document_index_proofs)
+{
+    const UniValue doc{ReadJsonObject(json_tests::drive_query_vectors, sizeof(json_tests::drive_query_vectors))};
+    const Identifier id{IdFromHex(doc["identity_id"].get_str())};
+    auto check = [&](const std::string& name, const auto& verify) {
+        const UniValue query{FindQuery(doc, name)};
+        const Bytes proof{ProofOf(query)};
+        std::vector<Bytes> documents;
+        Hash256 root{};
+        std::string error;
+        BOOST_REQUIRE_MESSAGE(verify(Span<const uint8_t>{proof}, documents, root, error), name + ": " + error);
+        const UniValue& expected{query["expected"]["documents"]};
+        BOOST_REQUIRE_EQUAL(documents.size(), expected.size());
+        for (size_t i = 0; i < documents.size(); ++i) BOOST_CHECK_EQUAL(HexStr(documents[i]), expected[i].get_str());
+        BOOST_CHECK_EQUAL(HexStr(root), query["expected_root_hash_hex"].get_str());
+    };
+
+    check("dpns_exact", [](auto proof, auto& documents, auto& root, auto& error) {
+        return platform::drive::VerifyDpnsNameExact(proof, "alice", documents, root, error);
+    });
+    check("dpns_prefix", [](auto proof, auto& documents, auto& root, auto& error) {
+        return platform::drive::VerifyDpnsNamePrefix(proof, "ali", 25, documents, root, error);
+    });
+    check("dpns_by_identity", [&id](auto proof, auto& documents, auto& root, auto& error) {
+        return platform::drive::VerifyDpnsNamesByIdentity(proof, id, 100, documents, root, error);
+    });
+    check("dashpay_profile", [&id](auto proof, auto& documents, auto& root, auto& error) {
+        return platform::drive::VerifyDashPayProfileByOwner(proof, id, documents, root, error);
+    });
+    check("dashpay_contacts_incoming", [&id](auto proof, auto& documents, auto& root, auto& error) {
+        return platform::drive::VerifyDashPayContactRequests(proof, id, true, 100, documents, root, error);
+    });
+    check("dashpay_contacts_outgoing", [&id](auto proof, auto& documents, auto& root, auto& error) {
+        return platform::drive::VerifyDashPayContactRequests(proof, id, false, 100, documents, root, error);
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Quorum signature: digest intermediates + verification verdicts
 // ---------------------------------------------------------------------------
@@ -300,6 +350,23 @@ BOOST_AUTO_TEST_CASE(quorum_sig_verdicts)
                             "vector '" + name + "' expected valid=" + (expected_valid ? "true" : "false") +
                                 " got=" + (ok ? "true" : "false") + " error=" + error);
     }
+}
+
+BOOST_AUTO_TEST_CASE(quorum_key_matches_dapi_hash_byte_order)
+{
+    platform::QuorumKey key;
+    for (size_t i = 0; i < key.quorum_hash.size(); ++i) {
+        key.quorum_hash.begin()[i] = static_cast<uint8_t>(i);
+    }
+
+    Hash256 proof_hash{};
+    for (size_t i = 0; i < proof_hash.size(); ++i) {
+        proof_hash[i] = static_cast<uint8_t>(proof_hash.size() - 1 - i);
+    }
+    BOOST_CHECK(key.matchesProofHash(proof_hash));
+
+    proof_hash[0] ^= 1;
+    BOOST_CHECK(!key.matchesProofHash(proof_hash));
 }
 
 // End-to-end: a valid grovedb proof + quorum key produces a decoded, bound

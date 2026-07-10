@@ -49,6 +49,7 @@ struct DpnsName {
 
 //! DashPay profile document (all fields optional per schema).
 struct Profile {
+    Identifier document_id{};
     Identifier owner_id{};
     std::string display_name;
     std::string public_message;

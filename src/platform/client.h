@@ -25,6 +25,19 @@ struct QuorumKey {
     uint256 quorum_hash;
     std::vector<uint8_t> pubkey; //!< serialized BLS public key (basic scheme)
     int32_t height{0};
+
+    //! DAPI encodes Proof.quorum_hash in display (big-endian) byte order,
+    //! while uint256::begin() exposes Dash Core's internal little-endian
+    //! representation. Keep that representation boundary explicit here so a
+    //! valid locally synced quorum can be selected without weakening proof
+    //! verification.
+    bool matchesProofHash(const std::array<uint8_t, 32>& proof_hash) const
+    {
+        for (size_t i = 0; i < proof_hash.size(); ++i) {
+            if (proof_hash[i] != quorum_hash.begin()[proof_hash.size() - 1 - i]) return false;
+        }
+        return true;
+    }
 };
 
 //! An evonode DAPI endpoint, fed from the deterministic masternode list.

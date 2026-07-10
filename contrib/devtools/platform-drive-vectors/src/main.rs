@@ -36,6 +36,7 @@ use platform_value::BinaryData;
 
 use dpp::bls_signatures::{Bls12381G2Impl, SecretKey, SerializationFormat, SignatureSchemes};
 
+use grovedb::reference_path::ReferencePathType;
 use grovedb::{Element, GroveDb, PathQuery, Query, QueryItem, SizedQuery};
 use grovedb_version::version::GroveVersion;
 
@@ -54,6 +55,9 @@ use serde_json::{json, Value as JsonValue};
 const ROOT_IDENTITIES: u8 = 32;
 const ROOT_BALANCES: u8 = 96;
 const ROOT_UNIQUE_PKH_TO_IDENTITIES: u8 = 24;
+const ROOT_DATA_CONTRACT_DOCUMENTS: u8 = 64;
+const DPNS_CONTRACT_ID: [u8; 32] = [230,104,198,89,175,102,174,225,231,44,24,109,222,123,91,126,10,29,113,42,9,196,13,87,33,246,34,191,83,197,49,85];
+const DASHPAY_CONTRACT_ID: [u8; 32] = [162,161,180,172,111,239,34,234,42,26,104,232,18,54,68,179,87,135,95,107,65,44,24,16,146,129,193,70,231,178,113,188];
 
 const ID_TREE_REVISION: u8 = 192;
 const ID_TREE_NONCE: u8 = 64;
@@ -379,6 +383,11 @@ fn build_db(db: &GroveDb, v: &GroveVersion, f: &IdentityFixture) {
             Element::new_item(serialized),
         );
     }
+    // Identity contract-info group: [32, identity, 32, contract, 0].
+    insert(&[&[ROOT_IDENTITIES], &f.id], &[32], Element::empty_tree());
+    insert(&[&[ROOT_IDENTITIES], &f.id, &[32]], &DPNS_CONTRACT_ID, Element::empty_tree());
+    insert(&[&[ROOT_IDENTITIES], &f.id, &[32], &DPNS_CONTRACT_ID], &[0],
+           Element::new_item(11u64.to_be_bytes().to_vec()));
 
     // RootTree::UniquePublicKeyHashesToIdentities (24): pubkey hash -> id.
     insert(&[], &[ROOT_UNIQUE_PKH_TO_IDENTITIES], Element::empty_tree());
@@ -387,6 +396,66 @@ fn build_db(db: &GroveDb, v: &GroveVersion, f: &IdentityFixture) {
         &f.pubkey_hash,
         Element::new_item(f.id.to_vec()),
     );
+
+    // DataContractDocuments layout used by DPNS/DashPay queries. Index leaves
+    // resolve through absolute references to the primary-key item.
+    insert(&[], &[ROOT_DATA_CONTRACT_DOCUMENTS], Element::empty_tree());
+    let add_contract_type = |contract: &[u8; 32], doc_type: &[u8]| {
+        insert(&[&[ROOT_DATA_CONTRACT_DOCUMENTS]], contract, Element::empty_tree());
+        insert(&[&[ROOT_DATA_CONTRACT_DOCUMENTS], contract], &[1], Element::empty_tree());
+        insert(&[&[ROOT_DATA_CONTRACT_DOCUMENTS], contract, &[1]], doc_type, Element::empty_tree());
+        insert(&[&[ROOT_DATA_CONTRACT_DOCUMENTS], contract, &[1], doc_type], &[0], Element::empty_tree());
+    };
+    add_contract_type(&DPNS_CONTRACT_ID, b"domain");
+    add_contract_type(&DASHPAY_CONTRACT_ID, b"profile");
+    // The contract already exists, so add only the second DashPay type.
+    insert(&[&[ROOT_DATA_CONTRACT_DOCUMENTS], &DASHPAY_CONTRACT_ID, &[1]], b"contactRequest", Element::empty_tree());
+    insert(&[&[ROOT_DATA_CONTRACT_DOCUMENTS], &DASHPAY_CONTRACT_ID, &[1], b"contactRequest"], &[0], Element::empty_tree());
+
+    let dpns_doc_id = [0xd1u8; 32];
+    let profile_doc_id = [0xd2u8; 32];
+    let contact_doc_id = [0xd3u8; 32];
+    let dpns_doc = b"proved-dpns-document".to_vec();
+    let profile_doc = b"proved-profile-document".to_vec();
+    let contact_doc = b"proved-contact-document".to_vec();
+    insert(&[&[ROOT_DATA_CONTRACT_DOCUMENTS], &DPNS_CONTRACT_ID, &[1], b"domain", &[0]], &dpns_doc_id, Element::new_item(dpns_doc));
+    insert(&[&[ROOT_DATA_CONTRACT_DOCUMENTS], &DASHPAY_CONTRACT_ID, &[1], b"profile", &[0]], &profile_doc_id, Element::new_item(profile_doc));
+    insert(&[&[ROOT_DATA_CONTRACT_DOCUMENTS], &DASHPAY_CONTRACT_ID, &[1], b"contactRequest", &[0]], &contact_doc_id, Element::new_item(contact_doc));
+
+    let reference = |contract: &[u8; 32], doc_type: &[u8], id: &[u8; 32]| {
+        Element::new_reference(ReferencePathType::AbsolutePathReference(vec![
+            vec![ROOT_DATA_CONTRACT_DOCUMENTS], contract.to_vec(), vec![1], doc_type.to_vec(), vec![0], id.to_vec(),
+        ]))
+    };
+    // Unique DPNS parentNameAndLabel index.
+    let dpns_type = [&[ROOT_DATA_CONTRACT_DOCUMENTS][..], &DPNS_CONTRACT_ID[..], &[1][..], &b"domain"[..]];
+    insert(&dpns_type, b"normalizedParentDomainName", Element::empty_tree());
+    insert(&[&[ROOT_DATA_CONTRACT_DOCUMENTS], &DPNS_CONTRACT_ID, &[1], b"domain", b"normalizedParentDomainName"], b"dash", Element::empty_tree());
+    insert(&[&[ROOT_DATA_CONTRACT_DOCUMENTS], &DPNS_CONTRACT_ID, &[1], b"domain", b"normalizedParentDomainName", b"dash"], b"normalizedLabel", Element::empty_tree());
+    insert(&[&[ROOT_DATA_CONTRACT_DOCUMENTS], &DPNS_CONTRACT_ID, &[1], b"domain", b"normalizedParentDomainName", b"dash", b"normalizedLabel"], b"alice", Element::empty_tree());
+    insert(&[&[ROOT_DATA_CONTRACT_DOCUMENTS], &DPNS_CONTRACT_ID, &[1], b"domain", b"normalizedParentDomainName", b"dash", b"normalizedLabel", b"alice"], &[0], reference(&DPNS_CONTRACT_ID, b"domain", &dpns_doc_id));
+    // Non-unique DPNS identity index.
+    insert(&dpns_type, b"records.identity", Element::empty_tree());
+    insert(&[&[ROOT_DATA_CONTRACT_DOCUMENTS], &DPNS_CONTRACT_ID, &[1], b"domain", b"records.identity"], &f.id, Element::empty_tree());
+    insert(&[&[ROOT_DATA_CONTRACT_DOCUMENTS], &DPNS_CONTRACT_ID, &[1], b"domain", b"records.identity", &f.id], &[0], Element::empty_tree());
+    insert(&[&[ROOT_DATA_CONTRACT_DOCUMENTS], &DPNS_CONTRACT_ID, &[1], b"domain", b"records.identity", &f.id, &[0]], &dpns_doc_id, reference(&DPNS_CONTRACT_ID, b"domain", &dpns_doc_id));
+
+    // Unique profile owner index.
+    insert(&[&[ROOT_DATA_CONTRACT_DOCUMENTS], &DASHPAY_CONTRACT_ID, &[1], b"profile"], b"$ownerId", Element::empty_tree());
+    insert(&[&[ROOT_DATA_CONTRACT_DOCUMENTS], &DASHPAY_CONTRACT_ID, &[1], b"profile", b"$ownerId"], &f.id, Element::empty_tree());
+    insert(&[&[ROOT_DATA_CONTRACT_DOCUMENTS], &DASHPAY_CONTRACT_ID, &[1], b"profile", b"$ownerId", &f.id], &[0], reference(&DASHPAY_CONTRACT_ID, b"profile", &profile_doc_id));
+
+    // Incoming and outgoing contact indexes: identity/$createdAt/time/0/id.
+    for field in [b"toUserId".as_slice(), b"$ownerId".as_slice()] {
+        let base = [&[ROOT_DATA_CONTRACT_DOCUMENTS][..], &DASHPAY_CONTRACT_ID[..], &[1][..], &b"contactRequest"[..]];
+        insert(&base, field, Element::empty_tree());
+        insert(&[&[ROOT_DATA_CONTRACT_DOCUMENTS], &DASHPAY_CONTRACT_ID, &[1], b"contactRequest", field], &f.id, Element::empty_tree());
+        insert(&[&[ROOT_DATA_CONTRACT_DOCUMENTS], &DASHPAY_CONTRACT_ID, &[1], b"contactRequest", field, &f.id], b"$createdAt", Element::empty_tree());
+        let time = 1_700_000_000_000u64.to_be_bytes();
+        insert(&[&[ROOT_DATA_CONTRACT_DOCUMENTS], &DASHPAY_CONTRACT_ID, &[1], b"contactRequest", field, &f.id, b"$createdAt"], &time, Element::empty_tree());
+        insert(&[&[ROOT_DATA_CONTRACT_DOCUMENTS], &DASHPAY_CONTRACT_ID, &[1], b"contactRequest", field, &f.id, b"$createdAt", &time], &[0], Element::empty_tree());
+        insert(&[&[ROOT_DATA_CONTRACT_DOCUMENTS], &DASHPAY_CONTRACT_ID, &[1], b"contactRequest", field, &f.id, b"$createdAt", &time, &[0]], &contact_doc_id, reference(&DASHPAY_CONTRACT_ID, b"contactRequest", &contact_doc_id));
+    }
 }
 
 // small helper: KeyID accessor without pulling the accessor trait into scope
@@ -410,6 +479,37 @@ fn range_full_query(path: Vec<Vec<u8>>) -> PathQuery {
     let mut query = Query::new();
     query.insert_item(QueryItem::RangeFull(std::ops::RangeFull));
     PathQuery::new(path, SizedQuery::new(query, None, None))
+}
+
+fn unique_index_query(path: Vec<Vec<u8>>, key: Vec<u8>) -> PathQuery {
+    let mut query = Query::new();
+    query.insert_key(key);
+    query.set_subquery_path(vec![vec![0]]);
+    PathQuery::new(path, SizedQuery::new(query, Some(1), None))
+}
+
+fn non_unique_index_query(path: Vec<Vec<u8>>, key: Vec<u8>, branch: Vec<Vec<u8>>) -> PathQuery {
+    let mut documents = Query::new();
+    documents.insert_item(QueryItem::RangeFull(std::ops::RangeFull));
+    let mut query = Query::new();
+    query.insert_key(key);
+    query.set_subquery_path(branch);
+    query.set_subquery(documents);
+    PathQuery::new(path, SizedQuery::new(query, Some(100), None))
+}
+
+fn contact_index_query(path: Vec<Vec<u8>>, key: Vec<u8>) -> PathQuery {
+    let mut ids = Query::new();
+    ids.insert_item(QueryItem::RangeFull(std::ops::RangeFull));
+    let mut times = Query::new();
+    times.insert_item(QueryItem::RangeFull(std::ops::RangeFull));
+    times.set_subquery_path(vec![vec![0]]);
+    times.set_subquery(ids);
+    let mut query = Query::new();
+    query.insert_key(key);
+    query.set_subquery_path(vec![b"$createdAt".to_vec()]);
+    query.set_subquery(times);
+    PathQuery::new(path, SizedQuery::new(query, Some(100), None))
 }
 
 /// Prove a path query, re-verify it raw, and return (proof_bytes, root_hash,
@@ -515,6 +615,20 @@ fn main() {
         }));
     }
 
+    // getIdentityContractNonce (contract-info key 0)
+    {
+        let pq = single_key_query(
+            vec_path(&[&[ROOT_IDENTITIES], &f.id, &[32], &DPNS_CONTRACT_ID]),
+            vec![0], Some(1));
+        let (proof, root, tuples) = prove_and_verify(&db, v, &pq);
+        queries.push(json!({
+            "name": "identity_contract_nonce",
+            "query": {"identity_id": hex_of(&f.id), "contract_id": hex_of(&DPNS_CONTRACT_ID)},
+            "grovedb_proof_hex": hex_of(&proof), "expected_root_hash_hex": hex_of(&root),
+            "results": tuples_json(&tuples), "expected": {"nonce": 11},
+        }));
+    }
+
     // getIdentityKeys (all keys, RangeFull)
     {
         let pq = range_full_query(vec_path(&[&[ROOT_IDENTITIES], &f.id, &[ID_TREE_KEYS]]));
@@ -570,6 +684,47 @@ fn main() {
             "results": tuples_json(&tuples),
             "expected": { "identity_id": JsonValue::Null },
         }));
+    }
+
+    let doc_type_path = |contract: &[u8; 32], doc_type: &str| vec![
+        vec![ROOT_DATA_CONTRACT_DOCUMENTS], contract.to_vec(), vec![1], doc_type.as_bytes().to_vec(),
+    ];
+    // Exact DPNS name through the unique parentNameAndLabel reference.
+    {
+        let mut path = doc_type_path(&DPNS_CONTRACT_ID, "domain");
+        path.extend([b"normalizedParentDomainName".to_vec(), b"dash".to_vec(), b"normalizedLabel".to_vec()]);
+        let pq = unique_index_query(path, b"alice".to_vec());
+        let (proof, root, tuples) = prove_and_verify(&db, v, &pq);
+        queries.push(json!({"name":"dpns_exact","grovedb_proof_hex":hex_of(&proof),"expected_root_hash_hex":hex_of(&root),"results":tuples_json(&tuples),"expected":{"documents":[hex_of(b"proved-dpns-document")]}}));
+    }
+    // DPNS prefix range uses the same unique terminal branch.
+    {
+        let mut path = doc_type_path(&DPNS_CONTRACT_ID, "domain");
+        path.extend([b"normalizedParentDomainName".to_vec(), b"dash".to_vec(), b"normalizedLabel".to_vec()]);
+        let mut query = Query::new();
+        query.insert_range(b"ali".to_vec()..b"alj".to_vec());
+        query.set_subquery_path(vec![vec![0]]);
+        let pq = PathQuery::new(path, SizedQuery::new(query, Some(25), None));
+        let (proof, root, tuples) = prove_and_verify(&db, v, &pq);
+        queries.push(json!({"name":"dpns_prefix","grovedb_proof_hex":hex_of(&proof),"expected_root_hash_hex":hex_of(&root),"results":tuples_json(&tuples),"expected":{"documents":[hex_of(b"proved-dpns-document")]}}));
+    }
+    {
+        let mut path = doc_type_path(&DPNS_CONTRACT_ID, "domain"); path.push(b"records.identity".to_vec());
+        let pq = non_unique_index_query(path, f.id.to_vec(), vec![vec![0]]);
+        let (proof, root, tuples) = prove_and_verify(&db, v, &pq);
+        queries.push(json!({"name":"dpns_by_identity","grovedb_proof_hex":hex_of(&proof),"expected_root_hash_hex":hex_of(&root),"results":tuples_json(&tuples),"expected":{"documents":[hex_of(b"proved-dpns-document")]}}));
+    }
+    {
+        let mut path = doc_type_path(&DASHPAY_CONTRACT_ID, "profile"); path.push(b"$ownerId".to_vec());
+        let pq = unique_index_query(path, f.id.to_vec());
+        let (proof, root, tuples) = prove_and_verify(&db, v, &pq);
+        queries.push(json!({"name":"dashpay_profile","grovedb_proof_hex":hex_of(&proof),"expected_root_hash_hex":hex_of(&root),"results":tuples_json(&tuples),"expected":{"documents":[hex_of(b"proved-profile-document")]}}));
+    }
+    for (name, field) in [("dashpay_contacts_incoming", "toUserId"), ("dashpay_contacts_outgoing", "$ownerId")] {
+        let mut path = doc_type_path(&DASHPAY_CONTRACT_ID, "contactRequest"); path.push(field.as_bytes().to_vec());
+        let pq = contact_index_query(path, f.id.to_vec());
+        let (proof, root, tuples) = prove_and_verify(&db, v, &pq);
+        queries.push(json!({"name":name,"grovedb_proof_hex":hex_of(&proof),"expected_root_hash_hex":hex_of(&root),"results":tuples_json(&tuples),"expected":{"documents":[hex_of(b"proved-contact-document")]}}));
     }
 
     let drive_json = json!({

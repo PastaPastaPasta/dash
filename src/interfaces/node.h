@@ -221,9 +221,10 @@ public:
         std::vector<uint8_t> m_pubkey{}; //!< serialized BLS public key (basic scheme)
         int32_t m_height{0};
     };
-    //! Active quorums of the given LLMQ type with their public keys. Used by
-    //! the GUI Platform client to verify Platform state-root quorum
-    //! signatures against locally synced quorum data.
+    //! Locally retained quorums of the given LLMQ type with their public
+    //! keys. Used by the GUI Platform client to verify Platform state-root
+    //! quorum signatures against locally synced quorum data. This includes
+    //! retained signing quorums that are no longer in the active signing set.
     virtual std::vector<PlatformQuorum> getPlatformQuorums(uint8_t llmq_type) = 0;
     //! Serialized InstantSend lock for the given txid, or empty if the
     //! transaction has no islock (used to build asset lock proofs).

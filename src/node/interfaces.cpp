@@ -557,7 +557,12 @@ public:
         if (!llmq_params.has_value()) {
             return ret;
         }
-        for (const auto& q : context().llmq_ctx->qman->ScanQuorums(type, pindex, llmq_params->signingActiveQuorumCount)) {
+        // Drive proofs may be signed by an older Platform quorum while they
+        // are still consensus-valid and retained locally. Export the full
+        // retained-key window, not only the current signing-active set.
+        const auto quorum_count{static_cast<size_t>(std::max(llmq_params->signingActiveQuorumCount,
+                                                             llmq_params->keepOldKeys))};
+        for (const auto& q : context().llmq_ctx->qman->ScanQuorums(type, pindex, quorum_count)) {
             if (!q->qc->quorumPublicKey.IsValid()) continue;
             ret.emplace_back(PlatformQuorum{
                 .m_quorum_hash = q->qc->quorumHash,
