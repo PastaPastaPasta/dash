@@ -39,7 +39,10 @@
 #include <wallet/bip39.h>
 #include <wallet/hdchain.h>
 #ifdef ENABLE_PLATFORM_GUI
+#include <key_io.h>
+#include <script/descriptor.h>
 #include <wallet/platformkeys.h>
+#include <wallet/walletutil.h>
 #endif
 #include <wallet/scriptpubkeyman.h>
 #include <evo/assetlocktx.h>
@@ -329,11 +332,62 @@ public:
         chaincode_out = ext_key.chaincode;
         return true;
     }
+    bool importFriendshipKeychains(uint32_t account, const uint256& my_id, const uint256& their_id,
+                                   const std::string& label, std::string& error) override
+    {
+        SecureVector seed;
+        if (!getPlatformSeed(seed)) { error = "wallet must be unlocked"; return false; }
+        const auto path = platformkeys::FriendshipPath(Params().ExtCoinType(), account,
+            Span{my_id.begin(), uint256::size()}, Span{their_id.begin(), uint256::size()});
+        platformkeys::ExtKey256 own;
+        if (!platformkeys::DeriveExtKey(seed, path, own)) { error = "could not derive receiving friendship key"; return false; }
+
+        CExtKey xprv{};
+        xprv.chaincode = own.chaincode;
+        xprv.key = own.key;
+
+        // Only our private receiving chain becomes a wallet descriptor. The
+        // contact's receiving chain must NOT be imported: its scriptPubKeys
+        // would become IsMine, so payments to the contact would be classified
+        // as payments-to-self and their outputs treated as our own. Payment
+        // destinations for the contact are derived statelessly from their
+        // xpub (kept in the wallet's platform data records) via
+        // getFriendshipPaymentDestination.
+        FlatSigningProvider provider;
+        auto parsed = Parse("pkh(" + EncodeExtKey(xprv) + "/*)", provider, error,
+                            /*require_checksum=*/false);
+        if (!parsed) return false;
+        WalletDescriptor wallet_descriptor(std::move(parsed), /*creation_time=*/0,
+                                           /*range_start=*/0, /*range_end=*/1000,
+                                           /*next_index=*/0);
+
+        LOCK(m_wallet->cs_wallet);
+        if (!m_wallet->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) {
+            error = "DashPay contact payments require a descriptor wallet";
+            return false;
+        }
+        if (!m_wallet->AddWalletDescriptor(wallet_descriptor, provider, label, /*internal=*/false)) {
+            if (error.empty()) error = "could not import receiving friendship descriptor";
+            return false;
+        }
+        return true;
+    }
+    bool getFriendshipPaymentDestination(const CPubKey& their_pubkey, const uint256& their_chaincode,
+                                         uint32_t index, CTxDestination& destination_out) override
+    {
+        platformkeys::ExtPubKey256 parent{their_pubkey, their_chaincode};
+        platformkeys::ExtPubKey256 child;
+        if (!platformkeys::DerivePubKey(parent, platformkeys::PathElement::Normal(index), child)) return false;
+        destination_out = PKHash{child.pubkey};
+        return true;
+    }
 #else
     bool getPlatformPubKey(PlatformKeyType, uint32_t, uint32_t, CPubKey&) override { return false; }
     bool signPlatformDigest(PlatformKeyType, uint32_t, uint32_t, const uint256&, std::vector<unsigned char>&) override { return false; }
     bool platformECDHSecret(uint32_t, uint32_t, const CPubKey&, SecureVector&) override { return false; }
     bool getFriendshipXpub(uint32_t, const uint256&, const uint256&, CPubKey&, uint256&) override { return false; }
+    bool importFriendshipKeychains(uint32_t, const uint256&, const uint256&, const std::string&, std::string&) override { return false; }
+    bool getFriendshipPaymentDestination(const CPubKey&, const uint256&, uint32_t, CTxDestination&) override { return false; }
 #endif // ENABLE_PLATFORM_GUI
     bool isSpendable(const CScript& script) override
     {

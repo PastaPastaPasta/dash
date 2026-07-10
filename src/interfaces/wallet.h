@@ -162,6 +162,19 @@ public:
     //! user_a is our identity id and user_b the contact's.
     virtual bool getFriendshipXpub(uint32_t account, const uint256& user_a_id, const uint256& user_b_id, CPubKey& pubkey_out, uint256& chaincode_out) = 0;
 
+    //! Import the local private DIP-15 receiving chain for a friendship as a
+    //! ranged descriptor. The contact's own receiving chain is deliberately
+    //! never imported (its outputs must not be IsMine, or payments to the
+    //! contact would decompose as payments-to-self); payment destinations are
+    //! derived statelessly via getFriendshipPaymentDestination instead.
+    virtual bool importFriendshipKeychains(uint32_t account, const uint256& my_id,
+        const uint256& their_id, const std::string& label, std::string& error) = 0;
+
+    //! Derive a contact payment destination from their serialized DIP-15
+    //! friendship xpub without advancing any wallet-global keypool.
+    virtual bool getFriendshipPaymentDestination(const CPubKey& their_pubkey,
+        const uint256& their_chaincode, uint32_t index, CTxDestination& destination_out) = 0;
+
     //! Return whether wallet has private key.
     virtual bool isSpendable(const CScript& script) = 0;
     virtual bool isSpendable(const CTxDestination& dest) = 0;
