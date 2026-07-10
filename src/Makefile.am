@@ -747,6 +747,13 @@ libdash_platform_a_SOURCES = \
   platform/serialize.cpp \
   platform/serialize.h \
   platform/statetransitions.h \
+  platform/transport/cbor.h \
+  platform/transport/grpcweb.cpp \
+  platform/transport/grpcweb.h \
+  platform/transport/protobuf.cpp \
+  platform/transport/protobuf.h \
+  platform/transport/tls.cpp \
+  platform/transport/tls.h \
   platform/types.h
 endif
 #
