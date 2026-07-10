@@ -695,6 +695,7 @@ libdash_platform_a_SOURCES = \
   platform/client.h \
   platform/params.cpp \
   platform/params.h \
+  platform/statetransitions.h \
   platform/types.h
 endif
 #
