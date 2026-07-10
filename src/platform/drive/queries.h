@@ -63,6 +63,9 @@ bool VerifyIdentityRevision(Span<const uint8_t> proof, const Identifier& identit
 //! getIdentityNonce: proof over [[32], id] keyed by [64].
 bool VerifyIdentityNonce(Span<const uint8_t> proof, const Identifier& identity_id,
                          std::optional<uint64_t>& nonce_out, Hash256& root_out, std::string& error);
+bool VerifyIdentityContractNonce(Span<const uint8_t> proof, const Identifier& identity_id,
+                                 const Identifier& contract_id, std::optional<uint64_t>& nonce_out,
+                                 Hash256& root_out, std::string& error);
 
 //! getIdentityKeys (all keys): proof over the identity key tree
 //! [[32], id, [128]] (range-full). Each leaf is a platform-serialized
@@ -91,6 +94,26 @@ bool VerifyFullIdentity(Span<const uint8_t> balance_proof, Span<const uint8_t> r
                         Span<const uint8_t> keys_proof, const Identifier& identity_id,
                         std::optional<Identity>& identity_out, Hash256& root_out,
                         std::string& error);
+
+//! Proof-backed document query shapes used by the DashPay GUI. These mirror
+//! DriveDocumentQuery::construct_path_query for the pinned DPNS/DashPay v1
+//! system-contract indexes and return the serialized document items resolved
+//! through GroveDB index references.
+bool VerifyDpnsNameExact(Span<const uint8_t> proof, const std::string& normalized_label,
+                         std::vector<Bytes>& documents_out, Hash256& root_out, std::string& error);
+bool VerifyDpnsNamePrefix(Span<const uint8_t> proof, const std::string& normalized_prefix,
+                          uint16_t limit, std::vector<Bytes>& documents_out, Hash256& root_out,
+                          std::string& error);
+bool VerifyDpnsNamesByIdentity(Span<const uint8_t> proof, const Identifier& identity_id,
+                               uint16_t limit, std::vector<Bytes>& documents_out,
+                               Hash256& root_out, std::string& error);
+bool VerifyDashPayProfileByOwner(Span<const uint8_t> proof, const Identifier& owner_id,
+                                 std::vector<Bytes>& documents_out, Hash256& root_out,
+                                 std::string& error);
+bool VerifyDashPayContactRequests(Span<const uint8_t> proof, const Identifier& identity_id,
+                                  bool to_identity, uint16_t limit,
+                                  std::vector<Bytes>& documents_out, Hash256& root_out,
+                                  std::string& error);
 
 } // namespace platform::drive
 

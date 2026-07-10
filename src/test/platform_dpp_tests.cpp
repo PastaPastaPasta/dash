@@ -426,4 +426,51 @@ BOOST_AUTO_TEST_CASE(contested_labels)
     BOOST_CHECK_EQUAL(st::NormalizeLabel("A0boic0Dlelfl"), "a0b01c0d1e1f1");
 }
 
+BOOST_AUTO_TEST_CASE(stored_document_decoders)
+{
+    const UniValue vectors{LoadVectors(json_tests::dpp_st_vectors, sizeof(json_tests::dpp_st_vectors))};
+    const UniValue& stored{vectors["stored_documents"]};
+    {
+        const UniValue& expected{stored["domain"]};
+        DpnsName domain;
+        const auto bytes{FromHex(expected["serialized_hex"].get_str())};
+        BOOST_REQUIRE(dpp::DecodeDpnsDomain(bytes, domain));
+        BOOST_CHECK_EQUAL(HexStr(domain.document_id), expected["id_hex"].get_str());
+        BOOST_CHECK_EQUAL(HexStr(domain.identity), expected["identity_id_hex"].get_str());
+        BOOST_CHECK_EQUAL(domain.label, expected["label"].get_str());
+        BOOST_CHECK_EQUAL(domain.normalized_label, expected["normalized_label"].get_str());
+        BOOST_CHECK_EQUAL(domain.parent_domain, "dash");
+    }
+    {
+        const UniValue& expected{stored["profile"]};
+        Profile profile;
+        const auto bytes{FromHex(expected["serialized_hex"].get_str())};
+        BOOST_REQUIRE(dpp::DecodeDashPayProfile(bytes, profile));
+        BOOST_CHECK_EQUAL(HexStr(profile.document_id), expected["id_hex"].get_str());
+        BOOST_CHECK_EQUAL(HexStr(profile.owner_id), expected["owner_id_hex"].get_str());
+        BOOST_CHECK_EQUAL(profile.revision, expected["revision"].getInt<uint64_t>());
+        BOOST_CHECK_EQUAL(profile.display_name, expected["display_name"].get_str());
+        BOOST_CHECK_EQUAL(profile.public_message, expected["public_message"].get_str());
+        BOOST_CHECK_EQUAL(profile.avatar_url, expected["avatar_url"].get_str());
+        BOOST_CHECK_EQUAL(profile.created_at, expected["created_at"].getInt<uint64_t>());
+        BOOST_CHECK_EQUAL(profile.updated_at, expected["updated_at"].getInt<uint64_t>());
+    }
+    {
+        const UniValue& expected{stored["contact"]};
+        ContactRequest contact;
+        const auto bytes{FromHex(expected["serialized_hex"].get_str())};
+        BOOST_REQUIRE(dpp::DecodeDashPayContactRequest(bytes, contact));
+        BOOST_CHECK_EQUAL(HexStr(contact.document_id), expected["id_hex"].get_str());
+        BOOST_CHECK_EQUAL(HexStr(contact.owner_id), expected["owner_id_hex"].get_str());
+        BOOST_CHECK_EQUAL(HexStr(contact.to_user_id), expected["to_user_id_hex"].get_str());
+        BOOST_CHECK_EQUAL(contact.sender_key_index, expected["sender_key_index"].getInt<uint32_t>());
+        BOOST_CHECK_EQUAL(contact.recipient_key_index, expected["recipient_key_index"].getInt<uint32_t>());
+        BOOST_CHECK_EQUAL(contact.account_reference, expected["account_reference"].getInt<uint32_t>());
+        BOOST_CHECK_EQUAL(contact.created_at, expected["created_at"].getInt<uint64_t>());
+        BOOST_CHECK_EQUAL(contact.core_height_created_at, expected["core_height_created_at"].getInt<uint32_t>());
+        BOOST_CHECK_EQUAL(contact.encrypted_public_key.size(), 96U);
+        BOOST_CHECK_EQUAL(contact.encrypted_account_label.size(), 48U);
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()

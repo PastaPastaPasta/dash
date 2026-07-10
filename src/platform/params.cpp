@@ -23,6 +23,7 @@ std::optional<Params> GetParams(const std::string& network_id)
             // uncontested username registration. Contested (premium) names
             // require additional prefunded balance, handled by the GUI flow.
             .default_identity_funding_amount = 1000000,
+            .contested_identity_funding_amount = 25000000,
         };
     }
     if (network_id == CBaseChainParams::TESTNET) {
@@ -30,6 +31,7 @@ std::optional<Params> GetParams(const std::string& network_id)
             .network_id = network_id,
             .tenderdash_chain_id = "dash-testnet-51",
             .default_identity_funding_amount = 1000000,
+            .contested_identity_funding_amount = 25000000,
         };
     }
     // Platform is not deployed on this network (or, for devnets, the GUI

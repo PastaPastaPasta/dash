@@ -4,11 +4,13 @@
 
 #include <platform/transport/grpcweb.h>
 
+#include <common/url.h>
 #include <platform/transport/tls.h>
 
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <optional>
 
 namespace platform::transport {
 
@@ -126,7 +128,25 @@ GrpcCallResult GrpcWebUnary(const std::string& host, uint16_t port, const std::s
     result.transport_ok = true;
 
     // Parse gRPC-Web frames: data frame(s) then a trailers frame (0x80).
-    result.grpc_status = 0; // default OK unless a trailer overrides
+    result.grpc_status = 0; // default OK unless headers/trailers override
+    // Envoy is also allowed to return grpc-status/grpc-message as HTTP
+    // headers, notably for validation errors with an empty response body.
+    // Capture those first; a trailers frame below remains authoritative.
+    const std::string lower_headers{ToLower(headers)};
+    const auto header_value = [&](const std::string& name) -> std::optional<std::string> {
+        const std::string needle{name + ":"};
+        size_t pos{lower_headers.find(needle)};
+        while (pos != std::string::npos && pos != 0 && lower_headers[pos - 1] != '\n') {
+            pos = lower_headers.find(needle, pos + 1);
+        }
+        if (pos == std::string::npos) return std::nullopt;
+        size_t start{pos + needle.size()};
+        while (start < headers.size() && (headers[start] == ' ' || headers[start] == '\t')) ++start;
+        const size_t end{headers.find("\r\n", start)};
+        return headers.substr(start, end == std::string::npos ? std::string::npos : end - start);
+    };
+    if (const auto status{header_value("grpc-status")}) result.grpc_status = std::atoi(status->c_str());
+    if (const auto message{header_value("grpc-message")}) result.grpc_message = urlDecode(*message);
     size_t p = 0;
     while (p + 5 <= payload.size()) {
         const uint8_t flags = payload[p];

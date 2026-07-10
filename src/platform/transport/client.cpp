@@ -12,6 +12,8 @@
 #include <platform/transport/grpcweb.h>
 #include <platform/transport/protobuf.h>
 
+#include <logging.h>
+
 #include <atomic>
 #include <condition_variable>
 #include <deque>
@@ -130,7 +132,7 @@ public:
     }
     void namesOfIdentity(const Identifier& identity, Callback<std::vector<DpnsName>> cb) override
     {
-        Enqueue([=, this] { cb(Result<std::vector<DpnsName>>{.value = std::vector<DpnsName>{}}); });
+        Enqueue([=, this] { DoNamesOfIdentity(identity, cb); });
     }
     void getIdentity(const Identifier& id, Callback<std::optional<Identity>> cb) override
     {
@@ -209,7 +211,7 @@ private:
         auto keys = m_quorum_keys;
         return [keys](uint8_t, const drive::Hash256& qh) -> std::optional<std::vector<uint8_t>> {
             for (const auto& k : keys) {
-                if (std::equal(qh.begin(), qh.end(), k.quorum_hash.begin())) return k.pubkey;
+                if (k.matchesProofHash(qh)) return k.pubkey;
             }
             return std::nullopt;
         };
@@ -254,8 +256,10 @@ private:
         std::string method;
         if (contract) {
             v0.Bytes(2, std::vector<uint8_t>(contract->begin(), contract->end()));
+            v0.Bool(3, true);
             method = "getIdentityContractNonce";
         } else {
+            v0.Bool(2, true);
             method = "getIdentityNonce";
         }
         std::string terr;
@@ -263,13 +267,21 @@ private:
         Result<uint64_t> out;
         if (!r.transport_ok || r.grpc_status != 0) { out.error = r.transport_ok ? r.grpc_message : terr; cb(out); return; }
         auto p = ParseResponse(r.message);
-        // Nonce is a scalar in the non-proof result (prove=false). Proof-backed
-        // nonce verification is available via drive::VerifyIdentityNonce when
-        // prove=true is requested; nonces are non-security-critical (server
-        // rejects a wrong nonce at broadcast) so the value path is acceptable.
-        uint64_t nonce = 0;
-        if (p.v0) { if (auto n = pb::GetVarintField(*p.v0, 1)) nonce = *n; }
-        out.value = nonce;
+        if (!p.proof) { out.error = method + ": no proof in response"; cb(out); return; }
+        drive::ProofEnvelope env;
+        std::vector<uint8_t> proof;
+        if (!DecodeProof(*p.proof, env, proof)) { out.error = method + ": bad proof envelope"; cb(out); return; }
+        drive::Hash256 root;
+        std::optional<uint64_t> nonce;
+        std::string err;
+        const bool verified = contract
+            ? drive::VerifyIdentityContractNonce(proof, id, *contract, nonce, root, err)
+            : drive::VerifyIdentityNonce(proof, id, nonce, root, err);
+        if (!verified || !drive::VerifyRootBinding(root, env,
+                DecodeMetadata(p.metadata, m_params.tenderdash_chain_id), MakeLookup(), err)) {
+            out.error = method + ": proof verification failed: " + err; cb(out); return;
+        }
+        out.value = nonce.value_or(0);
         cb(out);
     }
 
@@ -280,15 +292,16 @@ private:
         auto lookup = MakeLookup();
         Result<std::optional<Identity>> out;
 
-        std::vector<uint8_t> bal_proof, rev_proof, keys_proof;
-        drive::ProofEnvelope env;
-        drive::BlockContext ctx;
-        bool have_env = false;
+        struct ProvedResponse {
+            std::vector<uint8_t> proof;
+            drive::ProofEnvelope envelope;
+            drive::BlockContext context;
+        } balance, revision, keys;
 
         // getIdentityBalance / getIdentityBalanceAndRevision take {id=1,
         // prove=2}; getIdentityKeys takes {id=1, request_type=2 (an AllKeys
         // sub-message), prove=5} — see platform.proto.
-        auto fetch = [&](const std::string& method, bool keys_request, std::vector<uint8_t>& proof_out) -> bool {
+        auto fetch = [&](const std::string& method, bool keys_request, ProvedResponse& proved) -> bool {
             pb::Writer v0;
             v0.Bytes(1, std::vector<uint8_t>(id.begin(), id.end()));
             if (keys_request) {
@@ -305,30 +318,45 @@ private:
             if (!r.transport_ok || r.grpc_status != 0) { out.error = r.transport_ok ? r.grpc_message : terr; return false; }
             auto p = ParseResponse(r.message);
             if (!p.proof) { out.error = method + ": no proof in response"; return false; }
-            if (!DecodeProof(*p.proof, env, proof_out)) { out.error = method + ": bad proof envelope"; return false; }
-            if (!have_env) { ctx = DecodeMetadata(p.metadata, m_params.tenderdash_chain_id); have_env = true; }
+            if (!DecodeProof(*p.proof, proved.envelope, proved.proof)) { out.error = method + ": bad proof envelope"; return false; }
+            proved.context = DecodeMetadata(p.metadata, m_params.tenderdash_chain_id);
             return true;
         };
 
-        if (!fetch("getIdentityBalance", false, bal_proof)) { cb(out); return; }
-        if (!fetch("getIdentityBalanceAndRevision", false, rev_proof)) { cb(out); return; }
-        if (!fetch("getIdentityKeys", true, keys_proof)) { cb(out); return; }
+        if (!fetch("getIdentityBalance", false, balance)) { cb(out); return; }
+        if (!fetch("getIdentityBalanceAndRevision", false, revision)) { cb(out); return; }
+        if (!fetch("getIdentityKeys", true, keys)) { cb(out); return; }
 
-        std::optional<Identity> identity;
-        drive::Hash256 root;
+        std::optional<uint64_t> balance_value, revision_value;
+        std::optional<std::vector<IdentityPublicKey>> key_values;
+        drive::Hash256 balance_root, revision_root, keys_root;
         std::string err;
-        if (!drive::VerifyFullIdentity(bal_proof, rev_proof, keys_proof, id, identity, root, err)) {
-            out.error = "proof verify failed: " + err;
+        const bool proofs_ok =
+            drive::VerifyIdentityBalance(balance.proof, id, balance_value, balance_root, err) &&
+            drive::VerifyRootBinding(balance_root, balance.envelope, balance.context, lookup, err) &&
+            drive::VerifyIdentityRevision(revision.proof, id, revision_value, revision_root, err) &&
+            drive::VerifyRootBinding(revision_root, revision.envelope, revision.context, lookup, err) &&
+            drive::VerifyIdentityKeys(keys.proof, id, key_values, keys_root, err) &&
+            drive::VerifyRootBinding(keys_root, keys.envelope, keys.context, lookup, err);
+        if (!proofs_ok) {
+            out.error = "identity proof verification failed: " + err;
             cb(out);
             return;
         }
-        // Bind the root to a signed Platform block.
-        if (identity && !drive::VerifyRootBinding(root, env, ctx, lookup, err)) {
-            out.error = "quorum signature verify failed: " + err;
+        if (!balance_value && !revision_value && !key_values) {
+            out.value = std::optional<Identity>{};
+        } else if (!balance_value || !revision_value || !key_values) {
+            out.error = "identity proof components were inconsistent";
             cb(out);
             return;
+        } else {
+            Identity identity;
+            identity.id = id;
+            identity.balance = *balance_value;
+            identity.revision = *revision_value;
+            identity.public_keys = std::move(*key_values);
+            out.value = std::move(identity);
         }
-        out.value = identity;
         cb(out);
     }
 
@@ -355,32 +383,47 @@ private:
         DoGetIdentity(*id_out, cb);
     }
 
-    // Document queries (DPNS domain / DashPay profile & contactRequest). These
-    // decode the returned documents via the DPP layer. Document-level proof
-    // verification is applied when the drive layer exposes it; until then a
-    // present document is returned and absence is treated as "not found".
+    using DocumentVerifier = std::function<bool(Span<const uint8_t>, std::vector<Bytes>&,
+                                                drive::Hash256&, std::string&)>;
+
+    // Document queries (DPNS domain / DashPay profile & contactRequest). The
+    // server returns only a GroveDB proof; the requested Drive index path is
+    // reconstructed locally, including cryptographic absence, and the root is
+    // bound to a locally-known Platform LLMQ key before document bytes escape.
     std::vector<std::vector<uint8_t>> GetDocuments(const Identifier& contract, const std::string& doc_type,
                                                    const std::vector<uint8_t>& where_cbor, uint32_t limit,
-                                                   std::string& err)
+                                                   const DocumentVerifier& verifier, std::string& err,
+                                                   const std::vector<uint8_t>& order_by_cbor = {})
     {
         pb::Writer v0;
         v0.Bytes(1, std::vector<uint8_t>(contract.begin(), contract.end()));
         v0.Str(2, doc_type);
         if (!where_cbor.empty()) v0.Bytes(3, where_cbor);
+        if (!order_by_cbor.empty()) v0.Bytes(4, order_by_cbor);
         if (limit) v0.Varint(5, limit);
+        v0.Bool(8, true); // prove
         std::string terr;
         auto r = Call("getDocuments", VersionWrap(std::move(v0)).data(), terr);
         std::vector<std::vector<uint8_t>> docs;
-        if (!r.transport_ok || r.grpc_status != 0) { err = r.transport_ok ? r.grpc_message : terr; return docs; }
+        if (!r.transport_ok || r.grpc_status != 0) {
+            err = r.transport_ok ? r.grpc_message : terr;
+            LogPrintf("Platform getDocuments(%s) failed: %s\n", doc_type, err);
+            return docs;
+        }
         auto p = ParseResponse(r.message);
-        if (!p.v0) return docs;
-        // result.documents (field 1) -> Documents { repeated bytes documents = 1 }
-        if (auto docs_msg = pb::GetLenField(*p.v0, 1)) {
-            pb::Reader rd{*docs_msg};
-            pb::Field f;
-            while (rd.Next(f)) {
-                if (f.number == 1 && f.type == pb::WireType::Len) docs.emplace_back(f.bytes.begin(), f.bytes.end());
-            }
+        if (!p.proof) { err = "getDocuments response did not contain a proof"; return docs; }
+        drive::ProofEnvelope env;
+        std::vector<uint8_t> grovedb_proof;
+        if (!DecodeProof(*p.proof, env, grovedb_proof)) { err = "bad document proof envelope"; return docs; }
+        drive::Hash256 root;
+        if (!verifier(grovedb_proof, docs, root, err)) {
+            LogPrintf("Platform getDocuments(%s) proof verification failed: %s\n", doc_type, err);
+            return {};
+        }
+        const auto ctx = DecodeMetadata(p.metadata, m_params.tenderdash_chain_id);
+        if (!drive::VerifyRootBinding(root, env, ctx, MakeLookup(), err)) {
+            LogPrintf("Platform getDocuments(%s) root binding failed: %s\n", doc_type, err);
+            return {};
         }
         return docs;
     }
@@ -394,24 +437,67 @@ private:
         return w.take();
     }
 
+    static std::vector<uint8_t> DpnsPrefixOrderBy()
+    {
+        transport::cbor::Writer w;
+        w.Array(1);
+        w.Array(2); w.Text("normalizedLabel"); w.Text("asc");
+        return w.take();
+    }
+
     void DoResolveName(const std::string& normalized_label, const Callback<std::optional<DpnsName>>& cb)
     {
         std::string err;
-        auto docs = GetDocuments(DPNS_CONTRACT_ID, "domain", DpnsWhere(normalized_label, false), 1, err);
+        auto docs = GetDocuments(DPNS_CONTRACT_ID, "domain", DpnsWhere(normalized_label, false), 1,
+            [&normalized_label](Span<const uint8_t> proof, std::vector<Bytes>& out,
+                                drive::Hash256& root, std::string& verify_error) {
+                return drive::VerifyDpnsNameExact(proof, normalized_label, out, root, verify_error);
+            }, err);
         Result<std::optional<DpnsName>> out;
         if (!err.empty()) { out.error = err; cb(out); return; }
         if (docs.empty()) { out.value = std::optional<DpnsName>{}; cb(out); return; } // available / absent
         DpnsName name;
         if (dpp::DecodeDpnsDomain(docs.front(), name)) { out.value = name; }
-        else { out.value = std::optional<DpnsName>{}; }
+        else {
+            out.error = "DPNS domain document decoding failed";
+            LogPrintf("Platform resolveName(%s): %s (%u bytes)\n", normalized_label, out.error,
+                      docs.front().size());
+        }
         cb(out);
     }
 
     void DoSearchNames(const std::string& prefix, uint32_t limit, const Callback<std::vector<DpnsName>>& cb)
     {
         std::string err;
-        auto docs = GetDocuments(DPNS_CONTRACT_ID, "domain", DpnsWhere(prefix, true), limit, err);
+        auto docs = GetDocuments(DPNS_CONTRACT_ID, "domain", DpnsWhere(prefix, true), limit,
+            [&prefix, limit](Span<const uint8_t> proof, std::vector<Bytes>& out,
+                             drive::Hash256& root, std::string& verify_error) {
+                return drive::VerifyDpnsNamePrefix(proof, prefix, static_cast<uint16_t>(limit),
+                                                   out, root, verify_error);
+            }, err, DpnsPrefixOrderBy());
         Result<std::vector<DpnsName>> out;
+        if (!err.empty()) { out.error = err; cb(out); return; }
+        std::vector<DpnsName> names;
+        for (auto& d : docs) { DpnsName n; if (dpp::DecodeDpnsDomain(d, n)) names.push_back(std::move(n)); }
+        out.value = std::move(names);
+        cb(out);
+    }
+
+    void DoNamesOfIdentity(const Identifier& identity, const Callback<std::vector<DpnsName>>& cb)
+    {
+        transport::cbor::Writer w;
+        w.Array(1);
+        w.Array(3); w.Text("records.identity"); w.Text("==");
+        w.Bytes(Span<const uint8_t>{identity.data(), identity.size()});
+        std::string err;
+        constexpr uint32_t limit{100};
+        auto docs = GetDocuments(DPNS_CONTRACT_ID, "domain", w.take(), limit,
+            [&identity](Span<const uint8_t> proof, std::vector<Bytes>& out,
+                        drive::Hash256& root, std::string& verify_error) {
+                return drive::VerifyDpnsNamesByIdentity(proof, identity, 100, out, root, verify_error);
+            }, err);
+        Result<std::vector<DpnsName>> out;
+        if (!err.empty()) { out.error = err; cb(out); return; }
         std::vector<DpnsName> names;
         for (auto& d : docs) { DpnsName n; if (dpp::DecodeDpnsDomain(d, n)) names.push_back(std::move(n)); }
         out.value = std::move(names);
@@ -424,7 +510,11 @@ private:
         w.Array(1);
         w.Array(3); w.Text("$ownerId"); w.Text("=="); w.Bytes(Span<const uint8_t>{owner_id.data(), owner_id.size()});
         std::string err;
-        auto docs = GetDocuments(DASHPAY_CONTRACT_ID, "profile", w.take(), 1, err);
+        auto docs = GetDocuments(DASHPAY_CONTRACT_ID, "profile", w.take(), 1,
+            [&owner_id](Span<const uint8_t> proof, std::vector<Bytes>& out,
+                        drive::Hash256& root, std::string& verify_error) {
+                return drive::VerifyDashPayProfileByOwner(proof, owner_id, out, root, verify_error);
+            }, err);
         Result<std::optional<Profile>> out;
         if (!err.empty()) { out.error = err; cb(out); return; }
         if (docs.empty()) { out.value = std::optional<Profile>{}; cb(out); return; }
@@ -443,9 +533,20 @@ private:
         w.Text(to_me ? "toUserId" : "$ownerId");
         w.Text("==");
         w.Bytes(Span<const uint8_t>{identity.data(), identity.size()});
+        transport::cbor::Writer order_by;
+        order_by.Array(1);
+        order_by.Array(2);
+        order_by.Text("$createdAt");
+        order_by.Text("asc");
         std::string err;
-        auto docs = GetDocuments(DASHPAY_CONTRACT_ID, "contactRequest", w.take(), 100, err);
+        auto docs = GetDocuments(DASHPAY_CONTRACT_ID, "contactRequest", w.take(), 100,
+            [&identity, to_me](Span<const uint8_t> proof, std::vector<Bytes>& docs_out,
+                               drive::Hash256& root, std::string& verify_error) {
+                return drive::VerifyDashPayContactRequests(proof, identity, to_me, 100,
+                                                           docs_out, root, verify_error);
+            }, err, order_by.take());
         Result<std::vector<ContactRequest>> out;
+        if (!err.empty()) { out.error = err; cb(out); return; }
         std::vector<ContactRequest> reqs;
         for (auto& d : docs) { ContactRequest cr; if (dpp::DecodeDashPayContactRequest(d, cr)) reqs.push_back(std::move(cr)); }
         out.value = std::move(reqs);
