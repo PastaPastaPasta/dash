@@ -730,8 +730,11 @@ libdash_platform_a_SOURCES = \
   crypto/blake3/blake3_dispatch.c \
   crypto/blake3/blake3_impl.h \
   crypto/blake3/blake3_portable.c \
+  platform/client.h \
   platform/params.cpp \
-  platform/params.h
+  platform/params.h \
+  platform/statetransitions.h \
+  platform/types.h
 endif
 #
 
