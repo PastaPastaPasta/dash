@@ -285,10 +285,21 @@ private:
         drive::BlockContext ctx;
         bool have_env = false;
 
-        auto fetch = [&](const std::string& method, bool with_prove, std::vector<uint8_t>& proof_out) -> bool {
+        // getIdentityBalance / getIdentityBalanceAndRevision take {id=1,
+        // prove=2}; getIdentityKeys takes {id=1, request_type=2 (an AllKeys
+        // sub-message), prove=5} — see platform.proto.
+        auto fetch = [&](const std::string& method, bool keys_request, std::vector<uint8_t>& proof_out) -> bool {
             pb::Writer v0;
             v0.Bytes(1, std::vector<uint8_t>(id.begin(), id.end()));
-            if (with_prove) v0.Bool(2, true);
+            if (keys_request) {
+                pb::Writer all_keys;             // AllKeys {}
+                pb::Writer request_type;         // KeyRequestType { all_keys = 1 }
+                request_type.Message(1, all_keys.take());
+                v0.Message(2, request_type.take());
+                v0.Bool(5, true);                // prove
+            } else {
+                v0.Bool(2, true);                // prove
+            }
             std::string terr;
             auto r = Call(method, VersionWrap(std::move(v0)).data(), terr);
             if (!r.transport_ok || r.grpc_status != 0) { out.error = r.transport_ok ? r.grpc_message : terr; return false; }
@@ -299,8 +310,8 @@ private:
             return true;
         };
 
-        if (!fetch("getIdentityBalance", true, bal_proof)) { cb(out); return; }
-        if (!fetch("getIdentityBalanceAndRevision", true, rev_proof)) { cb(out); return; }
+        if (!fetch("getIdentityBalance", false, bal_proof)) { cb(out); return; }
+        if (!fetch("getIdentityBalanceAndRevision", false, rev_proof)) { cb(out); return; }
         if (!fetch("getIdentityKeys", true, keys_proof)) { cb(out); return; }
 
         std::optional<Identity> identity;
