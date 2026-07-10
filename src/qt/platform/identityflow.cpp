@@ -45,7 +45,8 @@ std::vector<unsigned char> SerializeRecord(const IdentityFlow::Record& r)
       << r.label << r.normalized_label
       << std::vector<uint8_t>(r.preorder_salt.begin(), r.preorder_salt.end())
       << r.contested << r.last_error << r.started_at;
-    return {s.begin(), s.end()};
+    const auto span = MakeUCharSpan(s);
+    return {span.begin(), span.end()};
 }
 
 bool DeserializeRecord(const std::vector<unsigned char>& data, IdentityFlow::Record& r)
