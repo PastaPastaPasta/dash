@@ -163,7 +163,7 @@ class AssumeutxoTest(BitcoinTestFramework):
             self.generate(n0, nblocks=1, sync_fun=self.no_op)
             newblock = n0.getblock(n0.getbestblockhash(), 0)
             height = n0.getblockcount()
-            blocks[height] = Block(newblock, 1, blocks[height - 1].chain_tx + 1)
+            blocks[height] = Block(n0.getbestblockhash(), 1, blocks[height - 1].chain_tx + 1)
             if i == 4:
                 # Create a stale block that forks off the main chain before the snapshot.
                 temp_invalid = n0.getbestblockhash()
