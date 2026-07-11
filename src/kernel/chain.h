@@ -21,8 +21,22 @@ interfaces::BlockInfo MakeBlockInfo(const CBlockIndex* block_index, const CBlock
 
 class CBlock;
 class CBlockIndex;
+class CBlockUndo;
+class uint256;
 namespace interfaces {
-struct BlockInfo;
+//! Block data sent with blockConnected and blockDisconnected notifications.
+struct BlockInfo {
+    const uint256& hash;
+    const uint256* prev_hash{nullptr};
+    int height{-1};
+    int file_number{-1};
+    unsigned data_pos{0};
+    const CBlock* data{nullptr};
+    const CBlockUndo* undo_data{nullptr};
+    unsigned int chain_time_max{0};
+
+    explicit BlockInfo(const uint256& block_hash) : hash(block_hash) {}
+};
 } // namespace interfaces
 
 namespace kernel {
