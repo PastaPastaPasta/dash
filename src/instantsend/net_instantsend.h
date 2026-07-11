@@ -14,6 +14,7 @@
 #include <thread>
 #include <vector>
 
+class Chainstate;
 class ChainstateManager;
 
 namespace Consensus {
@@ -44,7 +45,7 @@ class NetInstantSend final : public NetHandler, public CValidationInterface
 public:
     NetInstantSend(PeerManagerInternal* peer_manager, llmq::CInstantSendManager& is_manager,
                    instantsend::InstantSendSigner* signer, llmq::CSigningManager& sigman, llmq::CQuorumManager& qman,
-                   const chainlock::Chainlocks& chainlocks, const ChainstateManager& chainman, CTxMemPool& mempool,
+                   const chainlock::Chainlocks& chainlocks, ChainstateManager& chainman, CTxMemPool& mempool,
                    const CMasternodeSync& mn_sync) :
         NetHandler(peer_manager),
         m_is_manager{is_manager},
@@ -74,7 +75,7 @@ protected:
     void TransactionAddedToMempool(const CTransactionRef&, int64_t, uint64_t mempool_sequence) override;
     void TransactionRemovedFromMempool(const CTransactionRef& ptx, MemPoolRemovalReason reason,
                                        uint64_t mempool_sequence) override;
-    void BlockConnected(const std::shared_ptr<const CBlock>& pblock, const CBlockIndex* pindex) override;
+    void BlockConnected(ChainstateRole role, const std::shared_ptr<const CBlock>& pblock, const CBlockIndex* pindex) override;
     void BlockDisconnected(const std::shared_ptr<const CBlock>& pblock, const CBlockIndex* pindexDisconnected) override;
     void NotifyChainLock(const CBlockIndex* pindex, const std::shared_ptr<const chainlock::ChainLockSig>& clsig) override;
 
@@ -113,7 +114,7 @@ private:
     llmq::CSigningManager& m_sigman;
     llmq::CQuorumManager& m_qman;
     const chainlock::Chainlocks& m_chainlocks;
-    const ChainstateManager& m_chainman;
+    ChainstateManager& m_chainman;
     CTxMemPool& m_mempool;
     const CMasternodeSync& m_mn_sync;
 

@@ -23,7 +23,7 @@ SERVER_DATADIR="$(pwd)/utxodemo-data-server-$BASE_HEIGHT"
 CLIENT_DATADIR="$(pwd)/utxodemo-data-client-$BASE_HEIGHT"
 UTXO_DAT_FILE="$(pwd)/utxo.$BASE_HEIGHT.dat"
 
-# Chosen to try to not interfere with any running bitcoind processes.
+# Chosen to try to not interfere with any running dashd processes.
 SERVER_PORT=8633
 SERVER_RPC_PORT=8632
 
@@ -61,10 +61,10 @@ trap finish EXIT
 EARLY_IBD_FLAGS="-maxtipage=9223372036854775207 -minimumchainwork=0x00"
 
 server_rpc() {
-  ./src/bitcoin-cli -rpcport=$SERVER_RPC_PORT -datadir="$SERVER_DATADIR" "$@"
+  ./src/dash-cli -rpcport=$SERVER_RPC_PORT -datadir="$SERVER_DATADIR" "$@"
 }
 client_rpc() {
-  ./src/bitcoin-cli -rpcport=$CLIENT_RPC_PORT -datadir="$CLIENT_DATADIR" "$@"
+  ./src/dash-cli -rpcport=$CLIENT_RPC_PORT -datadir="$CLIENT_DATADIR" "$@"
 }
 server_sleep_til_boot() {
   while ! server_rpc ping >/dev/null 2>&1; do sleep 0.1; done
@@ -104,13 +104,13 @@ read -p "Press [enter] to continue" _
 
 echo
 echo "-- IBDing the blocks (height=$BASE_HEIGHT) required to the server node..."
-./src/bitcoind -logthreadnames=1 $SERVER_PORTS \
+./src/dashd -logthreadnames=1 $SERVER_PORTS \
     -datadir="$SERVER_DATADIR" $EARLY_IBD_FLAGS -stopatheight="$BASE_HEIGHT" >/dev/null
 
 echo
 echo "-- Creating snapshot at ~ height $BASE_HEIGHT ($UTXO_DAT_FILE)..."
 sleep 2
-./src/bitcoind -logthreadnames=1 $SERVER_PORTS \
+./src/dashd -logthreadnames=1 $SERVER_PORTS \
     -datadir="$SERVER_DATADIR" $EARLY_IBD_FLAGS -connect=0 -listen=0 >/dev/null &
 SERVER_PID="$!"
 
@@ -121,6 +121,7 @@ kill -9 "$SERVER_PID"
 
 RPC_BASE_HEIGHT=$(jq -r .base_height < "$DUMP_OUTPUT")
 RPC_AU=$(jq -r .txoutset_hash < "$DUMP_OUTPUT")
+RPC_EVO=$(jq -r .evo_hash < "$DUMP_OUTPUT")
 RPC_NCHAINTX=$(jq -r .nchaintx < "$DUMP_OUTPUT")
 RPC_BLOCKHASH=$(jq -r .base_hash < "$DUMP_OUTPUT")
 
@@ -129,18 +130,20 @@ while server_rpc ping >/dev/null 2>&1; do sleep 0.1; done
 
 echo
 echo "-- Now: add the following to CMainParams::m_assumeutxo_data"
-echo "   in src/kernel/chainparams.cpp, and recompile:"
+echo "   in src/chainparams.cpp, and recompile:"
 echo
-echo "   {${RPC_BASE_HEIGHT}, AssumeutxoHash{uint256S(\"0x${RPC_AU}\")}, ${RPC_NCHAINTX}, uint256S(\"0x${RPC_BLOCKHASH}\")},"
+echo "   {.height = ${RPC_BASE_HEIGHT}, .hash_serialized = AssumeutxoHash{uint256S(\"0x${RPC_AU}\")},"
+echo "    .evo_hash = EvoSnapshotHash{uint256S(\"0x${RPC_EVO}\")}, .nChainTx = ${RPC_NCHAINTX},"
+echo "    .blockhash = uint256S(\"0x${RPC_BLOCKHASH}\")},"
 echo
 echo
 echo "-- IBDing more blocks to the server node (height=$FINAL_HEIGHT) so there is a diff between snapshot and tip..."
-./src/bitcoind $SERVER_PORTS -logthreadnames=1 -datadir="$SERVER_DATADIR" \
+./src/dashd $SERVER_PORTS -logthreadnames=1 -datadir="$SERVER_DATADIR" \
     $EARLY_IBD_FLAGS -stopatheight="$FINAL_HEIGHT" >/dev/null
 
 echo
 echo "-- Starting the server node to provide blocks to the client node..."
-./src/bitcoind $SERVER_PORTS -logthreadnames=1 -debug=net -datadir="$SERVER_DATADIR" \
+./src/dashd $SERVER_PORTS -logthreadnames=1 -debug=net -datadir="$SERVER_DATADIR" \
     $EARLY_IBD_FLAGS -connect=0 -listen=1 >/dev/null &
 SERVER_PID="$!"
 server_sleep_til_boot
@@ -163,7 +166,7 @@ read -p "When you're ready for all this, hit [enter]" _
 
 echo
 echo "-- Starting the client node to get headers from the server, then load the snapshot..."
-./src/bitcoind $CLIENT_PORTS $ALL_INDEXES -logthreadnames=1 -datadir="$CLIENT_DATADIR" \
+./src/dashd $CLIENT_PORTS $ALL_INDEXES -logthreadnames=1 -datadir="$CLIENT_DATADIR" \
     -connect=0 -addnode=127.0.0.1:$SERVER_PORT -debug=net $EARLY_IBD_FLAGS >/dev/null &
 CLIENT_PID="$!"
 client_sleep_til_boot
@@ -176,7 +179,7 @@ echo
 echo "-- Loading UTXO snapshot into client..."
 client_rpc loadtxoutset "$UTXO_DAT_FILE"
 
-watch -n 0.3 "( tail -n 14 $CLIENT_DATADIR/debug.log ; echo ; ./src/bitcoin-cli -rpcport=$CLIENT_RPC_PORT -datadir=$CLIENT_DATADIR getchainstates) | cat"
+watch -n 0.3 "( tail -n 14 $CLIENT_DATADIR/debug.log ; echo ; ./src/dash-cli -rpcport=$CLIENT_RPC_PORT -datadir=$CLIENT_DATADIR getchainstates) | cat"
 
 echo
 echo "-- Okay, now I'm going to restart the client to make sure that the snapshot chain reloads "
@@ -189,12 +192,12 @@ read -p "Press [enter] to continue"
 while kill -0 "$CLIENT_PID"; do
     sleep 1
 done
-./src/bitcoind $CLIENT_PORTS $ALL_INDEXES -logthreadnames=1 -datadir="$CLIENT_DATADIR" -connect=0 \
+./src/dashd $CLIENT_PORTS $ALL_INDEXES -logthreadnames=1 -datadir="$CLIENT_DATADIR" -connect=0 \
     -addnode=127.0.0.1:$SERVER_PORT "$EARLY_IBD_FLAGS" >/dev/null &
 CLIENT_PID="$!"
 client_sleep_til_boot
 
-watch -n 0.3 "( tail -n 14 $CLIENT_DATADIR/debug.log ; echo ; ./src/bitcoin-cli -rpcport=$CLIENT_RPC_PORT -datadir=$CLIENT_DATADIR getchainstates) | cat"
+watch -n 0.3 "( tail -n 14 $CLIENT_DATADIR/debug.log ; echo ; ./src/dash-cli -rpcport=$CLIENT_RPC_PORT -datadir=$CLIENT_DATADIR getchainstates) | cat"
 
 echo
 echo "-- Done!"

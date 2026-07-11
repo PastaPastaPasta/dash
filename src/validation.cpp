@@ -3374,7 +3374,7 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
             LOCK(cs_main);
             // Lock transaction pool for at least as long as it takes for connectTrace to be consumed
             LOCK(MempoolMutex());
-            const bool was_in_ibd = m_chainman.IsInitialBlockDownload();
+            const bool was_in_ibd = IsInitialBlockDownload();
             CBlockIndex* starting_tip = m_chain.Tip();
             bool blocks_connected = false;
             do {
@@ -3422,7 +3422,7 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
             if (!blocks_connected) return true;
 
             const CBlockIndex* pindexFork = m_chain.FindFork(starting_tip);
-            bool still_in_ibd = m_chainman.IsInitialBlockDownload();
+            bool still_in_ibd = IsInitialBlockDownload();
 
             if (was_in_ibd && !still_in_ibd) {
                 // Active chainstate has exited IBD.
@@ -5559,7 +5559,8 @@ Chainstate& ChainstateManager::InitializeChainstate(CTxMemPool* mempool,
 bool ChainstateManager::ActivateSnapshot(
         AutoFile& coins_file,
         const SnapshotMetadata& metadata,
-        bool in_memory)
+        bool in_memory,
+        std::string* error)
 {
     uint256 base_blockhash = metadata.m_base_blockhash;
 
@@ -5625,8 +5626,9 @@ bool ChainstateManager::ActivateSnapshot(
             static_cast<size_t>(current_coinstip_cache_size * SNAPSHOT_CACHE_PERC));
     }
 
-    auto cleanup_bad_snapshot = [&](const char* reason) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
+    auto cleanup_bad_snapshot = [&](const std::string& reason) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
         LogPrintf("[snapshot] activation failed - %s\n", reason);
+        if (error) *error = reason;
         this->ReleaseSnapshotPruneLock();
         this->MaybeRebalanceCaches();
 
@@ -5646,9 +5648,10 @@ bool ChainstateManager::ActivateSnapshot(
         return false;
     };
 
-    if (!this->PopulateAndValidateSnapshot(*snapshot_chainstate, coins_file, metadata)) {
+    std::string population_error;
+    if (!this->PopulateAndValidateSnapshot(*snapshot_chainstate, coins_file, metadata, &population_error)) {
         LOCK(::cs_main);
-        return cleanup_bad_snapshot("population failed");
+        return cleanup_bad_snapshot(population_error.empty() ? "population failed" : population_error);
     }
 
     LOCK(::cs_main);  // cs_main required for rest of snapshot activation.
@@ -6027,16 +6030,6 @@ bool ChainstateManager::DeleteSnapshotChainstate()
     m_active_chainstate = m_ibd_chainstate.get();
     m_snapshot_chainstate.reset();
     return true;
-}
-
-ChainstateRole Chainstate::GetRole() const
-{
-    if (m_chainman.GetAll().size() <= 1) {
-        return ChainstateRole::NORMAL;
-    }
-    return (this != &m_chainman.ActiveChainstate()) ?
-               ChainstateRole::BACKGROUND :
-               ChainstateRole::ASSUMEDVALID;
 }
 
 const CBlockIndex* ChainstateManager::GetSnapshotBaseBlock() const
