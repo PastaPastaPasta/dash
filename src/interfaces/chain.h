@@ -6,6 +6,7 @@
 #define BITCOIN_INTERFACES_CHAIN_H
 
 #include <blockfilter.h>
+#include <kernel/chain.h> // IWYU pragma: export
 #include <primitives/transaction.h> // For CTransactionRef
 #include <util/settings.h>          // For util::SettingsValue
 
@@ -25,7 +26,6 @@ class CRPCCommand;
 class CScheduler;
 class CFeeRate;
 class CBlockIndex;
-class CBlockUndo;
 class Coin;
 class uint256;
 enum class MemPoolRemovalReason;
@@ -47,20 +47,6 @@ struct NodeContext;
 typedef std::shared_ptr<const CTransaction> CTransactionRef;
 
 namespace interfaces {
-
-//! Block data sent with blockConnected and blockDisconnected notifications.
-struct BlockInfo {
-    const uint256& hash;
-    const uint256* prev_hash{nullptr};
-    int height{-1};
-    int file_number{-1};
-    unsigned data_pos{0};
-    const CBlock* data{nullptr};
-    const CBlockUndo* undo_data{nullptr};
-    unsigned int chain_time_max{0};
-
-    explicit BlockInfo(const uint256& block_hash) : hash(block_hash) {}
-};
 
 class Wallet;
 class Handler;
