@@ -89,24 +89,24 @@ bool BaseIndex::Init()
     // Note: this will latch to true immediately if the user starts up with an empty
     // datadir and an index enabled. If this is the case, indexation will happen solely
     // via `BlockConnected` signals until, possibly, the next restart.
-    m_synced = m_best_block_index.load() == active_chain.Tip();
+    m_synced = m_best_block_index.load() == index_chain.Tip();
     if (!m_synced) {
         bool prune_violation = false;
         if (!m_best_block_index) {
             // index is not built yet
             // make sure we have all block data back to the genesis
-            prune_violation = m_chainstate->m_blockman.GetFirstStoredBlock(*active_chain.Tip()) != active_chain.Genesis();
+            prune_violation = m_chainstate->m_blockman.GetFirstStoredBlock(*index_chain.Tip()) != index_chain.Genesis();
         }
         // in case the index has a best block set and is not fully synced
         // check if we have the required blocks to continue building the index
         else {
             const CBlockIndex* block_to_test = m_best_block_index.load();
-            if (!active_chain.Contains(block_to_test)) {
+            if (!index_chain.Contains(block_to_test)) {
                 // if the bestblock is not part of the mainchain, find the fork
                 // and make sure we have all data down to the fork
-                block_to_test = active_chain.FindFork(block_to_test);
+                block_to_test = index_chain.FindFork(block_to_test);
             }
-            const CBlockIndex* block = active_chain.Tip();
+            const CBlockIndex* block = index_chain.Tip();
             prune_violation = true;
             // check backwards from the tip if we have all block data until we reach the indexes bestblock
             while (block_to_test && block && (block->nStatus & BLOCK_HAVE_DATA)) {
