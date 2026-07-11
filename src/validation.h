@@ -581,6 +581,7 @@ public:
      * std::nullopt if this chainstate was not created from a snapshot.
      */
     const std::optional<uint256> m_from_snapshot_blockhash;
+    std::optional<std::set<uint256>> m_required_background_mn_list_hashes;
 
     /**
      * The base of the snapshot this chainstate was created from.
@@ -671,6 +672,7 @@ public:
 
     /** Persist the MN list produced by this chainstate's own block connection. */
     void RecordBackgroundMNListHash(const uint256& block_hash, const uint256& mn_list_hash);
+    void SetRequiredBackgroundMNListHashes(const std::vector<uint256>& block_hashes);
 
     //! Prune blockfiles from the disk if necessary and then flush chainstate changes
     //! if we pruned.
@@ -1082,6 +1084,14 @@ public:
         std::function<void(bilingual_str)> shutdown_fnc =
             [](bilingual_str msg) { AbortNode(msg.original, msg); })
         EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
+    /** Mark the active assumeutxo chainstate invalid and shut down. Returns
+     * false when no snapshot is active or an EvoDB transaction must unwind
+     * before the operation can safely run. */
+    bool HandleSnapshotStateMismatch(
+        const std::string& reason,
+        std::function<void(bilingual_str)> shutdown_fnc =
+            [](bilingual_str msg) { AbortNode(msg.original, msg); });
 
     //! The most-work chain.
     Chainstate& ActiveChainstate() const;
