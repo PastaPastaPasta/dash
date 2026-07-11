@@ -596,6 +596,11 @@ void PlatformService::updateNodeContext()
         m_client->updateEndpoints(std::move(endpoints));
     }
 
+    // Best local ChainLock height: a coarse freshness floor letting the
+    // client reject stale (validly signed) platform proofs replayed by an
+    // on-path attacker.
+    m_client->updateCoreChainLockedHeight(node.llmq().getBestChainLock().m_height);
+
     // Platform-signing quorum public keys for proof verification.
     const auto llmq_type{static_cast<uint8_t>(Params().GetConsensus().llmqTypePlatform)};
     auto quorums{node.llmq().getPlatformQuorums(llmq_type)};

@@ -143,7 +143,19 @@ bool RunQuery(Span<const uint8_t> proof, const PathQuery& query, GroveVerifyResu
               std::string& error)
 {
     VerifyOptions options; // defaults: raw results, include empty trees
-    return platform::grove::VerifyQuery(proof, query, options, out, error);
+    if (!platform::grove::VerifyQuery(proof, query, options, out, error)) return false;
+    // Every Drive query the GUI issues goes through here. Require the strict
+    // V1 GroveDBProof envelope: current Platform (protocol >= 4) only emits
+    // V1, and the lenient V0 format does not bind the serialized element
+    // bytes of a non-empty tree returned without a subquery, so accepting it
+    // would let a malicious evonode (or on-path attacker, TLS being
+    // unauthenticated by design) downgrade the proof and forge those bytes
+    // while preserving the quorum-signed root hash.
+    if (out.envelope_version < 1) {
+        error = "rejected lenient V0 GroveDB proof envelope (strict V1 required)";
+        return false;
+    }
+    return true;
 }
 
 //! Reads an 8-byte big-endian item value (revision / nonce).
@@ -409,9 +421,9 @@ bool VerifyDpnsNamePrefix(Span<const uint8_t> proof, const std::string& normaliz
     query.path.push_back(StringBytes("dash"));
     query.path.push_back(StringBytes("normalizedLabel"));
     Bytes start{StringBytes(normalized_prefix)};
-    Bytes end{start};
-    ++end.back();
-    query.query.items.push_back(QueryItem::Range(std::move(start), std::move(end)));
+    Bytes range_end{start};
+    ++range_end.back();
+    query.query.items.push_back(QueryItem::Range(std::move(start), std::move(range_end)));
     query.query.default_subquery_branch = PathBranch({ByteSeg(0)});
     query.limit = limit;
     return ExtractDocuments(proof, query, documents_out, root_out, error);
@@ -538,11 +550,11 @@ bool DecodeStoredVoteInfo(Span<const uint8_t> bytes, StoredVoteInfo& out, std::s
         error = strprintf("unknown stored info version %u", version);
         return false;
     }
-    uint64_t event_count;
+    uint64_t event_count{0};
     bool ok{reader.ReadBincodeVarint(event_count)};
     if (ok && event_count > reader.Remaining()) ok = reader.SetError("event count exceeds remaining data");
     for (uint64_t i = 0; ok && i < event_count; ++i) {
-        uint64_t choice_count;
+        uint64_t choice_count{0};
         ok = reader.ReadBincodeVarint(choice_count);
         if (ok && choice_count > reader.Remaining()) ok = reader.SetError("choice count exceeds remaining data");
         std::vector<StoredVoteInfo::VoteChoice> choices;
@@ -590,8 +602,12 @@ bool DecodeStoredVoteInfo(Span<const uint8_t> bytes, StoredVoteInfo& out, std::s
             ok = reader.SetError(strprintf("unknown vote poll status discriminant %u", status));
         }
     }
-    uint64_t locked_count;
-    if (ok) ok = reader.ReadBincodeVarint(locked_count);
+    // Trailing locked_count (u16); consumed so the "all bytes read" check
+    // below is meaningful.
+    if (ok) {
+        uint64_t locked_count{0};
+        ok = reader.ReadBincodeVarint(locked_count);
+    }
     if (!ok || reader.HasError()) {
         error = strprintf("unable to decode contested vote stored info: %s", reader.GetError());
         return false;

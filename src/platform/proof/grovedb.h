@@ -135,6 +135,10 @@ struct ProvedPathKeyValue {
 struct GroveVerifyResult {
     Hash256 root_hash{};
     std::vector<ProvedPathKeyValue> results;
+    //! Decoded GroveDBProof envelope version (0 = lenient V0, 1 = strict V1).
+    //! Network verification requires V1; V0 is retained only for the decoder
+    //! unit tests (see platform_proof_tests).
+    uint16_t envelope_version{1};
 };
 
 //! Verification options (merk/src/proofs/query/verify.rs VerifyOptions

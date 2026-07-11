@@ -120,6 +120,12 @@ public:
         m_quorum_type = llmq_type;
         m_quorum_keys = std::move(keys);
     }
+    void updateCoreChainLockedHeight(int32_t height) override
+    {
+        std::lock_guard<std::mutex> lk(m_mtx);
+        // Monotonic: never let a stale node context lower the floor.
+        if (height > m_local_core_chainlocked_height) m_local_core_chainlocked_height = height;
+    }
 
     // Queries — each enqueues a task on the worker thread.
     void resolveName(const std::string& normalized_label, Callback<std::optional<DpnsName>> cb) override
@@ -217,6 +223,46 @@ private:
         };
     }
 
+    //! Coarse staleness bound (in core blocks) between a proof's signed
+    //! core-chain-locked height and the node's own best ChainLock. Generous
+    //! so normal platform lag never trips it; the session-monotonic platform
+    //! height check below is the airtight anti-rollback guard.
+    static constexpr int64_t MAX_CORE_CHAINLOCK_LAG{288};
+
+    //! Verifies the quorum-signed root binding and then enforces freshness so
+    //! an on-path attacker (TLS is unauthenticated by design) cannot feed a
+    //! stale-but-validly-signed response. Two guards:
+    //!  - session-monotonic platform height: a signed height that regressed
+    //!    below the highest already accepted this session is a replay;
+    //!  - core ChainLock floor: the signed core-chain-locked height must not
+    //!    trail the node's own best ChainLock by more than MAX_CORE_CHAINLOCK_LAG.
+    //! The monotonic baseline is only advanced after a fully verified response.
+    bool BindAndCheckFresh(const drive::Hash256& root, const drive::ProofEnvelope& env,
+                           const drive::BlockContext& ctx, const drive::QuorumKeyLookup& lookup,
+                           std::string& err)
+    {
+        if (!drive::VerifyRootBinding(root, env, ctx, lookup, err)) return false;
+        std::lock_guard<std::mutex> lk(m_mtx);
+        if (m_local_core_chainlocked_height > 0 &&
+            static_cast<int64_t>(ctx.core_chain_locked_height) + MAX_CORE_CHAINLOCK_LAG <
+                static_cast<int64_t>(m_local_core_chainlocked_height)) {
+            err = strprintf("stale platform proof: signed core chainlock height %u trails the local "
+                            "ChainLock height %d by more than %d blocks",
+                            ctx.core_chain_locked_height, m_local_core_chainlocked_height,
+                            MAX_CORE_CHAINLOCK_LAG);
+            return false;
+        }
+        if (ctx.height < m_max_platform_height) {
+            err = strprintf("stale platform proof: signed platform height %llu is below the highest "
+                            "height %llu already verified this session (possible rollback/replay)",
+                            static_cast<unsigned long long>(ctx.height),
+                            static_cast<unsigned long long>(m_max_platform_height));
+            return false;
+        }
+        m_max_platform_height = ctx.height;
+        return true;
+    }
+
     transport::GrpcCallResult Call(const std::string& method, const std::vector<uint8_t>& req, std::string& transport_err)
     {
         // Try each endpoint until one answers at transport level.
@@ -277,7 +323,7 @@ private:
         const bool verified = contract
             ? drive::VerifyIdentityContractNonce(proof, id, *contract, nonce, root, err)
             : drive::VerifyIdentityNonce(proof, id, nonce, root, err);
-        if (!verified || !drive::VerifyRootBinding(root, env,
+        if (!verified || !BindAndCheckFresh(root, env,
                 DecodeMetadata(p.metadata, m_params.tenderdash_chain_id), MakeLookup(), err)) {
             out.error = method + ": proof verification failed: " + err; cb(out); return;
         }
@@ -333,13 +379,23 @@ private:
         std::string err;
         const bool proofs_ok =
             drive::VerifyIdentityBalance(balance.proof, id, balance_value, balance_root, err) &&
-            drive::VerifyRootBinding(balance_root, balance.envelope, balance.context, lookup, err) &&
+            BindAndCheckFresh(balance_root, balance.envelope, balance.context, lookup, err) &&
             drive::VerifyIdentityRevision(revision.proof, id, revision_value, revision_root, err) &&
-            drive::VerifyRootBinding(revision_root, revision.envelope, revision.context, lookup, err) &&
+            BindAndCheckFresh(revision_root, revision.envelope, revision.context, lookup, err) &&
             drive::VerifyIdentityKeys(keys.proof, id, key_values, keys_root, err) &&
-            drive::VerifyRootBinding(keys_root, keys.envelope, keys.context, lookup, err);
+            BindAndCheckFresh(keys_root, keys.envelope, keys.context, lookup, err);
         if (!proofs_ok) {
             out.error = "identity proof verification failed: " + err;
+            cb(out);
+            return;
+        }
+        // The three sub-queries are separate DAPI responses; require them to
+        // commit to the same GroveDB state root so a peer cannot assemble a
+        // full identity from independently valid states at different heights
+        // (the invariant drive::VerifyFullIdentity enforces). A transient
+        // block boundary between the calls trips this; the caller retries.
+        if (balance_root != revision_root || balance_root != keys_root) {
+            out.error = "identity sub-proofs commit to different state roots; retry";
             cb(out);
             return;
         }
@@ -375,7 +431,9 @@ private:
         if (!DecodeProof(*p.proof, env, gp)) { out.error = "bad proof"; cb(out); return; }
         auto ctx = DecodeMetadata(p.metadata, m_params.tenderdash_chain_id);
         std::optional<Identifier> id_out; std::string err;
-        if (!drive::VerifyAndDecodeIdentityIdByPublicKeyHash(gp, env, ctx, h, MakeLookup(), id_out, err)) {
+        drive::Hash256 root;
+        if (!drive::VerifyIdentityIdByPublicKeyHash(gp, h, id_out, root, err) ||
+            !BindAndCheckFresh(root, env, ctx, MakeLookup(), err)) {
             out.error = err; cb(out); return;
         }
         if (!id_out) { out.value = std::optional<Identity>{}; cb(out); return; }
@@ -421,7 +479,7 @@ private:
             return {};
         }
         const auto ctx = DecodeMetadata(p.metadata, m_params.tenderdash_chain_id);
-        if (!drive::VerifyRootBinding(root, env, ctx, MakeLookup(), err)) {
+        if (!BindAndCheckFresh(root, env, ctx, MakeLookup(), err)) {
             LogPrintf("Platform getDocuments(%s) root binding failed: %s\n", doc_type, err);
             return {};
         }
@@ -487,8 +545,8 @@ private:
         std::string err;
         if (!drive::VerifyContestedVoteState(grovedb_proof, DPNS_CONTRACT_ID, "domain", index_values,
                                              CONTESTED_VOTE_COUNT, state, root, err) ||
-            !drive::VerifyRootBinding(root, env, DecodeMetadata(p.metadata, m_params.tenderdash_chain_id),
-                                      MakeLookup(), err)) {
+            !BindAndCheckFresh(root, env, DecodeMetadata(p.metadata, m_params.tenderdash_chain_id),
+                               MakeLookup(), err)) {
             out.error = "contested vote state proof verification failed: " + err;
             cb(out);
             return;
@@ -650,6 +708,9 @@ private:
     size_t m_ep_index{0};
     uint8_t m_quorum_type{0};
     std::vector<QuorumKey> m_quorum_keys;
+    //! Freshness state (guarded by m_mtx). See BindAndCheckFresh.
+    int32_t m_local_core_chainlocked_height{0};
+    uint64_t m_max_platform_height{0};
 };
 
 } // namespace

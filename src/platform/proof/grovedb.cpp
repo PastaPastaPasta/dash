@@ -656,6 +656,7 @@ bool VerifyQuery(Span<const uint8_t> proof, const PathQuery& query, const Verify
 
     out.root_hash = root_hash;
     out.results = std::move(ctx.results);
+    out.envelope_version = envelope.version;
     return true;
 }
 
