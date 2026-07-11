@@ -118,15 +118,19 @@ GrpcCallResult GrpcWebUnary(const std::string& host, uint16_t port, const std::s
                 ++line_end;
             }
             if (line_end + 1 >= payload.size()) break;
-            const std::string hexlen(payload.begin() + p, payload.begin() + line_end);
-            // Locale-independent hex parse of the chunk length (std::from_chars
-            // never consults the locale, unlike std::stoul).
+            std::string hexlen(payload.begin() + p, payload.begin() + line_end);
+            // A chunk-size line may carry optional ";"-delimited chunk
+            // extensions (RFC 9112 sec 7.1.1), e.g. "1a;ext=value"; only the
+            // leading hex is the size. Locale-independent hex parse via
+            // std::from_chars (std::stoul would consult the locale).
+            const size_t ext{hexlen.find(';')};
+            if (ext != std::string::npos) hexlen.resize(ext);
             size_t chunk_len = 0;
             {
                 const char* first{hexlen.c_str()};
                 const char* last{first + hexlen.size()};
                 const auto [ptr, ec] = std::from_chars(first, last, chunk_len, 16);
-                if (ec != std::errc{} || ptr != last) break;
+                if (hexlen.empty() || ec != std::errc{} || ptr != last) break;
             }
             p = line_end + 2;
             if (chunk_len == 0) break;
