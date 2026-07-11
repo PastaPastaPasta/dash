@@ -17,7 +17,11 @@ constexpr uint8_t VARINT_U128{0xfe}; // 254 (unused by DPP; rejected)
 //! Zigzag encoding as used by bincode-v2 for signed varints.
 uint64_t ZigZag(int64_t value)
 {
-    return (static_cast<uint64_t>(value) << 1) ^ static_cast<uint64_t>(value >> 63);
+    // Equivalent to (value << 1) ^ (value >> 63) with an arithmetic right
+    // shift, but without a signed shift (implementation-defined pre-C++20):
+    // the sign-extended mask is all-ones for negatives, zero otherwise.
+    const uint64_t sign_mask{value < 0 ? ~uint64_t{0} : uint64_t{0}};
+    return (static_cast<uint64_t>(value) << 1) ^ sign_mask;
 }
 
 int64_t UnZigZag(uint64_t value)

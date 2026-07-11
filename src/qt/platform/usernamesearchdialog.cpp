@@ -112,13 +112,13 @@ void UsernameSearchDialog::onResults(const QString& prefix, const QVector<QPair<
         if (!display_name.isEmpty()) text += QStringLiteral(" — ") + display_name;
         bool selectable{true};
         if (r.second == my_id_hex) {
-            text += tr(" (this is you)");
+            text += QStringLiteral(" ") + tr("(this is you)");
             selectable = false;
         } else if (m_service.readRecord("contact/key/" + r.second.toStdString()).size() == 65) {
-            text += tr(" (already a contact)");
+            text += QStringLiteral(" ") + tr("(already a contact)");
             selectable = false;
         } else if (!m_service.readRecord("contact/out/" + r.second.toStdString()).empty()) {
-            text += tr(" (request already sent)");
+            text += QStringLiteral(" ") + tr("(request already sent)");
             selectable = false;
         }
         auto* item = new QListWidgetItem(text, m_list);

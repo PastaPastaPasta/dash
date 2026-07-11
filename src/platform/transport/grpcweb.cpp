@@ -6,9 +6,11 @@
 
 #include <common/url.h>
 #include <platform/transport/tls.h>
+#include <util/strencodings.h>
+#include <util/string.h>
 
 #include <algorithm>
-#include <cctype>
+#include <charconv>
 #include <cstring>
 #include <optional>
 
@@ -33,7 +35,10 @@ std::vector<uint8_t> FrameMessage(const std::vector<uint8_t>& msg)
 
 std::string ToLower(std::string s)
 {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
+    // HTTP/gRPC-Web header names are ASCII; use a locale-independent fold so
+    // header matching cannot vary with the process locale.
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return (c >= 'A' && c <= 'Z') ? c - 'A' + 'a' : c; });
     return s;
 }
 
@@ -56,7 +61,7 @@ GrpcCallResult GrpcWebUnary(const std::string& host, uint16_t port, const std::s
     head += "Accept: application/grpc-web+proto\r\n";
     head += "X-Grpc-Web: 1\r\n";
     head += "Te: trailers\r\n";
-    head += "Content-Length: " + std::to_string(body.size()) + "\r\n";
+    head += "Content-Length: " + ToString(body.size()) + "\r\n";
     head += "Connection: close\r\n\r\n";
 
     std::vector<uint8_t> out(head.begin(), head.end());
@@ -114,8 +119,15 @@ GrpcCallResult GrpcWebUnary(const std::string& host, uint16_t port, const std::s
             }
             if (line_end + 1 >= payload.size()) break;
             const std::string hexlen(payload.begin() + p, payload.begin() + line_end);
+            // Locale-independent hex parse of the chunk length (std::from_chars
+            // never consults the locale, unlike std::stoul).
             size_t chunk_len = 0;
-            try { chunk_len = std::stoul(hexlen, nullptr, 16); } catch (...) { break; }
+            {
+                const char* first{hexlen.c_str()};
+                const char* last{first + hexlen.size()};
+                const auto [ptr, ec] = std::from_chars(first, last, chunk_len, 16);
+                if (ec != std::errc{} || ptr != last) break;
+            }
             p = line_end + 2;
             if (chunk_len == 0) break;
             if (p + chunk_len > payload.size()) break;
@@ -145,7 +157,7 @@ GrpcCallResult GrpcWebUnary(const std::string& host, uint16_t port, const std::s
         const size_t end{headers.find("\r\n", start)};
         return headers.substr(start, end == std::string::npos ? std::string::npos : end - start);
     };
-    if (const auto status{header_value("grpc-status")}) result.grpc_status = std::atoi(status->c_str());
+    if (const auto status{header_value("grpc-status")}) result.grpc_status = LocaleIndependentAtoi<int>(*status);
     if (const auto message{header_value("grpc-message")}) result.grpc_message = urlDecode(*message);
     size_t p = 0;
     while (p + 5 <= payload.size()) {
@@ -164,7 +176,7 @@ GrpcCallResult GrpcWebUnary(const std::string& host, uint16_t port, const std::s
             const auto lower = ToLower(trailers);
             auto spos = lower.find("grpc-status:");
             if (spos != std::string::npos) {
-                result.grpc_status = std::atoi(trailers.c_str() + spos + 12);
+                result.grpc_status = LocaleIndependentAtoi<int>(trailers.substr(spos + 12));
             }
             auto mpos = lower.find("grpc-message:");
             if (mpos != std::string::npos) {
