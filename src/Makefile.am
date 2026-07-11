@@ -58,6 +58,9 @@ LIBSECP256K1=secp256k1/libsecp256k1.la
 if ENABLE_ZMQ
 LIBBITCOIN_ZMQ=libbitcoin_zmq.a
 endif
+if ENABLE_PLATFORM_GUI
+LIBDASH_PLATFORM=libdash_platform.a
+endif
 if BUILD_BITCOIN_LIBS
 LIBBITCOINCONSENSUS=libdashconsensus.la
 endif
@@ -123,7 +126,8 @@ EXTRA_LIBRARIES += \
   $(LIBBITCOIN_IPC) \
   $(LIBBITCOIN_WALLET) \
   $(LIBBITCOIN_WALLET_TOOL) \
-  $(LIBBITCOIN_ZMQ)
+  $(LIBBITCOIN_ZMQ) \
+  $(LIBDASH_PLATFORM)
 
 if BUILD_BITCOIND
   bin_PROGRAMS += dashd
@@ -468,6 +472,7 @@ BITCOIN_CORE_H = \
   wallet/hdchain.h \
   wallet/ismine.h \
   wallet/load.h \
+  wallet/platformkeys.h \
   wallet/receive.h \
   wallet/rpc/util.h \
   wallet/rpc/wallet.h \
@@ -675,6 +680,55 @@ libbitcoin_zmq_a_SOURCES = \
 endif
 #
 
+# platform (Dash Platform client, linked into dash-qt and test_dash only) #
+if ENABLE_PLATFORM_GUI
+libdash_platform_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(BOOST_CPPFLAGS) $(MBEDTLS_CFLAGS) \
+  -DBLAKE3_NO_SSE2 -DBLAKE3_NO_SSE41 -DBLAKE3_NO_AVX2 -DBLAKE3_NO_AVX512 -DBLAKE3_USE_NEON=0
+libdash_platform_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+libdash_platform_a_CFLAGS = $(AM_CFLAGS) $(PIE_FLAGS)
+libdash_platform_a_SOURCES = \
+  crypto/blake3/blake3.c \
+  crypto/blake3/blake3.h \
+  crypto/blake3/blake3_dispatch.c \
+  crypto/blake3/blake3_impl.h \
+  crypto/blake3/blake3_portable.c \
+  platform/client.h \
+  platform/dpp/bincode.cpp \
+  platform/dpp/bincode.h \
+  platform/dpp/document.cpp \
+  platform/dpp/document.h \
+  platform/dpp/identity.cpp \
+  platform/dpp/identity.h \
+  platform/dpp/statetransitions.cpp \
+  platform/drive/queries.cpp \
+  platform/drive/queries.h \
+  platform/drive/quorumsig.cpp \
+  platform/drive/quorumsig.h \
+  platform/drive/verify.cpp \
+  platform/drive/verify.h \
+  platform/params.cpp \
+  platform/params.h \
+  platform/proof/grovedb.cpp \
+  platform/proof/grovedb.h \
+  platform/proof/merk.cpp \
+  platform/proof/merk.h \
+  platform/serialize.cpp \
+  platform/serialize.h \
+  platform/statetransitions.h \
+  platform/transport/cbor.h \
+  platform/transport/client.cpp \
+  platform/transport/endpoint_retry.h \
+  platform/transport/freshness.h \
+  platform/transport/grpcweb.cpp \
+  platform/transport/grpcweb.h \
+  platform/transport/protobuf.cpp \
+  platform/transport/protobuf.h \
+  platform/transport/tls.cpp \
+  platform/transport/tls.h \
+  platform/types.h
+endif
+#
+
 # wallet #
 libbitcoin_wallet_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(BOOST_CPPFLAGS) $(BDB_CPPFLAGS) $(SQLITE_CFLAGS)
 libbitcoin_wallet_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
@@ -718,6 +772,9 @@ libbitcoin_wallet_a_SOURCES += wallet/sqlite.cpp
 endif
 if USE_BDB
 libbitcoin_wallet_a_SOURCES += wallet/bdb.cpp wallet/salvage.cpp
+endif
+if ENABLE_PLATFORM_GUI
+libbitcoin_wallet_a_SOURCES += wallet/platformkeys.cpp
 endif
 #
 

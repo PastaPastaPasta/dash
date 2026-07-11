@@ -131,6 +131,16 @@ public:
     bool isBanned() const override { return m_dmn->pdmnState->IsBanned(); }
 
     CService getNetInfoPrimary() const override { return m_dmn->pdmnState->netInfo->GetPrimary(); }
+    std::vector<CService> getPlatformHTTPSAddrs() const override
+    {
+        std::vector<CService> ret;
+        for (const auto& entry : m_dmn->pdmnState->netInfo->GetEntries(NetInfoPurpose::PLATFORM_HTTPS)) {
+            if (const auto service_opt{entry.GetAddrPort()}) {
+                ret.push_back(*service_opt);
+            }
+        }
+        return ret;
+    }
     MnType getType() const override { return m_dmn->nType; }
     UniValue toJson() const override { return m_dmn->ToJson(); }
     const CKeyID& getKeyIdOwner() const override { return m_dmn->pdmnState->keyIDOwner; }
@@ -531,6 +541,49 @@ public:
             });
         }
         return stats;
+    }
+    std::vector<PlatformQuorum> getPlatformQuorums(uint8_t llmq_type) override
+    {
+        std::vector<PlatformQuorum> ret;
+        if (!context().llmq_ctx || !context().llmq_ctx->qman || !context().chainman) {
+            return ret;
+        }
+        const auto* pindex{WITH_LOCK(::cs_main, return context().chainman->ActiveChain().Tip())};
+        if (!pindex) {
+            return ret;
+        }
+        const auto type{static_cast<Consensus::LLMQType>(llmq_type)};
+        const auto llmq_params{Params().GetLLMQ(type)};
+        if (!llmq_params.has_value()) {
+            return ret;
+        }
+        // Drive proofs may be signed by an older Platform quorum while they
+        // are still consensus-valid and retained locally. Export the full
+        // retained-key window, not only the current signing-active set.
+        const auto quorum_count{static_cast<size_t>(std::max(llmq_params->signingActiveQuorumCount,
+                                                             llmq_params->keepOldKeys))};
+        for (const auto& q : context().llmq_ctx->qman->ScanQuorums(type, pindex, quorum_count)) {
+            if (!q->qc->quorumPublicKey.IsValid()) continue;
+            ret.emplace_back(PlatformQuorum{
+                .m_quorum_hash = q->qc->quorumHash,
+                .m_pubkey = q->qc->quorumPublicKey.ToByteVector(/*specificLegacyScheme=*/false),
+                .m_height = q->m_quorum_base_block_index ? q->m_quorum_base_block_index->nHeight : 0,
+            });
+        }
+        return ret;
+    }
+    std::vector<uint8_t> getInstantSendLock(const uint256& txid) override
+    {
+        if (!context().llmq_ctx || !context().llmq_ctx->isman) {
+            return {};
+        }
+        const auto islock{context().llmq_ctx->isman->GetInstantSendLockByTxid(txid)};
+        if (!islock) {
+            return {};
+        }
+        CDataStream ds(SER_NETWORK, PROTOCOL_VERSION);
+        ds << *islock;
+        return {UCharCast(ds.data()), UCharCast(ds.data()) + ds.size()};
     }
     void setContext(NodeContext* context) override
     {

@@ -208,6 +208,22 @@ BITCOIN_TESTS =\
   test/versionbits_tests.cpp \
   test/xoroshiro128plusplus_tests.cpp
 
+if ENABLE_PLATFORM_GUI
+BITCOIN_TESTS += \
+  test/platform_client_tests.cpp \
+  test/platform_dpp_tests.cpp \
+  test/platform_drive_tests.cpp \
+  test/platform_proof_tests.cpp
+JSON_TEST_FILES += \
+  test/data/platform/dpp_identity_vectors.json \
+  test/data/platform/dpp_st_vectors.json \
+  test/data/platform/drive_query_vectors.json \
+  test/data/platform/element_vectors.json \
+  test/data/platform/grovedb_proof_vectors.json \
+  test/data/platform/merk_proof_vectors.json \
+  test/data/platform/quorum_sig_vectors.json
+endif
+
 if ENABLE_WALLET
 BITCOIN_TESTS += \
   wallet/test/bip39_tests.cpp \
@@ -224,6 +240,10 @@ BITCOIN_TESTS += \
   wallet/test/ismine_tests.cpp \
   wallet/test/rpc_util_tests.cpp \
   wallet/test/scriptpubkeyman_tests.cpp
+
+if ENABLE_PLATFORM_GUI
+BITCOIN_TESTS += wallet/test/platformkeys_tests.cpp
+endif
 
 FUZZ_SUITE_LD_COMMON +=\
  $(SQLITE_LIBS) \
@@ -258,6 +278,9 @@ test_test_dash_LDADD = $(LIBTEST_UTIL)
 if ENABLE_WALLET
 test_test_dash_LDADD += $(LIBBITCOIN_WALLET)
 test_test_dash_CPPFLAGS += $(BDB_CPPFLAGS)
+endif
+if ENABLE_PLATFORM_GUI
+test_test_dash_LDADD += $(LIBDASH_PLATFORM) $(MBEDTLS_LIBS)
 endif
 test_test_dash_LDADD += $(LIBBITCOIN_NODE) $(LIBBITCOIN_CLI) $(LIBBITCOIN_COMMON) $(LIBBITCOIN_UTIL) $(LIBBITCOIN_CONSENSUS) $(LIBBITCOIN_CRYPTO) $(LIBUNIVALUE) \
   $(LIBDASHBLS) $(LIBLEVELDB) $(LIBMEMENV) $(BACKTRACE_LIBS) $(LIBSECP256K1) $(EVENT_LIBS) $(EVENT_PTHREADS_LIBS) $(MINISKETCH_LIBS)

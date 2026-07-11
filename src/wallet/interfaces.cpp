@@ -2,9 +2,14 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#if defined(HAVE_CONFIG_H)
+#include <config/bitcoin-config.h>
+#endif
+
 #include <interfaces/wallet.h>
 
 #include <chain.h>
+#include <chainparams.h>
 #include <coinjoin/client.h>
 #include <consensus/amount.h>
 #include <interfaces/chain.h>
@@ -31,9 +36,18 @@
 #include <wallet/rpc/wallet.h>
 #include <wallet/spend.h>
 #include <wallet/wallet.h>
+#include <wallet/bip39.h>
 #include <wallet/hdchain.h>
+#ifdef ENABLE_PLATFORM_GUI
+#include <key_io.h>
+#include <script/descriptor.h>
+#include <wallet/platformkeys.h>
+#include <wallet/walletutil.h>
+#endif
 #include <wallet/scriptpubkeyman.h>
+#include <evo/assetlocktx.h>
 #include <evo/deterministicmns.h>
+#include <evo/specialtx.h>
 #include <masternode/sync.h>
 #include <txdb.h>
 #include <node/context.h>
@@ -235,6 +249,146 @@ public:
     {
         return m_wallet->SignSpecialTxPayload(hash, keyid, vchSig);
     }
+#ifdef ENABLE_PLATFORM_GUI
+    //! Fetch the BIP39 seed backing this wallet's HD chain (requires the
+    //! wallet to be unlocked). Precedent: getMnemonic() below.
+    bool getPlatformSeed(SecureVector& seed_out)
+    {
+        LOCK(m_wallet->cs_wallet);
+        if (m_wallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) return false;
+
+        if (m_wallet->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) {
+            SecureString mnemonic, mnemonic_passphrase;
+            for (auto spk_man : m_wallet->GetActiveScriptPubKeyMans()) {
+                if (auto desc_spk_man = dynamic_cast<DescriptorScriptPubKeyMan*>(spk_man)) {
+                    if (desc_spk_man->GetMnemonicString(mnemonic, mnemonic_passphrase)) {
+                        CMnemonic::ToSeed(mnemonic, mnemonic_passphrase, seed_out);
+                        return !seed_out.empty();
+                    }
+                }
+            }
+            return false;
+        }
+
+        auto spk_man = m_wallet->GetLegacyScriptPubKeyMan();
+        if (!spk_man) return false;
+        CHDChain hd_chain;
+        if (!spk_man->GetHDChain(hd_chain)) return false;
+        if (m_wallet->IsCrypted() && !spk_man->GetDecryptedHDChain(hd_chain)) return false;
+        seed_out = hd_chain.GetSeed();
+        return !seed_out.empty();
+    }
+    bool derivePlatformKey(PlatformKeyType type, uint32_t account, uint32_t index, platformkeys::ExtKey256& out)
+    {
+        SecureVector seed;
+        if (!getPlatformSeed(seed)) return false;
+        const auto coin_type{static_cast<uint32_t>(Params().ExtCoinType())};
+        platformkeys::Path path;
+        switch (type) {
+        case PlatformKeyType::IdentityAuth:
+            path = platformkeys::IdentityAuthKeyPath(coin_type, account, index);
+            break;
+        case PlatformKeyType::RegistrationFunding:
+            path = platformkeys::IdentityFundingPath(coin_type, platformkeys::IDENTITY_REGISTRATION_FUNDING, index);
+            break;
+        case PlatformKeyType::TopupFunding:
+            path = platformkeys::IdentityFundingPath(coin_type, platformkeys::IDENTITY_TOPUP_FUNDING, index);
+            break;
+        case PlatformKeyType::InvitationFunding:
+            path = platformkeys::IdentityFundingPath(coin_type, platformkeys::IDENTITY_INVITATION_FUNDING, index);
+            break;
+        }
+        return platformkeys::DeriveExtKey(seed, path, out);
+    }
+    bool getPlatformPubKey(PlatformKeyType type, uint32_t account, uint32_t index, CPubKey& pubkey_out) override
+    {
+        platformkeys::ExtKey256 ext_key;
+        if (!derivePlatformKey(type, account, index, ext_key)) return false;
+        pubkey_out = ext_key.key.GetPubKey();
+        return true;
+    }
+    bool signPlatformDigest(PlatformKeyType type, uint32_t account, uint32_t index, const uint256& digest, std::vector<unsigned char>& vchSig) override
+    {
+        platformkeys::ExtKey256 ext_key;
+        if (!derivePlatformKey(type, account, index, ext_key)) return false;
+        return ext_key.key.SignCompact(digest, vchSig);
+    }
+    bool platformECDHSecret(uint32_t identity_index, uint32_t key_index, const CPubKey& counterparty, SecureVector& secret_out) override
+    {
+        platformkeys::ExtKey256 ext_key;
+        if (!derivePlatformKey(PlatformKeyType::IdentityAuth, identity_index, key_index, ext_key)) return false;
+        return platformkeys::ComputeECDHSecret(ext_key.key, counterparty, secret_out);
+    }
+    bool getFriendshipXpub(uint32_t account, const uint256& user_a_id, const uint256& user_b_id, CPubKey& pubkey_out, uint256& chaincode_out) override
+    {
+        SecureVector seed;
+        if (!getPlatformSeed(seed)) return false;
+        const auto path = platformkeys::FriendshipPath(Params().ExtCoinType(), account,
+                                                       Span{user_a_id.begin(), uint256::size()},
+                                                       Span{user_b_id.begin(), uint256::size()});
+        platformkeys::ExtKey256 ext_key;
+        if (!platformkeys::DeriveExtKey(seed, path, ext_key)) return false;
+        pubkey_out = ext_key.key.GetPubKey();
+        chaincode_out = ext_key.chaincode;
+        return true;
+    }
+    bool importFriendshipKeychains(uint32_t account, const uint256& my_id, const uint256& their_id,
+                                   const std::string& label, std::string& error) override
+    {
+        SecureVector seed;
+        if (!getPlatformSeed(seed)) { error = "wallet must be unlocked"; return false; }
+        const auto path = platformkeys::FriendshipPath(Params().ExtCoinType(), account,
+            Span{my_id.begin(), uint256::size()}, Span{their_id.begin(), uint256::size()});
+        platformkeys::ExtKey256 own;
+        if (!platformkeys::DeriveExtKey(seed, path, own)) { error = "could not derive receiving friendship key"; return false; }
+
+        CExtKey xprv{};
+        xprv.chaincode = own.chaincode;
+        xprv.key = own.key;
+
+        // Only our private receiving chain becomes a wallet descriptor. The
+        // contact's receiving chain must NOT be imported: its scriptPubKeys
+        // would become IsMine, so payments to the contact would be classified
+        // as payments-to-self and their outputs treated as our own. Payment
+        // destinations for the contact are derived statelessly from their
+        // xpub (kept in the wallet's platform data records) via
+        // getFriendshipPaymentDestination.
+        FlatSigningProvider provider;
+        auto parsed = Parse("pkh(" + EncodeExtKey(xprv) + "/*)", provider, error,
+                            /*require_checksum=*/false);
+        if (!parsed) return false;
+        WalletDescriptor wallet_descriptor(std::move(parsed), /*creation_time=*/0,
+                                           /*range_start=*/0, /*range_end=*/1000,
+                                           /*next_index=*/0);
+
+        LOCK(m_wallet->cs_wallet);
+        if (!m_wallet->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) {
+            error = "DashPay contact payments require a descriptor wallet";
+            return false;
+        }
+        if (!m_wallet->AddWalletDescriptor(wallet_descriptor, provider, label, /*internal=*/false)) {
+            if (error.empty()) error = "could not import receiving friendship descriptor";
+            return false;
+        }
+        return true;
+    }
+    bool getFriendshipPaymentDestination(const CPubKey& their_pubkey, const uint256& their_chaincode,
+                                         uint32_t index, CTxDestination& destination_out) override
+    {
+        platformkeys::ExtPubKey256 parent{their_pubkey, their_chaincode};
+        platformkeys::ExtPubKey256 child;
+        if (!platformkeys::DerivePubKey(parent, platformkeys::PathElement::Normal(index), child)) return false;
+        destination_out = PKHash{child.pubkey};
+        return true;
+    }
+#else
+    bool getPlatformPubKey(PlatformKeyType, uint32_t, uint32_t, CPubKey&) override { return false; }
+    bool signPlatformDigest(PlatformKeyType, uint32_t, uint32_t, const uint256&, std::vector<unsigned char>&) override { return false; }
+    bool platformECDHSecret(uint32_t, uint32_t, const CPubKey&, SecureVector&) override { return false; }
+    bool getFriendshipXpub(uint32_t, const uint256&, const uint256&, CPubKey&, uint256&) override { return false; }
+    bool importFriendshipKeychains(uint32_t, const uint256&, const uint256&, const std::string&, std::string&) override { return false; }
+    bool getFriendshipPaymentDestination(const CPubKey&, const uint256&, uint32_t, CTxDestination&) override { return false; }
+#endif // ENABLE_PLATFORM_GUI
     bool isSpendable(const CScript& script) override
     {
         LOCK(m_wallet->cs_wallet);
@@ -312,6 +466,16 @@ public:
         return value.empty() ? m_wallet->EraseAddressReceiveRequest(batch, dest, id)
                              : m_wallet->SetAddressReceiveRequest(batch, dest, id, value);
     }
+    bool writePlatformData(const std::string& key, const std::vector<unsigned char>& value) override
+    {
+        LOCK(m_wallet->cs_wallet);
+        return m_wallet->WritePlatformData(key, value);
+    }
+    std::map<std::string, std::vector<unsigned char>> getPlatformData(const std::string& prefix) override
+    {
+        LOCK(m_wallet->cs_wallet);
+        return m_wallet->GetPlatformData(prefix);
+    }
     bool displayAddress(const CTxDestination& dest) override
     {
         LOCK(m_wallet->cs_wallet);
@@ -386,6 +550,42 @@ public:
         change_pos = txr.change_pos;
 
         return txr.tx;
+    }
+    util::Result<CTransactionRef> createAssetLockTransaction(CAmount credit_amount,
+        const CPubKey& credit_pubkey,
+        const CCoinControl& coin_control) override
+    {
+#ifdef ENABLE_PLATFORM_GUI
+        if (credit_amount <= 0 || !credit_pubkey.IsValid()) {
+            return util::Error{Untranslated("invalid asset lock parameters")};
+        }
+
+        LOCK(m_wallet->cs_wallet);
+
+        CMutableTransaction mtx;
+        mtx.nVersion = 3;
+        mtx.nType = TRANSACTION_ASSET_LOCK;
+        const CAssetLockPayload payload{{CTxOut{credit_amount, GetScriptForDestination(PKHash{credit_pubkey})}}};
+        SetTxPayload(mtx, payload);
+
+        // The single OP_RETURN "burn" output must carry the total credit
+        // amount (see CheckAssetLockTx).
+        const std::vector<CRecipient> recipients{{CScript() << OP_RETURN << OP_0, credit_amount, /*fSubtractFeeFromAmount=*/false}};
+        auto res = CreateTransaction(*m_wallet, recipients, RANDOM_CHANGE_POSITION, coin_control,
+                                     /*sign=*/false, static_cast<int>(mtx.vExtraPayload.size()));
+        if (!res) return util::Error{util::ErrorString(res)};
+
+        // Graft funded inputs/outputs onto the special tx and sign it as a
+        // whole (input signatures commit to nType and vExtraPayload).
+        mtx.vin = res->tx->vin;
+        mtx.vout = res->tx->vout;
+        if (!m_wallet->SignTransaction(mtx)) {
+            return util::Error{Untranslated("failed to sign asset lock transaction")};
+        }
+        return MakeTransactionRef(std::move(mtx));
+#else
+        return util::Error{Untranslated("platform support is not compiled in")};
+#endif // ENABLE_PLATFORM_GUI
     }
     void commitTransaction(CTransactionRef tx,
         WalletValueMap value_map,
