@@ -205,9 +205,11 @@ void BlockManager::FindFilesToPrune(
         return;
     }
 
-    // Distribute our -prune budget over all chainstates.
+    // Distribute our -prune budget over all chainstates. On regtest, preserve
+    // the lower configured target used by pruning tests.
     const auto target = std::max(
-        MIN_DISK_SPACE_FOR_BLOCK_FILES, nPruneTarget / chainman.GetAll().size());
+        std::min(MIN_DISK_SPACE_FOR_BLOCK_FILES, nPruneTarget),
+        nPruneTarget / chainman.GetAll().size());
 
     if (target == 0) {
         return;
@@ -231,7 +233,7 @@ void BlockManager::FindFilesToPrune(
         // To avoid excessive prune events negating the benefit of high dbcache
         // values, we should not prune too rapidly.
         // So when pruning in IBD, increase the buffer a bit to avoid a re-prune too soon.
-        if (chainman.IsInitialBlockDownload()) {
+        if (chain.IsInitialBlockDownload()) {
             // Since this is only relevant during IBD, we use a fixed 10%
             nBuffer += target / 10;
         }

@@ -8,6 +8,7 @@
 #include <evo/deterministicmns.h>
 #include <evo/dmn_types.h>
 #include <interfaces/chain.h>
+#include <kernel/chain.h>
 #include <test/util/masternode.h>
 #include <txmempool.h>
 #include <validation.h>
@@ -249,7 +250,7 @@ BOOST_FIXTURE_TEST_CASE(ConflictedDescendantReactivationReconcilesInputs, Availa
     block_info.prev_hash = &block.hashPrevBlock;
     block_info.height = tip->nHeight;
     block_info.data = &block;
-    wallet->blockConnected(block_info);
+    wallet->blockConnected(ChainstateRole::NORMAL, block_info);
     {
         LOCK(wallet->cs_wallet);
         BOOST_REQUIRE(wallet->mapWallet.at(child->GetHash()).isConflicted());
@@ -335,7 +336,7 @@ BOOST_FIXTURE_TEST_CASE(AbandonedSpendRestoresActiveMasternodeCollateralLock, Av
     block_info.prev_hash = &block.hashPrevBlock;
     block_info.height = tip->nHeight;
     block_info.data = &block;
-    wallet->blockConnected(block_info);
+    wallet->blockConnected(ChainstateRole::NORMAL, block_info);
 
     const COutPoint collateral{pro_reg_tx->GetHash(), 0};
     {

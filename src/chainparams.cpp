@@ -883,25 +883,27 @@ public:
             {
                 .height = 110,
                 .hash_serialized = AssumeutxoHash{uint256S("0x9b2a277a3e3b979f1a539d57e949495d7f8247312dbc32bce6619128c192b44b")},
+                // Unit-test chains at this height may have different empty evo
+                // state encodings, so retain the regtest-only M4 wildcard.
                 .evo_hash = EvoSnapshotHash{uint256{}},
                 .nChainTx = 110,
-                .blockhash = uint256{},
+                .blockhash = uint256S("0x729bcb1479ff9f4968439f0276bd76bcb2de0f0720b7a16f383321f6a41cb238"),
             },
             {
                 .height = 200,
                 .hash_serialized = AssumeutxoHash{uint256S("0x8a5bdd92252fc6b24663244bbe958c947bb036dc1f94ccd15439f48d8d1cb4e3")},
                 .evo_hash = EvoSnapshotHash{uint256{}},
                 .nChainTx = 200,
-                .blockhash = uint256{},
+                .blockhash = uint256S("0x19c1b203b5a960c7f3619e0e805b24c94e684b1aa261f3a79c84d291638a6e1f"),
             },
             {
                 // For use by test/functional/feature_assumeutxo.py. Dash-specific
-                // hashes are filled in by the test adaptation follow-up.
+                // pre-DIP3 snapshot has an empty, but canonically serialized, evo section.
                 .height = 299,
-                .hash_serialized = AssumeutxoHash{uint256{}},
-                .evo_hash = EvoSnapshotHash{uint256{}},
+                .hash_serialized = AssumeutxoHash{uint256S("0x2618646eb7f9b17a1982e206f94e8feec3efb3b7e7e97ade16b658eef7636519")},
+                .evo_hash = EvoSnapshotHash{uint256S("0xf2ccd3fef604df58a0c174489821e16912c9332969a267650cd040e85fb2adde")},
                 .nChainTx = 300,
-                .blockhash = uint256{},
+                .blockhash = uint256S("0x64ce3ab60754c7974ea472221fa9c7a04f2d193ba480d1ef61b5d12216b14760"),
             },
         };
 
