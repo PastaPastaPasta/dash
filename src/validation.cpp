@@ -3937,8 +3937,11 @@ void Chainstate::TryAddBlockIndexCandidate(CBlockIndex* pindex)
 void ChainstateManager::ReceivedBlockTransactions(const CBlock& block, CBlockIndex* pindexNew, const FlatFilePos& pos)
 {
     AssertLockHeld(cs_main);
+    const bool is_snapshot_base{GetSnapshotBaseBlock() == pindexNew};
     pindexNew->nTx = block.vtx.size();
-    pindexNew->nChainTx = 0;
+    if (!is_snapshot_base) {
+        pindexNew->nChainTx = 0;
+    }
     pindexNew->nFile = pos.nFile;
     pindexNew->nDataPos = pos.nPos;
     pindexNew->nUndoPos = 0;
@@ -3946,7 +3949,15 @@ void ChainstateManager::ReceivedBlockTransactions(const CBlock& block, CBlockInd
     pindexNew->RaiseValidity(BLOCK_VALID_TRANSACTIONS);
     m_blockman.m_dirty_blockindex.insert(pindexNew);
 
-    if (pindexNew->pprev == nullptr || pindexNew->pprev->HaveNumChainTxs()) {
+    if (is_snapshot_base) {
+        // The authorized cumulative count was seeded when the snapshot was
+        // activated. Preserve it if the base block arrives before its history.
+        Assert(pindexNew->nChainTx > 0);
+        pindexNew->nSequenceId = nBlockSequenceId++;
+        for (Chainstate* chainstate : GetAll()) {
+            chainstate->TryAddBlockIndexCandidate(pindexNew);
+        }
+    } else if (pindexNew->pprev == nullptr || pindexNew->pprev->HaveNumChainTxs()) {
         // If pindexNew is the genesis block or all parents are BLOCK_VALID_TRANSACTIONS.
         std::deque<CBlockIndex*> queue;
         queue.push_back(pindexNew);
@@ -5274,7 +5285,10 @@ void ChainstateManager::CheckBlockIndex()
                // For testing, allow transaction counts to be completely unset.
                || (pindex->nChainTx == 0 && pindex->nTx == 0)
                // For testing, allow this nChainTx to be unset if previous is also unset.
-               || (pindex->nChainTx == 0 && prev_chain_tx == 0 && pindex->pprev));
+               || (pindex->nChainTx == 0 && prev_chain_tx == 0 && pindex->pprev)
+               // Snapshot entries can have seeded or partially linked counts
+               // until background validation removes BLOCK_ASSUMED_VALID.
+               || pindex->IsAssumedValid());
         if (pindexFirstAssumeValid == nullptr && pindex->nStatus & BLOCK_ASSUMED_VALID) pindexFirstAssumeValid = pindex;
         if (pindexFirstInvalid == nullptr && pindex->nStatus & BLOCK_FAILED_VALID) pindexFirstInvalid = pindex;
         if (pindexFirstConflicing == nullptr && pindex->nStatus & BLOCK_CONFLICT_CHAINLOCK) pindexFirstConflicing = pindex;
