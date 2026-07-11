@@ -15,6 +15,7 @@
 #include <evo/mnhftx.h>
 #include <evo/netinfo.h>
 #include <evo/simplifiedmns.h>
+#include <evo/snapshot.h>
 #include <llmq/blockprocessor.h>
 #include <llmq/commitment.h>
 #include <llmq/quorumsman.h>
@@ -732,7 +733,10 @@ bool CSpecialTxProcessor::ProcessSpecialTxsInBlock(Chainstate& chainstate, const
         LogPrint(BCLog::BENCHMARK, "      - m_qblockman.ProcessBlock: %.2fms [%.2fs]\n", 0.001 * (nTime5 - nTime4),
                  nTimeQuorum * 0.000001);
 
-        CDeterministicMNList mn_list;
+        // Even before DIP3, bind the canonical empty list to the block so the
+        // independently derived completion hash has the same identity as an
+        // empty evo snapshot section.
+        CDeterministicMNList mn_list{pindex->GetBlockHash(), pindex->nHeight, 0};
         if (DeploymentActiveAt(*pindex, m_consensus_params, Consensus::DEPLOYMENT_DIP0003)) {
             if (!BuildNewListFromBlock(block, pindex->pprev, view, true, state, mn_list)) {
                 // pass the state returned by the function above
@@ -750,7 +754,7 @@ bool CSpecialTxProcessor::ProcessSpecialTxsInBlock(Chainstate& chainstate, const
             // Snapshot activation may populate the shared MN-list cache with seeded
             // state, so completion must not reconstruct this value through that cache.
             // Before DIP3 activates, mn_list is the independently computed empty list.
-            chainstate.RecordBackgroundMNListHash(pindex->GetBlockHash(), SerializeHash(mn_list));
+            chainstate.RecordBackgroundMNListHash(pindex->GetBlockHash(), evo::CanonicalMNListHash(mn_list));
         }
 
         int64_t nTime6 = GetTimeMicros();

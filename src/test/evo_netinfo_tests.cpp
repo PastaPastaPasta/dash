@@ -560,4 +560,30 @@ BOOST_FIXTURE_TEST_CASE(extnetinfo_validate_deser, RegTestingSetup)
     }
 }
 
+BOOST_AUTO_TEST_CASE(domain_port_wire_compatibility)
+{
+    DomainPort domain;
+    BOOST_REQUIRE_EQUAL(domain.Set("example.com", 443), DomainPort::Status::Success);
+
+    CDataStream encoded{SER_NETWORK, CLIENT_VERSION};
+    encoded << domain;
+    CDataStream expected{SER_NETWORK, CLIENT_VERSION};
+    expected << std::string{"example.com"} << Using<BigEndianFormatter<2>>(uint16_t{443});
+    BOOST_CHECK_EQUAL_COLLECTIONS(encoded.begin(), encoded.end(), expected.begin(), expected.end());
+
+    CDataStream oversized{SER_NETWORK, CLIENT_VERSION};
+    oversized << NetInfoEntry::NetInfoType::Domain;
+    constexpr size_t MAX_DOMAIN_LENGTH{253};
+    WriteCompactSize(oversized, MAX_DOMAIN_LENGTH + 1);
+    const std::string oversized_addr(MAX_DOMAIN_LENGTH + 1, 'a');
+    oversized.write(MakeByteSpan(oversized_addr));
+    oversized << Using<BigEndianFormatter<2>>(uint16_t{443});
+
+    NetInfoEntry entry;
+    BOOST_CHECK_NO_THROW(oversized >> entry);
+    BOOST_CHECK(entry.IsEmpty());
+    BOOST_CHECK(!entry.GetDomainPort().has_value());
+    BOOST_CHECK(oversized.empty());
+}
+
 BOOST_AUTO_TEST_SUITE_END()
