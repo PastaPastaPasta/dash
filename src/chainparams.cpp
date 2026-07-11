@@ -339,7 +339,7 @@ public:
             }
         };
 
-        m_assumeutxo_data = MapAssumeutxo{
+        m_assumeutxo_data = {
          // TODO to be specified in a future patch.
         };
 
@@ -514,7 +514,7 @@ public:
             }
         };
 
-        m_assumeutxo_data = MapAssumeutxo{
+        m_assumeutxo_data = {
             // TODO to be specified in a future patch.
         };
 
@@ -879,14 +879,29 @@ public:
             }
         };
 
-        m_assumeutxo_data = MapAssumeutxo{
+        m_assumeutxo_data = {
             {
-                110,
-                {AssumeutxoHash{uint256S("0x9b2a277a3e3b979f1a539d57e949495d7f8247312dbc32bce6619128c192b44b")}, EvoSnapshotHash{uint256{}}, 110},
+                .height = 110,
+                .hash_serialized = AssumeutxoHash{uint256S("0x9b2a277a3e3b979f1a539d57e949495d7f8247312dbc32bce6619128c192b44b")},
+                .evo_hash = EvoSnapshotHash{uint256{}},
+                .nChainTx = 110,
+                .blockhash = uint256{},
             },
             {
-                200,
-                {AssumeutxoHash{uint256S("0x8a5bdd92252fc6b24663244bbe958c947bb036dc1f94ccd15439f48d8d1cb4e3")}, EvoSnapshotHash{uint256{}}, 200},
+                .height = 200,
+                .hash_serialized = AssumeutxoHash{uint256S("0x8a5bdd92252fc6b24663244bbe958c947bb036dc1f94ccd15439f48d8d1cb4e3")},
+                .evo_hash = EvoSnapshotHash{uint256{}},
+                .nChainTx = 200,
+                .blockhash = uint256{},
+            },
+            {
+                // For use by test/functional/feature_assumeutxo.py. Dash-specific
+                // hashes are filled in by the test adaptation follow-up.
+                .height = 299,
+                .hash_serialized = AssumeutxoHash{uint256{}},
+                .evo_hash = EvoSnapshotHash{uint256{}},
+                .nChainTx = 300,
+                .blockhash = uint256{},
             },
         };
 
