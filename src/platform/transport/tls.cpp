@@ -10,6 +10,9 @@
 #include <mbedtls/net_sockets.h>
 #include <mbedtls/ssl.h>
 
+#include <util/strencodings.h>
+#include <util/string.h>
+
 #include <cstring>
 
 namespace platform::transport {
@@ -57,7 +60,7 @@ std::unique_ptr<TlsConnection> TlsConnection::Connect(const std::string& host, u
         return nullptr;
     }
 
-    const std::string port_str = std::to_string(port);
+    const std::string port_str = ToString(port);
     if (mbedtls_net_connect(&s.net, host.c_str(), port_str.c_str(), MBEDTLS_NET_PROTO_TCP) != 0) {
         error = "tcp connect to " + host + ":" + port_str + " failed";
         return nullptr;
