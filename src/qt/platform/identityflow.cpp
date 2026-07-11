@@ -103,9 +103,9 @@ bool IdentityFlow::load()
     return true;
 }
 
-void IdentityFlow::save()
+bool IdentityFlow::save()
 {
-    m_service.writeRecord(RECORD_KEY, SerializeRecord(m_record));
+    return m_service.writeRecord(RECORD_KEY, SerializeRecord(m_record));
 }
 
 void IdentityFlow::setState(State state)
@@ -196,7 +196,15 @@ bool IdentityFlow::start(const QString& label, CAmount funding_amount, QString& 
     m_record.contested = platform::st::IsContestedLabel(normalized);
     m_record.started_at = GetTime();
     GetStrongRandBytes(m_record.preorder_salt);
-    save();
+    if (!save()) {
+        // The wallet DB write failed: broadcasting the asset lock now would
+        // fund an identity flow the GUI can never resume. Abort before the
+        // irreversible commit and leave the wallet untouched.
+        m_record = Record{};
+        error = tr("could not save the registration state to the wallet; the funding "
+                   "transaction was not broadcast");
+        return false;
+    }
 
     wallet.commitTransaction(tx, {}, {});
 

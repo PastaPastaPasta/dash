@@ -110,7 +110,9 @@ private:
     void setState(State state);
     void fail(const QString& step, const QString& error, bool retryable);
     bool load();
-    void save();
+    //! Persists the current record. Returns false if the wallet DB write
+    //! failed (the caller must not proceed with an irreversible step).
+    bool save();
 
     void checkFundingLock();
     void broadcastIdentityCreate();
