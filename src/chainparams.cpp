@@ -907,6 +907,34 @@ public:
             },
         };
 
+        for (const std::string& arg : args.GetArgs("-assumeutxodata")) {
+            const std::vector<std::string> fields{SplitString(arg, ':')};
+            int32_t height;
+            uint32_t n_chain_tx;
+            const auto valid_hash = [](const std::string& value) {
+                return value.size() == uint256::size() * 2 && IsHex(value) && !uint256S(value).IsNull();
+            };
+            if (fields.size() != 5 || !ParseInt32(fields[0], &height) || height <= 0 ||
+                !valid_hash(fields[1]) || !valid_hash(fields[2]) ||
+                !ParseUInt32(fields[3], &n_chain_tx) || n_chain_tx == 0 || !valid_hash(fields[4])) {
+                throw std::runtime_error(strprintf(
+                    "Invalid value (%s) for -assumeutxodata=<height>:<hash_serialized>:<evo_hash>:<nchaintx>:<blockhash>.",
+                    arg));
+            }
+            const uint256 blockhash{uint256S(fields[4])};
+            if (AssumeutxoForHeight(height) || AssumeutxoForBlockhash(blockhash)) {
+                throw std::runtime_error(strprintf(
+                    "Duplicate height or block hash in -assumeutxodata (%s).", arg));
+            }
+            m_assumeutxo_data.emplace_back(AssumeutxoData{
+                .height = height,
+                .hash_serialized = AssumeutxoHash{uint256S(fields[1])},
+                .evo_hash = EvoSnapshotHash{uint256S(fields[2])},
+                .nChainTx = n_chain_tx,
+                .blockhash = blockhash,
+            });
+        }
+
         chainTxData = ChainTxData{
             0,
             0,
@@ -1409,6 +1437,7 @@ void SetupChainParamsOptions(ArgsManager& argsman)
     SetupChainParamsBaseOptions(argsman);
 
     argsman.AddArg("-budgetparams=<masternode>:<budget>:<superblock>", "Override masternode, budget and superblock start heights (regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
+    argsman.AddArg("-assumeutxodata=<height>:<hash_serialized>:<evo_hash>:<nchaintx>:<blockhash>", "Add an exact AssumeUTXO snapshot authorization (regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-dip3params=<activation>:<enforcement>", "Override DIP3 activation and enforcement heights (regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-highsubsidyblocks=<n>", "The number of blocks with a higher than normal subsidy to mine at the start of a chain. Block after that height will have fixed subsidy base. (default: 0, devnet-only)", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-highsubsidyfactor=<n>", "The factor to multiply the normal block subsidy by while in the highsubsidyblocks window of a chain (default: 1, devnet-only)", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
