@@ -314,7 +314,7 @@ BOOST_AUTO_TEST_CASE(dpns_domain)
     const UniValue vectors{LoadVectors(json_tests::dpp_st_vectors, sizeof(json_tests::dpp_st_vectors))};
     const std::string high_priv{vectors["keys"]["high"]["private_key_hex"].get_str()};
 
-    for (const std::string& name : {"dpns_domain_contested", "dpns_domain"}) {
+    for (const char* name : {"dpns_domain_contested", "dpns_domain"}) {
         const UniValue& vec{vectors[name]};
         const auto owner{ArrayFromHex<32>(vec["owner_id_hex"].get_str())};
         const auto salt{ArrayFromHex<32>(vec["salt_hex"].get_str())};
