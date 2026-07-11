@@ -73,12 +73,13 @@ bool NetInstantSend::ValidateIncomingISLock(const instantsend::InstantSendLock& 
 
 std::optional<int> NetInstantSend::ResolveCycleHeight(const uint256& cycle_hash)
 {
-    auto cycle_height = GetBlockHeight(m_is_manager, m_chainman.ActiveChainstate(), cycle_hash);
+    Chainstate& chainstate{m_chainman.ActiveChainstate()};
+    auto cycle_height = GetBlockHeight(m_is_manager, chainstate, cycle_hash);
     if (cycle_height) {
         return cycle_height;
     }
 
-    const auto block_index = WITH_LOCK(::cs_main, return m_chainman.m_blockman.LookupBlockIndex(cycle_hash));
+    const auto block_index = WITH_LOCK(::cs_main, return chainstate.m_blockman.LookupBlockIndex(cycle_hash));
     if (block_index == nullptr) {
         return std::nullopt;
     }
@@ -524,8 +525,9 @@ void NetInstantSend::TransactionRemovedFromMempool(const CTransactionRef& tx, Me
     m_is_manager.TransactionIsRemoved(tx);
 }
 
-void NetInstantSend::BlockConnected(const std::shared_ptr<const CBlock>& pblock, const CBlockIndex* pindex)
+void NetInstantSend::BlockConnected(ChainstateRole role, const std::shared_ptr<const CBlock>& pblock, const CBlockIndex* pindex)
 {
+    if (role == ChainstateRole::BACKGROUND) return;
     if (!m_is_manager.IsInstantSendEnabled()) {
         return;
     }
@@ -595,6 +597,7 @@ void NetInstantSend::ResolveBlockConflicts(const uint256& islockHash, const inst
     bool hasTxForLock = m_is_manager.HasTxForLock(islockHash);
 
     bool activateBestChain = false;
+    Chainstate& chainstate{m_chainman.ActiveChainstate()};
     for (const auto& p : conflicts) {
         const auto* pindex = p.first;
         ClearConflicting(p.second);
@@ -603,8 +606,8 @@ void NetInstantSend::ResolveBlockConflicts(const uint256& islockHash, const inst
 
         BlockValidationState state;
         // need non-const pointer
-        auto pindex2 = WITH_LOCK(::cs_main, return m_chainman.ActiveChainstate().m_blockman.LookupBlockIndex(pindex->GetBlockHash()));
-        if (!m_chainman.ActiveChainstate().InvalidateBlock(state, pindex2)) {
+        auto pindex2 = WITH_LOCK(::cs_main, return chainstate.m_blockman.LookupBlockIndex(pindex->GetBlockHash()));
+        if (!chainstate.InvalidateBlock(state, pindex2)) {
             LogPrintf("NetInstantSend::%s -- InvalidateBlock failed: %s\n", __func__, state.ToString());
             // This should not have happened and we are in a state were it's not safe to continue anymore
             assert(false);
@@ -614,13 +617,13 @@ void NetInstantSend::ResolveBlockConflicts(const uint256& islockHash, const inst
         } else {
             LogPrintf("NetInstantSend::%s -- resetting block %s\n", __func__, pindex2->GetBlockHash().ToString());
             LOCK(::cs_main);
-            m_chainman.ActiveChainstate().ResetBlockFailureFlags(pindex2);
+            chainstate.ResetBlockFailureFlags(pindex2);
         }
     }
 
     if (activateBestChain) {
         BlockValidationState state;
-        if (!m_chainman.ActiveChainstate().ActivateBestChain(state)) {
+        if (!chainstate.ActivateBestChain(state)) {
             LogPrintf("NetInstantSend::%s -- ActivateBestChain failed: %s\n", __func__, state.ToString());
             // This should not have happened and we are in a state were it's not safe to continue anymore
             assert(false);

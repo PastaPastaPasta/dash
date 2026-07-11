@@ -128,8 +128,11 @@ protected:
 
     virtual DB& GetDB() const = 0;
 
+public:
     /// Get the name of the index for display in logs.
     const std::string& GetName() const LIFETIMEBOUND { return m_name; }
+
+protected:
 
     /// Trigger a fatal index error and initiate shutdown.
     static void FatalErrorImpl(const std::string& message);
@@ -147,9 +150,6 @@ public:
     BaseIndex(std::unique_ptr<interfaces::Chain> chain, std::string name);
     /// Destructor interrupts sync thread if running and blocks until it exits.
     virtual ~BaseIndex();
-
-    /// Get the name of the index for display in logs.
-    const std::string& GetName() const LIFETIMEBOUND { return m_name; }
 
     /// Blocks the current thread until the index is caught up to the current
     /// state of the block chain. This only blocks if the index has gotten in

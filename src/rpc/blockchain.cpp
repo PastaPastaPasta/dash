@@ -3182,13 +3182,13 @@ static RPCHelpMan loadtxoutset()
         "Meanwhile, the original chainstate will complete the initial block download process in "
         "the background, eventually validating up to the block that the snapshot is based upon.\n\n"
 
-        "The result is a usable bitcoind instance that is current with the network tip in a "
+        "The result is a usable dashd instance that is current with the network tip in a "
         "matter of minutes rather than hours. UTXO snapshot are typically obtained from "
         "third-party sources (HTTP, torrent, etc.) which is reasonable since their "
         "contents are always checked by hash.\n\n"
 
         "You can find more information on this process in the `assumeutxo` design "
-        "document (<https://github.com/bitcoin/bitcoin/blob/master/doc/design/assumeutxo.md>).",
+        "document (<https://github.com/dashpay/dash/blob/master/doc/design/assumeutxo.md>).",
         {
             {"path",
                 RPCArg::Type::STR,
@@ -3210,6 +3210,11 @@ static RPCHelpMan loadtxoutset()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     NodeContext& node = EnsureAnyNodeContext(request.context);
+    if (node.active_ctx) {
+        throw JSONRPCError(RPC_MISC_ERROR,
+            "loadtxoutset is unavailable in masternode mode because active signing contexts cannot be rebound safely");
+    }
+
     fs::path path{AbsPathForConfigVal(EnsureArgsman(node), fs::u8path(request.params[0].get_str()))};
 
     FILE* file{fsbridge::fopen(path, "rb")};
@@ -3217,7 +3222,7 @@ static RPCHelpMan loadtxoutset()
     if (afile.IsNull()) {
         throw JSONRPCError(
             RPC_INVALID_PARAMETER,
-            "Couldn't open file " + path.u8string() + " for reading.");
+            "Couldn't open file " + fs::PathToString(path) + " for reading.");
     }
 
     SnapshotMetadata metadata;
@@ -3255,8 +3260,10 @@ static RPCHelpMan loadtxoutset()
             RPC_INTERNAL_ERROR,
             "Timed out waiting for base block header to appear in headers chain");
     }
-    if (!chainman.ActivateSnapshot(afile, metadata, false)) {
-        throw JSONRPCError(RPC_INTERNAL_ERROR, "Unable to load UTXO snapshot " + fs::PathToString(path));
+    std::string activation_error;
+    if (!chainman.ActivateSnapshot(afile, metadata, false, &activation_error)) {
+        const std::string detail = activation_error.empty() ? "" : ": " + activation_error;
+        throw JSONRPCError(RPC_INTERNAL_ERROR, "Unable to load UTXO snapshot " + fs::PathToString(path) + detail);
     }
     CBlockIndex* new_tip{WITH_LOCK(::cs_main, return chainman.ActiveTip())};
 

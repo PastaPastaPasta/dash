@@ -3412,7 +3412,7 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
             LOCK(cs_main);
             // Lock transaction pool for at least as long as it takes for connectTrace to be consumed
             LOCK(MempoolMutex());
-            const bool was_in_ibd = m_chainman.IsInitialBlockDownload();
+            const bool was_in_ibd = IsInitialBlockDownload();
             CBlockIndex* starting_tip = m_chain.Tip();
             bool blocks_connected = false;
             do {
@@ -3460,7 +3460,7 @@ bool Chainstate::ActivateBestChain(BlockValidationState& state, std::shared_ptr<
             if (!blocks_connected) return true;
 
             const CBlockIndex* pindexFork = m_chain.FindFork(starting_tip);
-            bool still_in_ibd = m_chainman.IsInitialBlockDownload();
+            bool still_in_ibd = IsInitialBlockDownload();
 
             if (was_in_ibd && !still_in_ibd) {
                 // Active chainstate has exited IBD.
@@ -5635,7 +5635,8 @@ bool DeleteSnapshotChainstateFromDisk()
 bool ChainstateManager::ActivateSnapshot(
         AutoFile& coins_file,
         const SnapshotMetadata& metadata,
-        bool in_memory)
+        bool in_memory,
+        std::string* error)
 {
     uint256 base_blockhash = metadata.m_base_blockhash;
 
@@ -5701,8 +5702,9 @@ bool ChainstateManager::ActivateSnapshot(
             static_cast<size_t>(current_coinstip_cache_size * SNAPSHOT_CACHE_PERC));
     }
 
-    auto cleanup_bad_snapshot = [&](const char* reason) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
+    auto cleanup_bad_snapshot = [&](const std::string& reason) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
         LogPrintf("[snapshot] activation failed - %s\n", reason);
+        if (error) *error = reason;
         this->ReleaseSnapshotPruneLock();
         this->MaybeRebalanceCaches();
 
@@ -5737,9 +5739,10 @@ bool ChainstateManager::ActivateSnapshot(
         return false;
     };
 
-    if (!this->PopulateAndValidateSnapshot(*snapshot_chainstate, coins_file, metadata)) {
+    std::string population_error;
+    if (!this->PopulateAndValidateSnapshot(*snapshot_chainstate, coins_file, metadata, &population_error)) {
         LOCK(::cs_main);
-        return cleanup_bad_snapshot("population failed");
+        return cleanup_bad_snapshot(population_error.empty() ? "population failed" : population_error);
     }
 
     LOCK(::cs_main);  // cs_main required for rest of snapshot activation.
@@ -5808,7 +5811,8 @@ static void SnapshotUTXOHashBreakpoint()
 bool ChainstateManager::PopulateAndValidateSnapshot(
     Chainstate& snapshot_chainstate,
     AutoFile& coins_file,
-    const SnapshotMetadata& metadata)
+    const SnapshotMetadata& metadata,
+    std::string* error)
 {
     // It's okay to release cs_main before we're done using `coins_cache` because we know
     // that nothing else will be referencing the newly created snapshot_chainstate yet.
@@ -5845,7 +5849,7 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
     // Avoid doing the long population work when the snapshot is already behind
     // the active chainstate. ActivateSnapshot repeats this check before the swap
     // in case the active tip advances while the snapshot is being loaded.
-    if (WITH_LOCK(::cs_main, return !CBlockIndexWorkComparator()(ActiveTip(), snapshot_start_block))) {
+    if (WITH_LOCK(::cs_main, return !node::CBlockIndexWorkComparator()(ActiveTip(), snapshot_start_block))) {
         LogPrintf("[snapshot] activation failed - height does not exceed active chainstate\n");
         return false;
     }
@@ -5925,12 +5929,14 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
     } catch (const std::ios_base::failure&) {
         if (DeploymentActiveAt(*snapshot_start_block, GetConsensus(), Consensus::DEPLOYMENT_DIP0003)) {
             LogPrintf("[snapshot] missing evo section at DIP3-active base\n");
+            if (error) *error = "missing evo section at DIP3-active base";
             return false;
         }
     }
     if (evo_marker != 0) {
         if (evo_marker != evo::EVO_SNAPSHOT_MARKER) {
             LogPrintf("[snapshot] bad evo section marker (or coins left over) after %d coins\n", coins_count);
+            if (error) *error = "invalid evo section marker";
             return false;
         }
         try {
@@ -5939,12 +5945,14 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
             evo_file >> *evo_snapshot;
         } catch (const std::ios_base::failure&) {
             LogPrintf("[snapshot] truncated or invalid evo section\n");
+            if (error) *error = "truncated or invalid evo section";
             return false;
         }
         try {
             uint8_t trailing;
             coins_file >> trailing;
             LogPrintf("[snapshot] trailing data after evo section\n");
+            if (error) *error = "trailing data after evo section";
             return false;
         } catch (const std::ios_base::failure&) {
             // EOF immediately after a completely decoded CEvoSnapshot is required.
@@ -5953,6 +5961,7 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
 
     if (!evo_snapshot && DeploymentActiveAt(*snapshot_start_block, GetConsensus(), Consensus::DEPLOYMENT_DIP0003)) {
         LogPrintf("[snapshot] UTXO-only snapshot refused at DIP3-active base\n");
+        if (error) *error = "UTXO-only snapshot refused at DIP3-active base";
         return false;
     }
 
@@ -5996,6 +6005,7 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
             LOCK(::cs_main);
             if (!evo::ValidateEvoSnapshotAgainstChain(*evo_snapshot, *this, snapshot_start_block, evo_error)) {
                 LogPrintf("[snapshot] bad evo snapshot chain data: %s\n", evo_error);
+                if (error) *error = "invalid evo snapshot chain data: " + evo_error;
                 return false;
             }
         }
@@ -6005,12 +6015,15 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
         if (au_data.evo_hash == EvoSnapshotHash{uint256::ZERO} &&
             GetParams().NetworkIDString() != CBaseChainParams::REGTEST) {
             LogPrintf("[snapshot] null evo snapshot hash is only permitted on regtest\n");
+            if (error) *error = "null evo snapshot hash is only permitted on regtest";
             return false;
         }
         if (au_data.evo_hash != EvoSnapshotHash{uint256::ZERO} &&
             EvoSnapshotHash{actual_evo_hash} != au_data.evo_hash) {
             LogPrintf("[snapshot] bad evo snapshot hash: expected %s, got %s\n",
                       au_data.evo_hash.ToString(), actual_evo_hash.ToString());
+            if (error) *error = strprintf("evo snapshot hash mismatch (expected %s, got %s)",
+                                         au_data.evo_hash.ToString(), actual_evo_hash.ToString());
             return false;
         }
 
@@ -6023,10 +6036,12 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
             CBlock base_block;
             if (!ReadBlockFromDisk(base_block, snapshot_start_block, GetConsensus()) || base_block.vtx.empty()) {
                 LogPrintf("[snapshot] failed to read available base block for evo CbTx check\n");
+                if (error) *error = "failed to read base block for evo CbTx check";
                 return false;
             }
             if (!evo::VerifyEvoSnapshotBaseBlock(*evo_snapshot, base_block, evo_error)) {
                 LogPrintf("[snapshot] evo CbTx cross-check failed: %s\n", evo_error);
+                if (error) *error = "evo CbTx cross-check failed: " + evo_error;
                 return false;
             }
         } else if (DeploymentActiveAt(*snapshot_start_block, GetConsensus(), Consensus::DEPLOYMENT_DIP0003)) {
@@ -6784,16 +6799,6 @@ bool ChainstateManager::DeleteSnapshotChainstate()
     m_active_chainstate = m_ibd_chainstate.get();
     m_snapshot_chainstate.reset();
     return true;
-}
-
-ChainstateRole Chainstate::GetRole() const
-{
-    if (m_chainman.GetAll().size() <= 1) {
-        return ChainstateRole::NORMAL;
-    }
-    return (this != &m_chainman.ActiveChainstate()) ?
-               ChainstateRole::BACKGROUND :
-               ChainstateRole::ASSUMEDVALID;
 }
 
 const CBlockIndex* ChainstateManager::GetSnapshotBaseBlock() const

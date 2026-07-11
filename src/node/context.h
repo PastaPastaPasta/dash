@@ -40,6 +40,7 @@ class PeerManager;
 class SpentIndex;
 class TimestampIndex;
 struct ActiveContext;
+class BaseIndex;
 struct LLMQContext;
 
 namespace chainlock {
@@ -114,6 +115,7 @@ struct NodeContext {
     //! Dash contexts
     std::unique_ptr<CDSNotificationInterface> ds_notification_interface;
     std::unique_ptr<ActiveContext> active_ctx;
+    std::vector<BaseIndex*> indexes;
     std::unique_ptr<LLMQContext> llmq_ctx;
     std::unique_ptr<llmq::ObserverContext> observer_ctx;
     //! Dash indexes

@@ -927,7 +927,8 @@ private:
     [[nodiscard]] bool PopulateAndValidateSnapshot(
         Chainstate& snapshot_chainstate,
         AutoFile& coins_file,
-        const node::SnapshotMetadata& metadata);
+        const node::SnapshotMetadata& metadata,
+        std::string* error = nullptr);
 
     /**
      * If a block header hasn't already been seen, call CheckBlockHeader on it, ensure
@@ -1070,7 +1071,8 @@ public:
     //! - Move the new chainstate to `m_snapshot_chainstate` and make it our
     //!   ChainstateActive().
     [[nodiscard]] bool ActivateSnapshot(
-        AutoFile& coins_file, const node::SnapshotMetadata& metadata, bool in_memory);
+        AutoFile& coins_file, const node::SnapshotMetadata& metadata, bool in_memory,
+        std::string* error = nullptr);
 
     //! Once the background validation chainstate has reached the height which
     //! is the base of the UTXO snapshot in use, compare its coins to ensure
