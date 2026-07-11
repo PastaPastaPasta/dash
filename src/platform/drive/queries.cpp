@@ -566,11 +566,15 @@ bool DecodeStoredVoteInfo(Span<const uint8_t> bytes, StoredVoteInfo& out, std::s
         }
         uint64_t start_time, finalization_time;
         ok = ok && ReadBlockInfo(reader, start_time) && ReadBlockInfo(reader, finalization_time);
-        // ContestedDocumentVotePollWinnerInfo { NoWinner, WonByIdentity, Locked }
+        // ContestedDocumentVotePollWinnerInfo { NoWinner, WonByIdentity, Locked }.
+        // The per-event winner is parsed only to advance the reader; the
+        // authoritative outcome comes from the poll status field below.
         uint64_t winner_kind{0};
-        Identifier winner{};
         ok = ok && reader.ReadBincodeVarint(winner_kind);
-        if (ok && winner_kind == 1) ok = ReadIdentifier(reader, winner);
+        if (ok && winner_kind == 1) {
+            Identifier winner{};
+            ok = ReadIdentifier(reader, winner);
+        }
         if (ok && winner_kind > 2) ok = reader.SetError(strprintf("unknown winner discriminant %u", winner_kind));
         if (ok) {
             // Only the last event matters for the outcome.
