@@ -145,12 +145,13 @@ bool RunQuery(Span<const uint8_t> proof, const PathQuery& query, GroveVerifyResu
     VerifyOptions options; // defaults: raw results, include empty trees
     if (!platform::grove::VerifyQuery(proof, query, options, out, error)) return false;
     // Every Drive query the GUI issues goes through here. Require the strict
-    // V1 GroveDBProof envelope: current Platform (protocol >= 4) only emits
-    // V1, and the lenient V0 format does not bind the serialized element
-    // bytes of a non-empty tree returned without a subquery, so accepting it
-    // would let a malicious evonode (or on-path attacker, TLS being
-    // unauthenticated by design) downgrade the proof and forge those bytes
-    // while preserving the quorum-signed root hash.
+    // V1 GroveDBProof envelope: current Platform (protocol >= 12, which maps
+    // to grovedb GROVE_V3) only emits V1; the lenient V0 format predates it
+    // and does not bind the serialized element bytes of a non-empty tree
+    // returned without a subquery, so accepting it would let a malicious
+    // evonode (or on-path attacker, TLS being unauthenticated by design)
+    // downgrade the proof and forge those bytes while preserving the
+    // quorum-signed root hash.
     if (out.envelope_version < 1) {
         error = "rejected lenient V0 GroveDB proof envelope (strict V1 required)";
         return false;
