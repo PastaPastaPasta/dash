@@ -75,7 +75,10 @@ struct ContactRequest {
     Identifier document_id{};
 };
 
-//! Contested-resource (premium username) vote state.
+//! Contested-resource (premium username) vote state. Status is
+//! contest-global: WON means the contest finished with `winner` awarded the
+//! name (callers compare against their own identity); UNKNOWN means no
+//! contest exists for the label (proven absent).
 struct ContestedNameState {
     enum class Status { UNKNOWN, CONTEST_IN_PROGRESS, WON, LOST, LOCKED };
     Status status{Status::UNKNOWN};
@@ -83,7 +86,8 @@ struct ContestedNameState {
     std::vector<std::pair<Identifier, uint32_t>> contenders; //!< identity -> votes
     uint32_t abstain_votes{0};
     uint32_t lock_votes{0};
-    std::optional<uint64_t> ends_at; //!< ms since epoch
+    std::optional<Identifier> winner; //!< set when status == WON
+    std::optional<uint64_t> ends_at;  //!< ms since epoch (finish time once decided)
 };
 
 //! Result of broadcasting a state transition.

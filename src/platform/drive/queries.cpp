@@ -7,7 +7,10 @@
 #include <platform/dpp/identity.h>
 #include <platform/proof/merk.h>
 
+#include <tinyformat.h>
+
 #include <algorithm>
+#include <limits>
 
 namespace platform::drive {
 namespace {
@@ -28,6 +31,22 @@ constexpr uint8_t ROOT_DATA_CONTRACT_DOCUMENTS = 64;
 constexpr uint8_t ID_TREE_REVISION = 192;
 constexpr uint8_t ID_TREE_NONCE = 64;
 constexpr uint8_t ID_TREE_KEYS = 128;
+
+// Contested-resource vote tree constants
+// (rs-drive src/drive/votes/paths.rs).
+constexpr uint8_t ROOT_VOTES = 112;
+constexpr uint8_t CONTESTED_RESOURCE_TREE_KEY = 'c';
+constexpr uint8_t ACTIVE_POLLS_TREE_KEY = 'p';
+constexpr uint8_t CONTESTED_DOCUMENT_INDEXES_TREE_KEY = 1;
+constexpr uint8_t VOTING_STORAGE_TREE_KEY = 1;
+//! [0;32] = stored info item, [0;31]+1 = abstain sum tree, [0;31]+2 = lock
+//! sum tree.
+Bytes SpecialVoteKey(uint8_t last)
+{
+    Bytes key(32, 0);
+    key.back() = last;
+    return key;
+}
 
 bool RunQuery(Span<const uint8_t> proof, const PathQuery& query, GroveVerifyResult& out,
               std::string& error);
@@ -434,6 +453,271 @@ bool VerifyDashPayContactRequests(Span<const uint8_t> proof, const Identifier& i
         PathBranch({StringBytes("$createdAt")}, FullRangeQueryWithDocumentIds());
     query.limit = limit;
     return ExtractDocuments(proof, query, documents_out, root_out, error);
+}
+
+namespace {
+
+//! Decoded subset of dpp ContestedDocumentVotePollStoredInfo (bincode
+//! standard()+big_endian(), rs-dpp
+//! src/voting/vote_info_storage/contested_document_vote_poll_stored_info/):
+//! the last finalized vote event and the poll status.
+struct StoredVoteInfo {
+    enum class Status : uint8_t { NOT_STARTED, AWARDED, LOCKED, STARTED };
+    struct VoteChoice {
+        enum class Kind : uint8_t { TOWARDS_IDENTITY, ABSTAIN, LOCK };
+        Kind kind{Kind::ABSTAIN};
+        Identifier identity{}; //!< TOWARDS_IDENTITY only
+        uint32_t votes{0};     //!< sum of the voters' strengths
+    };
+    std::vector<VoteChoice> last_choices; //!< empty when never finalized
+    uint64_t last_finalization_time_ms{0};
+    Status status{Status::NOT_STARTED};
+    Identifier awarded_to{}; //!< AWARDED only
+};
+
+bool ReadIdentifier(BytesReader& reader, Identifier& out)
+{
+    return reader.ReadInto(Span<uint8_t>{out.data(), out.size()});
+}
+
+//! BlockInfo { time_ms: u64, height: u64, core_height: u32, epoch: u16 };
+//! only the block time survives into `time_ms_out`.
+bool ReadBlockInfo(BytesReader& reader, uint64_t& time_ms_out)
+{
+    uint64_t height, core_height, epoch;
+    return reader.ReadBincodeVarint(time_ms_out) && reader.ReadBincodeVarint(height) &&
+           reader.ReadBincodeVarint(core_height) && reader.ReadBincodeVarint(epoch);
+}
+
+//! FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice:
+//! ResourceVoteChoice, voters: Vec<(Identifier, u8)> }. The per-voter list is
+//! collapsed to the summed strength.
+bool ReadVoteChoice(BytesReader& reader, StoredVoteInfo::VoteChoice& out)
+{
+    uint64_t kind;
+    if (!reader.ReadBincodeVarint(kind)) return false;
+    switch (kind) {
+    case 0:
+        out.kind = StoredVoteInfo::VoteChoice::Kind::TOWARDS_IDENTITY;
+        if (!ReadIdentifier(reader, out.identity)) return false;
+        break;
+    case 1:
+        out.kind = StoredVoteInfo::VoteChoice::Kind::ABSTAIN;
+        break;
+    case 2:
+        out.kind = StoredVoteInfo::VoteChoice::Kind::LOCK;
+        break;
+    default:
+        return reader.SetError(strprintf("unknown resource vote choice discriminant %u", kind));
+    }
+    uint64_t voter_count;
+    if (!reader.ReadBincodeVarint(voter_count)) return false;
+    if (voter_count > reader.Remaining()) return reader.SetError("voter count exceeds remaining data");
+    uint64_t votes = 0;
+    for (uint64_t i = 0; i < voter_count; ++i) {
+        Identifier voter;
+        uint8_t strength;
+        if (!ReadIdentifier(reader, voter) || !reader.ReadU8(strength)) return false;
+        votes += strength;
+    }
+    if (votes > std::numeric_limits<uint32_t>::max()) return reader.SetError("vote tally overflows u32");
+    out.votes = static_cast<uint32_t>(votes);
+    return true;
+}
+
+bool DecodeStoredVoteInfo(Span<const uint8_t> bytes, StoredVoteInfo& out, std::string& error)
+{
+    BytesReader reader{bytes};
+    out = StoredVoteInfo{};
+    uint64_t version;
+    if (!reader.ReadBincodeVarint(version)) {
+        error = reader.GetError();
+        return false;
+    }
+    if (version != 0) {
+        error = strprintf("unknown stored info version %u", version);
+        return false;
+    }
+    uint64_t event_count;
+    bool ok{reader.ReadBincodeVarint(event_count)};
+    if (ok && event_count > reader.Remaining()) ok = reader.SetError("event count exceeds remaining data");
+    for (uint64_t i = 0; ok && i < event_count; ++i) {
+        uint64_t choice_count;
+        ok = reader.ReadBincodeVarint(choice_count);
+        if (ok && choice_count > reader.Remaining()) ok = reader.SetError("choice count exceeds remaining data");
+        std::vector<StoredVoteInfo::VoteChoice> choices;
+        for (uint64_t j = 0; ok && j < choice_count; ++j) {
+            StoredVoteInfo::VoteChoice choice;
+            ok = ReadVoteChoice(reader, choice);
+            if (ok) choices.push_back(std::move(choice));
+        }
+        uint64_t start_time, finalization_time;
+        ok = ok && ReadBlockInfo(reader, start_time) && ReadBlockInfo(reader, finalization_time);
+        // ContestedDocumentVotePollWinnerInfo { NoWinner, WonByIdentity, Locked }
+        uint64_t winner_kind{0};
+        Identifier winner{};
+        ok = ok && reader.ReadBincodeVarint(winner_kind);
+        if (ok && winner_kind == 1) ok = ReadIdentifier(reader, winner);
+        if (ok && winner_kind > 2) ok = reader.SetError(strprintf("unknown winner discriminant %u", winner_kind));
+        if (ok) {
+            // Only the last event matters for the outcome.
+            out.last_choices = std::move(choices);
+            out.last_finalization_time_ms = finalization_time;
+        }
+    }
+    // ContestedDocumentVotePollStatus { NotStarted, Awarded(id), Locked, Started(BlockInfo) }
+    uint64_t status{0};
+    if (ok) ok = reader.ReadBincodeVarint(status);
+    if (ok) {
+        switch (status) {
+        case 0:
+            out.status = StoredVoteInfo::Status::NOT_STARTED;
+            break;
+        case 1:
+            out.status = StoredVoteInfo::Status::AWARDED;
+            ok = ReadIdentifier(reader, out.awarded_to);
+            break;
+        case 2:
+            out.status = StoredVoteInfo::Status::LOCKED;
+            break;
+        case 3: {
+            out.status = StoredVoteInfo::Status::STARTED;
+            uint64_t start_time;
+            ok = ReadBlockInfo(reader, start_time);
+            break;
+        }
+        default:
+            ok = reader.SetError(strprintf("unknown vote poll status discriminant %u", status));
+        }
+    }
+    uint64_t locked_count;
+    if (ok) ok = reader.ReadBincodeVarint(locked_count);
+    if (!ok || reader.HasError()) {
+        error = strprintf("unable to decode contested vote stored info: %s", reader.GetError());
+        return false;
+    }
+    if (!reader.IsEof()) {
+        error = "contested vote stored info has trailing bytes";
+        return false;
+    }
+    return true;
+}
+
+} // namespace
+
+bool VerifyContestedVoteState(Span<const uint8_t> proof, const Identifier& contract_id,
+                              const std::string& document_type,
+                              const std::vector<Bytes>& index_values, uint16_t count,
+                              ContestedVoteState& out, Hash256& root_out, std::string& error)
+{
+    const Bytes stored_info_key{SpecialVoteKey(0)};
+    const Bytes abstain_key{SpecialVoteKey(1)};
+    const Bytes lock_key{SpecialVoteKey(2)};
+
+    // Mirror of ContestedDocumentVotePollDriveQuery::construct_path_query for
+    // result type VoteTally, allow_include_locked_and_abstaining_vote_tally =
+    // true, no start_at (rs-drive src/query/vote_poll_vote_state_query.rs):
+    // all keys of the contenders tree, tallies resolved through the [1]
+    // voting sum tree, the stored-info item returned in place.
+    PathQuery query;
+    query.path = {ByteSeg(ROOT_VOTES), ByteSeg(CONTESTED_RESOURCE_TREE_KEY),
+                  ByteSeg(ACTIVE_POLLS_TREE_KEY), IdBytes(contract_id), StringBytes(document_type),
+                  ByteSeg(CONTESTED_DOCUMENT_INDEXES_TREE_KEY)};
+    query.path.insert(query.path.end(), index_values.begin(), index_values.end());
+    query.query.items.push_back(QueryItem::RangeFull());
+    query.query.default_subquery_branch = PathBranch({ByteSeg(VOTING_STORAGE_TREE_KEY)});
+    const auto conditional = [](Bytes key, GroveQuery::SubqueryBranch branch) {
+        GroveQuery::ConditionalBranch out_branch;
+        out_branch.item = QueryItem::Key(std::move(key));
+        out_branch.branch = std::move(branch);
+        return out_branch;
+    };
+    query.query.conditional_subquery_branches.push_back(
+        conditional(lock_key, PathBranch({ByteSeg(VOTING_STORAGE_TREE_KEY)})));
+    query.query.conditional_subquery_branches.push_back(
+        conditional(abstain_key, PathBranch({ByteSeg(VOTING_STORAGE_TREE_KEY)})));
+    query.query.conditional_subquery_branches.push_back(
+        conditional(stored_info_key, GroveQuery::SubqueryBranch{}));
+    query.limit = static_cast<uint16_t>(std::min<uint32_t>(uint32_t{count} + 3, 65535));
+
+    GroveVerifyResult result;
+    if (!RunQuery(proof, query, result, error)) return false;
+    root_out = result.root_hash;
+
+    out = ContestedVoteState{};
+    out.contest_found = !result.results.empty();
+
+    for (const ProvedPathKeyValue& r : result.results) {
+        Element element;
+        if (!platform::grove::DecodeElement(Span<const uint8_t>(r.value), element, error)) return false;
+        if (r.path.size() < query.path.size() || r.path.empty()) {
+            error = "contested vote result on an unexpected path";
+            return false;
+        }
+        const Bytes& path_tail{r.path.back()};
+
+        if (element.type == Element::Type::SUM_TREE) {
+            // A tally: the enclosing tree's key names the contender (or the
+            // abstain/lock buckets); the sum tree itself sits at key [1].
+            if (r.path.size() != query.path.size() + 1 || r.key != ByteSeg(VOTING_STORAGE_TREE_KEY) ||
+                !std::equal(query.path.begin(), query.path.end(), r.path.begin())) {
+                error = "contested vote tally on an unexpected path";
+                return false;
+            }
+            if (element.sum_value < 0 || element.sum_value > std::numeric_limits<uint32_t>::max()) {
+                error = strprintf("vote tally out of range: %d", element.sum_value);
+                return false;
+            }
+            const auto tally{static_cast<uint32_t>(element.sum_value)};
+            if (path_tail == lock_key) {
+                out.lock_votes = tally;
+            } else if (path_tail == abstain_key) {
+                out.abstain_votes = tally;
+            } else if (path_tail.size() == 32) {
+                Identifier id{};
+                std::copy(path_tail.begin(), path_tail.end(), id.begin());
+                out.contenders.emplace_back(id, tally);
+            } else {
+                error = "contested vote tally under a malformed contender key";
+                return false;
+            }
+        } else if (element.type == Element::Type::ITEM && r.key == stored_info_key &&
+                   r.path == query.path) {
+            StoredVoteInfo info;
+            if (!DecodeStoredVoteInfo(Span<const uint8_t>(element.item_value), info, error)) return false;
+            if (info.status != StoredVoteInfo::Status::AWARDED &&
+                info.status != StoredVoteInfo::Status::LOCKED) {
+                continue; // active or reset poll: live tallies are authoritative
+            }
+            // Finished poll: the stored info replaces the live tallies
+            // (rs-drive verify_vote_poll_vote_state_proof_v0).
+            out.finished = true;
+            out.finished_at_time_ms = info.last_finalization_time_ms;
+            out.locked = info.status == StoredVoteInfo::Status::LOCKED;
+            if (info.status == StoredVoteInfo::Status::AWARDED) out.winner = info.awarded_to;
+            out.contenders.clear();
+            uint32_t lock_total{0}, abstain_total{0};
+            for (const StoredVoteInfo::VoteChoice& choice : info.last_choices) {
+                switch (choice.kind) {
+                case StoredVoteInfo::VoteChoice::Kind::TOWARDS_IDENTITY:
+                    out.contenders.emplace_back(choice.identity, choice.votes);
+                    break;
+                case StoredVoteInfo::VoteChoice::Kind::ABSTAIN:
+                    abstain_total += choice.votes;
+                    break;
+                case StoredVoteInfo::VoteChoice::Kind::LOCK:
+                    lock_total += choice.votes;
+                    break;
+                }
+            }
+            out.abstain_votes = abstain_total;
+            out.lock_votes = lock_total;
+        } else {
+            error = "unexpected element in contested vote state result";
+            return false;
+        }
+    }
+    return true;
 }
 
 } // namespace platform::drive

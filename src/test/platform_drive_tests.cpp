@@ -304,6 +304,87 @@ BOOST_AUTO_TEST_CASE(document_index_proofs)
     });
 }
 
+BOOST_AUTO_TEST_CASE(contested_vote_state)
+{
+    const UniValue doc{ReadJsonObject(json_tests::drive_query_vectors, sizeof(json_tests::drive_query_vectors))};
+    const Identifier id{IdFromHex(doc["identity_id"].get_str())};
+    const Identifier contender_b{IdFromHex(std::string(64, '8'))};
+
+    const auto verify = [&](const std::string& name, platform::drive::ContestedVoteState& state) {
+        const UniValue q{FindQuery(doc, name)};
+        const Bytes proof{ProofOf(q)};
+        const std::string label{q["query"]["normalized_label"].get_str()};
+        const std::vector<Bytes> index_values{Bytes{'d', 'a', 's', 'h'},
+                                              Bytes(label.begin(), label.end())};
+        Hash256 root{};
+        std::string error;
+        BOOST_REQUIRE_MESSAGE(platform::drive::VerifyContestedVoteState(
+                                  Span<const uint8_t>(proof), platform::DPNS_CONTRACT_ID, "domain",
+                                  index_values, 100, state, root, error),
+                              name + ": " + error);
+        BOOST_CHECK_EQUAL(HexStr(root), q["expected_root_hash_hex"].get_str());
+        return q;
+    };
+
+    // Active poll: live tallies from the contender/abstain/lock sum trees;
+    // the Started stored-info item is ignored.
+    {
+        platform::drive::ContestedVoteState state;
+        verify("contested_vote_state_active", state);
+        BOOST_CHECK(state.contest_found);
+        BOOST_CHECK(!state.finished);
+        BOOST_REQUIRE_EQUAL(state.contenders.size(), 2U);
+        BOOST_CHECK(state.contenders[0].first == id);
+        BOOST_CHECK_EQUAL(state.contenders[0].second, 5U);
+        BOOST_CHECK(state.contenders[1].first == contender_b);
+        BOOST_CHECK_EQUAL(state.contenders[1].second, 2U);
+        BOOST_CHECK(state.abstain_votes == std::optional<uint32_t>{2});
+        BOOST_CHECK(state.lock_votes == std::optional<uint32_t>{3});
+        BOOST_CHECK(!state.winner.has_value());
+    }
+
+    // Finished poll: outcome comes from the awarded stored info.
+    {
+        platform::drive::ContestedVoteState state;
+        verify("contested_vote_state_finished", state);
+        BOOST_CHECK(state.contest_found);
+        BOOST_CHECK(state.finished);
+        BOOST_CHECK(!state.locked);
+        BOOST_REQUIRE(state.winner.has_value());
+        BOOST_CHECK(*state.winner == id);
+        BOOST_REQUIRE_EQUAL(state.contenders.size(), 2U);
+        BOOST_CHECK_EQUAL(state.contenders[0].second, 5U);
+        BOOST_CHECK_EQUAL(state.contenders[1].second, 2U);
+        BOOST_CHECK(state.abstain_votes == std::optional<uint32_t>{2});
+        BOOST_CHECK(state.lock_votes == std::optional<uint32_t>{1});
+        BOOST_CHECK(state.finished_at_time_ms > 0);
+    }
+
+    // Absent contest: cryptographically proven "no contest for this label".
+    {
+        platform::drive::ContestedVoteState state;
+        verify("contested_vote_state_absent", state);
+        BOOST_CHECK(!state.contest_found);
+        BOOST_CHECK(state.contenders.empty());
+    }
+
+    // Negative: a wrong expected root must fail the bound verification, and
+    // corrupting the proof must never verify.
+    {
+        const UniValue q{FindQuery(doc, "contested_vote_state_active")};
+        Bytes proof{ProofOf(q)};
+        proof[proof.size() / 2] ^= 0x01;
+        platform::drive::ContestedVoteState state;
+        Hash256 root{};
+        std::string error;
+        const std::vector<Bytes> index_values{Bytes{'d', 'a', 's', 'h'}, Bytes{'a', 'l', 'i', 'c', 'e'}};
+        const bool ok{platform::drive::VerifyContestedVoteState(Span<const uint8_t>(proof),
+                                                                platform::DPNS_CONTRACT_ID, "domain",
+                                                                index_values, 100, state, root, error)};
+        BOOST_CHECK(!ok || HexStr(root) != q["expected_root_hash_hex"].get_str());
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Quorum signature: digest intermediates + verification verdicts
 // ---------------------------------------------------------------------------

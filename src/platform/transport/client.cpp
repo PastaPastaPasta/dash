@@ -161,7 +161,7 @@ public:
     }
     void getContestedNameState(const std::string& normalized_label, Callback<ContestedNameState> cb) override
     {
-        Enqueue([=, this] { cb(Result<ContestedNameState>{.value = ContestedNameState{}}); });
+        Enqueue([=, this] { DoGetContestedNameState(normalized_label, cb); });
     }
     void broadcastStateTransition(const std::vector<uint8_t>& st, Callback<BroadcastResult> cb) override
     {
@@ -426,6 +426,93 @@ private:
             return {};
         }
         return docs;
+    }
+
+    //! drive-abci decodes each getContestedResourceVoteState index value as a
+    //! bincode (standard, big-endian) platform Value; strings are
+    //! Value::Text = declaration-order discriminant 18 + length + utf8
+    //! (rs-platform-value src/lib.rs, rs-drive-abci
+    //! src/query/voting/contested_resource_vote_state/v0/mod.rs).
+    static std::vector<uint8_t> BincodeTextValue(const std::string& text)
+    {
+        std::vector<uint8_t> out;
+        out.push_back(18);
+        // bincode varint: single byte below 251; DPNS labels are <= 63 chars.
+        if (text.size() >= 251) return {};
+        out.push_back(static_cast<uint8_t>(text.size()));
+        out.insert(out.end(), text.begin(), text.end());
+        return out;
+    }
+
+    //! Mirrors drive-abci's default_query_limit for requests that pin `count`
+    //! so the locally reconstructed PathQuery matches the prover's exactly.
+    static constexpr uint16_t CONTESTED_VOTE_COUNT{100};
+
+    void DoGetContestedNameState(const std::string& normalized_label, const Callback<ContestedNameState>& cb)
+    {
+        // getContestedResourceVoteState on the DPNS contested
+        // parentNameAndLabel index, VoteTally result type with locked and
+        // abstaining tallies (platform.proto
+        // GetContestedResourceVoteStateRequestV0).
+        pb::Writer v0;
+        v0.Bytes(1, std::vector<uint8_t>(DPNS_CONTRACT_ID.begin(), DPNS_CONTRACT_ID.end()));
+        v0.Str(2, "domain");
+        v0.Str(3, "parentNameAndLabel");
+        v0.Bytes(4, BincodeTextValue("dash"));
+        v0.Bytes(4, BincodeTextValue(normalized_label));
+        v0.Varint(5, 1); // ResultType::VOTE_TALLY
+        v0.Bool(6, true); // allow_include_locked_and_abstaining_vote_tally
+        v0.Varint(8, CONTESTED_VOTE_COUNT);
+        v0.Bool(9, true); // prove
+        std::string terr;
+        auto r = Call("getContestedResourceVoteState", VersionWrap(std::move(v0)).data(), terr);
+        Result<ContestedNameState> out;
+        if (!r.transport_ok || r.grpc_status != 0) {
+            out.error = r.transport_ok ? r.grpc_message : terr;
+            cb(out);
+            return;
+        }
+        auto p = ParseResponse(r.message);
+        if (!p.proof) { out.error = "getContestedResourceVoteState: no proof in response"; cb(out); return; }
+        drive::ProofEnvelope env;
+        std::vector<uint8_t> grovedb_proof;
+        if (!DecodeProof(*p.proof, env, grovedb_proof)) { out.error = "bad contested vote proof envelope"; cb(out); return; }
+
+        // Index values as raw tree keys (strings encode to their utf8 bytes,
+        // DocumentPropertyType::encode_value_for_tree_keys).
+        const std::vector<Bytes> index_values{Bytes{'d', 'a', 's', 'h'},
+                                              Bytes(normalized_label.begin(), normalized_label.end())};
+        drive::ContestedVoteState state;
+        drive::Hash256 root;
+        std::string err;
+        if (!drive::VerifyContestedVoteState(grovedb_proof, DPNS_CONTRACT_ID, "domain", index_values,
+                                             CONTESTED_VOTE_COUNT, state, root, err) ||
+            !drive::VerifyRootBinding(root, env, DecodeMetadata(p.metadata, m_params.tenderdash_chain_id),
+                                      MakeLookup(), err)) {
+            out.error = "contested vote state proof verification failed: " + err;
+            cb(out);
+            return;
+        }
+
+        ContestedNameState result;
+        result.normalized_label = normalized_label;
+        result.contenders = std::move(state.contenders);
+        result.abstain_votes = state.abstain_votes.value_or(0);
+        result.lock_votes = state.lock_votes.value_or(0);
+        if (!state.contest_found) {
+            result.status = ContestedNameState::Status::UNKNOWN;
+        } else if (!state.finished) {
+            result.status = ContestedNameState::Status::CONTEST_IN_PROGRESS;
+        } else if (state.locked) {
+            result.status = ContestedNameState::Status::LOCKED;
+            result.ends_at = state.finished_at_time_ms;
+        } else {
+            result.status = ContestedNameState::Status::WON;
+            result.winner = state.winner;
+            result.ends_at = state.finished_at_time_ms;
+        }
+        out.value = std::move(result);
+        cb(out);
     }
 
     static std::vector<uint8_t> DpnsWhere(const std::string& normalized_label, bool starts_with)

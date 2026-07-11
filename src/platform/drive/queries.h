@@ -115,6 +115,36 @@ bool VerifyDashPayContactRequests(Span<const uint8_t> proof, const Identifier& i
                                   std::vector<Bytes>& documents_out, Hash256& root_out,
                                   std::string& error);
 
+//! Decoded contested-resource vote state
+//! (getContestedResourceVoteState, result type VoteTally with locked and
+//! abstaining tallies). Mirrors rs-drive
+//! src/verify/voting/verify_vote_poll_vote_state_proof/v0/mod.rs.
+struct ContestedVoteState {
+    //! False when the contenders tree is proven absent (no active or
+    //! finished contest for the resource).
+    bool contest_found{false};
+    std::vector<std::pair<Identifier, uint32_t>> contenders; //!< identity -> votes
+    std::optional<uint32_t> abstain_votes;
+    std::optional<uint32_t> lock_votes;
+    //! True once the poll's stored info reports awarded or locked; the
+    //! tallies and contenders then come from the final vote event.
+    bool finished{false};
+    bool locked{false};               //!< finished with the name locked
+    std::optional<Identifier> winner; //!< finished and awarded to this identity
+    uint64_t finished_at_time_ms{0};
+};
+
+//! getContestedResourceVoteState (VoteTally +
+//! allow_include_locked_and_abstaining_vote_tally): proof over the
+//! contenders tree [[112], [0x63], [0x70], contract, doc_type, [1],
+//! index values...] (rs-drive src/drive/votes/paths.rs). `index_values` are
+//! the tree-key-encoded index values (raw utf8 for DPNS strings); `count`
+//! must match the server-side query limit (drive-abci defaults to 100).
+bool VerifyContestedVoteState(Span<const uint8_t> proof, const Identifier& contract_id,
+                              const std::string& document_type,
+                              const std::vector<Bytes>& index_values, uint16_t count,
+                              ContestedVoteState& out, Hash256& root_out, std::string& error);
+
 } // namespace platform::drive
 
 #endif // BITCOIN_PLATFORM_DRIVE_QUERIES_H
