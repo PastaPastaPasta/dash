@@ -82,7 +82,7 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
     CBlockIndex* snapshot_start_block = WITH_LOCK(::cs_main, return m_blockman.LookupBlockIndex(base_blockhash));
 
     if (!snapshot_start_block) {
-        // Needed for ComputeUTXOStats and ExpectedAssumeutxo to determine the
+        // Needed for ComputeUTXOStats and AssumeutxoForHeight to determine the
         // height and to avoid a crash when base_blockhash.IsNull()
         LogPrintf("[snapshot] Did not find snapshot start blockheader %s\n",
                   base_blockhash.ToString());
@@ -95,7 +95,7 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
         "assumeutxo", {.height_first = snapshot_start_block->nHeight}));
 
     int base_height = snapshot_start_block->nHeight;
-    auto maybe_au_data = ExpectedAssumeutxo(base_height, GetParams());
+    auto maybe_au_data = GetParams().AssumeutxoForHeight(base_height);
 
     if (!maybe_au_data) {
         LogPrintf("[snapshot] assumeutxo height in snapshot metadata not recognized " /* Continued */
@@ -104,6 +104,14 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
     }
 
     const AssumeutxoData& au_data = *maybe_au_data;
+
+    // Avoid doing the long population work when the snapshot is already behind
+    // the active chainstate. ActivateSnapshot repeats this check before the swap
+    // in case the active tip advances while the snapshot is being loaded.
+    if (WITH_LOCK(::cs_main, return !CBlockIndexWorkComparator()(ActiveTip(), snapshot_start_block))) {
+        LogPrintf("[snapshot] activation failed - height does not exceed active chainstate\n");
+        return false;
+    }
 
     COutPoint outpoint;
     Coin coin;
@@ -542,7 +550,7 @@ SnapshotCompletionResult ChainstateManager::MaybeCompleteSnapshotValidation(
 
     CCoinsViewDB& ibd_coins_db = m_ibd_chainstate->CoinsDB();
 
-    auto maybe_au_data = ExpectedAssumeutxo(curr_height, ::Params());
+    auto maybe_au_data = GetParams().AssumeutxoForHeight(curr_height);
     if (!maybe_au_data) {
         LogPrintf("[snapshot] assumeutxo data not found for height " /* Continued */
             "(%d) - refusing to validate snapshot\n", curr_height);
@@ -662,4 +670,3 @@ SnapshotCompletionResult ChainstateManager::MaybeCompleteSnapshotValidation(
 
     return SnapshotCompletionResult::SUCCESS;
 }
-

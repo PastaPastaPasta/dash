@@ -75,7 +75,8 @@ bool BaseIndex::Init()
     }
 
     LOCK(cs_main);
-    CChain& active_chain = m_chainstate->m_chain;
+    CChain& index_chain = m_chainstate->m_chain;
+
     if (locator.IsNull()) {
         SetBestBlockIndex(nullptr);
     } else {
@@ -149,6 +150,8 @@ void BaseIndex::ThreadSync()
         std::chrono::steady_clock::time_point last_locator_write_time{0s};
         while (true) {
             if (m_interrupt) {
+                LogPrintf("%s: m_interrupt set; exiting ThreadSync\n", GetName());
+
                 SetBestBlockIndex(pindex);
                 // No need to handle errors in Commit. If it fails, the error will be already be
                 // logged. The best way to recover is to continue, as index cannot be corrupted by
@@ -256,8 +259,19 @@ bool BaseIndex::Rewind(const CBlockIndex* current_tip, const CBlockIndex* new_ti
     return true;
 }
 
-void BaseIndex::BlockConnected(const std::shared_ptr<const CBlock>& block, const CBlockIndex* pindex)
+void BaseIndex::BlockConnected(ChainstateRole role, const std::shared_ptr<const CBlock>& block, const CBlockIndex* pindex)
 {
+    // Ignore events from the assumed-valid chain; we will process its blocks
+    // (sequentially) after it is fully verified by the background chainstate. This
+    // is to avoid any out-of-order indexing.
+    //
+    // TODO at some point we could parameterize whether a particular index can be
+    // built out of order, but for now just do the conservative simple thing.
+    if (role == ChainstateRole::ASSUMEDVALID) {
+        return;
+    }
+
+    // Ignore BlockConnected signals until we have fully indexed the chain.
     if (!m_synced) {
         return;
     }
@@ -326,8 +340,14 @@ void BaseIndex::BlockDisconnected(const std::shared_ptr<const CBlock>& block, co
     }
 }
 
-void BaseIndex::ChainStateFlushed(const CBlockLocator& locator)
+void BaseIndex::ChainStateFlushed(ChainstateRole role, const CBlockLocator& locator)
 {
+    // Ignore events from the assumed-valid chain; we will process its blocks
+    // (sequentially) after it is fully verified by the background chainstate.
+    if (role == ChainstateRole::ASSUMEDVALID) {
+        return;
+    }
+
     if (!m_synced) {
         return;
     }
@@ -398,7 +418,8 @@ bool BaseIndex::Start()
 {
     // m_chainstate member gives indexing code access to node internals. It is
     // removed in followup https://github.com/bitcoin/bitcoin/pull/24230
-    m_chainstate = &m_chain->context()->chainman->ActiveChainstate();
+    m_chainstate = &WITH_LOCK(::cs_main, return m_chain->context()->chainman->GetChainstateForIndexing());
+    m_interrupt.reset();
     // Need to register this ValidationInterface before running Init(), so that
     // callbacks are not missed if Init sets m_synced to true.
     RegisterValidationInterface(this);
