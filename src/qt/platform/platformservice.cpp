@@ -128,7 +128,48 @@ void PlatformService::checkNameAvailability(const QString& name)
                 return;
             }
             const bool available{!res.value->has_value()};
-            Q_EMIT self->nameAvailability(QString::fromStdString(normalized), available, contested);
+            if (!available || !contested) {
+                Q_EMIT self->nameAvailability(QString::fromStdString(normalized), available, contested);
+                return;
+            }
+            // A contested label absent from the domain tree may still have an
+            // active (or locked) vote; only a proven-absent contest makes it
+            // truly available.
+            self->m_client->getContestedNameState(
+                normalized, [self, normalized](platform::Result<platform::ContestedNameState> vote_res) {
+                    if (!self) return;
+                    self->post([self, normalized, vote_res = std::move(vote_res)] {
+                        if (!self) return;
+                        if (!vote_res.ok()) {
+                            Q_EMIT self->nameAvailabilityFailed(QString::fromStdString(normalized),
+                                                                QString::fromStdString(vote_res.error));
+                            return;
+                        }
+                        const bool no_contest{vote_res.value->status ==
+                                              platform::ContestedNameState::Status::UNKNOWN};
+                        Q_EMIT self->nameAvailability(QString::fromStdString(normalized), no_contest,
+                                                      /*contested=*/true);
+                    });
+                });
+        });
+    });
+}
+
+void PlatformService::checkContestedNameState(const QString& normalized_label)
+{
+    const std::string normalized{normalized_label.toStdString()};
+    QPointer<PlatformService> self{this};
+    m_client->getContestedNameState(normalized, [self, normalized](platform::Result<platform::ContestedNameState> res) {
+        if (!self) return;
+        self->post([self, normalized, res = std::move(res)] {
+            if (!self) return;
+            if (!res.ok()) {
+                Q_EMIT self->contestedNameState(QString::fromStdString(normalized),
+                                                platform::ContestedNameState{},
+                                                QString::fromStdString(res.error));
+                return;
+            }
+            Q_EMIT self->contestedNameState(QString::fromStdString(normalized), *res.value, QString{});
         });
     });
 }

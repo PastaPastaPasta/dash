@@ -30,6 +30,8 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
+#include <algorithm>
+
 namespace {
 constexpr int AVATAR_SIZE{56};
 
@@ -192,6 +194,26 @@ void PlatformPage::maybeCreateService()
     m_service = std::make_unique<PlatformService>(*walletModel, *clientModel, std::move(client), this);
     Q_EMIT platformServiceReady(m_service.get());
     connect(m_service.get(), &PlatformService::identityStateChanged, this, &PlatformPage::refresh);
+    connect(m_service.get(), &PlatformService::contestedNameState, this,
+            [this](const QString& normalized_label, const platform::ContestedNameState& state,
+                   const QString& error) {
+                using State = IdentityFlow::State;
+                if (!m_service || m_service->identityFlow().record().state != State::CONTESTED_PENDING) return;
+                if (QString::fromStdString(m_service->identityFlow().record().normalized_label) !=
+                    normalized_label) return;
+                if (!error.isEmpty() ||
+                    state.status != platform::ContestedNameState::Status::CONTEST_IN_PROGRESS) return;
+                uint32_t my_votes{0}, best_other{0};
+                const auto my_id{m_service->identityFlow().record().identity_id};
+                for (const auto& [identity, votes] : state.contenders) {
+                    if (identity == my_id) my_votes = votes;
+                    else best_other = std::max(best_other, votes);
+                }
+                m_dashboard_status->setText(
+                    tr("Masternodes are voting — you: %1, best rival: %2, abstain: %3, lock: %4. "
+                       "The name may still be awarded to someone else.")
+                        .arg(my_votes).arg(best_other).arg(state.abstain_votes).arg(state.lock_votes));
+            });
     connect(m_service.get(), &PlatformService::profileLoaded, this,
             [this](const QString& identity_hex, const QString& display_name,
                    const QString& public_message, const QString& /*avatar_url*/) {
@@ -346,6 +368,7 @@ void PlatformPage::refresh()
             m_dashboard_profile->setText(tr("Premium name — masternodes are voting on your request."));
             m_dashboard_status->setText(tr("The vote can take a while and the name may be awarded to "
                                            "someone else. You will see the result here."));
+            m_service->checkContestedNameState(QString::fromStdString(rec.normalized_label));
         } else if (rec.state == State::FAILED) {
             m_dashboard_profile->setText(tr("Registration failed"));
             m_dashboard_status->setText(QString::fromStdString(rec.last_error));

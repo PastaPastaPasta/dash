@@ -475,6 +475,42 @@ void IdentityFlow::broadcastDomain()
     });
 }
 
+void IdentityFlow::checkContestedOutcome()
+{
+    // Proof-verified contested-resource vote state: detects a poll that
+    // finished locked (name unusable) or awarded before/without the domain
+    // document becoming visible, and feeds live tallies to the dashboard.
+    QPointer<IdentityFlow> self{this};
+    m_service.client().getContestedNameState(
+        m_record.normalized_label,
+        [self](platform::Result<platform::ContestedNameState> res) {
+            if (!self) return;
+            self->m_service.post([self, res = std::move(res)] {
+                if (!self || !res.ok()) return;
+                if (self->m_record.state != State::CONTESTED_PENDING) return;
+                const platform::ContestedNameState& state{*res.value};
+                switch (state.status) {
+                case platform::ContestedNameState::Status::LOCKED:
+                    self->fail(tr("vote"),
+                               tr("masternodes voted to lock this name; it cannot be registered"),
+                               /*retryable=*/false);
+                    break;
+                case platform::ContestedNameState::Status::WON:
+                    if (state.winner && *state.winner != self->m_record.identity_id) {
+                        self->fail(tr("vote"),
+                                   tr("the contested name was awarded to another identity"),
+                                   /*retryable=*/false);
+                    }
+                    // Awarded to us: keep polling; the domain document is
+                    // what finally flips the flow to REGISTERED.
+                    break;
+                default:
+                    break;
+                }
+            });
+        });
+}
+
 void IdentityFlow::confirmDomain()
 {
     m_step_in_flight = true;
@@ -498,11 +534,12 @@ void IdentityFlow::confirmDomain()
             }
 
             if (self->m_record.contested) {
-                // No document yet: a masternode vote is (probably) in
-                // progress. Reflect that and keep polling.
+                // No document yet: consult the proof-verified vote state to
+                // distinguish "vote in progress" from a decided outcome.
                 if (self->m_record.state != State::CONTESTED_PENDING) {
                     self->setState(State::CONTESTED_PENDING);
                 }
+                self->checkContestedOutcome();
                 return;
             }
 

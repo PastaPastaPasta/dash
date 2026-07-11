@@ -118,6 +118,7 @@ private:
     void broadcastPreorder();
     void broadcastDomain();
     void confirmDomain();
+    void checkContestedOutcome();
 
     PlatformService& m_service;
     Record m_record;

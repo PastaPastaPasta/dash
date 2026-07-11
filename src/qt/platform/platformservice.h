@@ -79,6 +79,10 @@ public:
     //! Emits nameAvailability().
     void checkNameAvailability(const QString& name);
 
+    //! Async proof-verified contested-name vote state
+    //! (getContestedResourceVoteState). Emits contestedNameState().
+    void checkContestedNameState(const QString& normalized_label);
+
     //! Async prefix search; emits searchResults().
     void searchNames(const QString& prefix);
 
@@ -107,6 +111,10 @@ public:
 Q_SIGNALS:
     void nameAvailability(const QString& normalized_label, bool available, bool contested);
     void nameAvailabilityFailed(const QString& normalized_label, const QString& error);
+    //! Proof-verified contested vote state for a label; error is empty on
+    //! success. Emitted on the GUI thread.
+    void contestedNameState(const QString& normalized_label,
+                            const platform::ContestedNameState& state, const QString& error);
     void searchResults(const QString& prefix, const QVector<QPair<QString, QString>>& results); //!< (label, identity id hex)
     //! Emitted with empty fields when the identity verifiably has no profile.
     void profileLoaded(const QString& identity_hex, const QString& display_name, const QString& public_message, const QString& avatar_url);
