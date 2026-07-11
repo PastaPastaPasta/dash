@@ -66,13 +66,15 @@ bool Reader::Next(Field& out)
     case WireType::Varint:
         return ReadVarint(out.varint);
     case WireType::I64: {
-        if (m_pos + 8 > m_data.size()) { m_failed = true; return false; }
+        // m_pos <= m_data.size() always, so size()-m_pos never underflows;
+        // the subtraction form also avoids any m_pos + N overflow.
+        if (m_data.size() - m_pos < 8) { m_failed = true; return false; }
         out.varint = 0;
         for (int i = 0; i < 8; ++i) out.varint |= static_cast<uint64_t>(m_data[m_pos++]) << (8 * i);
         return true;
     }
     case WireType::I32: {
-        if (m_pos + 4 > m_data.size()) { m_failed = true; return false; }
+        if (m_data.size() - m_pos < 4) { m_failed = true; return false; }
         out.varint = 0;
         for (int i = 0; i < 4; ++i) out.varint |= static_cast<uint64_t>(m_data[m_pos++]) << (8 * i);
         return true;
@@ -80,9 +82,12 @@ bool Reader::Next(Field& out)
     case WireType::Len: {
         uint64_t len{0};
         if (!ReadVarint(len)) return false;
-        if (m_pos + len > m_data.size()) { m_failed = true; return false; }
-        out.bytes = m_data.subspan(m_pos, len);
-        m_pos += len;
+        // len is attacker-controlled and up to 2^64-1; compare against the
+        // remaining byte count without ever computing m_pos + len (which
+        // would wrap and yield an out-of-bounds subspan).
+        if (len > m_data.size() - m_pos) { m_failed = true; return false; }
+        out.bytes = m_data.subspan(m_pos, static_cast<size_t>(len));
+        m_pos += static_cast<size_t>(len);
         return true;
     }
     default:
