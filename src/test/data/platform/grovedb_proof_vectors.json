@@ -19,7 +19,8 @@
           ],
           "left_to_right": true,
           "default_subquery_path": null,
-          "default_subquery": null
+          "default_subquery": null,
+          "conditional_subquery_branches": null
         },
         "limit": null
       },
@@ -61,7 +62,8 @@
           ],
           "left_to_right": true,
           "default_subquery_path": null,
-          "default_subquery": null
+          "default_subquery": null,
+          "conditional_subquery_branches": null
         },
         "limit": null
       },
@@ -99,7 +101,8 @@
           ],
           "left_to_right": true,
           "default_subquery_path": null,
-          "default_subquery": null
+          "default_subquery": null,
+          "conditional_subquery_branches": null
         },
         "limit": null
       },
@@ -130,7 +133,8 @@
           ],
           "left_to_right": true,
           "default_subquery_path": null,
-          "default_subquery": null
+          "default_subquery": null,
+          "conditional_subquery_branches": null
         },
         "limit": null
       },
@@ -168,7 +172,8 @@
           ],
           "left_to_right": true,
           "default_subquery_path": null,
-          "default_subquery": null
+          "default_subquery": null,
+          "conditional_subquery_branches": null
         },
         "limit": null
       },
@@ -199,7 +204,8 @@
           ],
           "left_to_right": true,
           "default_subquery_path": null,
-          "default_subquery": null
+          "default_subquery": null,
+          "conditional_subquery_branches": null
         },
         "limit": null
       },
@@ -229,7 +235,8 @@
           ],
           "left_to_right": true,
           "default_subquery_path": null,
-          "default_subquery": null
+          "default_subquery": null,
+          "conditional_subquery_branches": null
         },
         "limit": null
       },
@@ -275,7 +282,8 @@
           ],
           "left_to_right": true,
           "default_subquery_path": null,
-          "default_subquery": null
+          "default_subquery": null,
+          "conditional_subquery_branches": null
         },
         "limit": null
       },
@@ -315,8 +323,10 @@
             ],
             "left_to_right": true,
             "default_subquery_path": null,
-            "default_subquery": null
-          }
+            "default_subquery": null,
+            "conditional_subquery_branches": null
+          },
+          "conditional_subquery_branches": null
         },
         "limit": null
       },
@@ -354,7 +364,8 @@
           ],
           "left_to_right": true,
           "default_subquery_path": null,
-          "default_subquery": null
+          "default_subquery": null,
+          "conditional_subquery_branches": null
         },
         "limit": null
       },
@@ -381,7 +392,8 @@
           ],
           "left_to_right": true,
           "default_subquery_path": null,
-          "default_subquery": null
+          "default_subquery": null,
+          "conditional_subquery_branches": null
         },
         "limit": null
       },
@@ -408,7 +420,8 @@
           ],
           "left_to_right": true,
           "default_subquery_path": null,
-          "default_subquery": null
+          "default_subquery": null,
+          "conditional_subquery_branches": null
         },
         "limit": null
       },
@@ -419,6 +432,239 @@
           "path": [],
           "key_hex": "6974656d73",
           "element_hex": "020102693200"
+        }
+      ]
+    },
+    {
+      "name": "conditional_subquery_match_v1",
+      "path_query": {
+        "path": [
+          "646f6373"
+        ],
+        "query": {
+          "items": [
+            {
+              "type": "range_full"
+            }
+          ],
+          "left_to_right": true,
+          "default_subquery_path": null,
+          "default_subquery": null,
+          "conditional_subquery_branches": [
+            {
+              "item": {
+                "type": "key",
+                "key": "7573657231"
+              },
+              "subquery_path": null,
+              "subquery": {
+                "items": [
+                  {
+                    "type": "range_full"
+                  }
+                ],
+                "left_to_right": true,
+                "default_subquery_path": null,
+                "default_subquery": null,
+                "conditional_subquery_branches": null
+              }
+            }
+          ]
+        },
+        "limit": null
+      },
+      "proof_hex": "0100b90143bee683a1ef20a63dcac14981335ca47f6a323cd3243d33d53e4861529c1ba90404646f63730009020105757365723100ddb89ecdade4897f8bdecbf8a2d984747c81be35a977e23ef1d48c7fa408ea411001026cf5261c59a0142c12b68ea73e9232ba69df7d815969420ca22c193c4a760d1102053f9d933087d993b66dacebc15afc605f319fa38c14028b5e25a93351d24cf91001b8cd7d96ee6ef1856993d233edeb311527d162a692122c89867484e5ff4ad3c0110104646f63730080040575736572310006020102643100b2de5431f42011a4b0ad2f61d4cb8b350ad0b766f0803bb4e37610132c0da67c1c0575736572320006020102643300b6e8a6bfd32019569fe017c03fa1b867185b593f6d76bb3e876fb9b8ab54d032006cd492b526d4ef6abd3951d2f445d25526863ef53e27028c3ce1033c6b1508fc1101057573657231002103026431000a0007646f63206f6e650003026432000a0007646f632074776f001100",
+      "expected_root_hash_hex": "7fe907293e808349296e0c4dd4c6a9c4159022911d1c98a15f013aefbec70b51",
+      "expected_results": [
+        {
+          "path": [
+            "646f6373",
+            "7573657231"
+          ],
+          "key_hex": "6431",
+          "element_hex": "0007646f63206f6e6500"
+        },
+        {
+          "path": [
+            "646f6373",
+            "7573657231"
+          ],
+          "key_hex": "6432",
+          "element_hex": "0007646f632074776f00"
+        },
+        {
+          "path": [
+            "646f6373"
+          ],
+          "key_hex": "7573657232",
+          "element_hex": "020102643300"
+        }
+      ]
+    },
+    {
+      "name": "conditional_and_default_subquery_v1",
+      "path_query": {
+        "path": [
+          "646f6373"
+        ],
+        "query": {
+          "items": [
+            {
+              "type": "range_full"
+            }
+          ],
+          "left_to_right": true,
+          "default_subquery_path": null,
+          "default_subquery": {
+            "items": [
+              {
+                "type": "range_full"
+              }
+            ],
+            "left_to_right": true,
+            "default_subquery_path": null,
+            "default_subquery": null,
+            "conditional_subquery_branches": null
+          },
+          "conditional_subquery_branches": [
+            {
+              "item": {
+                "type": "key",
+                "key": "7573657231"
+              },
+              "subquery_path": null,
+              "subquery": {
+                "items": [
+                  {
+                    "type": "key",
+                    "key": "6431"
+                  }
+                ],
+                "left_to_right": true,
+                "default_subquery_path": null,
+                "default_subquery": null,
+                "conditional_subquery_branches": null
+              }
+            }
+          ]
+        },
+        "limit": null
+      },
+      "proof_hex": "0100b90143bee683a1ef20a63dcac14981335ca47f6a323cd3243d33d53e4861529c1ba90404646f63730009020105757365723100ddb89ecdade4897f8bdecbf8a2d984747c81be35a977e23ef1d48c7fa408ea411001026cf5261c59a0142c12b68ea73e9232ba69df7d815969420ca22c193c4a760d1102053f9d933087d993b66dacebc15afc605f319fa38c14028b5e25a93351d24cf91001b8cd7d96ee6ef1856993d233edeb311527d162a692122c89867484e5ff4ad3c0110104646f6373005f040575736572310006020102643100b2de5431f42011a4b0ad2f61d4cb8b350ad0b766f0803bb4e37610132c0da67c040575736572320006020102643300b6e8a6bfd32019569fe017c03fa1b867185b593f6d76bb3e876fb9b8ab54d0321102057573657231003203026431000a0007646f63206f6e650001e5bce65bdf527aaf8094ce5d747203deda06ca9515cee46d47696a205574d6271100057573657232001203026433000c0009646f632074687265650000",
+      "expected_root_hash_hex": "7fe907293e808349296e0c4dd4c6a9c4159022911d1c98a15f013aefbec70b51",
+      "expected_results": [
+        {
+          "path": [
+            "646f6373",
+            "7573657231"
+          ],
+          "key_hex": "6431",
+          "element_hex": "0007646f63206f6e6500"
+        },
+        {
+          "path": [
+            "646f6373",
+            "7573657232"
+          ],
+          "key_hex": "6433",
+          "element_hex": "0009646f6320746872656500"
+        }
+      ]
+    },
+    {
+      "name": "conditional_subquery_path_v1",
+      "path_query": {
+        "path": [],
+        "query": {
+          "items": [
+            {
+              "type": "key",
+              "key": "646f6373"
+            }
+          ],
+          "left_to_right": true,
+          "default_subquery_path": null,
+          "default_subquery": null,
+          "conditional_subquery_branches": [
+            {
+              "item": {
+                "type": "key",
+                "key": "646f6373"
+              },
+              "subquery_path": [
+                "7573657232"
+              ],
+              "subquery": {
+                "items": [
+                  {
+                    "type": "range_full"
+                  }
+                ],
+                "left_to_right": true,
+                "default_subquery_path": null,
+                "default_subquery": null,
+                "conditional_subquery_branches": null
+              }
+            }
+          ]
+        },
+        "limit": null
+      },
+      "proof_hex": "0100b90143bee683a1ef20a63dcac14981335ca47f6a323cd3243d33d53e4861529c1ba90404646f63730009020105757365723100ddb89ecdade4897f8bdecbf8a2d984747c81be35a977e23ef1d48c7fa408ea411001026cf5261c59a0142c12b68ea73e9232ba69df7d815969420ca22c193c4a760d1102053f9d933087d993b66dacebc15afc605f319fa38c14028b5e25a93351d24cf91001b8cd7d96ee6ef1856993d233edeb311527d162a692122c89867484e5ff4ad3c0110104646f6373005102c6ff6862438040d42a17dd468eefafcb7e9258a2764f3fdb7f143ac47a7abea0040575736572320006020102643300b6e8a6bfd32019569fe017c03fa1b867185b593f6d76bb3e876fb9b8ab54d0321101057573657232001203026433000c0009646f632074687265650000",
+      "expected_root_hash_hex": "7fe907293e808349296e0c4dd4c6a9c4159022911d1c98a15f013aefbec70b51",
+      "expected_results": [
+        {
+          "path": [
+            "646f6373",
+            "7573657232"
+          ],
+          "key_hex": "6433",
+          "element_hex": "0009646f6320746872656500"
+        }
+      ]
+    },
+    {
+      "name": "items_rtl_limit_3_v1",
+      "path_query": {
+        "path": [
+          "6974656d73"
+        ],
+        "query": {
+          "items": [
+            {
+              "type": "range_full"
+            }
+          ],
+          "left_to_right": false,
+          "default_subquery_path": null,
+          "default_subquery": null,
+          "conditional_subquery_branches": null
+        },
+        "limit": 3
+      },
+      "proof_hex": "010073017c9cea6b09368598059458fca2282022c905e48221ed492ba46b75c42c9b942a02053f9d933087d993b66dacebc15afc605f319fa38c14028b5e25a93351d24cf91004056974656d730006020102693200319f2ca4aadc32872b17db9b9eb646e3854b45277671335cfb2efdbcef9d06e91101056974656d7300830a026935000d000a76616c75652066697665000a026934000d000a76616c756520666f757200120a0269330011000b76616c756520746872656501020d0e1309709c6b09fd73e12f3fc564de16e2b5b8a38f01faed59c65701ac778e3cd714a61208a973d24c105b6feda08a6cb2489a7de0ff90a659833ce08f975480c53b9a227d1300",
+      "expected_root_hash_hex": "7fe907293e808349296e0c4dd4c6a9c4159022911d1c98a15f013aefbec70b51",
+      "expected_results": [
+        {
+          "path": [
+            "6974656d73"
+          ],
+          "key_hex": "6935",
+          "element_hex": "000a76616c7565206669766500"
+        },
+        {
+          "path": [
+            "6974656d73"
+          ],
+          "key_hex": "6934",
+          "element_hex": "000a76616c756520666f757200"
+        },
+        {
+          "path": [
+            "6974656d73"
+          ],
+          "key_hex": "6933",
+          "element_hex": "000b76616c756520746872656501020d0e"
         }
       ]
     }

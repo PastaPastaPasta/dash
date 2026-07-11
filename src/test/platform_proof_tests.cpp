@@ -100,6 +100,27 @@ GroveQuery ParseGroveQuery(const UniValue& json)
     if (!subquery.isNull()) {
         query.default_subquery_branch.subquery = std::make_shared<GroveQuery>(ParseGroveQuery(subquery));
     }
+    const UniValue& conditional{json["conditional_subquery_branches"]};
+    if (!conditional.isNull()) {
+        for (size_t i = 0; i < conditional.size(); ++i) {
+            const UniValue& entry{conditional[i]};
+            GroveQuery::ConditionalBranch branch;
+            branch.item = ParseQueryItem(entry["item"]);
+            const UniValue& branch_path{entry["subquery_path"]};
+            if (!branch_path.isNull()) {
+                std::vector<Bytes> segments;
+                for (size_t j = 0; j < branch_path.size(); ++j) {
+                    segments.push_back(FromHex(branch_path[j].get_str()));
+                }
+                branch.branch.subquery_path = std::move(segments);
+            }
+            const UniValue& branch_subquery{entry["subquery"]};
+            if (!branch_subquery.isNull()) {
+                branch.branch.subquery = std::make_shared<GroveQuery>(ParseGroveQuery(branch_subquery));
+            }
+            query.conditional_subquery_branches.push_back(std::move(branch));
+        }
+    }
     return query;
 }
 
@@ -357,6 +378,39 @@ BOOST_AUTO_TEST_CASE(merk_query_completeness)
     // Same for a range that the proof cannot answer completely.
     items = {QueryItem::Range(Bytes{'i', '1'}, Bytes{'i', '5'})};
     BOOST_CHECK(!platform::merk::VerifyProof(proof, items, std::nullopt, true, expected_root, result, error));
+}
+
+BOOST_AUTO_TEST_CASE(merk_query_completeness_rtl)
+{
+    // The right-to-left mirror of merk_query_completeness: a proof generated
+    // for a descending single-key query must not verify once the query also
+    // asks for data the proof abridges.
+    const UniValue doc{ReadJsonObject(json_tests::merk_proof_vectors, sizeof(json_tests::merk_proof_vectors))};
+    const UniValue& vectors{doc["vectors"]};
+    const UniValue* single_key{nullptr};
+    for (size_t i = 0; i < vectors.size(); ++i) {
+        if (vectors[i]["name"].get_str() == "items_single_key_present_rtl") single_key = &vectors[i];
+    }
+    BOOST_REQUIRE(single_key != nullptr);
+    const Bytes proof{FromHex((*single_key)["proof_hex"].get_str())};
+    const Hash256 expected_root{HashFromHex((*single_key)["expected_root_hash_hex"].get_str())};
+
+    // The original descending query verifies.
+    std::vector<QueryItem> items{QueryItem::Key(Bytes{'i', '2'})};
+    platform::merk::VerifyResult result;
+    std::string error;
+    BOOST_CHECK_MESSAGE(
+        platform::merk::VerifyProof(proof, items, std::nullopt, false, expected_root, result, error), error);
+    BOOST_CHECK_EQUAL(result.result_set.size(), 1U);
+
+    // Adding a key the proof does not cover must fail (items stay sorted
+    // ascending; traversal order is what differs).
+    items = {QueryItem::Key(Bytes{'i', '2'}), QueryItem::Key(Bytes{'i', '4'})};
+    BOOST_CHECK(!platform::merk::VerifyProof(proof, items, std::nullopt, false, expected_root, result, error));
+
+    // A range the proof cannot answer completely must fail as well.
+    items = {QueryItem::Range(Bytes{'i', '1'}, Bytes{'i', '5'})};
+    BOOST_CHECK(!platform::merk::VerifyProof(proof, items, std::nullopt, false, expected_root, result, error));
 }
 
 BOOST_AUTO_TEST_CASE(grovedb_vectors)
