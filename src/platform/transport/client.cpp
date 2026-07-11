@@ -9,6 +9,8 @@
 #include <platform/drive/verify.h>
 #include <platform/dpp/document.h>
 #include <platform/transport/cbor.h>
+#include <platform/transport/endpoint_retry.h>
+#include <platform/transport/freshness.h>
 #include <platform/transport/grpcweb.h>
 #include <platform/transport/protobuf.h>
 
@@ -19,6 +21,7 @@
 #include <deque>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <thread>
 
 namespace platform {
@@ -27,6 +30,9 @@ namespace {
 
 constexpr char SVC[] = "/org.dash.platform.dapi.v0.Platform/";
 constexpr int CALL_TIMEOUT_MS = 20000;
+//! Bound on how many distinct endpoints a single logical operation retries
+//! before giving up, so a persistently failing query terminates.
+constexpr size_t MAX_OP_ATTEMPTS{4};
 
 pb::Writer VersionWrap(pb::Writer inner)
 {
@@ -123,8 +129,7 @@ public:
     void updateCoreChainLockedHeight(int32_t height) override
     {
         std::lock_guard<std::mutex> lk(m_mtx);
-        // Monotonic: never let a stale node context lower the floor.
-        if (height > m_local_core_chainlocked_height) m_local_core_chainlocked_height = height;
+        m_freshness.SetLocalChainLockHeight(height);
     }
 
     // Queries — each enqueues a task on the worker thread.
@@ -200,15 +205,40 @@ private:
         }
     }
 
-    // Pick an endpoint round-robin; empty host if none configured.
-    std::string NextEndpoint(uint16_t& port)
+    //! Stable identity of an endpoint for per-endpoint freshness tracking:
+    //! its deterministic-masternode proTxHash when known, else its address.
+    static std::string EndpointKey(const Endpoint& ep)
+    {
+        if (!ep.pro_tx_hash.IsNull()) return ep.pro_tx_hash.ToString();
+        return ep.service.ToStringAddrPort();
+    }
+
+    //! Snapshot the current endpoint set and advance the round-robin cursor
+    //! once per logical operation, so successive operations start at
+    //! different nodes but a single operation can pin one node.
+    std::vector<Endpoint> SnapshotEndpoints(size_t& start)
     {
         std::lock_guard<std::mutex> lk(m_mtx);
-        if (m_endpoints.empty()) return {};
-        const auto& ep = m_endpoints[m_ep_index % m_endpoints.size()];
+        start = m_ep_index++;
+        return m_endpoints;
+    }
+
+    //! Round-robin pick of a single endpoint (advancing the cursor).
+    std::optional<Endpoint> NextEndpoint()
+    {
+        std::lock_guard<std::mutex> lk(m_mtx);
+        if (m_endpoints.empty()) return std::nullopt;
+        const Endpoint ep = m_endpoints[m_ep_index % m_endpoints.size()];
         ++m_ep_index;
-        port = ep.service.GetPort();
-        return ep.service.ToStringAddr();
+        return ep;
+    }
+
+    //! Issue a single unary call to one specific endpoint (no rotation).
+    transport::GrpcCallResult CallOn(const Endpoint& ep, const std::string& method,
+                                     const std::vector<uint8_t>& req)
+    {
+        return transport::GrpcWebUnary(ep.service.ToStringAddr(), ep.service.GetPort(),
+                                       std::string(SVC) + method, req, CALL_TIMEOUT_MS);
     }
 
     drive::QuorumKeyLookup MakeLookup()
@@ -223,57 +253,38 @@ private:
         };
     }
 
-    //! Coarse staleness bound (in core blocks) between a proof's signed
-    //! core-chain-locked height and the node's own best ChainLock. Generous
-    //! so normal platform lag never trips it; the session-monotonic platform
-    //! height check below is the airtight anti-rollback guard.
-    static constexpr int64_t MAX_CORE_CHAINLOCK_LAG{288};
-
-    //! Verifies the quorum-signed root binding and then enforces freshness so
-    //! an on-path attacker (TLS is unauthenticated by design) cannot feed a
-    //! stale-but-validly-signed response. Two guards:
-    //!  - session-monotonic platform height: a signed height that regressed
-    //!    below the highest already accepted this session is a replay;
-    //!  - core ChainLock floor: the signed core-chain-locked height must not
-    //!    trail the node's own best ChainLock by more than MAX_CORE_CHAINLOCK_LAG.
-    //! The monotonic baseline is only advanced after a fully verified response.
+    //! Verifies the quorum-signed root binding and then enforces freshness
+    //! (transport::FreshnessTracker) so an on-path attacker (TLS is
+    //! unauthenticated by design) cannot feed a stale-but-validly-signed
+    //! response. `endpoint_key` identifies the answering node so a lagging
+    //! honest node is not rejected merely because a different node was ahead.
     bool BindAndCheckFresh(const drive::Hash256& root, const drive::ProofEnvelope& env,
                            const drive::BlockContext& ctx, const drive::QuorumKeyLookup& lookup,
-                           std::string& err)
+                           const std::string& endpoint_key, std::string& err)
     {
         if (!drive::VerifyRootBinding(root, env, ctx, lookup, err)) return false;
         std::lock_guard<std::mutex> lk(m_mtx);
-        if (m_local_core_chainlocked_height > 0 &&
-            static_cast<int64_t>(ctx.core_chain_locked_height) + MAX_CORE_CHAINLOCK_LAG <
-                static_cast<int64_t>(m_local_core_chainlocked_height)) {
-            err = strprintf("stale platform proof: signed core chainlock height %u trails the local "
-                            "ChainLock height %d by more than %d blocks",
-                            ctx.core_chain_locked_height, m_local_core_chainlocked_height,
-                            MAX_CORE_CHAINLOCK_LAG);
-            return false;
-        }
-        if (ctx.height < m_max_platform_height) {
-            err = strprintf("stale platform proof: signed platform height %llu is below the highest "
-                            "height %llu already verified this session (possible rollback/replay)",
-                            static_cast<unsigned long long>(ctx.height),
-                            static_cast<unsigned long long>(m_max_platform_height));
-            return false;
-        }
-        m_max_platform_height = ctx.height;
-        return true;
+        return m_freshness.Accept(endpoint_key, ctx.height, ctx.core_chain_locked_height, err);
     }
 
-    transport::GrpcCallResult Call(const std::string& method, const std::vector<uint8_t>& req, std::string& transport_err)
+    //! Rotating single-shot call with transport-level failover across
+    //! endpoints. On success, reports the answering endpoint's key (for
+    //! per-endpoint freshness) via `endpoint_key` when non-null. Suitable for
+    //! operations that make exactly one proved request; multi-proof
+    //! operations pin an endpoint via RetryAcrossEndpoints + CallOn instead.
+    transport::GrpcCallResult Call(const std::string& method, const std::vector<uint8_t>& req,
+                                   std::string& transport_err, std::string* endpoint_key = nullptr)
     {
-        // Try each endpoint until one answers at transport level.
         const size_t n = [&] { std::lock_guard<std::mutex> lk(m_mtx); return std::max<size_t>(1, m_endpoints.size()); }();
         transport::GrpcCallResult last;
         for (size_t i = 0; i < n; ++i) {
-            uint16_t port = 1443;
-            const std::string host = NextEndpoint(port);
-            if (host.empty()) { transport_err = "no evonode endpoints available"; return {}; }
-            last = transport::GrpcWebUnary(host, port, std::string(SVC) + method, req, CALL_TIMEOUT_MS);
-            if (last.transport_ok) return last;
+            const auto ep = NextEndpoint();
+            if (!ep) { transport_err = "no evonode endpoints available"; return {}; }
+            last = CallOn(*ep, method, req);
+            if (last.transport_ok) {
+                if (endpoint_key != nullptr) *endpoint_key = EndpointKey(*ep);
+                return last;
+            }
             transport_err = last.transport_error;
         }
         return last;
@@ -308,8 +319,8 @@ private:
             v0.Bool(2, true);
             method = "getIdentityNonce";
         }
-        std::string terr;
-        auto r = Call(method, VersionWrap(std::move(v0)).data(), terr);
+        std::string terr, endpoint_key;
+        auto r = Call(method, VersionWrap(std::move(v0)).data(), terr, &endpoint_key);
         Result<uint64_t> out;
         if (!r.transport_ok || r.grpc_status != 0) { out.error = r.transport_ok ? r.grpc_message : terr; cb(out); return; }
         auto p = ParseResponse(r.message);
@@ -324,7 +335,7 @@ private:
             ? drive::VerifyIdentityContractNonce(proof, id, *contract, nonce, root, err)
             : drive::VerifyIdentityNonce(proof, id, nonce, root, err);
         if (!verified || !BindAndCheckFresh(root, env,
-                DecodeMetadata(p.metadata, m_params.tenderdash_chain_id), MakeLookup(), err)) {
+                DecodeMetadata(p.metadata, m_params.tenderdash_chain_id), MakeLookup(), endpoint_key, err)) {
             out.error = method + ": proof verification failed: " + err; cb(out); return;
         }
         out.value = nonce.value_or(0);
@@ -333,86 +344,104 @@ private:
 
     void DoGetIdentity(const Identifier& id, const Callback<std::optional<Identity>>& cb)
     {
-        // Proof-verified full identity: three simple proved sub-queries sharing
-        // one signed root (drive::VerifyFullIdentity).
+        // Proof-verified full identity: three simple proved sub-queries that
+        // must all commit to the same GroveDB state root (the invariant
+        // drive::VerifyFullIdentity enforces). Because the three are separate
+        // DAPI requests, they are pinned to a single endpoint per attempt so
+        // honest nodes at slightly different platform heights cannot produce
+        // mismatched roots; a failed attempt retries the whole operation
+        // against another endpoint.
         auto lookup = MakeLookup();
         Result<std::optional<Identity>> out;
+
+        size_t start{0};
+        const std::vector<Endpoint> endpoints{SnapshotEndpoints(start)};
+        if (endpoints.empty()) { out.error = "no evonode endpoints available"; cb(out); return; }
 
         struct ProvedResponse {
             std::vector<uint8_t> proof;
             drive::ProofEnvelope envelope;
             drive::BlockContext context;
-        } balance, revision, keys;
-
-        // getIdentityBalance / getIdentityBalanceAndRevision take {id=1,
-        // prove=2}; getIdentityKeys takes {id=1, request_type=2 (an AllKeys
-        // sub-message), prove=5} — see platform.proto.
-        auto fetch = [&](const std::string& method, bool keys_request, ProvedResponse& proved) -> bool {
-            pb::Writer v0;
-            v0.Bytes(1, std::vector<uint8_t>(id.begin(), id.end()));
-            if (keys_request) {
-                pb::Writer all_keys;             // AllKeys {}
-                pb::Writer request_type;         // KeyRequestType { all_keys = 1 }
-                request_type.Message(1, all_keys.take());
-                v0.Message(2, request_type.take());
-                v0.Bool(5, true);                // prove
-            } else {
-                v0.Bool(2, true);                // prove
-            }
-            std::string terr;
-            auto r = Call(method, VersionWrap(std::move(v0)).data(), terr);
-            if (!r.transport_ok || r.grpc_status != 0) { out.error = r.transport_ok ? r.grpc_message : terr; return false; }
-            auto p = ParseResponse(r.message);
-            if (!p.proof) { out.error = method + ": no proof in response"; return false; }
-            if (!DecodeProof(*p.proof, proved.envelope, proved.proof)) { out.error = method + ": bad proof envelope"; return false; }
-            proved.context = DecodeMetadata(p.metadata, m_params.tenderdash_chain_id);
-            return true;
         };
 
-        if (!fetch("getIdentityBalance", false, balance)) { cb(out); return; }
-        if (!fetch("getIdentityBalanceAndRevision", false, revision)) { cb(out); return; }
-        if (!fetch("getIdentityKeys", true, keys)) { cb(out); return; }
+        bool succeeded{false};
+        transport::RetryAcrossEndpoints(endpoints, start, MAX_OP_ATTEMPTS,
+            [&](const Endpoint& ep, size_t) -> transport::AttemptStatus {
+                const std::string key{EndpointKey(ep)};
+                ProvedResponse balance, revision, keys;
 
-        std::optional<uint64_t> balance_value, revision_value;
-        std::optional<std::vector<IdentityPublicKey>> key_values;
-        drive::Hash256 balance_root, revision_root, keys_root;
-        std::string err;
-        const bool proofs_ok =
-            drive::VerifyIdentityBalance(balance.proof, id, balance_value, balance_root, err) &&
-            BindAndCheckFresh(balance_root, balance.envelope, balance.context, lookup, err) &&
-            drive::VerifyIdentityRevision(revision.proof, id, revision_value, revision_root, err) &&
-            BindAndCheckFresh(revision_root, revision.envelope, revision.context, lookup, err) &&
-            drive::VerifyIdentityKeys(keys.proof, id, key_values, keys_root, err) &&
-            BindAndCheckFresh(keys_root, keys.envelope, keys.context, lookup, err);
-        if (!proofs_ok) {
-            out.error = "identity proof verification failed: " + err;
-            cb(out);
-            return;
-        }
-        // The three sub-queries are separate DAPI responses; require them to
-        // commit to the same GroveDB state root so a peer cannot assemble a
-        // full identity from independently valid states at different heights
-        // (the invariant drive::VerifyFullIdentity enforces). A transient
-        // block boundary between the calls trips this; the caller retries.
-        if (balance_root != revision_root || balance_root != keys_root) {
-            out.error = "identity sub-proofs commit to different state roots; retry";
-            cb(out);
-            return;
-        }
-        if (!balance_value && !revision_value && !key_values) {
-            out.value = std::optional<Identity>{};
-        } else if (!balance_value || !revision_value || !key_values) {
-            out.error = "identity proof components were inconsistent";
-            cb(out);
-            return;
-        } else {
-            Identity identity;
-            identity.id = id;
-            identity.balance = *balance_value;
-            identity.revision = *revision_value;
-            identity.public_keys = std::move(*key_values);
-            out.value = std::move(identity);
-        }
+                // getIdentityBalance / getIdentityBalanceAndRevision take
+                // {id=1, prove=2}; getIdentityKeys takes {id=1, request_type=2
+                // (an AllKeys sub-message), prove=5} — see platform.proto. All
+                // three go to the pinned endpoint `ep`.
+                auto fetch = [&](const std::string& method, bool keys_request, ProvedResponse& proved) -> bool {
+                    pb::Writer v0;
+                    v0.Bytes(1, std::vector<uint8_t>(id.begin(), id.end()));
+                    if (keys_request) {
+                        pb::Writer all_keys;         // AllKeys {}
+                        pb::Writer request_type;     // KeyRequestType { all_keys = 1 }
+                        request_type.Message(1, all_keys.take());
+                        v0.Message(2, request_type.take());
+                        v0.Bool(5, true);            // prove
+                    } else {
+                        v0.Bool(2, true);            // prove
+                    }
+                    auto r = CallOn(ep, method, VersionWrap(std::move(v0)).data());
+                    if (!r.transport_ok || r.grpc_status != 0) { out.error = r.transport_ok ? r.grpc_message : r.transport_error; return false; }
+                    auto p = ParseResponse(r.message);
+                    if (!p.proof) { out.error = method + ": no proof in response"; return false; }
+                    if (!DecodeProof(*p.proof, proved.envelope, proved.proof)) { out.error = method + ": bad proof envelope"; return false; }
+                    proved.context = DecodeMetadata(p.metadata, m_params.tenderdash_chain_id);
+                    return true;
+                };
+
+                if (!fetch("getIdentityBalance", false, balance) ||
+                    !fetch("getIdentityBalanceAndRevision", false, revision) ||
+                    !fetch("getIdentityKeys", true, keys)) {
+                    return transport::AttemptStatus::Retry;
+                }
+
+                std::optional<uint64_t> balance_value, revision_value;
+                std::optional<std::vector<IdentityPublicKey>> key_values;
+                drive::Hash256 balance_root, revision_root, keys_root;
+                std::string err;
+                const bool proofs_ok =
+                    drive::VerifyIdentityBalance(balance.proof, id, balance_value, balance_root, err) &&
+                    BindAndCheckFresh(balance_root, balance.envelope, balance.context, lookup, key, err) &&
+                    drive::VerifyIdentityRevision(revision.proof, id, revision_value, revision_root, err) &&
+                    BindAndCheckFresh(revision_root, revision.envelope, revision.context, lookup, key, err) &&
+                    drive::VerifyIdentityKeys(keys.proof, id, key_values, keys_root, err) &&
+                    BindAndCheckFresh(keys_root, keys.envelope, keys.context, lookup, key, err);
+                if (!proofs_ok) {
+                    out.error = "identity proof verification failed: " + err;
+                    return transport::AttemptStatus::Retry;
+                }
+                if (balance_root != revision_root || balance_root != keys_root) {
+                    // Block boundary landed mid-operation; another endpoint (or
+                    // a later poll) will answer at a single height.
+                    out.error = "identity sub-proofs commit to different state roots";
+                    return transport::AttemptStatus::Retry;
+                }
+
+                if (!balance_value && !revision_value && !key_values) {
+                    out.value = std::optional<Identity>{}; // proven fully absent
+                } else if (!balance_value || !revision_value || !key_values) {
+                    out.error = "identity proof components were inconsistent";
+                    return transport::AttemptStatus::Retry;
+                } else {
+                    Identity identity;
+                    identity.id = id;
+                    identity.balance = *balance_value;
+                    identity.revision = *revision_value;
+                    identity.public_keys = std::move(*key_values);
+                    out.value = std::move(identity);
+                }
+                out.error.clear();
+                succeeded = true;
+                return transport::AttemptStatus::Success;
+            });
+
+        if (!succeeded && out.error.empty()) out.error = "identity query failed against all endpoints";
         cb(out);
     }
 
@@ -421,8 +450,8 @@ private:
         pb::Writer v0;
         v0.Bytes(1, std::vector<uint8_t>(h.begin(), h.end()));
         v0.Bool(2, true);
-        std::string terr;
-        auto r = Call("getIdentityByPublicKeyHash", VersionWrap(std::move(v0)).data(), terr);
+        std::string terr, endpoint_key;
+        auto r = Call("getIdentityByPublicKeyHash", VersionWrap(std::move(v0)).data(), terr, &endpoint_key);
         Result<std::optional<Identity>> out;
         if (!r.transport_ok || r.grpc_status != 0) { out.error = r.transport_ok ? r.grpc_message : terr; cb(out); return; }
         auto p = ParseResponse(r.message);
@@ -433,7 +462,7 @@ private:
         std::optional<Identifier> id_out; std::string err;
         drive::Hash256 root;
         if (!drive::VerifyIdentityIdByPublicKeyHash(gp, h, id_out, root, err) ||
-            !BindAndCheckFresh(root, env, ctx, MakeLookup(), err)) {
+            !BindAndCheckFresh(root, env, ctx, MakeLookup(), endpoint_key, err)) {
             out.error = err; cb(out); return;
         }
         if (!id_out) { out.value = std::optional<Identity>{}; cb(out); return; }
@@ -460,8 +489,8 @@ private:
         if (!order_by_cbor.empty()) v0.Bytes(4, order_by_cbor);
         if (limit) v0.Varint(5, limit);
         v0.Bool(8, true); // prove
-        std::string terr;
-        auto r = Call("getDocuments", VersionWrap(std::move(v0)).data(), terr);
+        std::string terr, endpoint_key;
+        auto r = Call("getDocuments", VersionWrap(std::move(v0)).data(), terr, &endpoint_key);
         std::vector<std::vector<uint8_t>> docs;
         if (!r.transport_ok || r.grpc_status != 0) {
             err = r.transport_ok ? r.grpc_message : terr;
@@ -479,7 +508,7 @@ private:
             return {};
         }
         const auto ctx = DecodeMetadata(p.metadata, m_params.tenderdash_chain_id);
-        if (!BindAndCheckFresh(root, env, ctx, MakeLookup(), err)) {
+        if (!BindAndCheckFresh(root, env, ctx, MakeLookup(), endpoint_key, err)) {
             LogPrintf("Platform getDocuments(%s) root binding failed: %s\n", doc_type, err);
             return {};
         }
@@ -522,8 +551,8 @@ private:
         v0.Bool(6, true); // allow_include_locked_and_abstaining_vote_tally
         v0.Varint(8, CONTESTED_VOTE_COUNT);
         v0.Bool(9, true); // prove
-        std::string terr;
-        auto r = Call("getContestedResourceVoteState", VersionWrap(std::move(v0)).data(), terr);
+        std::string terr, endpoint_key;
+        auto r = Call("getContestedResourceVoteState", VersionWrap(std::move(v0)).data(), terr, &endpoint_key);
         Result<ContestedNameState> out;
         if (!r.transport_ok || r.grpc_status != 0) {
             out.error = r.transport_ok ? r.grpc_message : terr;
@@ -546,7 +575,7 @@ private:
         if (!drive::VerifyContestedVoteState(grovedb_proof, DPNS_CONTRACT_ID, "domain", index_values,
                                              CONTESTED_VOTE_COUNT, state, root, err) ||
             !BindAndCheckFresh(root, env, DecodeMetadata(p.metadata, m_params.tenderdash_chain_id),
-                               MakeLookup(), err)) {
+                               MakeLookup(), endpoint_key, err)) {
             out.error = "contested vote state proof verification failed: " + err;
             cb(out);
             return;
@@ -708,9 +737,8 @@ private:
     size_t m_ep_index{0};
     uint8_t m_quorum_type{0};
     std::vector<QuorumKey> m_quorum_keys;
-    //! Freshness state (guarded by m_mtx). See BindAndCheckFresh.
-    int32_t m_local_core_chainlocked_height{0};
-    uint64_t m_max_platform_height{0};
+    //! Per-endpoint replay/staleness guard (guarded by m_mtx).
+    transport::FreshnessTracker m_freshness;
 };
 
 } // namespace

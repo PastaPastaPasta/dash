@@ -755,6 +755,8 @@ libdash_platform_a_SOURCES = \
   platform/statetransitions.h \
   platform/transport/cbor.h \
   platform/transport/client.cpp \
+  platform/transport/endpoint_retry.h \
+  platform/transport/freshness.h \
   platform/transport/grpcweb.cpp \
   platform/transport/grpcweb.h \
   platform/transport/protobuf.cpp \

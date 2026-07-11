@@ -224,6 +224,7 @@ BITCOIN_TESTS =\
 
 if ENABLE_PLATFORM_GUI
 BITCOIN_TESTS += \
+  test/platform_client_tests.cpp \
   test/platform_dpp_tests.cpp \
   test/platform_drive_tests.cpp \
   test/platform_proof_tests.cpp
