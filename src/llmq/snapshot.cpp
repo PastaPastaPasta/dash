@@ -317,6 +317,18 @@ void CQuorumSnapshotManager::StoreSnapshotForBlock(const Consensus::LLMQType llm
 {
     auto snapshotHash = ::SerializeHash(std::make_pair(llmqType, pindex->GetBlockHash()));
 
+    // Snapshot activation seeds the historical rotation snapshots needed to
+    // reconstruct active quorums. RPC/P2P lookups can additionally derive the
+    // current cycle while no block transaction is active. Keep that result in
+    // memory: writing it here would dirty the default EvoDB transaction and
+    // make a later flush/shutdown fail. Once dual-chainstate mode ends, normal
+    // block processing remains responsible for durable derived snapshots.
+    if (!m_evoDb.HasActiveTransaction() && m_evoDb.HasDualChainstateMarker()) {
+        LOCK(snapshotCacheCs);
+        quorumSnapshotCache.insert(snapshotHash, snapshot);
+        return;
+    }
+
     if (!m_evoDb.WriteDerived(std::make_pair(DB_QUORUM_SNAPSHOT, snapshotHash), snapshot)) {
         throw std::runtime_error("EvoDB quorum snapshot payload mismatch");
     }
