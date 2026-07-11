@@ -4,7 +4,8 @@
 
 //! Tests for the pure C++ GroveDB proof verifier (src/platform/proof/)
 //! against JSON vectors generated from the Rust dashpay/grovedb v5.0.0
-//! implementation by contrib/devtools/platform-test-vectors.
+//! implementation by the platform-test-vectors crate
+//! (github.com/PastaPastaPasta/dash-platform-test-vectors).
 
 #include <test/data/platform/element_vectors.json.h>
 #include <test/data/platform/grovedb_proof_vectors.json.h>
