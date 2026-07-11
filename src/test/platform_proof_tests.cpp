@@ -329,7 +329,7 @@ BOOST_AUTO_TEST_CASE(merk_vectors)
             corrupted[pos] ^= 0x01;
             std::string ignored_error;
             BOOST_CHECK_MESSAGE(RunMerkVector(vec, corrupted, ignored_error) == VectorOutcome::DETECTED,
-                                name + ": corrupting byte " + std::to_string(pos) + " must fail");
+                                name + ": corrupting byte " + ToString(pos) + " must fail");
         }
 
         // Negative: wrong expected root hash must fail.
@@ -451,12 +451,12 @@ BOOST_AUTO_TEST_CASE(grovedb_vectors)
             const VectorOutcome outcome{RunGroveVector(vec, corrupted, ignored_error)};
             if (outcome == VectorOutcome::DIFFERS) {
                 BOOST_CHECK_MESSAGE(v0_tree_element_hole,
-                                    name + ": corrupting byte " + std::to_string(pos) +
+                                    name + ": corrupting byte " + ToString(pos) +
                                         " must not verify to different results");
             } else if (outcome == VectorOutcome::MATCHES) {
                 const bool malleable{(is_v0 && pos == proof.size() - 1) || proof[pos] == 0x1c ||
                                      proof[pos] == 0x1d};
-                BOOST_CHECK_MESSAGE(malleable, name + ": corrupting byte " + std::to_string(pos) +
+                BOOST_CHECK_MESSAGE(malleable, name + ": corrupting byte " + ToString(pos) +
                                                    " must fail");
             }
         }
@@ -470,6 +470,32 @@ BOOST_AUTO_TEST_CASE(grovedb_vectors)
             !platform::grove::VerifyQueryWithRootHash(proof, query, platform::grove::VerifyOptions{},
                                                       wrong_root, result, error),
             name + ": wrong expected root must fail");
+    }
+}
+
+BOOST_AUTO_TEST_CASE(grovedb_envelope_version_reported)
+{
+    // The drive layer (RunQuery) rejects any envelope whose reported version
+    // is below 1, closing the V0 downgrade. That gate relies on VerifyQuery
+    // surfacing the true decoded version, so assert it matches the _v0/_v1
+    // naming of every vector.
+    const UniValue doc{
+        ReadJsonObject(json_tests::grovedb_proof_vectors, sizeof(json_tests::grovedb_proof_vectors))};
+    const UniValue& vectors{doc["vectors"]};
+    for (size_t i = 0; i < vectors.size(); ++i) {
+        const UniValue& vec{vectors[i]};
+        const std::string name{vec["name"].get_str()};
+        const Bytes proof{FromHex(vec["proof_hex"].get_str())};
+        const PathQuery query{ParsePathQuery(vec["path_query"])};
+        platform::grove::GroveVerifyResult result;
+        std::string error;
+        BOOST_REQUIRE_MESSAGE(
+            platform::grove::VerifyQuery(proof, query, platform::grove::VerifyOptions{}, result, error),
+            name + ": " + error);
+        const bool is_v0{name.size() >= 3 && name.compare(name.size() - 3, 3, "_v0") == 0};
+        BOOST_CHECK_MESSAGE(result.envelope_version == (is_v0 ? 0 : 1),
+                            name + ": unexpected envelope version " +
+                                ToString(result.envelope_version));
     }
 }
 

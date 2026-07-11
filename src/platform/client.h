@@ -105,6 +105,11 @@ public:
     //! Node-local trust/context injection.
     virtual void updateEndpoints(std::vector<Endpoint> endpoints) = 0;
     virtual void updateQuorumKeys(uint8_t llmq_type, std::vector<QuorumKey> keys) = 0;
+    //! The node's best locally verified core ChainLock height. Used as a
+    //! coarse staleness floor so an on-path attacker cannot replay a much
+    //! older (but validly signed) platform state. 0 means "unknown" and
+    //! disables the floor.
+    virtual void updateCoreChainLockedHeight(int32_t height) = 0;
 
     //! Stop all I/O and drop pending callbacks (must be called before the
     //! consumer is destroyed).
