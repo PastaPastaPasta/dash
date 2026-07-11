@@ -5890,7 +5890,9 @@ SnapshotCompletionResult ChainstateManager::MaybeCompleteSnapshotValidation(
 
         auto rename_result = m_snapshot_chainstate->InvalidateCoinsDBOnDisk();
         if (!rename_result) {
-            user_error = strprintf(Untranslated("%s\n%s"), user_error, util::ErrorString(rename_result));
+            user_error += Untranslated("\n") + util::ErrorString(rename_result);
+        } else if (!m_ibd_chainstate->m_evoDb.DiscardSnapshotMarkers()) {
+            LogPrintf("[snapshot] failed to remove invalid snapshot EvoDB markers\n");
         }
 
         shutdown_fnc(user_error);
