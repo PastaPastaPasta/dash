@@ -704,6 +704,9 @@ public:
     //! Unconditionally flush all changes to disk.
     void ForceFlushStateToDisk();
 
+    /** Persist the MN list produced by this chainstate's own block connection. */
+    void RecordBackgroundMNListHash(const uint256& block_hash, const uint256& mn_list_hash);
+
     //! Prune blockfiles from the disk if necessary and then flush chainstate changes
     //! if we pruned.
     void PruneAndFlush();
@@ -881,6 +884,10 @@ enum class SnapshotCompletionResult {
     // The blockhash of the current tip of the background validation chainstate does
     // not match the one expected by the snapshot chainstate.
     BASE_BLOCKHASH_MISMATCH,
+
+    // Dash's derived Evo state or per-chainstate best-block markers did not
+    // converge at the snapshot base block.
+    EVO_STATE_MISMATCH,
 };
 
 /**

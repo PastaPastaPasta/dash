@@ -28,9 +28,9 @@ static const std::string EVODB_BEST_BLOCK = "b_b4";
 // with this legacy marker. That pair is the background chainstate's own coins
 // and marker, so downgrading mid-snapshot safely reverts to background IBD.
 static const std::string EVODB_DUAL_CHAINSTATE = "b_dcs";
+static const std::string EVODB_SNAPSHOT_MNLIST_HASH = "b_dcs_mn";
+static const std::string EVODB_BACKGROUND_MNLIST_HASH = "b_dcs_bg_mn";
 
-// TODO(assumeutxo): snapshot completion must promote the SNAPSHOT marker to
-// the legacy key when chainstate_snapshot is renamed over chainstate.
 enum class EvoDbIdentity {
     NORMAL,
     SNAPSHOT,
@@ -213,7 +213,7 @@ public:
         return result;
     }
 
-    bool CommitRootTransaction(EvoDbIdentity identity = EvoDbIdentity::NORMAL) EXCLUSIVE_LOCKS_REQUIRED(!cs);
+    bool CommitRootTransaction(EvoDbIdentity identity = EvoDbIdentity::NORMAL, bool sync = false) EXCLUSIVE_LOCKS_REQUIRED(!cs);
 
     bool IsEmpty() { return db->IsEmpty(); }
 
@@ -232,6 +232,20 @@ public:
     void WriteBestBlock(EvoDbIdentity identity, const uint256& hash) EXCLUSIVE_LOCKS_REQUIRED(!cs);
     void WriteDualChainstateMarker() EXCLUSIVE_LOCKS_REQUIRED(!cs);
     bool HasDualChainstateMarker() EXCLUSIVE_LOCKS_REQUIRED(!cs);
+    void WriteSnapshotBaseMNListHash(const uint256& hash) EXCLUSIVE_LOCKS_REQUIRED(!cs);
+    bool ReadSnapshotBaseMNListHash(uint256& hash) EXCLUSIVE_LOCKS_REQUIRED(!cs);
+    void WriteBackgroundMNListHash(const uint256& block_hash, const uint256& mn_list_hash) EXCLUSIVE_LOCKS_REQUIRED(!cs);
+    bool ReadBackgroundMNListHash(uint256& block_hash, uint256& mn_list_hash) EXCLUSIVE_LOCKS_REQUIRED(!cs);
+
+    /**
+     * Atomically promote the surviving snapshot marker to the legacy NORMAL key
+     * and remove all dual-chainstate metadata. Both identity transaction trees
+     * must already be fully committed by the caller.
+     */
+    bool PromoteSnapshotMarkers(const uint256& expected_snapshot_tip) EXCLUSIVE_LOCKS_REQUIRED(!cs);
+
+    /** Remove snapshot metadata after rejecting a snapshot, preserving NORMAL. */
+    bool DiscardSnapshotMarkers() EXCLUSIVE_LOCKS_REQUIRED(!cs);
 
     bool VerifyBestBlock(const uint256& hash) EXCLUSIVE_LOCKS_REQUIRED(!cs) { return VerifyBestBlock(EvoDbIdentity::NORMAL, hash); }
     void WriteBestBlock(const uint256& hash) EXCLUSIVE_LOCKS_REQUIRED(!cs) { WriteBestBlock(EvoDbIdentity::NORMAL, hash); }
