@@ -550,10 +550,10 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_reconsider_block_candidates, SnapshotT
 //! - First, verify that setBlockIndexCandidates is as expected when using a single,
 //!   fully-validating chainstate.
 //!
-//! - Then mark a region of the chain as missing data and introduce a second chainstate
-//!   that will tolerate assumed-valid blocks. Run LoadBlockIndex() and ensure that the first
+//! - Then mark a region of the chain as missing data and introduce a second snapshot chainstate.
+//!   Run LoadBlockIndex() and ensure that the first
 //!   chainstate only contains fully validated blocks and the other chainstate contains all blocks,
-//!   except those marked assume-valid, because those entries don't HAVE_DATA.
+//!   except the missing-data entries.
 //!
 BOOST_FIXTURE_TEST_CASE(chainstatemanager_loadblockindex, TestChain100Setup)
 {
@@ -562,7 +562,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_loadblockindex, TestChain100Setup)
 
     int num_indexes{0};
     // Blocks in range [assumed_valid_start_idx, last_assumed_valid_idx) will be
-    // marked as assumed-valid and not having data.
+    // marked as not having data.
     const int expected_assumed_valid{20};
     const int last_assumed_valid_idx{111};
     const int assumed_valid_start_idx = last_assumed_valid_idx - expected_assumed_valid;
@@ -590,7 +590,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_loadblockindex, TestChain100Setup)
         WITH_LOCK(::cs_main, chainman.LoadBlockIndex());
     };
 
-    // Ensure that without any assumed-valid BlockIndex entries, only the current tip is
+    // Ensure that without any missing-data BlockIndex entries, only the current tip is
     // considered as a candidate.
     reload_all_block_indexes();
     BOOST_CHECK_EQUAL(cs1.setBlockIndexCandidates.size(), 1);

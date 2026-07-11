@@ -294,9 +294,30 @@ class AssumeutxoDashTest(DashTestFramework):
         assert_equal(loaded["coins_loaded"], dump["coins_written"])
         self.assert_unvalidated_snapshot(snapshot_node, base_height, base_hash, mid_height)
 
+        def assert_unfaked_snapshot_counts(background_height):
+            # The dynamic -assumeutxodata count belongs only to the snapshot
+            # base. Header-only blocks between background validation and the
+            # base must keep unknown nTx and nChainTx values at zero.
+            assert_equal(snapshot_node.getblockheader(base_hash)["nTx"], 0)
+            assert_equal(
+                snapshot_node.getchaintxstats(nblocks=1, blockhash=base_hash)["txcount"],
+                dump["nchaintx"],
+            )
+            first_unknown_height = background_height + 1
+            if first_unknown_height < base_height:
+                first_unknown_hash = snapshot_node.getblockhash(first_unknown_height)
+                assert_equal(snapshot_node.getblockheader(first_unknown_hash)["nTx"], 0)
+                assert_equal(
+                    snapshot_node.getchaintxstats(nblocks=1, blockhash=first_unknown_hash)["txcount"],
+                    0,
+                )
+
+        assert_unfaked_snapshot_counts(mid_height)
+
         self.log.info("Restart immediately after loading the snapshot")
         self.restart_node(snapshot_index, extra_args=snapshot_args)
         self.assert_unvalidated_snapshot(snapshot_node, base_height, base_hash, mid_height)
+        assert_unfaked_snapshot_counts(mid_height)
 
         self.log.info("Advance only the disconnected background chainstate")
         advanced_height = base_height - 1
@@ -305,6 +326,7 @@ class AssumeutxoDashTest(DashTestFramework):
             assert snapshot_node.submitblock(
                 node0.getblock(node0.getblockhash(height), 0)) in (None, "duplicate")
         self.assert_unvalidated_snapshot(snapshot_node, base_height, base_hash, advanced_height)
+        assert_unfaked_snapshot_counts(advanced_height)
 
         self.log.info("Compare deterministic masternode and quorum state at the base")
         assert_equal(
@@ -367,6 +389,14 @@ class AssumeutxoDashTest(DashTestFramework):
         assert_equal(completed["blocks"], base_height)
         assert_equal(completed["validated"], True)
         assert_equal(completed["snapshot_blockhash"], base_hash)
+        assert_equal(
+            snapshot_node.getblockheader(base_hash)["nTx"],
+            node0.getblockheader(base_hash)["nTx"],
+        )
+        assert_equal(
+            snapshot_node.getchaintxstats(nblocks=1, blockhash=base_hash)["txcount"],
+            dump["nchaintx"],
+        )
 
         self.log.info("Restart after completion to run validated cleanup and b_b4 promotion")
         with snapshot_node.assert_debug_log(
