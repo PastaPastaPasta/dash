@@ -362,6 +362,14 @@ ChainstateLoadResult LoadChainstate(ChainstateManager& chainman, const CacheSize
         return {init_status, init_error};
     }
 
+    // Snapshot completion can inspect v19+ CbTx BLS signatures before
+    // VerifyLoadedChainstate() performs its usual scheme update.
+    if (const CBlockIndex* tip{chainman.ActiveChainstate().m_chain.Tip()};
+        tip && DeploymentActiveAfter(tip, chainman, Consensus::DEPLOYMENT_V19)) {
+        bls::bls_legacy_scheme.store(false);
+        LogPrintf("LoadChainstate: bls_legacy_scheme=%d\n", bls::bls_legacy_scheme.load());
+    }
+
     // If a snapshot chainstate was fully validated by a background chainstate during
     // the last run, detect it here and clean up the now-unneeded background
     // chainstate.
