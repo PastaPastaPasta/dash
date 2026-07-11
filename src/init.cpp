@@ -1979,6 +1979,21 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         node.chainman = std::make_unique<ChainstateManager>(chainman_opts);
         ChainstateManager& chainman = *node.chainman;
 
+        // This is defined here instead of validation.h to avoid a dependency on
+        // index/base from libdashconsensus-facing validation code.
+        chainman.restart_indexes = [&node]() {
+            LogPrintf("[snapshot] restarting indexes\n");
+            SyncWithValidationInterfaceQueue();
+
+            for (auto* index : node.indexes) {
+                index->Interrupt();
+                index->Stop();
+                if (!index->Start()) {
+                    LogPrintf("[snapshot] WARNING failed to restart index %s on snapshot chain\n", index->GetName());
+                }
+            }
+        };
+
         /**
          * The manager needs to be constructed regardless of whether governance
          * validation is needed or not.
@@ -2213,6 +2228,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         if (!g_txindex->Start()) {
             return false;
         }
+        node.indexes.push_back(g_txindex.get());
     }
 
     if (args.GetBoolArg("-addressindex", DEFAULT_ADDRESSINDEX)) {
@@ -2220,6 +2236,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         if (!node.address_index->Start()) {
             return false;
         }
+        node.indexes.push_back(g_addressindex.get());
     }
 
     if (args.GetBoolArg("-timestampindex", DEFAULT_TIMESTAMPINDEX)) {
@@ -2227,6 +2244,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         if (!node.timestamp_index->Start()) {
             return false;
         }
+        node.indexes.push_back(g_timestampindex.get());
     }
 
     if (args.GetBoolArg("-spentindex", DEFAULT_SPENTINDEX)) {
@@ -2234,6 +2252,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         if (!node.spent_index->Start()) {
             return false;
         }
+        node.indexes.push_back(g_spentindex.get());
     }
 
     for (const auto& filter_type : g_enabled_filter_types) {
@@ -2241,6 +2260,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         if (!GetBlockFilterIndex(filter_type)->Start()) {
             return false;
         }
+        node.indexes.push_back(GetBlockFilterIndex(filter_type));
     }
 
     if (args.GetBoolArg("-coinstatsindex", DEFAULT_COINSTATSINDEX)) {
@@ -2248,6 +2268,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         if (!g_coin_stats_index->Start()) {
             return false;
         }
+        node.indexes.push_back(g_coin_stats_index.get());
     }
 
     // ********************************************************* Step 9: load wallet

@@ -19,6 +19,18 @@ interfaces::BlockInfo MakeBlockInfo(const CBlockIndex* block_index, const CBlock
 
 } // namespace kernel
 
+class CBlock;
+class CBlockIndex;
+namespace interfaces {
+struct BlockInfo;
+} // namespace interfaces
+
+namespace kernel {
+//! Return data from block index.
+interfaces::BlockInfo MakeBlockInfo(const CBlockIndex* block_index, const CBlock* data = nullptr);
+
+} // namespace kernel
+
 //! This enum describes the various roles a specific Chainstate instance can take.
 //! Other parts of the system sometimes need to vary in behavior depending on the
 //! existence of a background validation chainstate, e.g. when building indexes.

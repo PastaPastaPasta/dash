@@ -1163,6 +1163,10 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         """Checks whether the wallet module was compiled with BDB support."""
         return self.config["components"].getboolean("USE_BDB")
 
+    def has_blockfile(self, node, filenum: str):
+        blocksdir = os.path.join(node.datadir, self.chain, 'blocks', '')
+        return os.path.isfile(os.path.join(blocksdir, f"blk{filenum}.dat"))
+
 MASTERNODE_COLLATERAL = 1000
 EVONODE_COLLATERAL = 4000
 
