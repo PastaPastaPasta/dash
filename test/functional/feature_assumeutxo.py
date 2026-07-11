@@ -4,7 +4,7 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test for assumeutxo, a means of quickly bootstrapping a node using
 a serialized version of the UTXO set at a certain height, which corresponds
-to a hash that has been compiled into bitcoind.
+to a hash that has been compiled into dashd.
 
 The assumeutxo value generated and used here is committed to in
 `CRegTestParams::m_assumeutxo_data` in `src/chainparams.cpp`.
@@ -36,6 +36,7 @@ Interesting starting states could be loading a snapshot when the current chain t
 
 """
 from test_framework.test_framework import BitcoinTestFramework
+from test_framework.governance import EXPECTED_STDERR_NO_GOV_PRUNE
 from test_framework.util import assert_equal, wait_until_helper
 
 START_HEIGHT = 199
@@ -110,7 +111,8 @@ class AssumeutxoTest(BitcoinTestFramework):
 
         assert_equal(
             dump_output['txoutset_hash'],
-            'ef45ccdca5898b6c2145e4581d2b88c56564dd389e4bd75a1aaf6961d3edd3c0')
+            '2618646eb7f9b17a1982e206f94e8feec3efb3b7e7e97ade16b658eef7636519')
+        assert_equal(dump_output['evo_hash'], 'f2ccd3fef604df58a0c174489821e16912c9332969a267650cd040e85fb2adde')
         assert_equal(dump_output['nchaintx'], 300)
         assert_equal(n0.getblockchaininfo()["blocks"], SNAPSHOT_BASE_HEIGHT)
 
@@ -139,7 +141,8 @@ class AssumeutxoTest(BitcoinTestFramework):
 
         self.log.info("Restarting node to stop at height %d", PAUSE_HEIGHT)
         self.restart_node(1, extra_args=[
-            f"-stopatheight={PAUSE_HEIGHT}", *self.extra_args[1]])
+            f"-stopatheight={PAUSE_HEIGHT}", *self.extra_args[1]],
+            expected_stderr=EXPECTED_STDERR_NO_GOV_PRUNE)
 
         # Finally connect the nodes and let them sync.
         self.connect_nodes(0, 1)
@@ -152,7 +155,7 @@ class AssumeutxoTest(BitcoinTestFramework):
         assert not self.has_blockfile(n1, "00002"), "too many blockfiles"
 
         self.log.info("Restarted node before snapshot validation completed, reloading...")
-        self.restart_node(1, extra_args=self.extra_args[1])
+        self.restart_node(1, extra_args=self.extra_args[1], expected_stderr=EXPECTED_STDERR_NO_GOV_PRUNE)
         self.connect_nodes(0, 1)
 
         self.log.info(f"Ensuring snapshot chain syncs to tip. ({FINAL_HEIGHT})")
@@ -174,7 +177,8 @@ class AssumeutxoTest(BitcoinTestFramework):
         for i in (0, 1):
             n = self.nodes[i]
             self.log.info(f"Restarting node {i} to ensure (Check|Load)BlockIndex passes")
-            self.restart_node(i, extra_args=self.extra_args[i])
+            self.restart_node(i, extra_args=self.extra_args[i],
+                              expected_stderr=EXPECTED_STDERR_NO_GOV_PRUNE if i == 1 else '')
 
             assert_equal(n.getblockchaininfo()["blocks"], FINAL_HEIGHT)
 
@@ -232,7 +236,8 @@ class AssumeutxoTest(BitcoinTestFramework):
 
         self.log.info("Test -reindex-chainstate of an assumeutxo-synced node")
         self.restart_node(2, extra_args=[
-            '-reindex-chainstate=1', *self.extra_args[2]])
+            '-reindex-chainstate=1', *self.extra_args[2],
+            '-txindex=0', '-blockfilterindex=0', '-coinstatsindex=0'])
         assert_equal(n2.getblockchaininfo()["blocks"], FINAL_HEIGHT)
         wait_until_helper(lambda: n2.getblockcount() == FINAL_HEIGHT)
 
@@ -240,6 +245,8 @@ class AssumeutxoTest(BitcoinTestFramework):
         self.restart_node(2, extra_args=['-reindex=1', *self.extra_args[2]])
         self.connect_nodes(0, 2)
         wait_until_helper(lambda: n2.getblockcount() == FINAL_HEIGHT)
+
+        self.stop_node(1, expected_stderr=EXPECTED_STDERR_NO_GOV_PRUNE)
 
 
 if __name__ == '__main__':

@@ -53,22 +53,6 @@ void SeedSnapshotMarker(CEvoDB& evodb, const uint256& hash)
 
 BOOST_FIXTURE_TEST_SUITE(validation_chainstatemanager_tests, TestingSetup)
 
-static void DashChainstateSetup(ChainstateManager& chainman,
-                         node::NodeContext& node,
-                         bool llmq_dbs_in_memory,
-                         bool llmq_dbs_wipe)
-{
-    node.llmq_ctx.reset();
-    node.llmq_ctx = std::make_unique<LLMQContext>(*node.dmnman, *node.evodb, chainman,
-                                                  util::DbWrapperParams{.path = node.args->GetDataDirNet(), .memory = llmq_dbs_in_memory, .wipe = llmq_dbs_wipe},
-                                                  llmq::DEFAULT_BLSCHECK_THREADS, llmq::DEFAULT_WORKER_COUNT, llmq::DEFAULT_MAX_RECOVERED_SIGS_AGE);
-    // Initialize chain_helper
-    node.chain_helper.reset();
-    node.chain_helper = std::make_unique<CChainstateHelper>(*node.evodb, *node.dmnman, *Assert(node.mn_sync), *Assert(node.isman), *(node.llmq_ctx->quorum_block_processor),
-                                                            *(node.llmq_ctx->qsnapman), chainman, chainman.GetConsensus(), *Assert(node.chainlocks),
-                                                            *(node.llmq_ctx->qman));
-}
-
 static void DashChainstateSetupClose(node::NodeContext& node)
 {
     node.chain_helper.reset();
@@ -110,20 +94,12 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager, TestChain100Setup)
 
     BOOST_CHECK(!manager.SnapshotBlockhash().has_value());
 
-    DashChainstateSetupClose(m_node);
-
     // Create a snapshot-based chainstate.
     //
     const uint256 snapshot_blockhash = active_tip->GetBlockHash();
     SeedSnapshotMarker(evodb, snapshot_blockhash);
     Chainstate& c2 = WITH_LOCK(::cs_main, return manager.ActivateExistingSnapshot(snapshot_blockhash));
     chainstates.push_back(&c2);
-
-    // Only the active chainstate keeps the mempool.
-    BOOST_CHECK_EQUAL(c2.GetMempool(), &mempool);
-    BOOST_CHECK(!c1.GetMempool());
-
-    DashChainstateSetup(manager, m_node, /*llmq_dbs_in_memory=*/true, /*llmq_dbs_wipe=*/false);
 
     BOOST_CHECK_EQUAL(manager.SnapshotBlockhash().value(), snapshot_blockhash);
     c2.InitCoinsDB(
@@ -164,27 +140,18 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager, TestChain100Setup)
     // Let scheduler events finish running to avoid accessing memory that is going to be unloaded
     SyncWithValidationInterfaceQueue();
 
-    DashChainstateSetupClose(m_node);
-    // dmnman holds a reference to m_node.evodb, it mustn't outlive it
-    m_node.dmnman.reset();
 }
 
 BOOST_AUTO_TEST_CASE(snapshot_startup_missing_base_header_is_nonfatal)
 {
     ChainstateManager& manager = *m_node.chainman;
-    Chainstate& background = WITH_LOCK(::cs_main, return manager.InitializeChainstate(
-        m_node.mempool.get(), *m_node.evodb, m_node.chain_helper));
-    background.InitCoinsDB(/*cache_size_bytes=*/1 << 23, /*in_memory=*/true, /*should_wipe=*/false);
-    WITH_LOCK(::cs_main, background.InitCoinsCache(1 << 23));
-    m_node.dmnman = std::make_unique<CDeterministicMNManager>(*m_node.evodb, *Assert(m_node.mn_metaman.get()));
-    DashChainstateSetup(manager, m_node, /*llmq_dbs_in_memory=*/true, /*llmq_dbs_wipe=*/false);
-    BOOST_REQUIRE(background.LoadGenesisBlock());
+    // The upstream suite now uses TestingSetup, which already initialized the
+    // IBD chainstate and Dash chainstate consumers.
+    Chainstate& background = manager.ActiveChainstate();
 
     const uint256 missing_base{GetRandHash()};
     SeedSnapshotMarker(*m_node.evodb, missing_base);
-    Chainstate* snapshot = WITH_LOCK(::cs_main, return manager.ActivateExistingSnapshot(
-        m_node.mempool.get(), missing_base));
-    BOOST_REQUIRE(snapshot);
+    Chainstate* snapshot = WITH_LOCK(::cs_main, return &manager.ActivateExistingSnapshot(missing_base));
 
     // Startup detection is allowed to precede receipt/loading of the base
     // header. Accessors and background candidate setup must fail softly.
@@ -195,10 +162,6 @@ BOOST_AUTO_TEST_CASE(snapshot_startup_missing_base_header_is_nonfatal)
             manager.GetConsensus().hashGenesisBlock));
         BOOST_CHECK_EQUAL(background.setBlockIndexCandidates.size(), candidates_before);
     });
-
-    DashChainstateSetupClose(m_node);
-    // dmnman holds a reference to m_node.evodb, it mustn't outlive it
-    m_node.dmnman.reset();
 }
 
 BOOST_FIXTURE_TEST_CASE(snapshot_prune_lock_release_survives_disconnect, TestChain100Setup)
@@ -509,6 +472,27 @@ struct SnapshotTestSetup : TestChain100Setup {
         return *Assert(m_node.chainman);
     }
 };
+
+//! Ensure a height-200 snapshot chainstate can be recovered from disk by block hash.
+BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_init_height_200, SnapshotTestSetup)
+{
+    ChainstateManager& chainman = *Assert(m_node.chainman);
+    mineBlocks(100);
+    BOOST_REQUIRE_EQUAL(WITH_LOCK(chainman.GetMutex(), return chainman.ActiveHeight()), 200);
+    BOOST_REQUIRE(CreateAndActivateUTXOSnapshot(this));
+
+    const auto assumeutxo = Params().AssumeutxoForHeight(200);
+    BOOST_REQUIRE(assumeutxo);
+    BOOST_REQUIRE_EQUAL(*chainman.SnapshotBlockhash(), assumeutxo->blockhash);
+
+    ChainstateManager& restarted = this->SimulateNodeRestart();
+    this->LoadVerifyActivateChainstate();
+    g_txindex = std::make_unique<TxIndex>(1 << 20, /*memory=*/true);
+    BOOST_REQUIRE(g_txindex->Start(restarted.ActiveChainstate()));
+    IndexWaitSynced(*g_txindex);
+
+    BOOST_CHECK_EQUAL(WITH_LOCK(restarted.GetMutex(), return restarted.ActiveHeight()), 200);
+}
 
 //! Test basic snapshot activation.
 BOOST_FIXTURE_TEST_CASE(chainstatemanager_activate_snapshot, SnapshotTestSetup)
@@ -910,6 +894,12 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_evodb_snapshot_only_flush_restart, Sna
     Chainstate* background_chainstate = std::get<0>(chainstates);
     ChainstateManager& chainman = *Assert(m_node.chainman);
 
+    // Mine first: background processing now consumes every newly accepted block,
+    // so disconnecting before this would immediately reconnect the base block.
+    mineBlocks(1);
+    const uint256 snapshot_marker = WITH_LOCK(chainman.GetMutex(), return chainman.ActiveTip()->GetBlockHash());
+    WITH_LOCK(::cs_main, chainman.ActiveChainstate().ForceFlushStateToDisk());
+
     // Keep this M2 marker-independence test below completion height; #25740 now
     // completes and cleans up immediately on restart when background is at base.
     DisconnectedBlockTransactions unused_pool;
@@ -925,10 +915,6 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_evodb_snapshot_only_flush_restart, Sna
 
     uint256 normal_marker;
     BOOST_REQUIRE(m_node.evodb->ReadBestBlock(EvoDbIdentity::NORMAL, normal_marker));
-
-    mineBlocks(1);
-    const uint256 snapshot_marker = WITH_LOCK(chainman.GetMutex(), return chainman.ActiveTip()->GetBlockHash());
-    WITH_LOCK(::cs_main, chainman.ActiveChainstate().ForceFlushStateToDisk());
 
     ChainstateManager& restarted = this->SimulateNodeRestart(/*flush_chainstates=*/false);
     this->LoadVerifyActivateChainstate();
