@@ -8,6 +8,7 @@
 #include <logging.h>
 #include <tinyformat.h>
 #include <util/system.h>
+#include <validation.h>
 
 constexpr uint8_t DB_TIMESTAMPINDEX{'s'};
 
@@ -49,15 +50,18 @@ bool TimestampIndex::DB::EraseTimestampIndex(const CTimestampIndexKey& key)
     return CDBWrapper::Erase(std::make_pair(DB_TIMESTAMPINDEX, key));
 }
 
-TimestampIndex::TimestampIndex(size_t n_cache_size, bool f_memory, bool f_wipe) :
+TimestampIndex::TimestampIndex(std::unique_ptr<interfaces::Chain> chain, size_t n_cache_size, bool f_memory, bool f_wipe) :
+    BaseIndex(std::move(chain)),
     m_db(std::make_unique<TimestampIndex::DB>(n_cache_size, f_memory, f_wipe))
 {
 }
 
 TimestampIndex::~TimestampIndex() = default;
 
-bool TimestampIndex::WriteBlock(const CBlock& block, const CBlockIndex* pindex)
+bool TimestampIndex::CustomAppend(const interfaces::BlockInfo& block)
 {
+    const CBlockIndex* pindex = WITH_LOCK(cs_main, return m_chainstate->m_blockman.LookupBlockIndex(block.hash));
+    assert(pindex);
     // Skip genesis block
     if (pindex->nHeight == 0) return true;
 
@@ -68,8 +72,12 @@ bool TimestampIndex::WriteBlock(const CBlock& block, const CBlockIndex* pindex)
     return m_db->Write(key);
 }
 
-bool TimestampIndex::Rewind(const CBlockIndex* current_tip, const CBlockIndex* new_tip)
+bool TimestampIndex::CustomRewind(const interfaces::BlockKey& current_tip_key, const interfaces::BlockKey& new_tip_key)
 {
+    LOCK(cs_main);
+    const CBlockIndex* current_tip = m_chainstate->m_blockman.LookupBlockIndex(current_tip_key.hash);
+    const CBlockIndex* new_tip = m_chainstate->m_blockman.LookupBlockIndex(new_tip_key.hash);
+    assert(current_tip && new_tip);
     assert(current_tip->GetAncestor(new_tip->nHeight) == new_tip);
 
     // Erase timestamp index entries for blocks being rewound
@@ -85,7 +93,7 @@ bool TimestampIndex::Rewind(const CBlockIndex* current_tip, const CBlockIndex* n
     }
 
     // Call base class Rewind to update the best block pointer
-    return BaseIndex::Rewind(current_tip, new_tip);
+    return true;
 }
 
 BaseIndex::DB& TimestampIndex::GetDB() const { return *m_db; }

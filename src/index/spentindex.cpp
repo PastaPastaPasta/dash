@@ -15,6 +15,7 @@
 #include <tinyformat.h>
 #include <undo.h>
 #include <util/system.h>
+#include <validation.h>
 
 constexpr uint8_t DB_SPENTINDEX{'p'};
 
@@ -53,15 +54,19 @@ bool SpentIndex::DB::EraseSpentIndex(const std::vector<CSpentIndexKey>& keys)
     return CDBWrapper::WriteBatch(batch);
 }
 
-SpentIndex::SpentIndex(size_t n_cache_size, bool f_memory, bool f_wipe) :
+SpentIndex::SpentIndex(std::unique_ptr<interfaces::Chain> chain, size_t n_cache_size, bool f_memory, bool f_wipe) :
+    BaseIndex(std::move(chain)),
     m_db(std::make_unique<SpentIndex::DB>(n_cache_size, f_memory, f_wipe))
 {
 }
 
 SpentIndex::~SpentIndex() = default;
 
-bool SpentIndex::WriteBlock(const CBlock& block, const CBlockIndex* pindex)
+bool SpentIndex::CustomAppend(const interfaces::BlockInfo& block)
 {
+    assert(block.data);
+    const CBlockIndex* pindex = WITH_LOCK(cs_main, return m_chainstate->m_blockman.LookupBlockIndex(block.hash));
+    assert(pindex);
     // Skip genesis block (no inputs to index)
     if (pindex->nHeight == 0) {
         return true;
@@ -78,13 +83,13 @@ bool SpentIndex::WriteBlock(const CBlock& block, const CBlockIndex* pindex)
 
     // Process each non-coinbase transaction
     // blockundo.vtxundo[i] corresponds to block.vtx[i+1] (coinbase is skipped in undo data)
-    if (blockundo.vtxundo.size() != block.vtx.size() - 1) {
+    if (blockundo.vtxundo.size() != block.data->vtx.size() - 1) {
         return error("%s: Undo data size mismatch for block %s (expected %zu, got %zu)", __func__,
-                     pindex->GetBlockHash().ToString(), block.vtx.size() - 1, blockundo.vtxundo.size());
+                     pindex->GetBlockHash().ToString(), block.data->vtx.size() - 1, blockundo.vtxundo.size());
     }
 
     for (size_t i = 0; i < blockundo.vtxundo.size(); i++) {
-        const CTransactionRef& tx = block.vtx[i + 1]; // +1 to skip coinbase
+        const CTransactionRef& tx = block.data->vtx[i + 1]; // +1 to skip coinbase
         const CTxUndo& txundo = blockundo.vtxundo[i];
         const uint256 txhash = tx->GetHash();
 
@@ -113,8 +118,12 @@ bool SpentIndex::WriteBlock(const CBlock& block, const CBlockIndex* pindex)
     return m_db->WriteBatch(entries);
 }
 
-bool SpentIndex::Rewind(const CBlockIndex* current_tip, const CBlockIndex* new_tip)
+bool SpentIndex::CustomRewind(const interfaces::BlockKey& current_tip_key, const interfaces::BlockKey& new_tip_key)
 {
+    LOCK(cs_main);
+    const CBlockIndex* current_tip = m_chainstate->m_blockman.LookupBlockIndex(current_tip_key.hash);
+    const CBlockIndex* new_tip = m_chainstate->m_blockman.LookupBlockIndex(new_tip_key.hash);
+    assert(current_tip && new_tip);
     assert(current_tip->GetAncestor(new_tip->nHeight) == new_tip);
 
     // Erase spent index entries for blocks being rewound
@@ -148,7 +157,7 @@ bool SpentIndex::Rewind(const CBlockIndex* current_tip, const CBlockIndex* new_t
     }
 
     // Call base class Rewind to update the best block pointer
-    return BaseIndex::Rewind(current_tip, new_tip);
+    return true;
 }
 
 BaseIndex::DB& SpentIndex::GetDB() const { return *m_db; }
