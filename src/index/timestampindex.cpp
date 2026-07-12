@@ -71,8 +71,11 @@ bool TimestampIndex::CustomAppend(const interfaces::BlockInfo& block)
     return m_db->Write(key);
 }
 
-bool TimestampIndex::Rewind(const CBlockIndex* current_tip, const CBlockIndex* new_tip)
+bool TimestampIndex::CustomRewind(const interfaces::BlockKey& current_tip_key, const interfaces::BlockKey& new_tip_key)
 {
+    const CBlockIndex* current_tip = m_chainstate->m_blockman.LookupBlockIndex(current_tip_key.hash);
+    const CBlockIndex* new_tip = m_chainstate->m_blockman.LookupBlockIndex(new_tip_key.hash);
+    assert(current_tip && new_tip);
     assert(current_tip->GetAncestor(new_tip->nHeight) == new_tip);
 
     // Erase timestamp index entries for blocks being rewound
@@ -88,7 +91,7 @@ bool TimestampIndex::Rewind(const CBlockIndex* current_tip, const CBlockIndex* n
     }
 
     // Call base class Rewind to update the best block pointer
-    return BaseIndex::Rewind(current_tip, new_tip);
+    return true;
 }
 
 BaseIndex::DB& TimestampIndex::GetDB() const { return *m_db; }

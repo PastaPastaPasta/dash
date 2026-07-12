@@ -271,8 +271,11 @@ bool AddressIndex::CustomAppend(const interfaces::BlockInfo& block)
     return m_db->WriteBatch(addressIndex, addressUnspentIndex);
 }
 
-bool AddressIndex::Rewind(const CBlockIndex* current_tip, const CBlockIndex* new_tip)
+bool AddressIndex::CustomRewind(const interfaces::BlockKey& current_tip_key, const interfaces::BlockKey& new_tip_key)
 {
+    const CBlockIndex* current_tip = m_chainstate->m_blockman.LookupBlockIndex(current_tip_key.hash);
+    const CBlockIndex* new_tip = m_chainstate->m_blockman.LookupBlockIndex(new_tip_key.hash);
+    assert(current_tip && new_tip);
     assert(current_tip->GetAncestor(new_tip->nHeight) == new_tip);
 
     // Rewind the unspent index by processing blocks in reverse
@@ -392,7 +395,7 @@ bool AddressIndex::Rewind(const CBlockIndex* current_tip, const CBlockIndex* new
     }
 
     // Call base class Rewind to update the best block pointer
-    return BaseIndex::Rewind(current_tip, new_tip);
+    return true;
 }
 
 BaseIndex::DB& AddressIndex::GetDB() const { return *m_db; }
