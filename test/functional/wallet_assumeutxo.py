@@ -7,17 +7,16 @@ See feature_assumeutxo.py for background.
 """
 from decimal import Decimal
 
-from test_framework.address import address_to_scriptpubkey
 from test_framework.descriptors import descsum_create
+from test_framework.governance import EXPECTED_STDERR_NO_GOV_PRUNE
 from test_framework.messages import COIN
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
     assert_greater_than,
     assert_raises_rpc_error,
-    ensure_for,
 )
-from test_framework.wallet import MiniWallet
+from test_framework.wallet import address_to_scriptpubkey, MiniWallet
 from test_framework.wallet_util import get_generate_key
 
 START_HEIGHT = 199
@@ -99,7 +98,7 @@ class AssumeutxoTest(BitcoinTestFramework):
         # and prune the chain again
         self.generate(n3, nblocks=500, sync_fun=self.no_op)
         assert_equal(n3.pruneblockchain(FINAL_HEIGHT), 298)  # 298 is the height of the last block pruned (pruneheight 299)
-        error_message = "Wallet loading failed. Prune: last wallet synchronisation goes beyond pruned data. You need to -reindex (download the whole blockchain again in case of a pruned node)"
+        error_message = "Wallet loading failed. Prune: last wallet synchronisation goes beyond pruned data. You need to -reindex (download the whole blockchain again in case of pruned node)"
         # This backup (backup_w2.dat) was created at height 199, so it can't be restored in a node with a pruneheight of 299
         assert_raises_rpc_error(-4, error_message, n3.restorewallet, "w2", "backup_w2.dat")
 
@@ -183,8 +182,6 @@ class AssumeutxoTest(BitcoinTestFramework):
             assert_equal(n.getblockchaininfo()[
                          "headers"], SNAPSHOT_BASE_HEIGHT)
 
-        w.backupwallet("backup_w.dat")
-
         self.log.info("-- Testing assumeutxo")
 
         assert_equal(n0.getblockcount(), SNAPSHOT_BASE_HEIGHT)
@@ -193,6 +190,10 @@ class AssumeutxoTest(BitcoinTestFramework):
         self.log.info(
             f"Creating a UTXO snapshot at height {SNAPSHOT_BASE_HEIGHT}")
         dump_output = n0.dumptxoutset('utxos.dat', "latest")
+
+        # dumptxoutset flushes chainstate notifications, ensuring Dash's wallet
+        # best-block locator is durable at the snapshot height before backup.
+        w.backupwallet("backup_w.dat")
 
         assert_equal(
             dump_output['txoutset_hash'],
@@ -280,7 +281,7 @@ class AssumeutxoTest(BitcoinTestFramework):
         n2.loadtxoutset(dump_output['path'])
         self.connect_nodes(0, 2)
         self.wait_until(lambda: len(n2.getchainstates()['chainstates']) == 1)
-        ensure_for(duration=1, f=lambda: n2.getbalance() == 34)
+        assert_equal(n2.getbalance(), 34)
 
         self.log.info("Ensuring descriptors can be loaded after background sync")
         n1.loadwallet(wallet_name)
@@ -288,6 +289,7 @@ class AssumeutxoTest(BitcoinTestFramework):
         assert_equal(result[0]['success'], True)
 
         self.test_restore_wallet_pruneheight(n3)
+        self.stop_node(3, expected_stderr=EXPECTED_STDERR_NO_GOV_PRUNE)
 
 if __name__ == '__main__':
     AssumeutxoTest().main()

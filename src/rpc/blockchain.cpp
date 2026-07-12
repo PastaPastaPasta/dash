@@ -1995,6 +1995,7 @@ void ReconsiderBlock(ChainstateManager& chainman, uint256 block_hash, bool ignor
         }
 
         chainman.ActiveChainstate().ResetBlockFailureFlags(pblockindex, ignore_chainlocks);
+        chainman.RecalculateBestHeader();
     }
 
     BlockValidationState state;

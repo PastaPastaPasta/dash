@@ -1659,7 +1659,7 @@ const CBlockIndex* Chainstate::SnapshotBase() const
 const CBlockIndex* Chainstate::TargetBlock() const
 {
     if (!m_target_blockhash) return nullptr;
-    if (!m_cached_target_block) m_cached_target_block = Assert(m_chainman.m_blockman.LookupBlockIndex(*m_target_blockhash));
+    if (!m_cached_target_block) m_cached_target_block = m_chainman.m_blockman.LookupBlockIndex(*m_target_blockhash);
     return m_cached_target_block;
 }
 
@@ -1772,7 +1772,7 @@ void Chainstate::InvalidChainFound(CBlockIndex* pindexNew)
         m_chainman.m_best_invalid = pindexNew;
     }
     if (m_chainman.m_best_header != nullptr && m_chainman.m_best_header->GetAncestor(pindexNew->nHeight) == pindexNew) {
-        m_chainman.m_best_header = m_chain.Tip();
+        m_chainman.RecalculateBestHeader();
     }
 
     LogPrintf("%s: invalid block=%s  height=%d  log2_work=%f  date=%s\n", __func__,
@@ -3907,6 +3907,9 @@ void Chainstate::TryAddBlockIndexCandidate(CBlockIndex* pindex)
     }
 
     const CBlockIndex* target_block{TargetBlock()};
+    if (m_target_blockhash && !target_block) {
+        return;
+    }
     if (!target_block) {
         // If no specific target block, add all entries that have more
         // work than the tip.
@@ -6130,7 +6133,7 @@ void ChainstateManager::RecalculateBestHeader()
     AssertLockHeld(cs_main);
     m_best_header = ActiveChain().Tip();
     for (auto& [_, index] : m_blockman.m_block_index) {
-        if (!(index.nStatus & BLOCK_FAILED_MASK) && m_best_header->nChainWork < index.nChainWork) {
+        if (!(index.nStatus & (BLOCK_FAILED_MASK | BLOCK_CONFLICT_CHAINLOCK)) && m_best_header->nChainWork < index.nChainWork) {
             m_best_header = &index;
         }
     }

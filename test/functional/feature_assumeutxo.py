@@ -141,8 +141,8 @@ class AssumeutxoTest(BitcoinTestFramework):
             [
                 # compressed txout value + scriptpubkey
                 ser_varint(compress_amount(MAX_MONEY + 1)) + ser_varint(0),
-                # outpoint txid + index + coin height/coinbase code
-                32 + 4 + 1,
+                # outpoint txid + index + two-byte coin height/coinbase code
+                32 + 4 + 2,
                 None,
                 "bad snapshot data after deserializing 0 coins - bad tx out value"
             ],  # Amount exceeds MAX_MONEY
@@ -372,15 +372,16 @@ class AssumeutxoTest(BitcoinTestFramework):
         Ensure an assumeutxo node is cleaning up the background chainstate
         """
         msg = []
+        snapshot_path = node.chain_path / "chainstate_snapshot"
         if assumeutxo_used:
             # Check that the snapshot actually existed before restart
-            assert (node.datadir_path / node.chain / "chainstate_snapshot").exists()
+            assert snapshot_path.exists()
             msg = ["cleaning up unneeded background chainstate"]
 
         with node.assert_debug_log(msg):
             yield
 
-        assert not (node.datadir_path / node.chain / "chainstate_snapshot").exists()
+        assert not snapshot_path.exists()
 
     def run_test(self):
         """
