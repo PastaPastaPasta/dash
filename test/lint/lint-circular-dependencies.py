@@ -22,12 +22,17 @@ EXPECTED_CIRCULAR_DEPENDENCIES = (
     "kernel/coinstats -> validation -> kernel/coinstats",
     "kernel/mempool_persist -> validation -> kernel/mempool_persist",
     # Dash
+    "active/context -> governance/superblock -> core_io -> index/spentindex -> index/base -> node/context -> active/context",
     "banman -> common/bloom -> evo/assetlocktx -> llmq/quorumsman -> llmq/blockprocessor -> net -> banman",
-    "coinjoin/client -> coinjoin/util -> wallet/wallet -> psbt -> node/transaction -> net_processing -> coinjoin/walletman -> coinjoin/client",
+    "coinjoin/client -> core_io -> index/spentindex -> index/base -> node/context -> coinjoin/walletman -> coinjoin/client",
+    "coinjoin/coinjoin -> core_io -> index/spentindex -> index/base -> node/context -> coinjoin/coinjoin",
+    "coinjoin/coinjoin -> core_io -> index/spentindex -> index/base -> node/context -> net_processing -> coinjoin/coinjoin",
     "common/bloom -> evo/assetlocktx -> llmq/commitment -> evo/deterministicmns -> evo/simplifiedmns -> merkleblock -> common/bloom",
     "common/bloom -> evo/assetlocktx -> llmq/quorumsman -> llmq/blockprocessor -> net -> common/bloom",
     "consensus/tx_verify -> evo/assetlocktx -> llmq/commitment -> validation -> consensus/tx_verify",
     "consensus/tx_verify -> evo/assetlocktx -> llmq/commitment -> validation -> txmempool -> consensus/tx_verify",
+    "core_io -> index/spentindex -> index/base -> node/context -> evo/chainhelper -> governance/superblock -> core_io",
+    "core_io -> index/spentindex -> index/base -> node/context -> net_processing -> evo/smldiff -> core_io",
     "evo/assetlocktx -> llmq/commitment -> validation -> txmempool -> evo/assetlocktx",
     "evo/chainhelper -> evo/creditpool -> validation -> evo/chainhelper",
     "evo/deterministicmns -> evo/providertx -> validation -> evo/deterministicmns",
@@ -40,6 +45,8 @@ EXPECTED_CIRCULAR_DEPENDENCIES = (
     "evo/specialtxman -> validation -> evo/specialtxman",
     "governance/superblock -> validation -> masternode/payments -> governance/superblock",
     "instantsend/instantsend -> node/blockstorage -> validation -> txmempool -> instantsend/instantsend",
+    "index/base -> node/context -> net_processing -> index/blockfilterindex -> index/base",
+    "index/base -> node/context -> net_processing -> index/txindex -> index/base",
     "llmq/blockprocessor -> llmq/utils -> llmq/snapshot -> llmq/blockprocessor",
     "llmq/commitment -> llmq/utils -> llmq/snapshot -> llmq/commitment",
     "net -> netmessagemaker -> net",
@@ -49,8 +56,6 @@ EXPECTED_CIRCULAR_DEPENDENCIES = (
     "qt/guiutil -> qt/qvalidatedlineedit -> qt/guiutil",
     "wallet/coinjoin -> wallet/receive -> wallet/coinjoin",
 
-    # Temporary, removed in followup https://github.com/bitcoin/bitcoin/pull/24230
-    "index/base -> node/context -> net_processing -> index/blockfilterindex -> index/base",
 )
 
 CODE_DIR = "src"

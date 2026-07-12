@@ -13,6 +13,7 @@
 #include <tinyformat.h>
 #include <undo.h>
 #include <util/system.h>
+#include <validation.h>
 
 constexpr uint8_t DB_ADDRESSINDEX{'a'};
 constexpr uint8_t DB_ADDRESSUNSPENTINDEX{'u'};
@@ -170,7 +171,7 @@ AddressIndex::~AddressIndex() = default;
 bool AddressIndex::CustomAppend(const interfaces::BlockInfo& block)
 {
     assert(block.data);
-    const CBlockIndex* pindex = m_chainstate->m_blockman.LookupBlockIndex(block.hash);
+    const CBlockIndex* pindex = WITH_LOCK(cs_main, return m_chainstate->m_blockman.LookupBlockIndex(block.hash));
     assert(pindex);
     // Skip genesis block (no inputs to index)
     if (pindex->nHeight == 0) {
@@ -273,6 +274,7 @@ bool AddressIndex::CustomAppend(const interfaces::BlockInfo& block)
 
 bool AddressIndex::CustomRewind(const interfaces::BlockKey& current_tip_key, const interfaces::BlockKey& new_tip_key)
 {
+    LOCK(cs_main);
     const CBlockIndex* current_tip = m_chainstate->m_blockman.LookupBlockIndex(current_tip_key.hash);
     const CBlockIndex* new_tip = m_chainstate->m_blockman.LookupBlockIndex(new_tip_key.hash);
     assert(current_tip && new_tip);
