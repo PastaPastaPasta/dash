@@ -520,7 +520,12 @@ class AssumeutxoTest(BitcoinTestFramework):
 
         for reindex_arg in ['-reindex=1', '-reindex-chainstate=1']:
             self.log.info(f"Check that restarting with {reindex_arg} will delete the snapshot chainstate")
-            self.restart_node(2, extra_args=[reindex_arg, *self.extra_args[2]])
+            reindex_args = [reindex_arg, *self.extra_args[2]]
+            if reindex_arg == '-reindex-chainstate=1':
+                # Dash forbids chainstate-only reindex while optional indexes
+                # are enabled because they cannot be rebuilt out of order.
+                reindex_args += ['-txindex=0', '-blockfilterindex=0', '-coinstatsindex=0']
+            self.restart_node(2, extra_args=reindex_args)
             assert_equal(1, len(n2.getchainstates()["chainstates"]))
             for i in range(1, 300):
                 block = n0.getblock(n0.getblockhash(i), 0)
@@ -528,6 +533,11 @@ class AssumeutxoTest(BitcoinTestFramework):
             loaded = n2.loadtxoutset(dump_output['path'])
             assert_equal(loaded['coins_loaded'], SNAPSHOT_BASE_HEIGHT)
             assert_equal(loaded['base_height'], SNAPSHOT_BASE_HEIGHT)
+
+        # The final -reindex-chainstate run disables optional indexes because
+        # Dash cannot rebuild them out of order. Re-enable them for the
+        # snapshot sync and index-completion checks below.
+        self.restart_node(2, extra_args=self.extra_args[2])
 
         normal, snapshot = n2.getchainstates()['chainstates']
         assert_equal(normal['blocks'], START_HEIGHT)

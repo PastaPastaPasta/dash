@@ -247,6 +247,8 @@ class AssumeutxoDashTest(DashTestFramework):
         node0.invalidateblock(extra_hash)
         assert_equal(node0.getblockcount(), base_height)
         node0.setnetworkactive(True)
+        for node_index in range(1, len(self.nodes)):
+            self.connect_nodes(0, node_index)
         force_finish_mnsync(node0)
         self.sync_all()
         self.wait_for_sporks_same()
@@ -418,7 +420,13 @@ class AssumeutxoDashTest(DashTestFramework):
         self.disconnect_nodes(snapshot_index, 0)
 
         completed, = snapshot_node.getchainstates()["chainstates"]
-        assert_equal(completed["blocks"], base_height)
+        # The rollback helper rolls the isolated block forward before writing.
+        # Once its header is later announced to the reconnected network, the
+        # quorum can ChainLock it and override the local invalidation used to
+        # hold the fixture at the snapshot base.
+        final_height = base_height + 1
+        assert_equal(completed["blocks"], final_height)
+        assert_equal(snapshot_node.getbestblockhash(), extra_hash)
         assert_equal(completed["validated"], True)
         assert_equal(completed["snapshot_blockhash"], base_hash)
         assert_equal(
@@ -438,7 +446,7 @@ class AssumeutxoDashTest(DashTestFramework):
         ):
             self.restart_node(snapshot_index, extra_args=snapshot_args)
         cleaned, = snapshot_node.getchainstates()["chainstates"]
-        assert_equal(cleaned["blocks"], base_height)
+        assert_equal(cleaned["blocks"], final_height)
         assert_equal(cleaned["validated"], True)
         assert "snapshot_blockhash" not in cleaned
         assert not (snapshot_node.chain_path / "chainstate_snapshot").exists()
@@ -447,7 +455,7 @@ class AssumeutxoDashTest(DashTestFramework):
         self.log.info("Restart once more after cleanup")
         self.restart_node(snapshot_index, extra_args=snapshot_args)
         final_state, = snapshot_node.getchainstates()["chainstates"]
-        assert_equal(final_state["blocks"], base_height)
+        assert_equal(final_state["blocks"], final_height)
         assert_equal(final_state["validated"], True)
         assert "snapshot_blockhash" not in final_state
 
