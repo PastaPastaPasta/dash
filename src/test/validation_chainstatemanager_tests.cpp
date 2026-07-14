@@ -949,9 +949,6 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_completion, SnapshotTestSetup
     // This call reinitializes the chainstates, and should clean up the now unnecessary
     // background-validation leveldb contents.
     this->LoadVerifyActivateChainstate();
-    g_txindex = std::make_unique<TxIndex>(1 << 20, /*memory=*/true);
-    BOOST_REQUIRE(g_txindex->Start(chainman_restarted.ActiveChainstate()));
-    IndexWaitSynced(*g_txindex);
 
     BOOST_CHECK(!fs::exists(snapshot_invalid_dir));
     // chainstate_snapshot should now *not* exist.
@@ -1040,14 +1037,11 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_cleanup_recovers_first_rename
         return chainman.MaybeCompleteSnapshotValidation([](bilingual_str) {})),
         SnapshotCompletionResult::SUCCESS);
 
-    ChainstateManager& restarted = this->SimulateNodeRestart();
+    this->SimulateNodeRestart();
     const fs::path data_dir{gArgs.GetDataDirNet()};
     fs::rename(data_dir / "chainstate", data_dir / "chainstate_todelete");
 
     this->LoadVerifyActivateChainstate();
-    g_txindex = std::make_unique<TxIndex>(1 << 20, /*memory=*/true);
-    BOOST_REQUIRE(g_txindex->Start(restarted.ActiveChainstate()));
-    IndexWaitSynced(*g_txindex);
 
     BOOST_CHECK(fs::exists(data_dir / "chainstate"));
     BOOST_CHECK(!fs::exists(data_dir / "chainstate_snapshot"));
@@ -1064,24 +1058,18 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_cleanup_recovers_completed_sw
         return chainman.MaybeCompleteSnapshotValidation([](bilingual_str) {})),
         SnapshotCompletionResult::SUCCESS);
 
-    ChainstateManager* restarted = &this->SimulateNodeRestart();
+    this->SimulateNodeRestart();
     const fs::path data_dir{gArgs.GetDataDirNet()};
     fs::rename(data_dir / "chainstate", data_dir / "chainstate_todelete");
     fs::rename(data_dir / "chainstate_snapshot", data_dir / "chainstate");
 
     this->LoadVerifyActivateChainstate();
-    g_txindex = std::make_unique<TxIndex>(1 << 20, /*memory=*/true);
-    BOOST_REQUIRE(g_txindex->Start(restarted->ActiveChainstate()));
-    IndexWaitSynced(*g_txindex);
     BOOST_CHECK(m_node.evodb->VerifyBestBlock(EvoDbIdentity::NORMAL, snapshot_tip));
     BOOST_CHECK(!m_node.evodb->HasDualChainstateMarker());
 
     // A restart of the already-promoted state is an idempotent no-op.
-    restarted = &this->SimulateNodeRestart();
+    this->SimulateNodeRestart();
     this->LoadVerifyActivateChainstate();
-    g_txindex = std::make_unique<TxIndex>(1 << 20, /*memory=*/true);
-    BOOST_REQUIRE(g_txindex->Start(restarted->ActiveChainstate()));
-    IndexWaitSynced(*g_txindex);
     BOOST_CHECK(m_node.evodb->VerifyBestBlock(EvoDbIdentity::NORMAL, snapshot_tip));
 }
 
@@ -1093,9 +1081,6 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_cleanup_recovers_invalid_rena
     fs::rename(data_dir / "chainstate_snapshot", data_dir / "chainstate_snapshot_INVALID");
 
     this->LoadVerifyActivateChainstate();
-    g_txindex = std::make_unique<TxIndex>(1 << 20, /*memory=*/true);
-    BOOST_REQUIRE(g_txindex->Start(restarted.ActiveChainstate()));
-    IndexWaitSynced(*g_txindex);
 
     BOOST_CHECK(fs::exists(data_dir / "chainstate_snapshot_INVALID"));
     BOOST_CHECK(!fs::exists(data_dir / "chainstate_snapshot"));
@@ -1116,16 +1101,13 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_cleanup_recovers_promoted_swa
         return chainman.MaybeCompleteSnapshotValidation([](bilingual_str) {})),
         SnapshotCompletionResult::SUCCESS);
 
-    ChainstateManager& restarted = this->SimulateNodeRestart();
+    this->SimulateNodeRestart();
     const fs::path data_dir{gArgs.GetDataDirNet()};
     fs::rename(data_dir / "chainstate", data_dir / "chainstate_todelete");
     fs::rename(data_dir / "chainstate_snapshot", data_dir / "chainstate");
     BOOST_REQUIRE(m_node.evodb->PromoteSnapshotMarkers(snapshot_tip));
 
     this->LoadVerifyActivateChainstate();
-    g_txindex = std::make_unique<TxIndex>(1 << 20, /*memory=*/true);
-    BOOST_REQUIRE(g_txindex->Start(restarted.ActiveChainstate()));
-    IndexWaitSynced(*g_txindex);
     BOOST_CHECK(!fs::exists(data_dir / "chainstate_todelete"));
     BOOST_CHECK(m_node.evodb->VerifyBestBlock(EvoDbIdentity::NORMAL, snapshot_tip));
 }
@@ -1194,9 +1176,6 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_completion_hash_mismatch, Sna
     // This call reinitializes the chainstates, and should clean up the now unnecessary
     // background-validation leveldb contents.
     this->LoadVerifyActivateChainstate();
-    g_txindex = std::make_unique<TxIndex>(1 << 20, /*memory=*/true);
-    BOOST_REQUIRE(g_txindex->Start(chainman_restarted.ActiveChainstate()));
-    IndexWaitSynced(*g_txindex);
 
     BOOST_CHECK(fs::exists(snapshot_invalid_dir));
     BOOST_CHECK(!fs::exists(snapshot_chainstate_dir));
