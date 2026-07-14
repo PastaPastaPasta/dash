@@ -98,6 +98,7 @@ BITCOIN_TESTS =\
   test/checkqueue_tests.cpp \
   test/cachemap_tests.cpp \
   test/cachemultimap_tests.cpp \
+  test/chrono_overflow_tests.cpp \
   test/coins_tests.cpp \
   test/coinstatsindex_tests.cpp \
   test/compilerbug_tests.cpp \

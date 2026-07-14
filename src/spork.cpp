@@ -125,7 +125,8 @@ void CSporkManager::CheckAndRemove()
 
 std::optional<CKeyID> CSporkManager::GetValidSporkSigner(const CSporkMessage& spork) const
 {
-    if (spork.TimeSigned() > GetAdjustedTime() + 2h) {
+    const auto now{std::chrono::time_point_cast<std::chrono::seconds>(GetAdjustedTime())};
+    if (spork.TimeSigned() > now + 2h) {
         LogPrint(BCLog::SPORK, "CSporkManager::%s -- ERROR: too far into the future\n", __func__);
         return std::nullopt;
     }
@@ -226,7 +227,8 @@ bool CSporkManager::IsSporkActive(SporkId nSporkID) const
     SporkValue nSporkValue = GetSporkValue(nSporkID);
     // Get time is somewhat costly it looks like
     const NodeSeconds activation_time{std::chrono::seconds{nSporkValue}};
-    const bool ret = activation_time < GetAdjustedTime();
+    const auto now{std::chrono::time_point_cast<std::chrono::seconds>(GetAdjustedTime())};
+    const bool ret = activation_time < now;
     // Only cache true values
     if (ret) {
         LOCK(cs_cache);

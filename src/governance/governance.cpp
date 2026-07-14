@@ -283,7 +283,7 @@ void CGovernanceManager::CheckOrphanVotes(CGovernanceObject& govobj)
 
     ScopedLockBool guard(cs_store, fRateChecksEnabled, false);
 
-    const auto now{GetAdjustedTime()};
+    const auto now{std::chrono::time_point_cast<std::chrono::seconds>(GetAdjustedTime())};
     const auto tip_mn_list = m_dmnman.GetListAtChainTip();
     for (const auto& orphan_vote : orphan_votes) {
         const auto& vote = orphan_vote.vote;
@@ -734,7 +734,7 @@ bool CGovernanceManager::MasternodeRateCheck(const CGovernanceObject& govobj, bo
 
     const COutPoint& masternodeOutpoint = govobj.GetMasternodeOutpoint();
     const auto timestamp{govobj.CreationTime()};
-    const auto now{GetAdjustedTime()};
+    const auto now{std::chrono::time_point_cast<std::chrono::seconds>(GetAdjustedTime())};
     const auto superblock_cycle{Params().GetConsensus().nSuperblockCycle * Params().GetConsensus().PowTargetSpacing()};
 
     std::string strHash = govobj.GetHash().ToString();
@@ -882,7 +882,7 @@ void CGovernanceManager::CheckPostponedObjects()
 
 
     // Perform additional relays for triggers
-    const auto now{GetAdjustedTime()};
+    const auto now{std::chrono::time_point_cast<std::chrono::seconds>(GetAdjustedTime())};
     const auto superblock_cycle{Params().GetConsensus().nSuperblockCycle * Params().GetConsensus().PowTargetSpacing()};
 
     for (auto it = setAdditionalRelayObjects.begin(); it != setAdditionalRelayObjects.end();) {

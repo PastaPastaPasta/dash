@@ -158,7 +158,8 @@ bool CGovernanceVote::CheckSignature(const CBLSPublicKey& pubKey) const
 
 bool CGovernanceVote::IsValid(const CDeterministicMNList& tip_mn_list, bool useVotingKey) const
 {
-    const auto max_time{GetAdjustedTime() + 1h};
+    const auto now{std::chrono::time_point_cast<std::chrono::seconds>(GetAdjustedTime())};
+    const auto max_time{now + 1h};
     if (Time() > max_time) {
         LogPrint(BCLog::GOBJECT, "CGovernanceVote::IsValid -- vote is too far ahead of current time - %s - nTime %lli - Max Time %lli\n", GetHash().ToString(), nTime, TicksSinceEpoch<std::chrono::seconds>(max_time));
         return false;

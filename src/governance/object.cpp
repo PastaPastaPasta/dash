@@ -144,9 +144,12 @@ bool ValidateStartEndEpoch(const UniValue& objJSON, bool fCheckExpiration, std::
         return false;
     }
 
-    if (fCheckExpiration && NodeSeconds{std::chrono::seconds{nEndEpoch}} <= GetAdjustedTime()) {
-        strErrorMessages += "expired;";
-        return false;
+    if (fCheckExpiration) {
+        const auto now{std::chrono::time_point_cast<std::chrono::seconds>(GetAdjustedTime())};
+        if (NodeSeconds{std::chrono::seconds{nEndEpoch}} <= now) {
+            strErrorMessages += "expired;";
+            return false;
+        }
     }
 
     return true;
@@ -438,17 +441,20 @@ bool CGovernanceObject::ProcessVote(CMasternodeMetaMan& mn_metaman, bool fRateCh
 
     auto vote_time_update{voteInstanceRef.last_update};
     if (fRateChecksEnabled) {
-        const auto now{GetAdjustedTime()};
-        const auto time_delta{now - voteInstanceRef.last_update};
-        if (time_delta < GOVERNANCE_UPDATE_MIN) {
+        const auto now{std::chrono::time_point_cast<std::chrono::seconds>(GetAdjustedTime())};
+        const bool within_update_window{now < NodeSeconds::min() + GOVERNANCE_UPDATE_MIN ||
+                                        voteInstanceRef.last_update > now - GOVERNANCE_UPDATE_MIN};
+        if (within_update_window) {
             std::string msg{strprintf("CGovernanceObject::%s -- Masternode voting too often, MN outpoint = %s, "
-                                      "governance object hash = %s, time delta = %d",
-                __func__, vote.GetMasternodeOutpoint().ToStringShort(), GetHash().ToString(), Ticks<std::chrono::seconds>(time_delta))};
+                                      "governance object hash = %s, last update = %d, current time = %d",
+                                      __func__, vote.GetMasternodeOutpoint().ToStringShort(), GetHash().ToString(),
+                                      TicksSinceEpoch<std::chrono::seconds>(voteInstanceRef.last_update),
+                                      TicksSinceEpoch<std::chrono::seconds>(now))};
             LogPrint(BCLog::GOBJECT, "%s\n", msg);
             exception = CGovernanceException(msg, GOVERNANCE_EXCEPTION_TEMPORARY_ERROR);
             return false;
         }
-        vote_time_update = std::chrono::time_point_cast<std::chrono::seconds>(now);
+        vote_time_update = now;
     }
 
     bool onlyVotingKeyAllowed = m_obj.type == GovernanceObject::PROPOSAL && vote.GetSignal() == VOTE_SIGNAL_FUNDING;
