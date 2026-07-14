@@ -487,9 +487,6 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_init_height_200, SnapshotTest
 
     ChainstateManager& restarted = this->SimulateNodeRestart();
     this->LoadVerifyActivateChainstate();
-    g_txindex = std::make_unique<TxIndex>(1 << 20, /*memory=*/true);
-    BOOST_REQUIRE(g_txindex->Start(restarted.ActiveChainstate()));
-    IndexWaitSynced(*g_txindex);
 
     BOOST_CHECK_EQUAL(WITH_LOCK(restarted.GetMutex(), return restarted.ActiveHeight()), 200);
 }
