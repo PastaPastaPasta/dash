@@ -144,7 +144,7 @@ bool ValidateStartEndEpoch(const UniValue& objJSON, bool fCheckExpiration, std::
         return false;
     }
 
-    if (fCheckExpiration && nEndEpoch <= GetAdjustedTime()) {
+    if (fCheckExpiration && NodeSeconds{std::chrono::seconds{nEndEpoch}} <= GetAdjustedTime()) {
         strErrorMessages += "expired;";
         return false;
     }
@@ -346,6 +346,12 @@ CGovernanceObject::CGovernanceObject(const uint256& nHashParentIn, int nRevision
     LoadData();
 }
 
+CGovernanceObject::CGovernanceObject(const uint256& nHashParentIn, int nRevisionIn, NodeClock::time_point time,
+                                     const uint256& nCollateralHashIn, const std::string& strDataHexIn) :
+    CGovernanceObject{nHashParentIn, nRevisionIn, TicksSinceEpoch<std::chrono::seconds>(time), nCollateralHashIn, strDataHexIn}
+{
+}
+
 CGovernanceObject::CGovernanceObject(const CGovernanceObject& other) :
     cs(),
     m_obj{other.m_obj},
@@ -430,19 +436,19 @@ bool CGovernanceObject::ProcessVote(CMasternodeMetaMan& mn_metaman, bool fRateCh
         LogPrint(BCLog::GOBJECT, "%s\n", msg);
     }
 
-    int64_t nNow = GetAdjustedTime();
-    int64_t nVoteTimeUpdate = voteInstanceRef.nTime;
+    auto vote_time_update{voteInstanceRef.last_update};
     if (fRateChecksEnabled) {
-        int64_t nTimeDelta = nNow - voteInstanceRef.nTime;
-        if (nTimeDelta < GOVERNANCE_UPDATE_MIN) {
+        const auto now{GetAdjustedTime()};
+        const auto time_delta{now - voteInstanceRef.last_update};
+        if (time_delta < GOVERNANCE_UPDATE_MIN) {
             std::string msg{strprintf("CGovernanceObject::%s -- Masternode voting too often, MN outpoint = %s, "
                                       "governance object hash = %s, time delta = %d",
-                __func__, vote.GetMasternodeOutpoint().ToStringShort(), GetHash().ToString(), nTimeDelta)};
+                __func__, vote.GetMasternodeOutpoint().ToStringShort(), GetHash().ToString(), Ticks<std::chrono::seconds>(time_delta))};
             LogPrint(BCLog::GOBJECT, "%s\n", msg);
             exception = CGovernanceException(msg, GOVERNANCE_EXCEPTION_TEMPORARY_ERROR);
             return false;
         }
-        nVoteTimeUpdate = nNow;
+        vote_time_update = std::chrono::time_point_cast<std::chrono::seconds>(now);
     }
 
     bool onlyVotingKeyAllowed = m_obj.type == GovernanceObject::PROPOSAL && vote.GetSignal() == VOTE_SIGNAL_FUNDING;
@@ -459,7 +465,7 @@ bool CGovernanceObject::ProcessVote(CMasternodeMetaMan& mn_metaman, bool fRateCh
 
     mn_metaman.AddGovernanceVote(dmn->proTxHash, vote.GetParentHash());
 
-    voteInstanceRef = vote_instance_t(vote.GetOutcome(), nVoteTimeUpdate, vote.GetTimestamp());
+    voteInstanceRef = vote_instance_t(vote.GetOutcome(), vote_time_update, vote.GetTimestamp());
     fileVotes.AddVote(vote);
     fDirtyCache = true;
     // SEND NOTIFICATION TO SCRIPT/ZMQ
