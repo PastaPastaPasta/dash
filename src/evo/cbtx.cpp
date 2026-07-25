@@ -9,7 +9,6 @@
 #include <llmq/commitment.h>
 #include <llmq/options.h>
 #include <llmq/quorumsman.h>
-#include <llmq/utils.h>
 #include <util/std23.h>
 
 #include <chain.h>
@@ -60,7 +59,6 @@ auto CachedGetQcHashesQcIndexedHashes(const CBlockIndex* pindexPrev, const llmq:
 
     static Mutex cs_cache;
     static std::map<Consensus::LLMQType, std::vector<const CBlockIndex*>> quorums_cached GUARDED_BY(cs_cache);
-    static std::map<Consensus::LLMQType, Uint256LruHashMap<std::pair<uint256, int>>> qc_hashes_cached GUARDED_BY(cs_cache);
     static QcHashMap qcHashes_cached GUARDED_BY(cs_cache);
     static QcIndexedHashMap qcIndexedHashes_cached GUARDED_BY(cs_cache);
 
@@ -70,18 +68,24 @@ auto CachedGetQcHashesQcIndexedHashes(const CBlockIndex* pindexPrev, const llmq:
     }
 
     // Quorums set is different, reset cached values.
-    // qc_hashes_cached must be cleared too: it is keyed only by the quorum *base*
-    // block hash, but the underlying mined commitment (SerializeHash of the
-    // CFinalCommitment stored under DB_MINED_COMMITMENT) is not immutable for a
-    // given quorumHash — UndoBlock erases it and a competing chain may mine a
-    // different but equally valid commitment (signers is serialized into the
-    // hash but not into the signed commitmentHash). Leaving the LRU intact
-    // across that mutation produces a permanent bad-cbtx-quorummerkleroot split.
+    //
+    // Do NOT reintroduce a cache keyed on the quorum *base* block hash here (there used to be a
+    // process-lifetime `qc_hashes_cached` LRU memoising ::SerializeHash(minedCommitment)). That key
+    // is not sufficient to identify the value: the DB_MINED_COMMITMENT row for a given quorumHash is
+    // mutable. CQuorumBlockProcessor::UndoBlock erases it on disconnect and re-adds the commitment as
+    // mineable, so a competing chain can mine a *different but equally valid* CFinalCommitment for the
+    // same quorum -- the signed commitmentHash covers only (llmqType, quorumHash, validMembers,
+    // quorumPublicKey, quorumVvecHash) and not the `signers` bitset, while `signers` does feed into
+    // ::SerializeHash. Surviving that mutation, such a cache returns the pre-reorg hash, this function
+    // computes a merkle root nobody else agrees on, and ConnectBlock rejects the honest majority tip
+    // with bad-cbtx-quorummerkleroot (BLOCK_CONSENSUS) -- marking it BLOCK_FAILED_VALID on disk, which
+    // a restart does not clear. That is a permanent chain split.
+    //
+    // Any such cache must be keyed on something that pins the commitment content (e.g. the mined block
+    // hash returned alongside it by GetMinedCommitment), not on the quorum base block hash alone.
     quorums_cached.clear();
     qcHashes_cached.clear();
     qcIndexedHashes_cached.clear();
-    qc_hashes_cached.clear();
-    llmq::utils::InitQuorumsCache(qc_hashes_cached, Params().GetConsensus());
 
     for (const auto& [llmqType, vecBlockIndexes] : quorums) {
         const auto& llmq_params_opt = Params().GetLLMQ(llmqType);
@@ -91,23 +95,18 @@ auto CachedGetQcHashesQcIndexedHashes(const CBlockIndex* pindexPrev, const llmq:
         vec_hashes.reserve(vecBlockIndexes.size());
         auto& map_indexed_hashes = qcIndexedHashes_cached[llmqType];
         for (const auto& blockIndex : vecBlockIndexes) {
-            uint256 block_hash{blockIndex->GetBlockHash()};
+            const uint256 block_hash{blockIndex->GetBlockHash()};
 
-            std::pair<uint256, int> qc_hash;
-            if (!qc_hashes_cached[llmqType].get(block_hash, qc_hash)) {
-                auto [pqc, dummy_hash] = quorum_block_processor.GetMinedCommitment(llmqType, block_hash);
-                if (dummy_hash == uint256::ZERO) {
-                    // this should never happen
-                    return std::nullopt;
-                }
-                qc_hash.first = ::SerializeHash(pqc);
-                qc_hash.second = rotation_enabled ? pqc.quorumIndex : 0;
-                qc_hashes_cached[llmqType].insert(block_hash, qc_hash);
+            const auto [pqc, mined_block_hash] = quorum_block_processor.GetMinedCommitment(llmqType, block_hash);
+            if (mined_block_hash == uint256::ZERO) {
+                // this should never happen
+                return std::nullopt;
             }
+            const uint256 qc_hash{::SerializeHash(pqc)};
             if (rotation_enabled) {
-                map_indexed_hashes[qc_hash.second] = qc_hash.first;
+                map_indexed_hashes[pqc.quorumIndex] = qc_hash;
             } else {
-                vec_hashes.emplace_back(qc_hash.first);
+                vec_hashes.emplace_back(qc_hash);
             }
         }
     }

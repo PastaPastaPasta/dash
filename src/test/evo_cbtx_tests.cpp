@@ -77,7 +77,7 @@ static llmq::CFinalCommitment MakeDistinctCommitment(const Consensus::LLMQParams
 static uint256 CalcQuorumMerkleRoot(const CBlockIndex* pindex_prev, const llmq::CQuorumBlockProcessor& qbp)
 {
     CBlock block;
-    // Coinbase only — current-block commitments are intentionally absent so the result is
+    // Coinbase only: current-block commitments are intentionally absent so the result is
     // driven solely by CachedGetQcHashesQcIndexedHashes / GetMinedCommitment.
     CMutableTransaction coinbase;
     coinbase.vin.emplace_back();
@@ -135,18 +135,19 @@ BOOST_FIXTURE_TEST_CASE(check_cbtx_best_chainlock_rejects_excessive_height_diff,
     BOOST_CHECK_EQUAL(state_big.GetRejectReason(), "bad-cbtx-cldiff");
 }
 
-// V034: qc_hashes_cached in CachedGetQcHashesQcIndexedHashes is a process-lifetime LRU keyed
-// only by the quorum *base* block hash. On reorg, UndoBlock erases the EvoDB mined-commitment
-// row and a competing chain may mine a different but equally valid CFinalCommitment for the
-// same quorum (signers is serialized into SerializeHash but not into the signed commitment
-// hash). Sibling caches are cleared when the active-quorum set changes; qc_hashes_cached is
-// not. A subsequent CalcCbTxMerkleRootQuorums call then returns the stale hash and rejects
-// the honest majority tip with bad-cbtx-quorummerkleroot (BLOCK_CONSENSUS).
+// V034: CachedGetQcHashesQcIndexedHashes must never memoise ::SerializeHash(minedCommitment)
+// under a key that is only the quorum *base* block hash. The EvoDB mined-commitment row for a
+// given quorumHash is mutable: on reorg UndoBlock erases it and a competing chain may mine a
+// different but equally valid CFinalCommitment for the same quorum (`signers` feeds into
+// SerializeHash but is not covered by the signed commitmentHash). A cache surviving that
+// mutation makes CalcCbTxMerkleRootQuorums return a root derived from the pre-reorg commitment,
+// rejecting the honest majority tip with bad-cbtx-quorummerkleroot (BLOCK_CONSENSUS) -- which is
+// persisted as BLOCK_FAILED_VALID and therefore survives restart. Permanent chain split.
 //
-// This test seeds EvoDB directly (no full DKG) to isolate the cache defect:
-//   1. Populate the LRU with SerializeHash(C1) for quorum base H_Q.
-//   2. Force the outer quorums_cached short-circuit to miss (as intermediate reorg blocks do)
-//      by evaluating against a tip below the mined height.
+// This test seeds EvoDB directly (no full DKG) to pin that invariant:
+//   1. Chain A mines C1 for quorum base H_Q; compute the root (warms any cache keyed on H_Q).
+//   2. Evaluate against a tip below the mined height, so the outer quorums_cached short-circuit
+//      misses exactly as it does for intermediate blocks of a real reorg.
 //   3. Replace the EvoDB row with C2 (simulating UndoBlock + ConnectBlock of the competing tip).
 //   4. Recompute: must agree with a fresh SerializeHash(C2) root, not the stale C1 value.
 BOOST_FIXTURE_TEST_CASE(cbtx_quorum_merkle_root_reorg_invalidates_mined_commitment_cache, TestChain100Setup)
@@ -183,7 +184,7 @@ BOOST_FIXTURE_TEST_CASE(cbtx_quorum_merkle_root_reorg_invalidates_mined_commitme
     const uint256 hash_c2 = ::SerializeHash(c2);
     BOOST_REQUIRE(hash_c1 != hash_c2);
 
-    // Independent expected roots (single active commitment → single leaf).
+    // Independent expected roots (single active commitment -> single leaf).
     const uint256 expected_root_c1 = ComputeMerkleRoot(std::vector<uint256>{hash_c1});
     const uint256 expected_root_c2 = ComputeMerkleRoot(std::vector<uint256>{hash_c2});
     BOOST_REQUIRE(expected_root_c1 != expected_root_c2);
