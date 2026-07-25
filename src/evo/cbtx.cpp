@@ -69,13 +69,19 @@ auto CachedGetQcHashesQcIndexedHashes(const CBlockIndex* pindexPrev, const llmq:
         return std::make_pair(qcHashes_cached, qcIndexedHashes_cached);
     }
 
-    // Quorums set is different, reset cached values
+    // Quorums set is different, reset cached values.
+    // qc_hashes_cached must be cleared too: it is keyed only by the quorum *base*
+    // block hash, but the underlying mined commitment (SerializeHash of the
+    // CFinalCommitment stored under DB_MINED_COMMITMENT) is not immutable for a
+    // given quorumHash — UndoBlock erases it and a competing chain may mine a
+    // different but equally valid commitment (signers is serialized into the
+    // hash but not into the signed commitmentHash). Leaving the LRU intact
+    // across that mutation produces a permanent bad-cbtx-quorummerkleroot split.
     quorums_cached.clear();
     qcHashes_cached.clear();
     qcIndexedHashes_cached.clear();
-    if (qc_hashes_cached.empty()) {
-        llmq::utils::InitQuorumsCache(qc_hashes_cached, Params().GetConsensus());
-    }
+    qc_hashes_cached.clear();
+    llmq::utils::InitQuorumsCache(qc_hashes_cached, Params().GetConsensus());
 
     for (const auto& [llmqType, vecBlockIndexes] : quorums) {
         const auto& llmq_params_opt = Params().GetLLMQ(llmqType);
