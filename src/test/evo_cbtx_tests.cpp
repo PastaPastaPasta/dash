@@ -135,7 +135,7 @@ BOOST_FIXTURE_TEST_CASE(check_cbtx_best_chainlock_rejects_excessive_height_diff,
     BOOST_CHECK_EQUAL(state_big.GetRejectReason(), "bad-cbtx-cldiff");
 }
 
-// V034: CachedGetQcHashesQcIndexedHashes must never memoise ::SerializeHash(minedCommitment)
+// CachedGetQcHashesQcIndexedHashes must never memoise ::SerializeHash(minedCommitment)
 // under a key that is only the quorum *base* block hash. The EvoDB mined-commitment row for a
 // given quorumHash is mutable: on reorg UndoBlock erases it and a competing chain may mine a
 // different but equally valid CFinalCommitment for the same quorum (`signers` feeds into
