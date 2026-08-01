@@ -176,9 +176,11 @@ bool CEvoDB::PromoteSnapshotMarkers(const uint256& expected_snapshot_tip)
     uint256 snapshot_tip;
     if (!db->Read(snapshot_key, snapshot_tip)) {
         uint256 normal_tip;
-        return db->Read(EVODB_BEST_BLOCK, normal_tip) && normal_tip == expected_snapshot_tip &&
-               !db->Exists(EVODB_DUAL_CHAINSTATE) && !db->Exists(EVODB_SNAPSHOT_MNLIST_HASH) &&
-               !db->Exists(EVODB_BACKGROUND_MNLIST_HASH);
+        const bool already_promoted = db->Read(EVODB_BEST_BLOCK, normal_tip) && normal_tip == expected_snapshot_tip &&
+                                      !db->Exists(EVODB_DUAL_CHAINSTATE) && !db->Exists(EVODB_SNAPSHOT_MNLIST_HASH) &&
+                                      !db->Exists(EVODB_BACKGROUND_MNLIST_HASH);
+        if (already_promoted) m_default_identity = EvoDbIdentity::NORMAL;
+        return already_promoted;
     }
     if (snapshot_tip != expected_snapshot_tip) return false;
 
@@ -188,7 +190,11 @@ bool CEvoDB::PromoteSnapshotMarkers(const uint256& expected_snapshot_tip)
     batch.Erase(EVODB_SNAPSHOT_MNLIST_HASH);
     batch.Erase(EVODB_BACKGROUND_MNLIST_HASH);
     batch.Erase(EVODB_DUAL_CHAINSTATE);
-    return db->WriteBatch(batch, /*fSync=*/true);
+    if (!db->WriteBatch(batch, /*fSync=*/true)) return false;
+    // The dual-chainstate run is over: the promoted state is the NORMAL
+    // identity, so transaction-less access must resolve there again.
+    m_default_identity = EvoDbIdentity::NORMAL;
+    return true;
 }
 
 bool CEvoDB::DiscardSnapshotMarkers()
@@ -206,5 +212,9 @@ bool CEvoDB::DiscardSnapshotMarkers()
     batch.Erase(EVODB_SNAPSHOT_MNLIST_HASH);
     batch.Erase(EVODB_BACKGROUND_MNLIST_HASH);
     batch.Erase(EVODB_DUAL_CHAINSTATE);
-    return db->WriteBatch(batch, /*fSync=*/true);
+    if (!db->WriteBatch(batch, /*fSync=*/true)) return false;
+    // The snapshot chainstate is gone; transaction-less access must resolve
+    // against the NORMAL identity again.
+    m_default_identity = EvoDbIdentity::NORMAL;
+    return true;
 }

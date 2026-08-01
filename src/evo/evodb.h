@@ -218,9 +218,8 @@ public:
     bool IsEmpty() { return db->IsEmpty(); }
 
     //! Set the identity used by reads/writes outside any transaction. Must
-    //! track the active chainstate: snapshot activation sets SNAPSHOT.
-    //! TODO(assumeutxo): snapshot completion (marker promotion) must reset
-    //! this to NORMAL.
+    //! track the active chainstate: snapshot activation sets SNAPSHOT;
+    //! PromoteSnapshotMarkers/DiscardSnapshotMarkers reset it to NORMAL.
     void SetDefaultIdentity(EvoDbIdentity identity) EXCLUSIVE_LOCKS_REQUIRED(!cs)
     {
         LOCK(cs);
