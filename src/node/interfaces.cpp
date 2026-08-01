@@ -104,11 +104,9 @@ namespace node {
 namespace {
 std::vector<CScript> GetOwnerPayoutScripts(const CDeterministicMNState& state)
 {
-    std::vector<CScript> ret;
-    for (const auto& payout : GetOwnerPayouts(state)) {
-        ret.emplace_back(payout.scriptPayout);
-    }
-    return ret;
+    // Shared-aware: for a shared masternode this is each share's reward script, so the GUI
+    // recognizes masternodes a wallet participates in
+    return state.GetOwnerRewardScripts();
 }
 
 class MnEntryImpl : public MnEntry
