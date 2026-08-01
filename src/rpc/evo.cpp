@@ -1307,8 +1307,14 @@ static UniValue protx_update_service_common_wrapper(const JSONRPCRequest& reques
             // use operator reward address as default source for fees
             ExtractDestination(ptx.scriptOperatorPayout, feeSource);
         } else {
-            // use payout address as default source for fees
+            // use payout address as default source for fees. A shared masternode has no payout
+            // list; its share reward scripts belong to the participants, not the operator running
+            // this command, so there is no sensible default to fall back to.
             const auto owner_payouts = GetOwnerPayouts(*dmn->pdmnState);
+            if (owner_payouts.empty()) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER,
+                                   "masternode has no default fee source; specify feeSourceAddress");
+            }
             ExtractDestination(owner_payouts.front().scriptPayout, feeSource);
         }
     }
@@ -2055,14 +2061,37 @@ static bool CheckWalletOwnsScript(const CWallet* const pwallet, const CScript& s
 
 static bool CheckWalletOwnsAnyPayout(const CWallet* const pwallet, const CDeterministicMNState& state)
 {
-    for (const auto& payout : GetOwnerPayouts(state)) {
-        if (CheckWalletOwnsScript(pwallet, payout.scriptPayout)) return true;
+    for (const auto& script : state.GetOwnerRewardScripts()) {
+        if (CheckWalletOwnsScript(pwallet, script)) return true;
     }
     return false;
 }
 
 static bool CheckWalletOwnsKey(const CWallet* const pwallet, const CKeyID& keyID) {
     return CheckWalletOwnsScript(pwallet, GetScriptForDestination(PKHash(keyID)));
+}
+
+static bool CheckWalletOwnsAnyOwnerKey(const CWallet* const pwallet, const CDeterministicMNState& state)
+{
+    // A shared masternode has a null keyIDOwner; the share owner keys take its place
+    if (state.IsShared()) {
+        for (const auto& share : state.shares) {
+            if (CheckWalletOwnsKey(pwallet, share.keyIDOwner)) return true;
+        }
+        return false;
+    }
+    return CheckWalletOwnsKey(pwallet, state.keyIDOwner);
+}
+
+static bool CheckWalletOwnsAnyShareRefund(const CWallet* const pwallet, const CDeterministicMNState& state)
+{
+    // A dissolution returns each share's collateral to its refund script. The non-shared
+    // equivalent (the collateral UTXO) is matched via ListProTxCoins, which cannot see the
+    // shared covenant output, so match the refund destinations directly.
+    for (const auto& share : state.shares) {
+        if (CheckWalletOwnsScript(pwallet, share.scriptRefund)) return true;
+    }
+    return false;
 }
 #endif
 
@@ -2092,7 +2121,7 @@ static UniValue BuildDMNListEntry(const CWallet* const pwallet, const CDetermini
     o.pushKV("confirmations", confirmations);
 
 #ifdef ENABLE_WALLET
-    bool hasOwnerKey = CheckWalletOwnsKey(pwallet, dmn.pdmnState->keyIDOwner);
+    bool hasOwnerKey = CheckWalletOwnsAnyOwnerKey(pwallet, *dmn.pdmnState);
     bool hasVotingKey = CheckWalletOwnsKey(pwallet, dmn.pdmnState->keyIDVoting);
 
     bool ownsCollateral = false;
@@ -2202,9 +2231,10 @@ static RPCHelpMan protx_list()
         CDeterministicMNList mnList = dmnman.GetListForBlock(chainman.ActiveChain()[height]);
         mnList.ForEachMN(/*onlyValid=*/false, [&](const auto& dmn) {
             if (setOutpts.count(dmn.collateralOutpoint) ||
-                CheckWalletOwnsKey(wallet.get(), dmn.pdmnState->keyIDOwner) ||
+                CheckWalletOwnsAnyOwnerKey(wallet.get(), *dmn.pdmnState) ||
                 CheckWalletOwnsKey(wallet.get(), dmn.pdmnState->keyIDVoting) ||
                 CheckWalletOwnsAnyPayout(wallet.get(), *dmn.pdmnState) ||
+                CheckWalletOwnsAnyShareRefund(wallet.get(), *dmn.pdmnState) ||
                 CheckWalletOwnsScript(wallet.get(), dmn.pdmnState->scriptOperatorPayout)) {
                 ret.push_back(BuildDMNListEntry(wallet.get(), dmn, mn_metaman, detailed, chainman));
             }
