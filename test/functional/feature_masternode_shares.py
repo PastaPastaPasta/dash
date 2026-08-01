@@ -409,6 +409,10 @@ class MasternodeSharesTest(DashTestFramework):
         ]
         protx_hash2, _ = self.register_shared(node, shares2, port_offset=2)
         standby_hex = node.protx("dissolve", protx_hash2, 0, DISSOLVE_FEE, False, False)
+        # a signed unilateral dissolution must not be re-signed via the multi-party flow:
+        # shared_sign signs the unanimous digest, which can never verify on a one-signature
+        # transaction, so it fails fast instead of producing unusable signatures
+        assert_raises_rpc_error(-8, "needs no shared_sign step", node.protx, "shared_sign", standby_hex)
         assert_equal(node.testmempoolaccept([standby_hex])[0]["allowed"], False)
         # mine past the early-period boundary; the same signed hex becomes and stays valid
         self.bump_mocktime(10 * 60 + 1)

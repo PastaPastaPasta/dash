@@ -1572,9 +1572,11 @@ static RPCHelpMan protx_revoke()
 static RPCHelpMan protx_shared_sign()
 {
     return RPCHelpMan{"protx shared_sign",
-        "\nSigns a shared masternode transaction (shared ProRegTx, ProDisTx or ProUpSharedRegTx) with every\n"
-        "share owner key this wallet holds and returns the produced signatures. The transaction itself is\n"
-        "not modified; pass the signatures to \"protx shared_combine\".\n"
+        "\nSigns a shared masternode transaction (shared ProRegTx, unanimous ProDisTx or ProUpSharedRegTx)\n"
+        "with every share owner key this wallet holds and returns the produced signatures. The transaction\n"
+        "itself is not modified; pass the signatures to \"protx shared_combine\".\n"
+        "Only the multi-party flows pass through here: a unilateral dissolution is built, signed and\n"
+        "submitted in one step by \"protx dissolve\" and never needs shared_sign.\n"
         + HELP_REQUIRING_PASSPHRASE,
         {
             {"tx", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The serialized transaction in hex format."},
@@ -1617,13 +1619,21 @@ static RPCHelpMan protx_shared_sign()
         if (!opt_ptx) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "transaction payload not deserializable");
         }
+        // shared_sign only ever signs unanimous dissolutions (built unsigned by dissolve_prepare);
+        // the signing digest commits to the signature count, so signatures produced here would
+        // never verify on a transaction carrying a different count. A unilateral dissolution is
+        // built, signed and submitted in one step by "protx dissolve" and must not pass through
+        // here at all.
+        if (!opt_ptx->vchSigs.empty()) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER,
+                               "transaction already carries dissolution signatures; a unilateral dissolution "
+                               "is created fully signed by \"protx dissolve\" and needs no shared_sign step");
+        }
         const auto dmn = dmnman.GetListAtChainTip().GetMN(opt_ptx->proTxHash);
         if (!dmn || !dmn->pdmnState->IsShared()) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "shared masternode not found");
         }
         shares = dmn->pdmnState->shares;
-        // shared_sign only ever signs unanimous dissolutions (built by dissolve_prepare); a
-        // unilateral dissolution is signed inline by "protx dissolve"
         sign_hash = opt_ptx->MakeSignHash(CTransaction(tx), static_cast<uint8_t>(shares.size()));
     } else if (tx.nType == TRANSACTION_PROVIDER_UPDATE_SHARED_REGISTRAR) {
         const auto opt_ptx = GetTxPayload<CProUpSharedRegTx>(tx);
