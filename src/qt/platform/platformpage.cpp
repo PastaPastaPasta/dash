@@ -21,10 +21,12 @@
 #include <qt/walletmodel.h>
 #include <util/strencodings.h>
 
+#include <QEvent>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPainter>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QSizePolicy>
 #include <QStackedWidget>
 #include <QTimer>
@@ -40,6 +42,28 @@ void SetMinimumLineHeight(QLabel* label, int lines = 1)
     label->setMinimumHeight(label->fontMetrics().lineSpacing() * lines +
                             2 * (label->margin() + label->frameWidth()));
 }
+
+//! QLabel whose minimum height always fits its wrapped contents at the
+//! current width. A word-wrapping QLabel's minimumSizeHint is only about one
+//! line tall, so a tight layout (or a font rescale after layout) can shrink
+//! it below its content and silently clip the last line(s).
+class WrappedLabel : public QLabel
+{
+public:
+    using QLabel::QLabel;
+
+protected:
+    void resizeEvent(QResizeEvent* event) override
+    {
+        setMinimumHeight(heightForWidth(width()));
+        QLabel::resizeEvent(event);
+    }
+    void changeEvent(QEvent* event) override
+    {
+        if (event->type() == QEvent::FontChange) setMinimumHeight(heightForWidth(width()));
+        QLabel::changeEvent(event);
+    }
+};
 } // namespace
 
 PlatformPage::PlatformPage(QWidget* parent) :
@@ -54,11 +78,11 @@ PlatformPage::PlatformPage(QWidget* parent) :
     auto* wl = new QVBoxLayout(welcome_page);
     auto* title = new QLabel(tr("DashPay"), welcome_page);
     GUIUtil::setFont({title}, GUIUtil::FontWeight::Bold, 20);
-    m_welcome = new QLabel(welcome_page);
+    m_welcome = new WrappedLabel(welcome_page);
     m_welcome->setWordWrap(true);
     m_welcome->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
     m_welcome->setAlignment(Qt::AlignHCenter);
-    m_welcome_steps = new QLabel(welcome_page);
+    m_welcome_steps = new WrappedLabel(welcome_page);
     m_welcome_steps->setWordWrap(true);
     m_welcome_steps->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
     m_welcome_steps->setTextFormat(Qt::RichText);
@@ -163,7 +187,6 @@ PlatformPage::PlatformPage(QWidget* parent) :
     }
 
     GUIUtil::updateFonts();
-    SetMinimumLineHeight(m_welcome);
     SetMinimumLineHeight(m_dashboard_username);
     SetMinimumLineHeight(m_dashboard_profile);
     SetMinimumLineHeight(m_dashboard_status);
