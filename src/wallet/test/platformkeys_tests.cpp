@@ -2,14 +2,23 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <interfaces/coinjoin.h>
+#include <interfaces/wallet.h>
+#include <key_io.h>
+#include <script/standard.h>
 #include <test/util/setup_common.h>
 #include <util/strencodings.h>
+#include <wallet/coincontrol.h>
+#include <wallet/context.h>
 #include <wallet/platformkeys.h>
+#include <wallet/spend.h>
+#include <wallet/wallet.h>
 
 #include <boost/test/unit_test.hpp>
 
 #include <array>
 
+using namespace wallet;
 using namespace wallet::platformkeys;
 
 BOOST_FIXTURE_TEST_SUITE(platformkeys_tests, BasicTestingSetup)
@@ -139,6 +148,113 @@ BOOST_AUTO_TEST_CASE(ecdh_symmetry)
     BOOST_REQUIRE(ComputeECDHSecret(b, a.GetPubKey(), s_ba));
     BOOST_CHECK_EQUAL(s_ab.size(), 32U);
     BOOST_CHECK(s_ab == s_ba);
+}
+
+//! Descriptor wallet with a BIP39 mnemonic, wrapped in the interfaces::Wallet
+//! the Platform GUI talks to. getPlatformSeed() only serves descriptor wallets
+//! it can recover a mnemonic from, so SetupDescriptorScriptPubKeyMans() is a
+//! prerequisite for every friendship keychain call below.
+struct FriendshipWalletSetup : public TestChain100Setup {
+    FriendshipWalletSetup()
+    {
+        m_context.args = &m_args;
+        m_context.chain = m_node.chain.get();
+        m_context.coinjoin_loader = m_node.coinjoin_loader.get();
+
+        m_wallet = std::make_shared<CWallet>(m_node.chain.get(), m_node.coinjoin_loader.get(), "", m_args,
+                                             CreateMockWalletDatabase());
+        m_wallet->LoadWallet();
+        {
+            LOCK(m_wallet->cs_wallet);
+            m_wallet->SetWalletFlag(WALLET_FLAG_DESCRIPTORS);
+            m_wallet->SetupDescriptorScriptPubKeyMans("", "");
+        }
+        m_iface = interfaces::MakeWallet(m_context, m_wallet);
+    }
+
+    isminetype IsMine(const CTxDestination& destination)
+    {
+        LOCK(m_wallet->cs_wallet);
+        return m_wallet->IsMine(GetScriptForDestination(destination));
+    }
+
+    //! Payment address `index` of the friendship chain rooted at (user_a, user_b),
+    //! taken through the same xpub export the contact would receive.
+    CTxDestination PaymentDestination(const uint256& user_a, const uint256& user_b, uint32_t index)
+    {
+        CPubKey xpub;
+        uint256 chaincode;
+        BOOST_REQUIRE(m_iface->getFriendshipXpub(ACCOUNT, user_a, user_b, xpub, chaincode));
+        CTxDestination destination;
+        BOOST_REQUIRE(m_iface->getFriendshipPaymentDestination(xpub, chaincode, index, destination));
+        return destination;
+    }
+
+    static constexpr uint32_t ACCOUNT{0};
+    const uint256 m_my_id{uint256S("1111111111111111111111111111111111111111111111111111111111111111")};
+    const uint256 m_their_id{uint256S("2222222222222222222222222222222222222222222222222222222222222222")};
+
+    WalletContext m_context;
+    std::shared_ptr<CWallet> m_wallet;
+    std::unique_ptr<interfaces::Wallet> m_iface;
+};
+
+//! Our own receiving chain for a friendship is imported as a private
+//! descriptor: its addresses must be spendable, not watch-only, and coins paid
+//! to them must count towards the spendable balance.
+BOOST_FIXTURE_TEST_CASE(friendship_own_chain_is_spendable, FriendshipWalletSetup)
+{
+    std::string error;
+    BOOST_REQUIRE_MESSAGE(m_iface->importFriendshipKeychains(ACCOUNT, m_my_id, m_their_id, "DashPay friend", error),
+                          error);
+
+    // Reaching the destination through getFriendshipXpub also pins that the
+    // exported xpub the contact pays to derives the very addresses the import
+    // made ours.
+    for (uint32_t index = 0; index < 5; ++index) {
+        BOOST_CHECK_EQUAL(IsMine(PaymentDestination(m_my_id, m_their_id, index)), ISMINE_SPENDABLE);
+    }
+
+    const CScript script{GetScriptForDestination(PaymentDestination(m_my_id, m_their_id, 0))};
+    CMutableTransaction payment;
+    payment.vin.emplace_back(g_insecure_rand_ctx.rand256(), 0);
+    payment.vout.emplace_back(COIN, script);
+
+    LOCK(m_wallet->cs_wallet);
+    m_wallet->AddToWallet(MakeTransactionRef(payment), TxStateInMempool{});
+
+    CCoinControl coin_control;
+    coin_control.m_include_unsafe_inputs = true;
+    BOOST_CHECK_EQUAL(AvailableCoins(*m_wallet, &coin_control).size(), 1U);
+}
+
+//! The contact's receiving chain must never become ours. If it did, payments to
+//! the contact would be classified as payments-to-self and their outputs would
+//! be counted as our own coins.
+BOOST_FIXTURE_TEST_CASE(friendship_contact_chain_is_not_ours, FriendshipWalletSetup)
+{
+    std::string error;
+    BOOST_REQUIRE_MESSAGE(m_iface->importFriendshipKeychains(ACCOUNT, m_my_id, m_their_id, "DashPay friend", error),
+                          error);
+
+    // The contact's receiving chain for this friendship is the reversed id
+    // pair; importing our own chain must not have pulled it in.
+    for (uint32_t index = 0; index < 5; ++index) {
+        BOOST_CHECK_EQUAL(IsMine(PaymentDestination(m_their_id, m_my_id, index)), ISMINE_NO);
+    }
+
+    // A real contact derives that chain from their own seed, which our wallet
+    // never sees; those destinations must be foreign too.
+    CExtKey contact_key;
+    const std::array<std::byte, 32> contact_seed{std::byte{7}};
+    contact_key.SetSeed(contact_seed);
+    const CExtPubKey contact_xpub{contact_key.Neuter()};
+    for (uint32_t index = 0; index < 5; ++index) {
+        CTxDestination destination;
+        BOOST_REQUIRE(m_iface->getFriendshipPaymentDestination(contact_xpub.pubkey, contact_xpub.chaincode, index,
+                                                               destination));
+        BOOST_CHECK_EQUAL(IsMine(destination), ISMINE_NO);
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()
