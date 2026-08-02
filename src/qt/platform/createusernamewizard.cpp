@@ -11,11 +11,14 @@
 #include <qt/platform/platformservice.h>
 #include <qt/walletmodel.h>
 
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
+#include <QPushButton>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
+#include <QStackedWidget>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -34,9 +37,6 @@ void ReserveWrappedLabelHeight(QLabel* label, int lines = 1)
 
 void AddPageHeader(QVBoxLayout* layout, QWidget* parent, const QString& title, const QString& subtitle = {})
 {
-    // QWizard's native ModernStyle header is repainted incorrectly by the
-    // macOS dark theme when a page emits completeChanged(). Keep the header
-    // in the page layout so its geometry and palette remain stable.
     auto* heading = new QLabel(title, parent);
     QFont heading_font{heading->font()};
     heading_font.setBold(true);
@@ -56,30 +56,95 @@ void AddPageHeader(QVBoxLayout* layout, QWidget* parent, const QString& title, c
 // ---- Wizard -----------------------------------------------------------------
 
 CreateUsernameWizard::CreateUsernameWizard(PlatformService& service, WalletModel& wallet_model, QWidget* parent) :
-    QWizard(parent),
+    QDialog(parent),
     m_service(service),
     m_wallet_model(wallet_model)
 {
     setWindowTitle(tr("Register a DashPay username"));
-    setWizardStyle(QWizard::ModernStyle);
     setMinimumSize(520, 400);
-    setOption(QWizard::NoBackButtonOnStartPage, true);
-    setOption(QWizard::DisabledBackButtonOnLastPage, true);
 
-    setPage(PAGE_ENTRY, new UsernameEntryPage(service, this));
-    setPage(PAGE_COST, new UsernameCostPage(service, wallet_model, this));
-    setPage(PAGE_PROGRESS, new UsernameProgressPage(service, this));
+    m_entry = new UsernameEntryPage(service, this);
+    m_cost = new UsernameCostPage(service, wallet_model, *m_entry, this);
+    m_progress = new UsernameProgressPage(service, this);
+
+    m_stack = new QStackedWidget(this);
+    m_stack->insertWidget(PAGE_ENTRY, m_entry);
+    m_stack->insertWidget(PAGE_COST, m_cost);
+    m_stack->insertWidget(PAGE_PROGRESS, m_progress);
+
+    m_back = new QPushButton(tr("Back"), this);
+    m_next = new QPushButton(this);
+    m_next->setDefault(true);
+    m_cancel = new QPushButton(tr("Cancel"), this);
+
+    auto* buttons = new QHBoxLayout();
+    buttons->addStretch();
+    buttons->addWidget(m_back);
+    buttons->addWidget(m_next);
+    buttons->addWidget(m_cancel);
+
+    auto* layout = new QVBoxLayout(this);
+    layout->addWidget(m_stack);
+    layout->addLayout(buttons);
+
+    connect(m_back, &QPushButton::clicked, this, &CreateUsernameWizard::onBack);
+    connect(m_next, &QPushButton::clicked, this, &CreateUsernameWizard::onNext);
+    connect(m_cancel, &QPushButton::clicked, this, &QDialog::reject);
+    for (UsernameWizardPage* page : {static_cast<UsernameWizardPage*>(m_entry),
+                                     static_cast<UsernameWizardPage*>(m_cost),
+                                     static_cast<UsernameWizardPage*>(m_progress)}) {
+        connect(page, &UsernameWizardPage::completeChanged, this, &CreateUsernameWizard::updateButtons);
+    }
+
+    setCurrentPage(PAGE_ENTRY);
 }
 
 void CreateUsernameWizard::startAtProgress()
 {
-    setStartId(PAGE_PROGRESS);
+    setCurrentPage(PAGE_PROGRESS);
+}
+
+UsernameWizardPage* CreateUsernameWizard::currentPage() const
+{
+    return static_cast<UsernameWizardPage*>(m_stack->currentWidget());
+}
+
+void CreateUsernameWizard::setCurrentPage(int id, bool initialize)
+{
+    m_stack->setCurrentIndex(id);
+    if (initialize) currentPage()->initializePage();
+    updateButtons();
+}
+
+void CreateUsernameWizard::onBack()
+{
+    // Only the cost page has a back button. Skip initializePage on the way
+    // back so the entry page keeps its state, matching QWizard semantics.
+    if (m_stack->currentIndex() == PAGE_COST) setCurrentPage(PAGE_ENTRY, /*initialize=*/false);
+}
+
+void CreateUsernameWizard::onNext()
+{
+    if (!currentPage()->validatePage()) return;
+    switch (m_stack->currentIndex()) {
+    case PAGE_ENTRY: setCurrentPage(PAGE_COST); break;
+    case PAGE_COST: setCurrentPage(PAGE_PROGRESS); break;
+    case PAGE_PROGRESS: accept(); break;
+    }
+}
+
+void CreateUsernameWizard::updateButtons()
+{
+    const int id{m_stack->currentIndex()};
+    m_back->setVisible(id == PAGE_COST);
+    m_next->setText(id == PAGE_PROGRESS ? tr("Finish") : tr("Next"));
+    m_next->setEnabled(currentPage()->isComplete());
 }
 
 // ---- Entry page -------------------------------------------------------------
 
 UsernameEntryPage::UsernameEntryPage(PlatformService& service, QWidget* parent) :
-    QWizardPage(parent),
+    UsernameWizardPage(parent),
     m_service(service)
 {
     auto* layout = new QVBoxLayout(this);
@@ -152,16 +217,16 @@ bool UsernameEntryPage::isComplete() const
     return m_available && !m_checked_normalized.isEmpty();
 }
 
-int UsernameEntryPage::nextId() const { return PAGE_COST; }
-
 QString UsernameEntryPage::username() const { return m_input->text().trimmed(); }
 
 // ---- Cost page --------------------------------------------------------------
 
-UsernameCostPage::UsernameCostPage(PlatformService& service, WalletModel& wallet_model, QWidget* parent) :
-    QWizardPage(parent),
+UsernameCostPage::UsernameCostPage(PlatformService& service, WalletModel& wallet_model, const UsernameEntryPage& entry,
+                                   QWidget* parent) :
+    UsernameWizardPage(parent),
     m_service(service),
-    m_wallet_model(wallet_model)
+    m_wallet_model(wallet_model),
+    m_entry(entry)
 {
     auto* layout = new QVBoxLayout(this);
     AddPageHeader(layout, this, tr("Confirm registration"));
@@ -177,8 +242,7 @@ UsernameCostPage::UsernameCostPage(PlatformService& service, WalletModel& wallet
 
 void UsernameCostPage::initializePage()
 {
-    auto* entry = qobject_cast<UsernameEntryPage*>(wizard()->page(PAGE_ENTRY));
-    m_funding_amount = entry && entry->contested()
+    m_funding_amount = m_entry.contested()
         ? m_service.params().contested_identity_funding_amount
         : m_service.params().default_identity_funding_amount;
     const auto unit{m_wallet_model.getOptionsModel()->getDisplayUnit()};
@@ -187,8 +251,8 @@ void UsernameCostPage::initializePage()
                           "state transitions.")
                            .arg(BitcoinUnits::formatWithUnit(unit, m_funding_amount)));
 
-    m_warning->setVisible(entry && entry->contested());
-    if (entry && entry->contested()) {
+    m_warning->setVisible(m_entry.contested());
+    if (m_entry.contested()) {
         m_warning->setText(tr("This is a premium (contested) name. The funding includes the 0.2 DASH "
                               "vote reserve. Masternodes will vote on who receives it; the process "
                               "can take weeks and you may not win it."));
@@ -197,14 +261,11 @@ void UsernameCostPage::initializePage()
 
 bool UsernameCostPage::validatePage()
 {
-    auto* entry = qobject_cast<UsernameEntryPage*>(wizard()->page(PAGE_ENTRY));
-    if (!entry) return false;
-
     WalletModel::UnlockContext ctx{m_wallet_model.requestUnlock()};
     if (!ctx.isValid()) return false;
 
     QString error;
-    if (!m_service.identityFlow().start(entry->username(), m_funding_amount, error)) {
+    if (!m_service.identityFlow().start(m_entry.username(), m_funding_amount, error)) {
         m_warning->setVisible(true);
         m_warning->setText(error);
         return false;
@@ -215,7 +276,7 @@ bool UsernameCostPage::validatePage()
 // ---- Progress page ----------------------------------------------------------
 
 UsernameProgressPage::UsernameProgressPage(PlatformService& service, QWidget* parent) :
-    QWizardPage(parent),
+    UsernameWizardPage(parent),
     m_service(service)
 {
     auto* layout = new QVBoxLayout(this);
