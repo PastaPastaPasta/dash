@@ -225,7 +225,10 @@ class AssumeutxoDashTest(DashTestFramework):
         assert_equal(oracle["base_hash"], base_hash)
 
         self.log.info("Dump the same base historically and prove rollback+rollforward preserves Evo state")
-        node0.setnetworkactive(False)
+        # Wait for all connections to drop; mining the extra block while a peer
+        # is still attached would relay it and let the quorums ChainLock it,
+        # making the invalidateblock below split node0 from the network.
+        self.isolate_node(0)
         extra_hash = self.generate(node0, 1, sync_fun=self.no_op)[0]
         assert_equal(node0.getblockcount(), base_height + 1)
         dump = node0.dumptxoutset("assumeutxo-dash.dat", rollback=base_height)
@@ -409,6 +412,10 @@ class AssumeutxoDashTest(DashTestFramework):
         self.restart_node(snapshot_index, extra_args=snapshot_args)
         self.assert_unvalidated_snapshot(snapshot_node, base_height, base_hash, advanced_height)
 
+        self.log.info("Roll the once-isolated block forward on node0")
+        node0.reconsiderblock(extra_hash)
+        assert_equal(node0.getbestblockhash(), extra_hash)
+
         self.log.info("Complete background validation and its deferred evo comparison")
         with snapshot_node.assert_debug_log(
             ["has been fully validated"],
@@ -417,13 +424,12 @@ class AssumeutxoDashTest(DashTestFramework):
         ):
             self.connect_nodes(snapshot_index, 0)
             self.wait_until(lambda: len(snapshot_node.getchainstates()["chainstates"]) == 1, timeout=180)
+        self.sync_blocks([node0, snapshot_node])
         self.disconnect_nodes(snapshot_index, 0)
 
         completed, = snapshot_node.getchainstates()["chainstates"]
-        # The rollback helper rolls the isolated block forward before writing.
-        # Once its header is later announced to the reconnected network, the
-        # quorum can ChainLock it and override the local invalidation used to
-        # hold the fixture at the snapshot base.
+        # The snapshot chainstate must have followed the reconsidered block
+        # past the snapshot base while it was connected to node0.
         final_height = base_height + 1
         assert_equal(completed["blocks"], final_height)
         assert_equal(snapshot_node.getbestblockhash(), extra_hash)
