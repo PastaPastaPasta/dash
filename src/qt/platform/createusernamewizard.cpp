@@ -195,19 +195,26 @@ void UsernameEntryPage::onTextChanged()
 
 void UsernameEntryPage::onAvailability(const QString& normalized_label, bool available, bool contested)
 {
-    const std::string typed_norm{platform::st::NormalizeLabel(m_input->text().trimmed().toStdString())};
+    const QString typed{m_input->text().trimmed()};
+    const std::string typed_norm{platform::st::NormalizeLabel(typed.toStdString())};
     if (QString::fromStdString(typed_norm) != normalized_label) return; // stale
 
     m_available = available;
     m_contested = contested;
     m_checked_normalized = normalized_label;
+    // DPNS decides availability on the normalized label (lowercased, with
+    // o->0 and i/l->1 confusable folding). When that differs from what the
+    // user typed, show both so the message doesn't look like a typo.
+    const QString shown{typed == normalized_label
+                            ? QStringLiteral("\"%1\"").arg(normalized_label)
+                            : tr("\"%1\" (registered as \"%2\")").arg(typed, normalized_label)};
     if (!available) {
-        m_status->setText(tr("\"%1\" is already taken.").arg(normalized_label));
+        m_status->setText(tr("%1 is already taken.").arg(shown));
     } else if (contested) {
-        m_status->setText(tr("\"%1\" is a premium name. Registration triggers a masternode vote "
-                             "that can take weeks and may be awarded to someone else.").arg(normalized_label));
+        m_status->setText(tr("%1 is a premium name. Registration triggers a masternode vote "
+                             "that can take weeks and may be awarded to someone else.").arg(shown));
     } else {
-        m_status->setText(tr("\"%1\" is available.").arg(normalized_label));
+        m_status->setText(tr("%1 is available.").arg(shown));
     }
     Q_EMIT completeChanged();
 }
