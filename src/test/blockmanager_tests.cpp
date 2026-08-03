@@ -6,6 +6,7 @@
 #include <node/blockstorage.h>
 #include <node/context.h>
 #include <streams.h>
+#include <txdb.h>
 #include <validation.h>
 
 #include <boost/test/unit_test.hpp>
@@ -96,6 +97,64 @@ BOOST_FIXTURE_TEST_CASE(prune_lock_update_and_delete, TestingSetup)
     BOOST_CHECK(blockman.DeletePruneLock("test_lock"));
     BOOST_CHECK(!blockman.DeletePruneLock("test_lock"));
     BOOST_CHECK(!blockman.DeletePruneLock("nonexistent"));
+}
+
+BOOST_FIXTURE_TEST_CASE(blockmanager_upgrade_legacy_assumeutxo_index, TestChain100Setup)
+{
+    LOCK(::cs_main);
+    auto& chainman{*Assert(m_node.chainman)};
+    auto& blockman{chainman.m_blockman};
+    CBlockIndex* legacy_index{chainman.ActiveChain().Tip()};
+    CBlockIndex* valid_index{legacy_index->pprev};
+
+    const BlockStatus legacy_status{legacy_index->nStatus};
+    const unsigned int legacy_tx{legacy_index->nTx};
+    const unsigned int legacy_chain_tx{legacy_index->nChainTx};
+    const int32_t legacy_sequence_id{legacy_index->nSequenceId};
+    const BlockStatus valid_status{valid_index->nStatus};
+    const unsigned int valid_tx{valid_index->nTx};
+    const unsigned int valid_chain_tx{valid_index->nChainTx};
+
+    // Persist the pre-M6 shape: a header-only entry with fabricated counts and
+    // the old assumed-valid bit. Also set the reserved bit on a fully validated
+    // entry to ensure the migration is gated on validity.
+    legacy_index->nStatus = BlockStatus{BLOCK_VALID_TREE | BLOCK_STATUS_RESERVED};
+    legacy_index->nTx = 1;
+    legacy_index->nChainTx = 1;
+    legacy_index->nSequenceId = 0; // Not persisted; mimic a newly constructed index on restart.
+    valid_index->nStatus = BlockStatus{valid_index->nStatus | BLOCK_STATUS_RESERVED};
+    BOOST_REQUIRE(blockman.m_block_tree_db->WriteBatchSync({}, 0, {legacy_index, valid_index}));
+
+    chainman.ActiveChainstate().ClearBlockIndexCandidates();
+    BOOST_REQUIRE(chainman.LoadBlockIndex());
+    BOOST_CHECK_EQUAL(legacy_index->nTx, 0U);
+    BOOST_CHECK_EQUAL(legacy_index->nChainTx, 0U);
+    BOOST_CHECK(!(legacy_index->nStatus & BLOCK_STATUS_RESERVED));
+    BOOST_CHECK_EQUAL(valid_index->nTx, valid_tx);
+    BOOST_CHECK_EQUAL(valid_index->nChainTx, valid_chain_tx);
+    BOOST_CHECK(valid_index->nStatus & BLOCK_STATUS_RESERVED);
+    chainman.CheckBlockIndex();
+
+    // The upgraded entry must be dirty so the repair survives another reload.
+    BOOST_REQUIRE(blockman.WriteBlockIndexDB());
+    legacy_index->nStatus = BlockStatus{BLOCK_VALID_TREE | BLOCK_STATUS_RESERVED};
+    legacy_index->nTx = 1;
+    legacy_index->nChainTx = 0; // Not persisted; mimic a newly constructed index on restart.
+    chainman.ActiveChainstate().ClearBlockIndexCandidates();
+    BOOST_REQUIRE(chainman.LoadBlockIndex());
+    BOOST_CHECK_EQUAL(legacy_index->nTx, 0U);
+    BOOST_CHECK_EQUAL(legacy_index->nChainTx, 0U);
+    BOOST_CHECK(!(legacy_index->nStatus & BLOCK_STATUS_RESERVED));
+    chainman.CheckBlockIndex();
+
+    legacy_index->nStatus = legacy_status;
+    legacy_index->nTx = legacy_tx;
+    legacy_index->nChainTx = legacy_chain_tx;
+    legacy_index->nSequenceId = legacy_sequence_id;
+    valid_index->nStatus = valid_status;
+    valid_index->nTx = valid_tx;
+    valid_index->nChainTx = valid_chain_tx;
+    BOOST_REQUIRE(blockman.m_block_tree_db->WriteBatchSync({}, 0, {legacy_index, valid_index}));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -598,9 +598,10 @@ public:
     const CBlockIndex* SnapshotBase() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     /**
-     * The set of all CBlockIndex entries with either BLOCK_VALID_TRANSACTIONS (for
-     * itself and all ancestors) *or* BLOCK_ASSUMED_VALID (if using background
-     * chainstates) and as good as our current tip or better. Entries may be failed,
+     * The set of all CBlockIndex entries that have as much work as our current
+     * tip or more, and transaction data needed to be validated (with
+     * BLOCK_VALID_TRANSACTIONS for each block and its parents back to the
+     * genesis block or an assumeutxo snapshot block). Entries may be failed,
      * though, and pruning nodes may be missing the data for the block.
      */
     std::set<CBlockIndex*, node::CBlockIndexWorkComparator> setBlockIndexCandidates;
@@ -925,6 +926,8 @@ private:
     const CChainParams m_chainparams;
 
     //! Internal helper for ActivateSnapshot().
+    //! De-serialization of a UTXO and Dash evo snapshot created by the
+    //! dumptxoutset RPC.
     [[nodiscard]] bool PopulateAndValidateSnapshot(
         Chainstate& snapshot_chainstate,
         AutoFile& coins_file,
@@ -1070,9 +1073,8 @@ public:
     //!   faking nTx* block index data along the way.
     //! - Move the new chainstate to `m_snapshot_chainstate` and make it our
     //!   ChainstateActive().
-    [[nodiscard]] bool ActivateSnapshot(
-        AutoFile& coins_file, const node::SnapshotMetadata& metadata, bool in_memory,
-        std::string* error = nullptr);
+    [[nodiscard]] util::Result<void> ActivateSnapshot(
+        AutoFile& coins_file, const node::SnapshotMetadata& metadata, bool in_memory);
 
     //! Once the background validation chainstate has reached the height which
     //! is the base of the UTXO snapshot in use, compare its coins to ensure

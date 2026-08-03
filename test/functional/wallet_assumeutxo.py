@@ -11,11 +11,14 @@ See feature_assumeutxo.py for background.
 - TODO: test loading a wallet (backup) on a pruned node
 
 """
+from decimal import Decimal
+
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
     assert_raises_rpc_error,
 )
+from test_framework.wallet import MiniWallet
 
 START_HEIGHT = 199
 SNAPSHOT_BASE_HEIGHT = 299
@@ -55,11 +58,35 @@ class AssumeutxoTest(BitcoinTestFramework):
         n0 = self.nodes[0]
         n1 = self.nodes[1]
 
+        self.mini_wallet = MiniWallet(n0)
+
         # Mock time for a deterministic chain
         for n in self.nodes:
             n.setmocktime(n.getblockheader(n.getbestblockhash())['time'])
 
         self.sync_blocks()
+
+        # Dash's cached regtest chain does not pay to MiniWallet's descriptor.
+        # Fund it from a mature deterministic coinbase before creating the
+        # non-coinbase transactions covered by this test.
+        funding_block = n0.getblock(n0.getblockhash(1), 3)
+        funding_prev = funding_block["tx"][0]
+        funding_prevout = {
+            "txid": funding_prev["txid"],
+            "vout": 0,
+            "scriptPubKey": funding_prev["vout"][0]["scriptPubKey"]["hex"],
+        }
+        funding_raw = n0.createrawtransaction(
+            [funding_prevout],
+            {self.mini_wallet.get_address(): funding_prev["vout"][0]["value"] - Decimal("0.001")},
+        )
+        funding_signed = n0.signrawtransactionwithkey(
+            funding_raw,
+            [n0.get_deterministic_priv_key().key],
+            [funding_prevout],
+        )["hex"]
+        n0.sendrawtransaction(funding_signed)
+        self.mini_wallet.rescan_utxos()
 
         n0.createwallet('w')
         w = n0.get_wallet_rpc("w")
@@ -69,7 +96,9 @@ class AssumeutxoTest(BitcoinTestFramework):
         # though, we have to ferry over the new headers to n1 so that it
         # isn't waiting forever to see the header of the snapshot's base block
         # while disconnected from n0.
-        for _ in range(100):
+        for i in range(100):
+            if i != 0 and i % 3 == 0:
+                self.mini_wallet.send_self_transfer(from_node=n0)
             self.generate(n0, nblocks=1, sync_fun=self.no_op)
             newblock = n0.getblock(n0.getbestblockhash(), 0)
 
@@ -90,13 +119,13 @@ class AssumeutxoTest(BitcoinTestFramework):
 
         self.log.info(
             f"Creating a UTXO snapshot at height {SNAPSHOT_BASE_HEIGHT}")
-        dump_output = n0.dumptxoutset('utxos.dat')
+        dump_output = n0.dumptxoutset('utxos.dat', "latest")
 
         assert_equal(
             dump_output['txoutset_hash'],
-            'd7f46f9830ea11f1bfc565b08f63b66f09e1403b54c988ede40461cf0846fcba')
-        assert_equal(dump_output['evo_hash'], 'f2ccd3fef604df58a0c174489821e16912c9332969a267650cd040e85fb2adde')
-        assert_equal(dump_output['nchaintx'], 300)
+            'f6571ed786c40dcbb835b38090eaca87762cf421874461caa779738c7ff602fa')
+        assert_equal(dump_output['evo_hash'], 'c3cc873878e8d1714ac14149eaae0ccf88b10f2a691ca9256fb4326ff5ec4001')
+        assert_equal(dump_output["nchaintx"], 334)
         assert_equal(n0.getblockchaininfo()["blocks"], SNAPSHOT_BASE_HEIGHT)
 
         # Mine more blocks on top of the snapshot that n1 hasn't yet seen. This

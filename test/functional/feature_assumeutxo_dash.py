@@ -22,6 +22,7 @@ from test_framework.util import (
     assert_raises_rpc_error,
     force_finish_mnsync,
     initialize_datadir,
+    sha256sum_file,
 )
 
 
@@ -218,8 +219,44 @@ class AssumeutxoDashTest(DashTestFramework):
         assert ordinary_quorums
         assert rotated_quorums
 
+        self.log.info("Create a tip oracle for the full Dash UTXO+evo snapshot")
+        oracle = node0.dumptxoutset("assumeutxo-dash-oracle.dat", "latest")
+        assert_equal(oracle["base_height"], base_height)
+        assert_equal(oracle["base_hash"], base_hash)
+
+        self.log.info("Dump the same base historically and prove rollback+rollforward preserves Evo state")
+        # Wait for all connections to drop; mining the extra block while a peer
+        # is still attached would relay it and let the quorums ChainLock it,
+        # making the invalidateblock below split node0 from the network.
+        self.isolate_node(0)
+        extra_hash = self.generate(node0, 1, sync_fun=self.no_op)[0]
+        assert_equal(node0.getblockcount(), base_height + 1)
+        dump = node0.dumptxoutset("assumeutxo-dash.dat", rollback=base_height)
+        assert_equal(node0.getblockcount(), base_height + 1)
+        for field in (
+            "coins_written",
+            "base_hash",
+            "base_height",
+            "txoutset_hash",
+            "evo_hash",
+            "evo_mn_count",
+            "nchaintx",
+        ):
+            assert_equal(dump[field], oracle[field])
+        assert_equal(sha256sum_file(dump["path"]), sha256sum_file(oracle["path"]))
+
+        # Keep the remainder of the lifecycle fixture at the historical base.
+        # The isolated extra block was never relayed or ChainLocked.
+        node0.invalidateblock(extra_hash)
+        assert_equal(node0.getblockcount(), base_height)
+        node0.setnetworkactive(True)
+        for node_index in range(1, len(self.nodes)):
+            self.connect_nodes(0, node_index)
+        force_finish_mnsync(node0)
+        self.sync_all()
+        self.wait_for_sporks_same()
+
         self.log.info("Keep the M4 dump-side checks and capture both commitments")
-        dump = node0.dumptxoutset("assumeutxo-dash.dat")
         assert_equal(dump["base_height"], base_height)
         assert_equal(dump["base_hash"], base_hash)
         assert len(dump["txoutset_hash"]) == 64
@@ -294,9 +331,30 @@ class AssumeutxoDashTest(DashTestFramework):
         assert_equal(loaded["coins_loaded"], dump["coins_written"])
         self.assert_unvalidated_snapshot(snapshot_node, base_height, base_hash, mid_height)
 
+        def assert_unfaked_snapshot_counts(background_height):
+            # The dynamic -assumeutxodata count belongs only to the snapshot
+            # base. Header-only blocks between background validation and the
+            # base must keep unknown nTx and nChainTx values at zero.
+            assert_equal(snapshot_node.getblockheader(base_hash)["nTx"], 0)
+            assert_equal(
+                snapshot_node.getchaintxstats(nblocks=1, blockhash=base_hash)["txcount"],
+                dump["nchaintx"],
+            )
+            first_unknown_height = background_height + 1
+            if first_unknown_height < base_height:
+                first_unknown_hash = snapshot_node.getblockhash(first_unknown_height)
+                assert_equal(snapshot_node.getblockheader(first_unknown_hash)["nTx"], 0)
+                assert_equal(
+                    snapshot_node.getchaintxstats(nblocks=1, blockhash=first_unknown_hash)["txcount"],
+                    0,
+                )
+
+        assert_unfaked_snapshot_counts(mid_height)
+
         self.log.info("Restart immediately after loading the snapshot")
         self.restart_node(snapshot_index, extra_args=snapshot_args)
         self.assert_unvalidated_snapshot(snapshot_node, base_height, base_hash, mid_height)
+        assert_unfaked_snapshot_counts(mid_height)
 
         self.log.info("Advance only the disconnected background chainstate")
         advanced_height = base_height - 1
@@ -305,6 +363,7 @@ class AssumeutxoDashTest(DashTestFramework):
             assert snapshot_node.submitblock(
                 node0.getblock(node0.getblockhash(height), 0)) in (None, "duplicate")
         self.assert_unvalidated_snapshot(snapshot_node, base_height, base_hash, advanced_height)
+        assert_unfaked_snapshot_counts(advanced_height)
 
         self.log.info("Compare deterministic masternode and quorum state at the base")
         assert_equal(
@@ -353,6 +412,10 @@ class AssumeutxoDashTest(DashTestFramework):
         self.restart_node(snapshot_index, extra_args=snapshot_args)
         self.assert_unvalidated_snapshot(snapshot_node, base_height, base_hash, advanced_height)
 
+        self.log.info("Roll the once-isolated block forward on node0")
+        node0.reconsiderblock(extra_hash)
+        assert_equal(node0.getbestblockhash(), extra_hash)
+
         self.log.info("Complete background validation and its deferred evo comparison")
         with snapshot_node.assert_debug_log(
             ["has been fully validated"],
@@ -361,12 +424,25 @@ class AssumeutxoDashTest(DashTestFramework):
         ):
             self.connect_nodes(snapshot_index, 0)
             self.wait_until(lambda: len(snapshot_node.getchainstates()["chainstates"]) == 1, timeout=180)
+        self.sync_blocks([node0, snapshot_node])
         self.disconnect_nodes(snapshot_index, 0)
 
         completed, = snapshot_node.getchainstates()["chainstates"]
-        assert_equal(completed["blocks"], base_height)
+        # The snapshot chainstate must have followed the reconsidered block
+        # past the snapshot base while it was connected to node0.
+        final_height = base_height + 1
+        assert_equal(completed["blocks"], final_height)
+        assert_equal(snapshot_node.getbestblockhash(), extra_hash)
         assert_equal(completed["validated"], True)
         assert_equal(completed["snapshot_blockhash"], base_hash)
+        assert_equal(
+            snapshot_node.getblockheader(base_hash)["nTx"],
+            node0.getblockheader(base_hash)["nTx"],
+        )
+        assert_equal(
+            snapshot_node.getchaintxstats(nblocks=1, blockhash=base_hash)["txcount"],
+            dump["nchaintx"],
+        )
 
         self.log.info("Restart after completion to run validated cleanup and b_b4 promotion")
         with snapshot_node.assert_debug_log(
@@ -376,7 +452,7 @@ class AssumeutxoDashTest(DashTestFramework):
         ):
             self.restart_node(snapshot_index, extra_args=snapshot_args)
         cleaned, = snapshot_node.getchainstates()["chainstates"]
-        assert_equal(cleaned["blocks"], base_height)
+        assert_equal(cleaned["blocks"], final_height)
         assert_equal(cleaned["validated"], True)
         assert "snapshot_blockhash" not in cleaned
         assert not (snapshot_node.chain_path / "chainstate_snapshot").exists()
@@ -385,7 +461,7 @@ class AssumeutxoDashTest(DashTestFramework):
         self.log.info("Restart once more after cleanup")
         self.restart_node(snapshot_index, extra_args=snapshot_args)
         final_state, = snapshot_node.getchainstates()["chainstates"]
-        assert_equal(final_state["blocks"], base_height)
+        assert_equal(final_state["blocks"], final_height)
         assert_equal(final_state["validated"], True)
         assert "snapshot_blockhash" not in final_state
 

@@ -900,10 +900,10 @@ public:
                 // For use by test/functional/feature_assumeutxo.py. Dash-specific
                 // pre-DIP3 snapshot has an empty, but canonically serialized, evo section.
                 .height = 299,
-                .hash_serialized = AssumeutxoHash{uint256S("0xd7f46f9830ea11f1bfc565b08f63b66f09e1403b54c988ede40461cf0846fcba")},
-                .evo_hash = EvoSnapshotHash{uint256S("0xf2ccd3fef604df58a0c174489821e16912c9332969a267650cd040e85fb2adde")},
-                .nChainTx = 300,
-                .blockhash = uint256S("0x64ce3ab60754c7974ea472221fa9c7a04f2d193ba480d1ef61b5d12216b14760"),
+                .hash_serialized = AssumeutxoHash{uint256S("0xf6571ed786c40dcbb835b38090eaca87762cf421874461caa779738c7ff602fa")},
+                .evo_hash = EvoSnapshotHash{uint256S("0xc3cc873878e8d1714ac14149eaae0ccf88b10f2a691ca9256fb4326ff5ec4001")},
+                .nChainTx = 334,
+                .blockhash = uint256S("0x2a9b2c0ea78a47f289053bbb206314e3871b4d4fbf8b6a5f558ca2e8382c57f2"),
             },
         };
 
@@ -1403,6 +1403,16 @@ void CDevNetParams::UpdateLLMQDevnetParametersFromArgs(const ArgsManager& args)
     }
     LogPrintf("Setting LLMQ_DEVNET parameters to size=%ld, threshold=%ld\n", size, threshold);
     UpdateLLMQDevnetParameters(size, threshold);
+}
+
+std::vector<int> CChainParams::GetAvailableSnapshotHeights() const
+{
+    std::vector<int> heights;
+    heights.reserve(m_assumeutxo_data.size());
+    for (const auto& data : m_assumeutxo_data) {
+        heights.emplace_back(data.height);
+    }
+    return heights;
 }
 
 static std::unique_ptr<const CChainParams> globalChainParams;

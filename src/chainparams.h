@@ -53,7 +53,8 @@ struct AssumeutxoData {
     //! The expected single-SHA256 hash of the canonical Dash evo section.
     EvoSnapshotHash evo_hash;
 
-    //! Used to populate the nChainTx value, which is used during BlockManager::LoadBlockIndex().
+    //! Used to populate the snapshot base block's nChainTx value during snapshot activation and
+    //! BlockManager::LoadBlockIndex(). Counts for earlier blocks remain unset until their data is received.
     //!
     //! We need to hardcode the value here because this is computed cumulatively using block data,
     //! which we do not necessarily have at the time of snapshot load.
@@ -150,6 +151,7 @@ public:
     {
         return FindFirst(m_assumeutxo_data, [&](const auto& d) { return d.blockhash == blockhash; });
     }
+    std::vector<int> GetAvailableSnapshotHeights() const;
 
     const ChainTxData& TxData() const { return chainTxData; }
     void UpdateDIP3Parameters(int nActivationHeight, int nEnforcementHeight);

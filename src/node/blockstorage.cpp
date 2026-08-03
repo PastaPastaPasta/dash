@@ -308,6 +308,17 @@ bool BlockManager::LoadBlockIndex(const std::optional<uint256>& snapshot_blockha
         if (block_index.pprev) {
             m_prev_block_index.emplace(block_index.pprev->GetBlockHash(), &block_index);
         }
+
+        // M4/M5 assumeutxo entries used a reserved status bit and fabricated
+        // transaction counts for header-only blocks. Remove that legacy state
+        // before rebuilding nChainTx below, and persist the upgraded entry.
+        if ((block_index.nStatus & BLOCK_STATUS_RESERVED) &&
+            (block_index.nStatus & BLOCK_VALID_MASK) < BLOCK_VALID_TRANSACTIONS) {
+            block_index.nTx = 0;
+            block_index.nChainTx = 0;
+            block_index.nStatus &= ~BLOCK_STATUS_RESERVED;
+            m_dirty_blockindex.insert(&block_index);
+        }
     }
 
     if (snapshot_blockhash) {
@@ -321,8 +332,8 @@ bool BlockManager::LoadBlockIndex(const std::optional<uint256>& snapshot_blockha
         CBlockIndex* base{LookupBlockIndex(*snapshot_blockhash)};
 
         // Since nChainTx (responsible for estimated progress) isn't persisted
-        // to disk, we must bootstrap the value for assumedvalid chainstates
-        // from the hardcoded assumeutxo chainparams.
+        // to disk, bootstrap the snapshot base value from the hardcoded
+        // assumeutxo chainparams. Earlier unknown counts remain zero.
         base->nChainTx = au_data.nChainTx;
         LogPrintf("[snapshot] set nChainTx=%d for %s\n", au_data.nChainTx, snapshot_blockhash->ToString());
     } else {
@@ -349,10 +360,9 @@ bool BlockManager::LoadBlockIndex(const std::optional<uint256>& snapshot_blockha
         pindex->nChainWork = (pindex->pprev ? pindex->pprev->nChainWork : 0) + GetBlockProof(*pindex);
         pindex->nTimeMax = (pindex->pprev ? std::max(pindex->pprev->nTimeMax, pindex->nTime) : pindex->nTime);
 
-        // We can link the chain of blocks for which we've received transactions at some point, or
-        // blocks that are assumed-valid on the basis of snapshot load (see
-        // PopulateAndValidateSnapshot()).
-        // Pruned nodes may have deleted the block.
+        // Link the chain of blocks for which we've received transactions at
+        // some point. The snapshot base nChainTx was bootstrapped above even
+        // when its nTx is still unknown. Pruned nodes may have deleted a block.
         if (pindex->nTx > 0) {
             if (pindex->pprev) {
                 if (m_snapshot_height && pindex->nHeight == *m_snapshot_height &&
