@@ -30,6 +30,11 @@ struct IndexSummary {
  * Base class for indices of blockchain data. This implements
  * CValidationInterface and ensures blocks are indexed sequentially according
  * to their position in the active chain.
+ *
+ * In the presence of multiple chainstates (i.e. if a UTXO snapshot is loaded),
+ * only the background "IBD" chainstate will be indexed to avoid building the
+ * index out of order. When the background chainstate completes validation, the
+ * index will be reinitialized and indexing will continue.
  */
 class BaseIndex : public CValidationInterface
 {
@@ -99,11 +104,11 @@ protected:
     std::unique_ptr<interfaces::Chain> m_chain;
     Chainstate* m_chainstate{nullptr};
 
-    void BlockConnected(const std::shared_ptr<const CBlock>& block, const CBlockIndex* pindex) override;
+    void BlockConnected(ChainstateRole role, const std::shared_ptr<const CBlock>& block, const CBlockIndex* pindex) override;
 
     void BlockDisconnected(const std::shared_ptr<const CBlock>& block, const CBlockIndex* pindex) override;
 
-    void ChainStateFlushed(const CBlockLocator& locator) override;
+    void ChainStateFlushed(ChainstateRole role, const CBlockLocator& locator) override;
 
     /// Initialize internal state from the database and block index.
     [[nodiscard]] virtual bool CustomInit(const std::optional<interfaces::BlockKey>& block) { return true; }
@@ -121,8 +126,11 @@ protected:
 
     virtual DB& GetDB() const = 0;
 
+public:
     /// Get the name of the index for display in logs.
     virtual const char* GetName() const = 0;
+
+protected:
 
     /// Trigger a fatal index error and initiate shutdown.
     static void FatalErrorImpl(const std::string& message);

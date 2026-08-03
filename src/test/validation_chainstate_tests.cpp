@@ -33,11 +33,21 @@ public:
     int updated_tip{0};
     int mn_list_changed{0};
     int chainstate_flushed{0};
+    int background_block_connected{0};
+    int background_chainstate_flushed{0};
 
-    void BlockConnected(const std::shared_ptr<const CBlock>&, const CBlockIndex*) override { ++block_connected; }
+    void BlockConnected(ChainstateRole role, const std::shared_ptr<const CBlock>&, const CBlockIndex*) override
+    {
+        ++block_connected;
+        if (role == ChainstateRole::BACKGROUND) ++background_block_connected;
+    }
     void UpdatedBlockTip(const CBlockIndex*, const CBlockIndex*, bool) override { ++updated_tip; }
     void NotifyMasternodeListChanged(bool, const CDeterministicMNList&, const CDeterministicMNListDiff&) override { ++mn_list_changed; }
-    void ChainStateFlushed(const CBlockLocator&) override { ++chainstate_flushed; }
+    void ChainStateFlushed(ChainstateRole role, const CBlockLocator&) override
+    {
+        ++chainstate_flushed;
+        if (role == ChainstateRole::BACKGROUND) ++background_chainstate_flushed;
+    }
 };
 
 } // namespace
@@ -173,10 +183,12 @@ BOOST_FIXTURE_TEST_CASE(chainstate_update_tip, TestChain100Setup)
     // validation chain.
     BOOST_CHECK(block_added);
     BOOST_CHECK_EQUAL(curr_tip, ::g_best_block);
-    BOOST_CHECK_EQUAL(event_counter.block_connected, 0);
+    BOOST_CHECK_EQUAL(event_counter.block_connected, 1);
+    BOOST_CHECK_EQUAL(event_counter.background_block_connected, 1);
     BOOST_CHECK_EQUAL(event_counter.updated_tip, 0);
     BOOST_CHECK_EQUAL(event_counter.mn_list_changed, 0);
-    BOOST_CHECK_EQUAL(event_counter.chainstate_flushed, 0);
+    BOOST_CHECK_EQUAL(event_counter.chainstate_flushed, 1);
+    BOOST_CHECK_EQUAL(event_counter.background_chainstate_flushed, 1);
     BOOST_CHECK_EQUAL(ui_mn_list_changed, 0);
 }
 

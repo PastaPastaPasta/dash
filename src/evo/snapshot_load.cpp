@@ -8,6 +8,7 @@
 #include <chainparams.h>
 #include <chainparamsbase.h>
 #include <clientversion.h>
+#include <consensus/amount.h>
 #include <deploymentstatus.h>
 #include <evo/cbtx.h>
 #include <evo/chainhelper.h>
@@ -71,7 +72,8 @@ static void SnapshotUTXOHashBreakpoint()
 bool ChainstateManager::PopulateAndValidateSnapshot(
     Chainstate& snapshot_chainstate,
     AutoFile& coins_file,
-    const SnapshotMetadata& metadata)
+    const SnapshotMetadata& metadata,
+    std::string* error)
 {
     // It's okay to release cs_main before we're done using `coins_cache` because we know
     // that nothing else will be referencing the newly created snapshot_chainstate yet.
@@ -82,7 +84,7 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
     CBlockIndex* snapshot_start_block = WITH_LOCK(::cs_main, return m_blockman.LookupBlockIndex(base_blockhash));
 
     if (!snapshot_start_block) {
-        // Needed for ComputeUTXOStats and ExpectedAssumeutxo to determine the
+        // Needed for ComputeUTXOStats and AssumeutxoForHeight to determine the
         // height and to avoid a crash when base_blockhash.IsNull()
         LogPrintf("[snapshot] Did not find snapshot start blockheader %s\n",
                   base_blockhash.ToString());
@@ -95,7 +97,7 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
         "assumeutxo", {.height_first = snapshot_start_block->nHeight}));
 
     int base_height = snapshot_start_block->nHeight;
-    auto maybe_au_data = ExpectedAssumeutxo(base_height, GetParams());
+    auto maybe_au_data = GetParams().AssumeutxoForHeight(base_height);
 
     if (!maybe_au_data) {
         LogPrintf("[snapshot] assumeutxo height in snapshot metadata not recognized " /* Continued */
@@ -104,6 +106,14 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
     }
 
     const AssumeutxoData& au_data = *maybe_au_data;
+
+    // Avoid doing the long population work when the snapshot is already behind
+    // the active chainstate. ActivateSnapshot repeats this check before the swap
+    // in case the active tip advances while the snapshot is being loaded.
+    if (WITH_LOCK(::cs_main, return !node::CBlockIndexWorkComparator()(ActiveTip(), snapshot_start_block))) {
+        LogPrintf("[snapshot] activation failed - work does not exceed active chainstate\n");
+        return false;
+    }
 
     COutPoint outpoint;
     Coin coin;
@@ -126,6 +136,11 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
             outpoint.n >= std::numeric_limits<decltype(outpoint.n)>::max() // Avoid integer wrap-around in coinstats.cpp:ApplyHash
         ) {
             LogPrintf("[snapshot] bad snapshot data after deserializing %d coins\n",
+                      coins_count - coins_left);
+            return false;
+        }
+        if (!MoneyRange(coin.out.nValue)) {
+            LogPrintf("[snapshot] bad snapshot data after deserializing %d coins - bad tx out value\n",
                       coins_count - coins_left);
             return false;
         }
@@ -180,12 +195,14 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
     } catch (const std::ios_base::failure&) {
         if (DeploymentActiveAt(*snapshot_start_block, GetConsensus(), Consensus::DEPLOYMENT_DIP0003)) {
             LogPrintf("[snapshot] missing evo section at DIP3-active base\n");
+            if (error) *error = "missing evo section at DIP3-active base";
             return false;
         }
     }
     if (evo_marker != 0) {
         if (evo_marker != evo::EVO_SNAPSHOT_MARKER) {
             LogPrintf("[snapshot] bad evo section marker (or coins left over) after %d coins\n", coins_count);
+            if (error) *error = "invalid evo section marker";
             return false;
         }
         try {
@@ -194,12 +211,14 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
             evo_file >> *evo_snapshot;
         } catch (const std::ios_base::failure&) {
             LogPrintf("[snapshot] truncated or invalid evo section\n");
+            if (error) *error = "truncated or invalid evo section";
             return false;
         }
         try {
             uint8_t trailing;
             coins_file >> trailing;
             LogPrintf("[snapshot] trailing data after evo section\n");
+            if (error) *error = "trailing data after evo section";
             return false;
         } catch (const std::ios_base::failure&) {
             // EOF immediately after a completely decoded CEvoSnapshot is required.
@@ -208,6 +227,7 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
 
     if (!evo_snapshot && DeploymentActiveAt(*snapshot_start_block, GetConsensus(), Consensus::DEPLOYMENT_DIP0003)) {
         LogPrintf("[snapshot] UTXO-only snapshot refused at DIP3-active base\n");
+        if (error) *error = "UTXO-only snapshot refused at DIP3-active base";
         return false;
     }
 
@@ -251,6 +271,7 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
             LOCK(::cs_main);
             if (!evo::ValidateEvoSnapshotAgainstChain(*evo_snapshot, *this, snapshot_start_block, evo_error)) {
                 LogPrintf("[snapshot] bad evo snapshot chain data: %s\n", evo_error);
+                if (error) *error = "invalid evo snapshot chain data: " + evo_error;
                 return false;
             }
         }
@@ -260,12 +281,15 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
         if (au_data.evo_hash == EvoSnapshotHash{uint256::ZERO} &&
             GetParams().NetworkIDString() != CBaseChainParams::REGTEST) {
             LogPrintf("[snapshot] null evo snapshot hash is only permitted on regtest\n");
+            if (error) *error = "null evo snapshot hash is only permitted on regtest";
             return false;
         }
         if (au_data.evo_hash != EvoSnapshotHash{uint256::ZERO} &&
             EvoSnapshotHash{actual_evo_hash} != au_data.evo_hash) {
             LogPrintf("[snapshot] bad evo snapshot hash: expected %s, got %s\n",
                       au_data.evo_hash.ToString(), actual_evo_hash.ToString());
+            if (error) *error = strprintf("evo snapshot hash mismatch (expected %s, got %s)",
+                                         au_data.evo_hash.ToString(), actual_evo_hash.ToString());
             return false;
         }
 
@@ -278,11 +302,13 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
             CBlock base_block;
             if (!ReadBlockFromDisk(base_block, snapshot_start_block, GetConsensus()) || base_block.vtx.empty()) {
                 LogPrintf("[snapshot] failed to read available base block for evo CbTx check\n");
+                if (error) *error = "failed to read base block for evo CbTx check";
                 return false;
             }
             const auto cbtx{GetTxPayload<CCbTx>(*base_block.vtx[0])};
             if (!cbtx || !evo::VerifyEvoSnapshotCbTx(*evo_snapshot, *cbtx, evo_error)) {
                 LogPrintf("[snapshot] evo CbTx cross-check failed: %s\n", evo_error);
+                if (error) *error = "evo CbTx cross-check failed: " + evo_error;
                 return false;
             }
         } else if (DeploymentActiveAt(*snapshot_start_block, GetConsensus(), Consensus::DEPLOYMENT_DIP0003)) {
@@ -542,7 +568,7 @@ SnapshotCompletionResult ChainstateManager::MaybeCompleteSnapshotValidation(
 
     CCoinsViewDB& ibd_coins_db = m_ibd_chainstate->CoinsDB();
 
-    auto maybe_au_data = ExpectedAssumeutxo(curr_height, ::Params());
+    auto maybe_au_data = GetParams().AssumeutxoForHeight(curr_height);
     if (!maybe_au_data) {
         LogPrintf("[snapshot] assumeutxo data not found for height " /* Continued */
             "(%d) - refusing to validate snapshot\n", curr_height);
@@ -662,4 +688,3 @@ SnapshotCompletionResult ChainstateManager::MaybeCompleteSnapshotValidation(
 
     return SnapshotCompletionResult::SUCCESS;
 }
-

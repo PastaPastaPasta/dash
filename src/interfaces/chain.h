@@ -6,6 +6,7 @@
 #define BITCOIN_INTERFACES_CHAIN_H
 
 #include <blockfilter.h>
+#include <kernel/chain.h> // IWYU pragma: export
 #include <primitives/transaction.h> // For CTransactionRef
 #include <util/settings.h>          // For util::SettingsValue
 
@@ -19,7 +20,6 @@
 
 class ArgsManager;
 class CBlock;
-class CBlockUndo;
 class CFeeRate;
 class CRPCCommand;
 class CScheduler;
@@ -28,6 +28,8 @@ class CBlockIndex;
 class Coin;
 class uint256;
 enum class MemPoolRemovalReason;
+enum class RBFTransactionState;
+enum class ChainstateRole;
 struct bilingual_str;
 struct CBlockLocator;
 struct FeeCalculation;
@@ -85,19 +87,6 @@ public:
     const FoundBlock* m_next_block = nullptr;
     CBlock* m_data = nullptr;
     mutable bool found = false;
-};
-
-//! Block data sent with blockConnected, blockDisconnected notifications.
-struct BlockInfo {
-    const uint256& hash;
-    const uint256* prev_hash = nullptr;
-    int height = -1;
-    int file_number = -1;
-    unsigned data_pos = 0;
-    const CBlock* data = nullptr;
-    const CBlockUndo* undo_data = nullptr;
-
-    BlockInfo(const uint256& hash LIFETIMEBOUND) : hash(hash) {}
 };
 
 //! Interface giving clients (wallet processes, maybe other analysis tools in
@@ -293,10 +282,10 @@ public:
         virtual ~Notifications() {}
         virtual void transactionAddedToMempool(const CTransactionRef& tx, int64_t nAcceptTime) {}
         virtual void transactionRemovedFromMempool(const CTransactionRef& tx, MemPoolRemovalReason reason) {}
-        virtual void blockConnected(const BlockInfo& block) {}
+        virtual void blockConnected(ChainstateRole role, const BlockInfo& block) {}
         virtual void blockDisconnected(const BlockInfo& block) {}
         virtual void updatedBlockTip() {}
-        virtual void chainStateFlushed(const CBlockLocator& locator) {}
+        virtual void chainStateFlushed(ChainstateRole role, const CBlockLocator& locator) {}
         virtual void notifyChainLock(const CBlockIndex* pindexChainLock, const std::shared_ptr<const chainlock::ChainLockSig>& clsig) {}
         virtual void notifyTransactionLock(const CTransactionRef &tx, const std::shared_ptr<const instantsend::InstantSendLock>& islock) {}
     };

@@ -216,8 +216,9 @@ void ChainlockHandler::AcceptedBlockHeader(const CBlockIndex* pindexNew)
     m_chainlocks.AcceptedBlockHeader(pindexNew);
 }
 
-void ChainlockHandler::BlockConnected(const std::shared_ptr<const CBlock>& pblock, const CBlockIndex* pindex)
+void ChainlockHandler::BlockConnected(ChainstateRole role, const std::shared_ptr<const CBlock>& pblock, const CBlockIndex* pindex)
 {
+    if (role == ChainstateRole::BACKGROUND) return;
     if (!m_mn_sync.IsBlockchainSynced()) {
         return;
     }

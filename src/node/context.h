@@ -36,6 +36,7 @@ class CTxMemPool;
 class NetGroupManager;
 class PeerManager;
 struct ActiveContext;
+class BaseIndex;
 struct LLMQContext;
 
 namespace chainlock {
@@ -107,6 +108,7 @@ struct NodeContext {
     std::unique_ptr<chainlock::ChainlockHandler> clhandler;
     //! Dash contexts
     std::unique_ptr<ActiveContext> active_ctx;
+    std::vector<BaseIndex*> indexes;
     std::unique_ptr<LLMQContext> llmq_ctx;
     std::unique_ptr<llmq::ObserverContext> observer_ctx;
 

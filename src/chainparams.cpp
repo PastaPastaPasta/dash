@@ -339,7 +339,7 @@ public:
             }
         };
 
-        m_assumeutxo_data = MapAssumeutxo{
+        m_assumeutxo_data = {
          // TODO to be specified in a future patch.
         };
 
@@ -514,7 +514,7 @@ public:
             }
         };
 
-        m_assumeutxo_data = MapAssumeutxo{
+        m_assumeutxo_data = {
             // TODO to be specified in a future patch.
         };
 
@@ -879,16 +879,61 @@ public:
             }
         };
 
-        m_assumeutxo_data = MapAssumeutxo{
+        m_assumeutxo_data = {
             {
-                110,
-                {AssumeutxoHash{uint256S("0x9b2a277a3e3b979f1a539d57e949495d7f8247312dbc32bce6619128c192b44b")}, EvoSnapshotHash{uint256{}}, 110},
+                .height = 110,
+                .hash_serialized = AssumeutxoHash{uint256S("0xffb210087e1ed14526c0c08a3ec3a7c8e288079eaa68acb87d3d4d9fd746079f")},
+                // Unit-test chains at this height may have different empty evo
+                // state encodings, so retain the regtest-only M4 wildcard.
+                .evo_hash = EvoSnapshotHash{uint256{}},
+                .nChainTx = 111,
+                .blockhash = uint256S("0x729bcb1479ff9f4968439f0276bd76bcb2de0f0720b7a16f383321f6a41cb238"),
             },
             {
-                200,
-                {AssumeutxoHash{uint256S("0x8a5bdd92252fc6b24663244bbe958c947bb036dc1f94ccd15439f48d8d1cb4e3")}, EvoSnapshotHash{uint256{}}, 200},
+                .height = 200,
+                .hash_serialized = AssumeutxoHash{uint256S("0x16e00a64db4fa48dd989dce86d8677f41797d52044e5fc86021aa88cc22b665b")},
+                .evo_hash = EvoSnapshotHash{uint256{}},
+                .nChainTx = 201,
+                .blockhash = uint256S("0x19c1b203b5a960c7f3619e0e805b24c94e684b1aa261f3a79c84d291638a6e1f"),
+            },
+            {
+                // For use by test/functional/feature_assumeutxo.py. Dash-specific
+                // pre-DIP3 snapshot has an empty, but canonically serialized, evo section.
+                .height = 299,
+                .hash_serialized = AssumeutxoHash{uint256S("0xd7f46f9830ea11f1bfc565b08f63b66f09e1403b54c988ede40461cf0846fcba")},
+                .evo_hash = EvoSnapshotHash{uint256S("0xf2ccd3fef604df58a0c174489821e16912c9332969a267650cd040e85fb2adde")},
+                .nChainTx = 300,
+                .blockhash = uint256S("0x64ce3ab60754c7974ea472221fa9c7a04f2d193ba480d1ef61b5d12216b14760"),
             },
         };
+
+        for (const std::string& arg : args.GetArgs("-assumeutxodata")) {
+            const std::vector<std::string> fields{SplitString(arg, ':')};
+            int32_t height;
+            uint32_t n_chain_tx;
+            const auto valid_hash = [](const std::string& value) {
+                return value.size() == uint256::size() * 2 && IsHex(value) && !uint256S(value).IsNull();
+            };
+            if (fields.size() != 5 || !ParseInt32(fields[0], &height) || height <= 0 ||
+                !valid_hash(fields[1]) || !valid_hash(fields[2]) ||
+                !ParseUInt32(fields[3], &n_chain_tx) || n_chain_tx == 0 || !valid_hash(fields[4])) {
+                throw std::runtime_error(strprintf(
+                    "Invalid value (%s) for -assumeutxodata=<height>:<hash_serialized>:<evo_hash>:<nchaintx>:<blockhash>.",
+                    arg));
+            }
+            const uint256 blockhash{uint256S(fields[4])};
+            if (AssumeutxoForHeight(height) || AssumeutxoForBlockhash(blockhash)) {
+                throw std::runtime_error(strprintf(
+                    "Duplicate height or block hash in -assumeutxodata (%s).", arg));
+            }
+            m_assumeutxo_data.emplace_back(AssumeutxoData{
+                .height = height,
+                .hash_serialized = AssumeutxoHash{uint256S(fields[1])},
+                .evo_hash = EvoSnapshotHash{uint256S(fields[2])},
+                .nChainTx = n_chain_tx,
+                .blockhash = blockhash,
+            });
+        }
 
         chainTxData = ChainTxData{
             0,
@@ -1392,6 +1437,7 @@ void SetupChainParamsOptions(ArgsManager& argsman)
     SetupChainParamsBaseOptions(argsman);
 
     argsman.AddArg("-budgetparams=<masternode>:<budget>:<superblock>", "Override masternode, budget and superblock start heights (regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
+    argsman.AddArg("-assumeutxodata=<height>:<hash_serialized>:<evo_hash>:<nchaintx>:<blockhash>", "Add an exact AssumeUTXO snapshot authorization (regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-dip3params=<activation>:<enforcement>", "Override DIP3 activation and enforcement heights (regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-highsubsidyblocks=<n>", "The number of blocks with a higher than normal subsidy to mine at the start of a chain. Block after that height will have fixed subsidy base. (default: 0, devnet-only)", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-highsubsidyfactor=<n>", "The factor to multiply the normal block subsidy by while in the highsubsidyblocks window of a chain (default: 1, devnet-only)", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);

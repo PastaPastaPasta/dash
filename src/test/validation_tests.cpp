@@ -27,17 +27,21 @@ BOOST_AUTO_TEST_CASE(test_assumeutxo)
     std::vector<int> bad_heights{0, 100, 111, 115, 209, 211};
 
     for (auto empty : bad_heights) {
-        const auto out = ExpectedAssumeutxo(empty, *params);
+        const auto out = params->AssumeutxoForHeight(empty);
         BOOST_CHECK(!out);
     }
 
-    const auto out110 = *ExpectedAssumeutxo(110, *params);
-    BOOST_CHECK_EQUAL(out110.hash_serialized.ToString(), "9b2a277a3e3b979f1a539d57e949495d7f8247312dbc32bce6619128c192b44b");
-    BOOST_CHECK_EQUAL(out110.nChainTx, 110U);
+    const auto out110 = *params->AssumeutxoForHeight(110);
+    BOOST_CHECK_EQUAL(out110.hash_serialized.ToString(), "ffb210087e1ed14526c0c08a3ec3a7c8e288079eaa68acb87d3d4d9fd746079f");
+    BOOST_CHECK_EQUAL(out110.nChainTx, 111U);
 
-    const auto out210 = *ExpectedAssumeutxo(200, *params);
-    BOOST_CHECK_EQUAL(out210.hash_serialized.ToString(), "8a5bdd92252fc6b24663244bbe958c947bb036dc1f94ccd15439f48d8d1cb4e3");
-    BOOST_CHECK_EQUAL(out210.nChainTx, 200U);
+    const auto out110_2 = *params->AssumeutxoForBlockhash(uint256S("0x729bcb1479ff9f4968439f0276bd76bcb2de0f0720b7a16f383321f6a41cb238"));
+    BOOST_CHECK_EQUAL(out110_2.hash_serialized.ToString(), "ffb210087e1ed14526c0c08a3ec3a7c8e288079eaa68acb87d3d4d9fd746079f");
+    BOOST_CHECK_EQUAL(out110_2.nChainTx, 111U);
+
+    const auto out210 = *params->AssumeutxoForHeight(200);
+    BOOST_CHECK_EQUAL(out210.hash_serialized.ToString(), "16e00a64db4fa48dd989dce86d8677f41797d52044e5fc86021aa88cc22b665b");
+    BOOST_CHECK_EQUAL(out210.nChainTx, 201U);
 }
 
 //! Test the Dash (non-witness) IsBlockMutated() predicate directly.
