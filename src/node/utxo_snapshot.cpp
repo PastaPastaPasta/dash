@@ -22,9 +22,7 @@ bool WriteSnapshotBaseBlockhash(Chainstate& snapshot_chainstate)
     AssertLockHeld(::cs_main);
     assert(snapshot_chainstate.m_from_snapshot_blockhash);
 
-    const std::optional<fs::path> chaindir = snapshot_chainstate.CoinsDB().StoragePath();
-    assert(chaindir); // Sanity check that chainstate isn't in-memory.
-    const fs::path write_to = *chaindir / node::SNAPSHOT_BLOCKHASH_FILENAME;
+    const fs::path write_to = snapshot_chainstate.StoragePath() / node::SNAPSHOT_BLOCKHASH_FILENAME;
 
     FILE* file{fsbridge::fopen(write_to, "wb")};
     AutoFile afile{file};
@@ -46,7 +44,7 @@ bool WriteSnapshotBaseBlockhash(Chainstate& snapshot_chainstate)
                   fs::PathToString(write_to));
         return false;
     }
-    DirectoryCommit(*chaindir);
+    DirectoryCommit(write_to.parent_path());
     return true;
 }
 
@@ -85,10 +83,10 @@ std::optional<uint256> ReadSnapshotBaseBlockhash(fs::path chaindir)
     return base_blockhash;
 }
 
-std::optional<fs::path> FindSnapshotChainstateDir()
+std::optional<fs::path> FindAssumeutxoChainstateDir(const fs::path& data_dir)
 {
     fs::path possible_dir =
-        gArgs.GetDataDirNet() / fs::u8path(strprintf("chainstate%s", SNAPSHOT_CHAINSTATE_SUFFIX));
+        data_dir / fs::u8path(strprintf("chainstate%s", SNAPSHOT_CHAINSTATE_SUFFIX));
 
     if (fs::exists(possible_dir)) {
         return possible_dir;

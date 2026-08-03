@@ -345,11 +345,12 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
     // has, hash its already-connected ordinary state now, before any snapshot
     // seeds enter the shared EvoDB namespace.
     std::map<uint256, uint256> existing_background_work_hashes;
-    auto& background_dmnman{m_ibd_chainstate->ChainHelper().DeterministicMNManager()};
+    Chainstate& background_chainstate{CurrentChainstate()};
+    auto& background_dmnman{background_chainstate.ChainHelper().DeterministicMNManager()};
     for (const auto& block_hash : required_work_blocks) {
         const CBlockIndex* index{m_blockman.LookupBlockIndex(block_hash)};
         assert(index != nullptr);
-        if (m_ibd_chainstate->m_chain.Contains(index)) {
+        if (background_chainstate.m_chain.Contains(index)) {
             existing_background_work_hashes.emplace(
                 block_hash, evo::CanonicalMNListHash(background_dmnman.GetListForBlock(index)));
         }
@@ -440,7 +441,7 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
         LogPrintf("[snapshot] failed to commit required historical MN-list marker\n");
         return false;
     }
-    m_ibd_chainstate->SetRequiredBackgroundMNListHashes(required_work_blocks);
+    background_chainstate.SetRequiredBackgroundMNListHashes(required_work_blocks);
     if (!snapshot_chainstate.m_evoDb.CommitRootTransaction(EvoDbIdentity::SNAPSHOT, /*sync=*/true)) {
         LogPrintf("[snapshot] failed to commit snapshot EvoDB marker\n");
         return false;
@@ -465,21 +466,26 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
     return true;
 }
 
-SnapshotCompletionResult ChainstateManager::MaybeCompleteSnapshotValidation(
+SnapshotCompletionResult ChainstateManager::MaybeValidateSnapshot(
+      Chainstate& validated_cs,
+      Chainstate& unvalidated_cs,
       std::function<void(bilingual_str)> shutdown_fnc)
 {
     AssertLockHeld(cs_main);
-    if (m_ibd_chainstate.get() == &this->ActiveChainstate() ||
-            !this->IsUsable(m_snapshot_chainstate.get()) ||
-            !this->IsUsable(m_ibd_chainstate.get()) ||
-            !m_ibd_chainstate->m_chain.Tip()) {
+    if (unvalidated_cs.m_assumeutxo != Assumeutxo::UNVALIDATED ||
+            !unvalidated_cs.m_from_snapshot_blockhash ||
+            validated_cs.m_assumeutxo != Assumeutxo::VALIDATED ||
+            !validated_cs.m_chain.Tip() ||
+            !validated_cs.m_target_blockhash ||
+            *validated_cs.m_target_blockhash != *unvalidated_cs.m_from_snapshot_blockhash ||
+            !validated_cs.ReachedTarget()) {
        // Nothing to do - this function only applies to the background
        // validation chainstate.
        return SnapshotCompletionResult::SKIPPED;
     }
-    const auto snapshot_base_height_opt = this->GetSnapshotBaseHeight();
-    if (!snapshot_base_height_opt) {
-        if (!m_snapshot_chainstate->CoinsDB().StoragePath()) {
+    const CBlockIndex* snapshot_base{unvalidated_cs.SnapshotBase()};
+    if (!snapshot_base) {
+        if (!fs::exists(unvalidated_cs.StoragePath())) {
             // Some Dash unit fixtures construct a synthetic in-memory snapshot
             // chainstate before inserting its base block into the block index.
             return SnapshotCompletionResult::SKIPPED;
@@ -487,24 +493,18 @@ SnapshotCompletionResult ChainstateManager::MaybeCompleteSnapshotValidation(
         LogPrintf("[snapshot] on-disk snapshot base block is missing from the block index\n");
         return SnapshotCompletionResult::BASE_BLOCKHASH_MISMATCH;
     }
-    const int snapshot_base_height = *snapshot_base_height_opt;
-    const CBlockIndex& index_new = *Assert(m_ibd_chainstate->m_chain.Tip());
+    const int snapshot_base_height{snapshot_base->nHeight};
+    const CBlockIndex& index_new{*Assert(validated_cs.m_chain.Tip())};
 
-    if (index_new.nHeight < snapshot_base_height) {
-        // Background IBD not complete yet.
-        return SnapshotCompletionResult::SKIPPED;
-    }
-
-    assert(SnapshotBlockhash());
-    uint256 snapshot_blockhash = *Assert(SnapshotBlockhash());
+    const uint256 snapshot_blockhash{*unvalidated_cs.m_from_snapshot_blockhash};
 
     // Completion is serialized by cs_main. Flush each identity in sequence so
     // CEvoDB's single-open-transaction invariant is preserved and marker
     // promotion can atomically operate on fully committed transaction trees.
-    m_ibd_chainstate->ForceFlushStateToDisk();
-    m_snapshot_chainstate->ForceFlushStateToDisk();
-    if (!m_ibd_chainstate->m_evoDb.CommitRootTransaction(EvoDbIdentity::NORMAL, /*sync=*/true) ||
-        !m_snapshot_chainstate->m_evoDb.CommitRootTransaction(EvoDbIdentity::SNAPSHOT, /*sync=*/true)) {
+    validated_cs.ForceFlushStateToDisk();
+    unvalidated_cs.ForceFlushStateToDisk();
+    if (!validated_cs.m_evoDb.CommitRootTransaction(EvoDbIdentity::NORMAL, /*sync=*/true) ||
+        !unvalidated_cs.m_evoDb.CommitRootTransaction(EvoDbIdentity::SNAPSHOT, /*sync=*/true)) {
         LogPrintf("[snapshot] failed to sync completion EvoDB state\n");
         return SnapshotCompletionResult::STATS_FAILED;
     }
@@ -515,24 +515,16 @@ SnapshotCompletionResult ChainstateManager::MaybeCompleteSnapshotValidation(
         assert(handled);
     };
 
-    if (index_new.GetBlockHash() != snapshot_blockhash) {
-        LogPrintf("[snapshot] supposed base block %s does not match the " /* Continued */
-          "snapshot base block %s (height %d). Snapshot is not valid.",
-          index_new.ToString(), snapshot_blockhash.ToString(), snapshot_base_height);
-        handle_invalid_snapshot();
-        return SnapshotCompletionResult::BASE_BLOCKHASH_MISMATCH;
-    }
-
+    assert(index_new.GetBlockHash() == snapshot_blockhash);
     assert(index_new.nHeight == snapshot_base_height);
 
-    int curr_height = m_ibd_chainstate->m_chain.Height();
+    int curr_height = validated_cs.m_chain.Height();
 
     assert(snapshot_base_height == curr_height);
     assert(snapshot_base_height == index_new.nHeight);
-    assert(this->IsUsable(m_snapshot_chainstate.get()));
     assert(this->GetAll().size() == 2);
 
-    CCoinsViewDB& ibd_coins_db = m_ibd_chainstate->CoinsDB();
+    CCoinsViewDB& ibd_coins_db = validated_cs.CoinsDB();
 
     auto maybe_au_data = GetParams().AssumeutxoForHeight(curr_height);
     if (!maybe_au_data) {
@@ -590,7 +582,7 @@ SnapshotCompletionResult ChainstateManager::MaybeCompleteSnapshotValidation(
         evo::CEvoSnapshot retained_snapshot;
         CBlock base_block;
         std::string evo_error;
-        if (!m_ibd_chainstate->m_evoDb.Read(EVODB_SNAPSHOT_EVO_SECTION, retained_snapshot) ||
+        if (!validated_cs.m_evoDb.Read(EVODB_SNAPSHOT_EVO_SECTION, retained_snapshot) ||
             !ReadBlockFromDisk(base_block, &index_new, GetConsensus()) || base_block.vtx.empty()) {
             LogPrintf("[snapshot] missing retained evo section/base block at completion\n");
             handle_invalid_snapshot();
@@ -602,7 +594,7 @@ SnapshotCompletionResult ChainstateManager::MaybeCompleteSnapshotValidation(
         if (history_matches) {
             for (const auto& [block_hash, reconstructed_list] : reconstructed_history) {
                 uint256 background_hash;
-                if (!m_ibd_chainstate->m_evoDb.ReadBackgroundWorkMNListHash(block_hash, background_hash) ||
+                if (!validated_cs.m_evoDb.ReadBackgroundWorkMNListHash(block_hash, background_hash) ||
                     background_hash != evo::CanonicalMNListHash(reconstructed_list)) {
                     evo_error = "missing or mismatched background historical MN-list capture";
                     history_matches = false;
@@ -625,8 +617,8 @@ SnapshotCompletionResult ChainstateManager::MaybeCompleteSnapshotValidation(
     uint256 snapshot_mn_list_hash;
     uint256 background_mn_list_block;
     uint256 background_mn_list_hash;
-    if (!m_ibd_chainstate->m_evoDb.ReadSnapshotBaseMNListHash(snapshot_mn_list_hash) ||
-        !m_ibd_chainstate->m_evoDb.ReadBackgroundMNListHash(
+    if (!validated_cs.m_evoDb.ReadSnapshotBaseMNListHash(snapshot_mn_list_hash) ||
+        !validated_cs.m_evoDb.ReadBackgroundMNListHash(
             background_mn_list_block, background_mn_list_hash) ||
         background_mn_list_block != snapshot_blockhash ||
         snapshot_mn_list_hash != background_mn_list_hash) {
@@ -637,9 +629,9 @@ SnapshotCompletionResult ChainstateManager::MaybeCompleteSnapshotValidation(
         return SnapshotCompletionResult::EVO_STATE_MISMATCH;
     }
 
-    const uint256 snapshot_tip = m_snapshot_chainstate->CoinsTip().GetBestBlock();
-    if (!m_ibd_chainstate->m_evoDb.VerifyBestBlock(EvoDbIdentity::NORMAL, snapshot_blockhash) ||
-        !m_snapshot_chainstate->m_evoDb.VerifyBestBlock(EvoDbIdentity::SNAPSHOT, snapshot_tip)) {
+    const uint256 snapshot_tip = unvalidated_cs.CoinsTip().GetBestBlock();
+    if (!validated_cs.m_evoDb.VerifyBestBlock(EvoDbIdentity::NORMAL, snapshot_blockhash) ||
+        !unvalidated_cs.m_evoDb.VerifyBestBlock(EvoDbIdentity::SNAPSHOT, snapshot_tip)) {
         LogPrintf("[snapshot] EvoDB best-block markers do not match their chainstate tips\n");
         handle_invalid_snapshot();
         return SnapshotCompletionResult::EVO_STATE_MISMATCH;
@@ -648,7 +640,8 @@ SnapshotCompletionResult ChainstateManager::MaybeCompleteSnapshotValidation(
     LogPrintf("[snapshot] snapshot beginning at %s has been fully validated\n",
         snapshot_blockhash.ToString());
 
-    m_ibd_chainstate->m_disabled = true;
+    unvalidated_cs.m_assumeutxo = Assumeutxo::VALIDATED;
+    validated_cs.m_target_utxohash = AssumeutxoHash{ibd_stats.hashSerialized};
     ReleaseSnapshotPruneLock();
     this->MaybeRebalanceCaches();
 

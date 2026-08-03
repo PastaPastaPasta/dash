@@ -289,6 +289,7 @@ BITCOIN_CORE_H = \
   kernel/mempool_limits.h \
   kernel/mempool_options.h \
   kernel/mempool_persist.h \
+  kernel/types.h \
   key.h \
   key_io.h \
   limitedmap.h \

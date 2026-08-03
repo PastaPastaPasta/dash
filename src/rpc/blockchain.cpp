@@ -53,6 +53,13 @@
 #include <chainlock/chainlock.h>
 #include <evo/assetlocktx.h>
 #include <evo/cbtx.h>
+
+std::optional<int> GetPruneHeight(const node::BlockManager& blockman, const CChain& chain)
+{
+    AssertLockHeld(::cs_main);
+    if (!blockman.m_have_pruned || !chain.Tip()) return std::nullopt;
+    return std::max(0, blockman.GetFirstStoredBlock(*chain.Tip())->nHeight - 1);
+}
 #include <evo/evodb.h>
 #include <evo/mnhftx.h>
 #include <evo/snapshot.h>
@@ -1988,6 +1995,7 @@ void ReconsiderBlock(ChainstateManager& chainman, uint256 block_hash, bool ignor
         }
 
         chainman.ActiveChainstate().ResetBlockFailureFlags(pblockindex, ignore_chainlocks);
+        chainman.RecalculateBestHeader();
     }
 
     BlockValidationState state;
@@ -3290,7 +3298,7 @@ UniValue WriteUTXOSnapshot(
         tip->nHeight, tip->GetBlockHash().ToString(),
         fs::PathToString(path), fs::PathToString(temppath)));
 
-    SnapshotMetadata metadata{tip->GetBlockHash(), maybe_stats->coins_count, tip->nChainTx};
+    SnapshotMetadata metadata{chainstate.m_chainman.GetParams().MessageStart(), tip->GetBlockHash(), maybe_stats->coins_count};
 
     afile << metadata;
 
@@ -3399,13 +3407,20 @@ static RPCHelpMan loadtxoutset()
             "Couldn't open file " + fs::PathToString(path) + " for reading.");
     }
 
-    SnapshotMetadata metadata;
-    afile >> metadata;
+    SnapshotMetadata metadata{chainman.GetParams().MessageStart()};
+    try {
+        afile >> metadata;
+    } catch (const std::ios_base::failure& e) {
+        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("Unable to parse metadata: %s", e.what()));
+    }
 
     uint256 base_blockhash = metadata.m_base_blockhash;
     if (!chainman.GetParams().AssumeutxoForBlockhash(base_blockhash).has_value()) {
+        const auto available_heights{chainman.GetParams().GetAvailableSnapshotHeights()};
+        const std::string heights_formatted{Join(available_heights, ", ", [&](const auto& height) { return ToString(height); })};
         throw JSONRPCError(RPC_INTERNAL_ERROR, strprintf("Unable to load UTXO snapshot, "
-            "assumeutxo block hash in snapshot metadata not recognized (%s)", base_blockhash.ToString()));
+            "assumeutxo block hash in snapshot metadata not recognized (hash: %s). The following snapshot heights are available: %s.",
+            base_blockhash.ToString(), heights_formatted));
     }
     int max_secs_to_wait_for_headers = 60 * 10;
     CBlockIndex* snapshot_start_block = nullptr;
@@ -3440,12 +3455,19 @@ static RPCHelpMan loadtxoutset()
     if (!activation_result) {
         throw JSONRPCError(RPC_INTERNAL_ERROR, "Unable to load UTXO snapshot: " + util::ErrorString(activation_result).original);
     }
-    CBlockIndex* new_tip{WITH_LOCK(::cs_main, return chainman.ActiveTip())};
+
+    // Because we can't provide historical blocks during tip or background sync.
+    // Update local services to reflect we are a limited peer until we are fully sync.
+    node.connman->RemoveLocalServices(NODE_NETWORK);
+    // Setting the limited state is usually redundant because the node can always
+    // provide the last 288 blocks, but it doesn't hurt to set it.
+    node.connman->AddLocalServices(NODE_NETWORK_LIMITED);
+    CBlockIndex& snapshot_index{*CHECK_NONFATAL(*activation_result)};
 
     UniValue result(UniValue::VOBJ);
     result.pushKV("coins_loaded", metadata.m_coins_count);
-    result.pushKV("tip_hash", new_tip->GetBlockHash().ToString());
-    result.pushKV("base_height", new_tip->nHeight);
+    result.pushKV("tip_hash", snapshot_index.GetBlockHash().ToString());
+    result.pushKV("base_height", snapshot_index.nHeight);
     result.pushKV("path", fs::PathToString(path));
     return result;
 },
@@ -3486,7 +3508,7 @@ return RPCHelpMan{
 
     ChainstateManager& chainman = EnsureAnyChainman(request.context);
 
-    auto make_chain_data = [&](const Chainstate& cs, bool validated) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
+    auto make_chain_data = [&](const Chainstate& cs) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
         AssertLockHeld(::cs_main);
         UniValue data(UniValue::VOBJ);
         if (!cs.m_chain.Tip()) {
@@ -3504,17 +3526,16 @@ return RPCHelpMan{
         if (cs.m_from_snapshot_blockhash) {
             data.pushKV("snapshot_blockhash", cs.m_from_snapshot_blockhash->ToString());
         }
-        data.pushKV("validated", validated);
+        data.pushKV("validated", cs.m_assumeutxo == Assumeutxo::VALIDATED);
         return data;
     };
 
     obj.pushKV("headers", chainman.m_best_header ? chainman.m_best_header->nHeight : -1);
-
-    const auto& chainstates = chainman.GetAll();
     UniValue obj_chainstates{UniValue::VARR};
-    for (Chainstate* cs : chainstates) {
-      obj_chainstates.push_back(make_chain_data(*cs, !cs->m_from_snapshot_blockhash || chainstates.size() == 1));
+    if (const Chainstate * cs{chainman.HistoricalChainstate()}) {
+        obj_chainstates.push_back(make_chain_data(*cs));
     }
+    obj_chainstates.push_back(make_chain_data(chainman.CurrentChainstate()));
     obj.pushKV("chainstates", std::move(obj_chainstates));
     return obj;
 }

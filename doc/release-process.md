@@ -20,6 +20,17 @@ Before every minor and major release:
   - Testnet should be set some tens of thousands back from the tip due to reorgs there.
   - This update should be reviewed with a `reindex-chainstate` with `assumevalid=0` to catch any defect
     that causes rejection of blocks in the past history.
+* [ ] Append a new entry to `m_assumeutxo_data` using the values returned by
+  `dash-cli -rpcclienttimeout=0 -named dumptxoutset utxo.dat rollback=<height or hash>`.
+  Use the same height-safety considerations as `defaultAssumeValid`, and copy
+  `base_height`, `base_hash`, `txoutset_hash`, `evo_hash`, and `nchaintx` into
+  the corresponding `AssumeutxoData` fields.
+  - Generate the release value on a node synced normally from genesis, without
+    loading an assumeutxo snapshot. This is required to reproduce `evo_hash`:
+    deterministic-masternode registration counters and the derived historical
+    evo state must have been built from genesis.
+  - Reproduce both `txoutset_hash` and `evo_hash` on a second independently
+    synced-from-genesis node at the same base block before committing the entry.
 * [ ] Ensure all TODOs are evaluated and resolved if needed
 * [ ] Verify Insight works
 * [ ] Verify p2pool works (unmaintained; no responsible party)

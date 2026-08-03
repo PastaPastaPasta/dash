@@ -78,9 +78,9 @@ void CDSNotificationInterface::TransactionAddedToMempool(const CTransactionRef& 
     m_dstxman.TransactionAddedToMempool(ptx);
 }
 
-void CDSNotificationInterface::BlockConnected(ChainstateRole role, const std::shared_ptr<const CBlock>& pblock, const CBlockIndex* pindex)
+void CDSNotificationInterface::BlockConnected(const kernel::ChainstateRole& role, const std::shared_ptr<const CBlock>& pblock, const CBlockIndex* pindex)
 {
-    if (role == ChainstateRole::BACKGROUND) return;
+    if (role.historical) return;
     m_dstxman.BlockConnected(pblock, pindex);
 }
 
