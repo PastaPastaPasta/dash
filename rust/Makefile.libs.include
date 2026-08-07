@@ -16,6 +16,7 @@ endif
 # This avoids merging per-crate archives with `ar -x`, which silently drops
 # object files with colliding member names once two crates share dependencies.
 include $(top_srcdir)/rust/Makefile.chirp.include
+include $(top_srcdir)/rust/Makefile.platform.include
 
 LIBRUSTDEPS_INCLUDES = \
 	$(LIBRUST_CHIRP_INCLUDES)
@@ -26,6 +27,12 @@ LIBRUSTDEPS_CPP = \
 LIBRUSTDEPS_H = \
 	$(LIBCXXBRIDGE_H) \
 	$(LIBRUST_CHIRP_H)
+
+if ENABLE_PLATFORM_GUI
+LIBRUSTDEPS_INCLUDES += $(LIBRUST_PLATFORM_INCLUDES)
+LIBRUSTDEPS_CPP += $(LIBRUST_PLATFORM_CPP)
+LIBRUSTDEPS_H += $(LIBRUST_PLATFORM_H)
+endif
 
 # Umbrella staticlib #
 LIBRUSTDEPS_TARGET_DIR = $(abs_top_builddir)/rust/target
@@ -52,6 +59,10 @@ LIBRUSTDEPS_FILES = \
 
 LIBRUSTDEPS_COMPONENT_SRCS = \
 	$(LIBRUST_CHIRP_FILES)
+
+if ENABLE_PLATFORM_GUI
+LIBRUSTDEPS_COMPONENT_SRCS += $(LIBRUST_PLATFORM_FILES)
+endif
 
 $(LIBRUSTDEPS): $(CARGO_CONFIGURED) \
 	$(top_srcdir)/Cargo.toml \

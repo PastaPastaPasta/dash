@@ -7,7 +7,7 @@ edition = "2021"
 crate-type = ["rlib"]
 
 [dependencies]
-cxx = "1.0.192"
+cxx = "1.0.198"
 
 [build-dependencies]
 built = "0.8.0"

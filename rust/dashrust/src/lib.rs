@@ -9,3 +9,5 @@
 //! survive into the staticlib.
 
 extern crate chirp;
+#[cfg(feature = "platform")]
+extern crate dash_platform_ffi;

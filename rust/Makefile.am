@@ -8,10 +8,16 @@ include $(top_srcdir)/rust/Makefile.libs.include
 
 EXTRA_DIST = \
 	$(LIBRUSTDEPS_FILES) \
-	$(LIBRUST_CHIRP_FILES)
+	$(LIBRUST_CHIRP_FILES) \
+	$(LIBRUST_PLATFORM_FILES)
+
+CXXBRIDGE_TARGETS = cxxbridge-chirp
+if ENABLE_PLATFORM_GUI
+CXXBRIDGE_TARGETS += cxxbridge-platform
+endif
 
 if ENABLE_RUST
-all-local: $(CARGO_CONFIGURED) cargo-build-dashrust cxxbridge-chirp
+all-local: $(CARGO_CONFIGURED) cargo-build-dashrust $(CXXBRIDGE_TARGETS)
 
 cargo-build: $(CARGO_CONFIGURED) cargo-build-dashrust
 else
@@ -26,7 +32,7 @@ cargo-clean: cargo-clean-dashrust
 # crates append here instead of defining their own dist-hook (automake allows
 # only one dist-hook recipe per Makefile).
 if ENABLE_RUST
-dist-hook: dist-chirp
+dist-hook: dist-chirp dist-platform
 endif
 
 cargo-clean-config:
@@ -35,6 +41,6 @@ cargo-clean-config:
 	$(AM_V_at)rm -f $(CARGO_BUILD_CONFIG)
 	$(AM_V_at)rm -f $(RUST_NATIVE_LINKER) $(RUST_TARGET_LINKER)
 
-clean-local: cargo-clean-dashrust cxxbridge-clean-chirp cargo-clean-config
+clean-local: cargo-clean-dashrust cxxbridge-clean-chirp cxxbridge-clean-platform cargo-clean-config
 
 .PHONY: cargo-build cargo-clean cargo-clean-config
