@@ -40,7 +40,14 @@ public:
         std::array<uint8_t, 32> digest_array;
         std::copy(digest.begin(), digest.end(), digest_array.begin());
         std::vector<uint8_t> signature;
-        if (!m_sign_fn(key_id, digest_array, signature)) return false;
+        // This is called from Rust frames; a C++ exception must not unwind
+        // through them (unsupported by cxx), so a throwing signer reads as a
+        // signing refusal instead.
+        try {
+            if (!m_sign_fn(key_id, digest_array, signature)) return false;
+        } catch (...) {
+            return false;
+        }
         sig_out.clear();
         sig_out.reserve(signature.size());
         for (const uint8_t byte : signature) sig_out.push_back(byte);

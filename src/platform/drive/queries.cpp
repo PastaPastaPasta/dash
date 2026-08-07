@@ -59,7 +59,9 @@ bool Bridged(std::string& error, const Fn& fn)
 {
     try {
         return fn();
-    } catch (const rust::Error& e) {
+    } catch (const std::exception& e) {
+        // rust::Error from the bridge, but also cxx marshalling throws such
+        // as rust::String rejecting invalid UTF-8 in index values.
         error = e.what();
         return false;
     }
