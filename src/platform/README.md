@@ -6,12 +6,13 @@ used exclusively by the dash-qt GUI when configured with
 
 - per-network parameters and the well-known system data contract IDs
   (`params.*`);
-- codecs for the wire formats Platform uses: a bincode-v2 subset, a protobuf
-  wire-format subset for the DAPI gRPC messages, and DPP (Dash Platform
-  Protocol) object serialization;
-- a GroveDB/merk proof verifier (blake3-based) mirroring the upstream Rust
-  `verify` feature slice, plus the Tenderdash quorum-signature check that
-  binds a proof's root hash to a Platform block signed by an LLMQ quorum;
+- a protobuf wire-format subset for the DAPI gRPC messages;
+- thin adapters (`dpp/`, `drive/queries.*`) over the Rust bridge
+  (`rust/platform`, cxx namespace `platform_ffi`) for GroveDB/Drive proof
+  verification, DPP object decoding and state-transition construction —
+  backed by the real dashpay/platform crates;
+- the Tenderdash quorum-signature check that binds a proof's root hash to a
+  Platform block signed by an LLMQ quorum (`drive/quorumsig.*`);
 - a DAPI client speaking gRPC-Web over HTTP/1.1 + TLS (mbedtls) to evonodes.
 
 ## Isolation rules

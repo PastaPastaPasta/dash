@@ -228,6 +228,7 @@ mod ffi {
 
         // --- DPP decoders -----------------------------------------------
         fn decode_identity(bytes: &[u8]) -> Result<FfiIdentity>;
+        fn decode_identity_public_key(bytes: &[u8]) -> Result<FfiIdentityKey>;
         fn decode_dpns_domain(doc_bytes: &[u8]) -> Result<FfiDpnsName>;
         fn decode_dashpay_profile(doc_bytes: &[u8]) -> Result<FfiProfile>;
         fn decode_contact_request(doc_bytes: &[u8]) -> Result<FfiContactRequest>;
@@ -489,6 +490,10 @@ fn decode_identity(bytes: &[u8]) -> Result<ffi::FfiIdentity, String> {
         revision: identity.revision,
         keys: identity.keys.iter().map(ffi_key).collect(),
     })
+}
+
+fn decode_identity_public_key(bytes: &[u8]) -> Result<ffi::FfiIdentityKey, String> {
+    decode::decode_identity_public_key(bytes).map(|key| ffi_key(&key))
 }
 
 fn decode_dpns_domain(doc_bytes: &[u8]) -> Result<ffi::FfiDpnsName, String> {

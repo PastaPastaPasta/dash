@@ -5,8 +5,9 @@
 #ifndef BITCOIN_PLATFORM_DRIVE_QUERIES_H
 #define BITCOIN_PLATFORM_DRIVE_QUERIES_H
 
-#include <platform/proof/grovedb.h>
+#include <platform/drive/hash256.h>
 #include <platform/serialize.h>
+#include <span.h>
 #include <platform/types.h>
 
 #include <array>
@@ -15,33 +16,12 @@
 #include <string>
 #include <vector>
 
-//! Per-query GroveDB path logic for the DAPI queries the dash-qt Platform GUI
-//! makes. Each function verifies a real Drive proof with the layered GroveDB
-//! verifier (platform/proof/grovedb.h), matches the returned (path, key,
-//! element) tuples against the Drive tree layout for that query, decodes the
-//! leaf bytes with the DPP decoders (platform/dpp/), and returns typed
-//! results. std::nullopt means the object was cryptographically proven absent.
-//!
-//! Drive tree layout (dashpay/platform tag v4.0.0, protocol version 12):
-//!  - RootTree children (packages/rs-drive/src/drive/mod.rs enum RootTree):
-//!      Balances = 96 (sum tree), Identities = 32,
-//!      UniquePublicKeyHashesToIdentities = 24.
-//!  - Per-identity sub-structure (packages/rs-drive/src/drive/identity/mod.rs
-//!    enum IdentityRootStructure), under path [[32], identity_id]:
-//!      IdentityTreeRevision = 192 (8-byte big-endian item),
-//!      IdentityTreeNonce    = 64  (8-byte big-endian item),
-//!      IdentityTreeKeys     = 128 (sub-tree of serialized IdentityPublicKeys
-//!                                  keyed by varint KeyID).
-//!  - balance leaf: sum item in balance_path [[96]] keyed by identity id
-//!    (packages/rs-drive/src/drive/balances/mod.rs balance_path_vec,
-//!    verify/identity/verify_identity_balance_for_identity_id/v0).
-//!
-//! Sources for the match logic (packages/rs-drive/src/verify/identity/):
-//!  - verify_identity_balance_for_identity_id/v0/mod.rs
-//!  - verify_identity_nonce/v0/mod.rs
-//!  - verify_identity_keys_by_identity_id/v0/mod.rs
-//!  - verify_full_identity_by_identity_id/v0/mod.rs
-//!  - verify_identity_id_by_unique_public_key_hash/v0/mod.rs
+//! Per-query Drive proof verification for the DAPI queries the dash-qt
+//! Platform GUI makes. Each function is a thin adapter over the Rust bridge
+//! (rust/platform, cxx namespace platform_ffi), which verifies the real
+//! GroveDB proof with the upstream rs-drive `verify` feature slice, decodes
+//! the typed result, and reports the proven root hash. std::nullopt means the
+//! object was cryptographically proven absent.
 namespace platform::drive {
 
 using platform::Identifier;

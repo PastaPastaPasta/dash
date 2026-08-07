@@ -21,7 +21,6 @@ EXCLUDED_DIRS = ["src/leveldb/",
                  "src/minisketch/",
                  "src/dashbls/",
                  "src/immer/",
-                 "src/crypto/blake3/",
                  "src/crypto/x11/"]
 
 EXPECTED_BOOST_INCLUDES = ["boost/date_time/posix_time/posix_time.hpp",

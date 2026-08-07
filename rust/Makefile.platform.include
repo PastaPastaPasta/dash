@@ -31,6 +31,7 @@ LIBRUST_PLATFORM_CPP = \
 	$(LIBRUST_PLATFORM_GEN_DIR)/src/lib.cpp
 
 LIBRUST_PLATFORM_H = \
+	$(LIBRUST_PLATFORM_GEN_DIR)/include/rust/cxx.h \
 	$(LIBRUST_PLATFORM_GEN_DIR)/include/rust/platform/lib.h
 
 LIBRUST_PLATFORM_INCLUDES = \
@@ -60,7 +61,7 @@ $(LIBRUST_PLATFORM_CPP): $(LIBRUST_PLATFORM_SRCS) $(LIBRUST_PLATFORM_GEN_STAMP)
 	  $(CXXBRIDGE) $< -o $@; \
 	fi
 
-$(LIBRUST_PLATFORM_H): $(LIBRUST_PLATFORM_SRCS) $(LIBRUST_PLATFORM_GEN_STAMP)
+$(LIBRUST_PLATFORM_GEN_DIR)/include/rust/platform/lib.h: $(LIBRUST_PLATFORM_SRCS) $(LIBRUST_PLATFORM_GEN_STAMP)
 	$(AM_V_at)$(MKDIR_P) $(@D)
 	$(AM_V_GEN)if test -f $(LIBRUST_PLATFORM_GEN_SRCDIR)/include/rust/platform/lib.h && \
 	  test -f $(LIBRUST_PLATFORM_GEN_SRCSTAMP) && \
@@ -70,6 +71,17 @@ $(LIBRUST_PLATFORM_H): $(LIBRUST_PLATFORM_SRCS) $(LIBRUST_PLATFORM_GEN_STAMP)
 	  cp $(LIBRUST_PLATFORM_GEN_SRCDIR)/include/rust/platform/lib.h $@; \
 	else \
 	  $(CXXBRIDGE) $< --header -o $@; \
+	fi
+
+# The one-per-tree cxx runtime header (rust::Slice, rust::Vec, rust::Error,
+# ...) that the generated bridge header and platform/ffi/signer.h include as
+# <rust/cxx.h>. `cxxbridge --header` with no input emits it.
+$(LIBRUST_PLATFORM_GEN_DIR)/include/rust/cxx.h: $(LIBRUST_PLATFORM_GEN_STAMP)
+	$(AM_V_at)$(MKDIR_P) $(@D)
+	$(AM_V_GEN)if test -f $(LIBRUST_PLATFORM_GEN_SRCDIR)/include/rust/cxx.h; then \
+	  cp $(LIBRUST_PLATFORM_GEN_SRCDIR)/include/rust/cxx.h $@; \
+	else \
+	  $(CXXBRIDGE) --header -o $@; \
 	fi
 
 cxxbridge-clean-platform:
@@ -82,6 +94,7 @@ dist-platform: cxxbridge-platform
 	$(MKDIR_P) $(distdir)/platform/gen/include/rust/platform
 	cp $(LIBRUST_PLATFORM_GEN_STAMP) $(distdir)/platform/gen/
 	cp $(LIBRUST_PLATFORM_CPP) $(distdir)/platform/gen/src/
-	cp $(LIBRUST_PLATFORM_H) $(distdir)/platform/gen/include/rust/platform/
+	cp $(LIBRUST_PLATFORM_GEN_DIR)/include/rust/cxx.h $(distdir)/platform/gen/include/rust/
+	cp $(LIBRUST_PLATFORM_GEN_DIR)/include/rust/platform/lib.h $(distdir)/platform/gen/include/rust/platform/
 
 .PHONY: cxxbridge-platform cxxbridge-clean-platform dist-platform

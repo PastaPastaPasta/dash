@@ -5,7 +5,7 @@
 #ifndef BITCOIN_PLATFORM_DRIVE_QUORUMSIG_H
 #define BITCOIN_PLATFORM_DRIVE_QUORUMSIG_H
 
-#include <platform/proof/merk.h>
+#include <platform/drive/hash256.h>
 #include <platform/serialize.h>
 
 #include <array>

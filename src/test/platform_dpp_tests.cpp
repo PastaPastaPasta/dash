@@ -2,12 +2,12 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <platform/dpp/bincode.h>
 #include <platform/dpp/document.h>
 #include <platform/dpp/identity.h>
 #include <platform/statetransitions.h>
 
 #include <crypto/sha256.h>
+#include <hash.h>
 #include <key.h>
 #include <test/util/setup_common.h>
 #include <uint256.h>
@@ -94,55 +94,25 @@ uint256 DigestOf(const UniValue& vec)
     return uint256{FromHex(vec["digest_hex"].get_str())};
 }
 
-} // namespace
-
-BOOST_AUTO_TEST_CASE(bincode_varint)
+//! Document id: DSHA256(contract_id || owner_id || type_name || entropy),
+//! per rs-dpp Document::generate_document_id_v0. Local mirror used to check
+//! the document ids the bridge-built transitions must carry.
+Identifier GenerateDocumentId(const Identifier& contract_id, const Identifier& owner_id,
+                              const std::string& document_type_name, Span<const uint8_t> entropy)
 {
-    // Encoding boundaries of bincode standard()+big_endian() varints.
-    const std::vector<std::pair<uint64_t, std::string>> cases{
-        {0, "00"},
-        {100, "64"},
-        {250, "fa"},
-        {251, "fb00fb"},
-        {0x1234, "fb1234"},
-        {0xffff, "fbffff"},
-        {0x10000, "fc00010000"},
-        {0xffffffff, "fcffffffff"},
-        {0x100000000ULL, "fd0000000100000000"},
-        {0xffffffffffffffffULL, "fdffffffffffffffff"},
-    };
-    for (const auto& [value, expected_hex] : cases) {
-        dpp::Writer writer;
-        writer.WriteVarint(value);
-        BOOST_CHECK_EQUAL(HexStr(writer.Data()), expected_hex);
-
-        dpp::Reader reader{Span{writer.Data()}};
-        uint64_t decoded;
-        BOOST_REQUIRE(reader.ReadVarint(decoded));
-        BOOST_CHECK_EQUAL(decoded, value);
-        BOOST_CHECK(reader.IsEof());
-    }
-
-    // Signed varints zigzag before encoding.
-    dpp::Writer writer;
-    writer.WriteSignedVarint(-1);
-    writer.WriteSignedVarint(1);
-    writer.WriteSignedVarint(-126);
-    BOOST_CHECK_EQUAL(HexStr(writer.Data()), "0102fb00fb");
-    dpp::Reader reader{Span{writer.Data()}};
-    int64_t s1, s2, s3;
-    BOOST_REQUIRE(reader.ReadSignedVarint(s1) && reader.ReadSignedVarint(s2) && reader.ReadSignedVarint(s3));
-    BOOST_CHECK_EQUAL(s1, -1);
-    BOOST_CHECK_EQUAL(s2, 1);
-    BOOST_CHECK_EQUAL(s3, -126);
-
-    // The u128 marker is rejected.
-    const std::vector<uint8_t> u128_marker{0xfe};
-    dpp::Reader bad{Span{u128_marker}};
-    uint64_t dummy;
-    BOOST_CHECK(!bad.ReadVarint(dummy));
-    BOOST_CHECK(bad.HasError());
+    CHash256 hasher;
+    hasher.Write(contract_id);
+    hasher.Write(owner_id);
+    hasher.Write(MakeUCharSpan(document_type_name));
+    hasher.Write(entropy);
+    uint256 hash;
+    hasher.Finalize(hash);
+    Identifier ret;
+    std::copy(hash.begin(), hash.end(), ret.begin());
+    return ret;
 }
+
+} // namespace
 
 BOOST_AUTO_TEST_CASE(identity_decode)
 {
@@ -176,17 +146,13 @@ BOOST_AUTO_TEST_CASE(identity_decode)
         }
     }
 
-    // Negative: truncation, trailing garbage and unknown versions all fail.
+    // Negative: truncation and unknown versions fail. (Trailing bytes are
+    // tolerated: rs-dpp's deserializer, like the Rust SDK, ignores unread
+    // input past a complete object.)
     for (size_t len : {size_t{0}, size_t{1}, size_t{16}, bytes.size() - 1}) {
         std::string err;
         BOOST_CHECK(!dpp::DecodeIdentity(Span{bytes}.first(len), err));
         BOOST_CHECK(!err.empty());
-    }
-    {
-        std::vector<uint8_t> trailing{bytes};
-        trailing.push_back(0x00);
-        std::string err;
-        BOOST_CHECK(!dpp::DecodeIdentity(trailing, err));
     }
     {
         std::vector<uint8_t> bad_version{bytes};
@@ -221,9 +187,6 @@ BOOST_AUTO_TEST_CASE(identity_public_key_decode)
 
     std::string err;
     BOOST_CHECK(!dpp::DecodeIdentityPublicKey(Span{bytes}.first(bytes.size() - 1), err));
-    std::vector<uint8_t> trailing{bytes};
-    trailing.push_back(0x00);
-    BOOST_CHECK(!dpp::DecodeIdentityPublicKey(trailing, err));
 }
 
 BOOST_AUTO_TEST_CASE(identity_create)
@@ -305,7 +268,7 @@ BOOST_AUTO_TEST_CASE(dpns_preorder)
     CheckBuilt(result, vec);
 
     // The preorder document id derives from the salted-domain-hash entropy.
-    const auto doc_id{dpp::GenerateDocumentId(DPNS_CONTRACT_ID, owner, "preorder", salted_hash)};
+    const auto doc_id{GenerateDocumentId(DPNS_CONTRACT_ID, owner, "preorder", salted_hash)};
     BOOST_CHECK_EQUAL(HexStr(doc_id), vec["document_id_hex"].get_str());
 }
 
@@ -331,7 +294,7 @@ BOOST_AUTO_TEST_CASE(dpns_domain)
         CheckBuilt(result, vec);
 
         // The domain document id derives from the preorder-salt entropy.
-        const auto doc_id{dpp::GenerateDocumentId(DPNS_CONTRACT_ID, owner, "domain", salt)};
+        const auto doc_id{GenerateDocumentId(DPNS_CONTRACT_ID, owner, "domain", salt)};
         BOOST_CHECK_EQUAL(HexStr(doc_id), vec["document_id_hex"].get_str());
     }
 

@@ -12,7 +12,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::Identity;
+use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::Value;
 use dpp::serialization::PlatformDeserializable;
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
@@ -41,6 +41,20 @@ pub fn decode_identity(bytes: &[u8]) -> Result<IdentityInfo, String> {
         balance: identity.balance(),
         revision: identity.revision(),
         keys,
+    })
+}
+
+pub fn decode_identity_public_key(bytes: &[u8]) -> Result<KeyInfo, String> {
+    let key = IdentityPublicKey::deserialize_from_bytes(bytes)
+        .map_err(|e| format!("bad identity public key: {e}"))?;
+    Ok(KeyInfo {
+        id: key.id(),
+        purpose: key.purpose() as u8,
+        security_level: key.security_level() as u8,
+        key_type: key.key_type() as u8,
+        read_only: key.read_only(),
+        data: key.data().to_vec(),
+        disabled_at: key.disabled_at(),
     })
 }
 

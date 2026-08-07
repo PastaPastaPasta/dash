@@ -720,36 +720,26 @@ endif
 
 # platform (Dash Platform client, linked into dash-qt and test_dash only) #
 if ENABLE_PLATFORM_GUI
-libdash_platform_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(BOOST_CPPFLAGS) $(MBEDTLS_CFLAGS) \
-  -DBLAKE3_NO_SSE2 -DBLAKE3_NO_SSE41 -DBLAKE3_NO_AVX2 -DBLAKE3_NO_AVX512 -DBLAKE3_USE_NEON=0
+libdash_platform_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(BOOST_CPPFLAGS) $(MBEDTLS_CFLAGS)
 libdash_platform_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 libdash_platform_a_CFLAGS = $(AM_CFLAGS) $(PIE_FLAGS)
 libdash_platform_a_SOURCES = \
-  crypto/blake3/blake3.c \
-  crypto/blake3/blake3.h \
-  crypto/blake3/blake3_dispatch.c \
-  crypto/blake3/blake3_impl.h \
-  crypto/blake3/blake3_portable.c \
   platform/client.h \
-  platform/dpp/bincode.cpp \
-  platform/dpp/bincode.h \
   platform/dpp/document.cpp \
   platform/dpp/document.h \
   platform/dpp/identity.cpp \
   platform/dpp/identity.h \
   platform/dpp/statetransitions.cpp \
+  platform/drive/hash256.h \
   platform/drive/queries.cpp \
   platform/drive/queries.h \
   platform/drive/quorumsig.cpp \
   platform/drive/quorumsig.h \
   platform/drive/verify.cpp \
   platform/drive/verify.h \
+  platform/ffi/signer.h \
   platform/params.cpp \
   platform/params.h \
-  platform/proof/grovedb.cpp \
-  platform/proof/grovedb.h \
-  platform/proof/merk.cpp \
-  platform/proof/merk.h \
   platform/serialize.cpp \
   platform/serialize.h \
   platform/statetransitions.h \
@@ -764,6 +754,10 @@ libdash_platform_a_SOURCES = \
   platform/transport/tls.cpp \
   platform/transport/tls.h \
   platform/types.h
+
+# The platform sources include the cxxbridge-generated header
+# <rust/platform/lib.h>; make sure codegen runs first.
+$(libdash_platform_a_OBJECTS): $(LIBRUSTDEPS_H)
 endif
 #
 

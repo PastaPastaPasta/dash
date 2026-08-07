@@ -15,8 +15,12 @@ versioned-feature-core = "1.0.0"
 [profile.release]
 codegen-units = 1
 lto = true
-panic = "abort"
+# panic=unwind (not abort): verify_*/decode_* parse attacker-controlled bytes from
+# remote DAPI nodes deep inside grovedb/drive; with unwind, cxx converts any
+# residual panic into a catchable C++ exception at the bridge instead of
+# aborting dash-qt. dashd links no Rust either way.
+panic = "unwind"
 
 [profile.dev]
 codegen-units = 1
-panic = "abort"
+panic = "unwind"
