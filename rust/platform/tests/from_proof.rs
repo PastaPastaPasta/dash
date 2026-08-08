@@ -242,9 +242,7 @@ fn identity_keys_request(identity_id: Vec<u8>) -> Vec<u8> {
             proto::get_identity_keys_request::GetIdentityKeysRequestV0 {
                 identity_id,
                 request_type: Some(proto::KeyRequestType {
-                    request: Some(proto::key_request_type::Request::AllKeys(
-                        proto::AllKeys {},
-                    )),
+                    request: Some(proto::key_request_type::Request::AllKeys(proto::AllKeys {})),
                 }),
                 limit: None,
                 offset: None,
@@ -261,7 +259,9 @@ fn identity_keys_response(proof: Proof) -> Vec<u8> {
             proto::get_identity_keys_response::GetIdentityKeysResponseV0 {
                 metadata: Some(metadata()),
                 result: Some(
-                    proto::get_identity_keys_response::get_identity_keys_response_v0::Result::Proof(proof),
+                    proto::get_identity_keys_response::get_identity_keys_response_v0::Result::Proof(
+                        proof,
+                    ),
                 ),
             },
         )),
@@ -379,9 +379,8 @@ fn identity_nonce_verifies_end_to_end() {
     let q = query(&file, "identity_nonce");
     let request = identity_nonce_request(hexv(&file.identity_id));
     let response = identity_nonce_response(proof_msg(hexv(&q.grovedb_proof_hex)));
-    let (nonce, meta) =
-        dash_platform_ffi::verify::verify_get_identity_nonce(&request, &response)
-            .expect("identity nonce verifies");
+    let (nonce, meta) = dash_platform_ffi::verify::verify_get_identity_nonce(&request, &response)
+        .expect("identity nonce verifies");
     assert_eq!(nonce, q.expected["nonce"].as_u64());
     check_meta(&meta);
 }
@@ -431,7 +430,10 @@ fn identity_keys_verify_end_to_end() {
     );
     assert_eq!(
         keys.len(),
-        q.expected["serialized_keys"].as_array().expect("keys").len()
+        q.expected["serialized_keys"]
+            .as_array()
+            .expect("keys")
+            .len()
     );
     check_meta(&meta);
 }
@@ -454,7 +456,10 @@ fn contested_vote_state_active_verifies_end_to_end() {
     let expected_contenders = q.expected["contenders"].as_array().unwrap();
     assert_eq!(state.contenders.len(), expected_contenders.len());
     for ((identity, votes), expected) in state.contenders.iter().zip(expected_contenders) {
-        assert_eq!(hex::encode(identity), expected["identity_id"].as_str().unwrap());
+        assert_eq!(
+            hex::encode(identity),
+            expected["identity_id"].as_str().unwrap()
+        );
         assert_eq!(votes.map(u64::from), expected["votes"].as_u64());
     }
     assert_eq!(
@@ -522,7 +527,10 @@ fn placeholder_documents_fail_decoding_cleanly() {
         .expect_err("placeholder documents must not decode");
     // The failure must come from the DPP decode, not from the grovedb
     // replay: a query-shape drift would surface as a "grovedb:" proof error.
-    assert!(!err.contains("grovedb"), "unexpected proof-layer error: {err}");
+    assert!(
+        !err.contains("grovedb"),
+        "unexpected proof-layer error: {err}"
+    );
 }
 
 // --- negative cases (quorum binding) ---------------------------------------
@@ -594,4 +602,93 @@ fn tampered_metadata_height_is_rejected() {
     .encode_to_vec();
     dash_platform_ffi::verify::verify_get_identity_nonce(&request, &response)
         .expect_err("tampered signed height must fail");
+}
+
+fn identity_request(id: Vec<u8>) -> Vec<u8> {
+    proto::GetIdentityRequest {
+        version: Some(proto::get_identity_request::Version::V0(
+            proto::get_identity_request::GetIdentityRequestV0 { id, prove: true },
+        )),
+    }
+    .encode_to_vec()
+}
+
+fn identity_response(proof: Proof) -> Vec<u8> {
+    proto::GetIdentityResponse {
+        version: Some(proto::get_identity_response::Version::V0(
+            proto::get_identity_response::GetIdentityResponseV0 {
+                metadata: Some(metadata()),
+                result: Some(
+                    proto::get_identity_response::get_identity_response_v0::Result::Proof(proof),
+                ),
+            },
+        )),
+    }
+    .encode_to_vec()
+}
+
+fn identity_by_pubkey_hash_request(public_key_hash: Vec<u8>) -> Vec<u8> {
+    proto::GetIdentityByPublicKeyHashRequest {
+        version: Some(proto::get_identity_by_public_key_hash_request::Version::V0(
+            proto::get_identity_by_public_key_hash_request::GetIdentityByPublicKeyHashRequestV0 {
+                public_key_hash,
+                prove: true,
+            },
+        )),
+    }
+    .encode_to_vec()
+}
+
+fn identity_by_pubkey_hash_response(proof: Proof) -> Vec<u8> {
+    proto::GetIdentityByPublicKeyHashResponse {
+        version: Some(proto::get_identity_by_public_key_hash_response::Version::V0(
+            proto::get_identity_by_public_key_hash_response::GetIdentityByPublicKeyHashResponseV0 {
+                metadata: Some(metadata()),
+                result: Some(
+                    proto::get_identity_by_public_key_hash_response::get_identity_by_public_key_hash_response_v0::Result::Proof(proof),
+                ),
+            },
+        )),
+    }
+    .encode_to_vec()
+}
+
+/// The fixture corpus has no full-identity proof: the pubkey-hash vectors
+/// prove only the unique-hash -> identity-id mapping, while the verifier
+/// requires the full identity subtree (upstream skips these vectors for the
+/// same reason). Until a full-identity fixture is regenerated, the two
+/// flagship identity paths are pinned negatively: an id-mapping-only proof
+/// must be rejected cleanly, never verified and never a panic.
+#[test]
+fn identity_by_pubkey_hash_rejects_id_mapping_only_proof() {
+    setup();
+    let file = drive_vectors();
+    let q = query(&file, "identity_by_public_key_hash_present");
+    let request = identity_by_pubkey_hash_request(hexv(
+        &q.query["public_key_hash"].as_str().unwrap().to_string(),
+    ));
+    let response = identity_by_pubkey_hash_response(proof_msg(hexv(&q.grovedb_proof_hex)));
+    let err = dash_platform_ffi::verify::verify_get_identity_by_pubkey_hash(&request, &response)
+        .expect_err("id-mapping-only proof must not satisfy full-identity verification");
+    assert!(
+        err.contains("identity-by-public-key-hash proof verification failed"),
+        "unexpected error: {err}"
+    );
+}
+
+/// A structurally valid proof for a different query shape must fail cleanly
+/// when presented as a full-identity proof.
+#[test]
+fn identity_rejects_wrong_shape_proof() {
+    setup();
+    let file = drive_vectors();
+    let q = query(&file, "identity_nonce");
+    let request = identity_request(hexv(&file.identity_id));
+    let response = identity_response(proof_msg(hexv(&q.grovedb_proof_hex)));
+    let err = dash_platform_ffi::verify::verify_get_identity(&request, &response)
+        .expect_err("nonce-shaped proof must not satisfy full-identity verification");
+    assert!(
+        err.contains("identity proof verification failed"),
+        "unexpected error: {err}"
+    );
 }

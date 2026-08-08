@@ -20,12 +20,12 @@ enum class AttemptStatus {
 
 //! Runs a whole logical operation against a *single* pinned endpoint at a
 //! time, moving to the next endpoint (round-robin from `start`) only when the
-//! attempt returns Retry. This is what keeps a multi-proof operation (e.g.
-//! getIdentity's balance/revision/keys sub-queries) consistent: every
-//! sub-request within one attempt targets the same node, so honest nodes at
-//! slightly different platform heights cannot produce mismatched roots for a
-//! single logical read. `attempt(endpoint, attempt_index)` performs the full
-//! operation against `endpoint`.
+//! attempt returns Retry. Since getIdentity collapsed to a single proved
+//! request, no in-tree operation issues multiple sub-queries per attempt any
+//! more; DoGetIdentity still uses this helper for its retry-on-verification-
+//! failure behaviour, and the pinning again matters the moment an operation
+//! spans more than one proof. `attempt(endpoint, attempt_index)` performs the
+//! full operation against `endpoint`.
 //!
 //! Returns the number of attempts made (0 when there are no endpoints). At
 //! most min(max_attempts, endpoints.size()) distinct endpoints are tried, so

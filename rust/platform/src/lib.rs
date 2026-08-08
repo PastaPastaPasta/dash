@@ -205,10 +205,7 @@ mod ffi {
         fn update_quorum_keys(quorum_type: u8, keys: Vec<FfiQuorumKey>) -> Result<()>;
 
         // --- FromProof verification over (request, response) bytes ------
-        fn verify_get_identity_nonce(
-            request: &[u8],
-            response: &[u8],
-        ) -> Result<FfiVerifiedU64>;
+        fn verify_get_identity_nonce(request: &[u8], response: &[u8]) -> Result<FfiVerifiedU64>;
         fn verify_get_identity_contract_nonce(
             request: &[u8],
             response: &[u8],
@@ -390,11 +387,12 @@ fn update_quorum_keys(quorum_type: u8, keys: Vec<ffi::FfiQuorumKey>) -> Result<(
         .map(|key| {
             Ok(provider::QuorumKey {
                 quorum_hash: types::id32(&key.quorum_hash, "quorum hash")?,
-                public_key: key
-                    .pubkey
-                    .as_slice()
-                    .try_into()
-                    .map_err(|_| format!("quorum public key must be 48 bytes, got {}", key.pubkey.len()))?,
+                public_key: key.pubkey.as_slice().try_into().map_err(|_| {
+                    format!(
+                        "quorum public key must be 48 bytes, got {}",
+                        key.pubkey.len()
+                    )
+                })?,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -475,13 +473,7 @@ fn verify_get_contested_vote_state(
 }
 
 fn decode_identity(bytes: &[u8]) -> Result<ffi::FfiIdentity, String> {
-    let identity = decode::decode_identity(bytes)?;
-    Ok(ffi::FfiIdentity {
-        id: identity.id.to_vec(),
-        balance: identity.balance,
-        revision: identity.revision,
-        keys: identity.keys.iter().map(ffi_key).collect(),
-    })
+    decode::decode_identity(bytes).map(|identity| ffi_identity(&identity))
 }
 
 fn decode_identity_public_key(bytes: &[u8]) -> Result<ffi::FfiIdentityKey, String> {
