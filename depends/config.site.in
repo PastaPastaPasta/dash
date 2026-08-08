@@ -194,3 +194,6 @@ fi
 if test -z "$RUST_VENDORED_SOURCES"; then
   RUST_VENDORED_SOURCES="${depends_prefix}/vendored-sources"
 fi
+if test -d "${depends_prefix}/tenderdash-sources"; then
+  TENDERDASH_SOURCES="${depends_prefix}/tenderdash-sources"
+fi

@@ -29,6 +29,6 @@ natpmp_packages=libnatpmp
 multiprocess_packages = libmultiprocess capnp
 multiprocess_native_packages = native_libmultiprocess native_capnp
 
-platform_packages = mbedtls
+platform_packages = mbedtls tenderdash_sources
 
 usdt_linux_packages=systemtap

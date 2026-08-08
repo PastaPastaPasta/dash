@@ -144,6 +144,14 @@ if test "${CARGO_INCREMENTAL+set}" != "set"; then
 fi
 
 AC_ARG_VAR([RUSTFLAGS], [Flags for Rust compiler])
+
+dnl Directory holding the sha256-pinned tenderdash source archive
+dnl (tenderdash-vX.Y.Z.zip, depends package tenderdash_sources). When set,
+dnl the archive is copied into the cargo target directory before building so
+dnl tenderdash-proto's build.rs finds it in its download cache instead of
+dnl fetching it from GitHub (required for offline/depends builds with
+dnl --enable-platform-gui). Unset for --enable-online-rust dev builds.
+AC_ARG_VAR([TENDERDASH_SOURCES], [Directory with the pinned tenderdash source archive for offline builds])
 if test "${RUSTFLAGS+set}" != "set"; then
   RUSTFLAGS="-C embed-bitcode=yes -C relocation-model=pic"
 fi
@@ -2457,4 +2465,5 @@ echo "  RUST_NATIVE                  = $RUST_NATIVE"
 echo "  RUST_OSX_SDK                 = $RUST_OSX_SDK"
 echo "  RUST_TARGET                  = $RUST_TARGET"
 echo "  RUST_VENDORED_SOURCES        = $RUST_VENDORED_SOURCES"
+echo "  TENDERDASH_SOURCES           = $TENDERDASH_SOURCES"
 echo

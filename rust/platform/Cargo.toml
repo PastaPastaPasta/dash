@@ -3,9 +3,14 @@ name = "dash-platform-ffi"
 version = "0.1.0"
 edition = "2021"
 
-# Dash Platform client internals: proof verification (drive), DPP decoding
-# and state-transition construction, exposed to C++ through cxx. Compiled
-# into Dash Core through the umbrella crate `dashrust` (feature "platform").
+# Dash Platform client internals: proof verification (drive-proof-verifier's
+# FromProof over dapi-grpc request/response bytes), DPP decoding and state
+# transition construction, exposed to C++ through cxx. Compiled into Dash
+# Core through the umbrella crate `dashrust` (feature "platform").
+#
+# All platform crates are pinned to one revision of dashpay/platform
+# (branch feat/transport-free-embedder-core); grovedb resolves through
+# drive's own pin.
 
 [lib]
 name = "dash_platform_ffi"
@@ -13,9 +18,15 @@ crate-type = ["rlib"]
 
 [dependencies]
 cxx = "1.0.198"
-grovedb = { git = "https://github.com/dashpay/grovedb", tag = "v5.0.1", default-features = false, features = ["verify"] }
-drive = { git = "https://github.com/dashpay/platform", tag = "v4.1.0", default-features = false, features = ["verify"] }
-dpp = { git = "https://github.com/dashpay/platform", tag = "v4.1.0", default-features = false, features = [
+dapi-grpc = { git = "https://github.com/dashpay/platform", rev = "db332fe05469361e95e48ff34d1b39803ace305e", default-features = false, features = [
+    "platform",
+    "client",
+] }
+dash-context-provider = { git = "https://github.com/dashpay/platform", rev = "db332fe05469361e95e48ff34d1b39803ace305e", default-features = false }
+dash-platform-queries = { git = "https://github.com/dashpay/platform", rev = "db332fe05469361e95e48ff34d1b39803ace305e", default-features = false }
+drive-proof-verifier = { git = "https://github.com/dashpay/platform", rev = "db332fe05469361e95e48ff34d1b39803ace305e", default-features = false }
+drive = { git = "https://github.com/dashpay/platform", rev = "db332fe05469361e95e48ff34d1b39803ace305e", default-features = false, features = ["verify"] }
+dpp = { git = "https://github.com/dashpay/platform", rev = "db332fe05469361e95e48ff34d1b39803ace305e", default-features = false, features = [
     "state-transitions",
     "state-transition-signing",
     "identity-serialization",
@@ -24,7 +35,8 @@ dpp = { git = "https://github.com/dashpay/platform", tag = "v4.1.0", default-fea
     "dpns-contract",
     "dashpay-contract",
 ] }
-platform-version = { git = "https://github.com/dashpay/platform", tag = "v4.1.0" }
+platform-version = { git = "https://github.com/dashpay/platform", rev = "db332fe05469361e95e48ff34d1b39803ace305e" }
+prost = "0.14"
 hex = "0.4"
 futures = "0.3"
 async-trait = "0.1"
