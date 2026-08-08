@@ -79,11 +79,14 @@ Result<BuiltTransition> BuildIdentityCreate(
     const Signer& asset_lock_signer);
 
 //! DPNS preorder document create (documents batch transition), signed by the
-//! identity HIGH-level authentication key.
+//! identity HIGH-level authentication key. The salted domain hash
+//! (DSHA256(salt || normalized_label || ".dash")) is derived on the Rust
+//! side by the upstream DPNS document builder.
 Result<BuiltTransition> BuildDpnsPreorder(
     const Identifier& identity,
     uint64_t identity_contract_nonce,
-    const std::array<uint8_t, 32>& salted_domain_hash,
+    const std::string& label,
+    const std::array<uint8_t, 32>& preorder_salt,
     uint32_t signature_public_key_id,
     const Signer& signer);
 

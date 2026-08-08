@@ -14,6 +14,13 @@
 
 use std::collections::BTreeMap;
 
+use dash_platform_queries::dashpay::{
+    build_contact_request_document, ContactRequestDocumentParams,
+};
+use dash_platform_queries::dpns_usernames::build_dpns_preorder_and_domain_documents;
+use dash_platform_queries::transition::put_document::{
+    ensure_entropy_matches_document_id, prepare_document_for_transition,
+};
 use dpp::dashcore::consensus::Decodable;
 use dpp::dashcore::hashes::{sha256, Hash};
 use dpp::dashcore::{InstantLock, OutPoint, Transaction};
@@ -139,32 +146,38 @@ fn built(state_transition: &StateTransition) -> Result<BuiltTransition, String> 
     Ok(BuiltTransition { bytes, hash })
 }
 
-/// Builds and signs a single-document create batch transition.
-#[allow(clippy::too_many_arguments)]
-fn build_document_create(
-    contract: SystemDataContract,
+/// Builds and signs a single-document create batch transition from an
+/// assembled document. The upstream put-document guards run first: the
+/// entropy must rederive the document id (Drive recomputes it during
+/// validation, so a mismatch is caught locally instead of after paying a
+/// nonce bump), and the properties are sanitized for the document type.
+fn build_document_create_transition(
+    contract: &DataContract,
     document_type_name: &str,
-    owner_id: [u8; 32],
+    document: Document,
     identity_contract_nonce: u64,
-    properties: BTreeMap<String, Value>,
     entropy: [u8; 32],
     key: &KeyInfo,
     sign_fn: SignFn<'_>,
 ) -> Result<BuiltTransition, String> {
+    use dpp::document::DocumentV0Getters;
+
     let version = PlatformVersion::latest();
-    let contract = load_contract(contract)?;
     let document_type = contract
         .document_type_for_name(document_type_name)
         .map_err(|e| format!("unknown document type {document_type_name}: {e}"))?;
-    let owner_id = Identifier::from(owner_id);
-    let document_id =
-        Document::generate_document_id_v0(&contract.id(), &owner_id, document_type_name, &entropy);
-    let document = Document::V0(DocumentV0 {
-        id: document_id,
-        owner_id,
-        properties,
-        ..Default::default()
-    });
+    ensure_entropy_matches_document_id(
+        &contract.id(),
+        &document.owner_id(),
+        document_type_name,
+        &entropy,
+        document.id(),
+    )
+    .map_err(|e| format!("{document_type_name}: {e}"))?;
+    let document_type_owned = contract
+        .document_type_cloned_for_name(document_type_name)
+        .map_err(|e| format!("unknown document type {document_type_name}: {e}"))?;
+    let document = prepare_document_for_transition(&document, &document_type_owned);
     let identity_key = identity_key_from_info(key)?;
     let signer = CallbackSigner { sign_fn };
     let state_transition = futures::executor::block_on(
@@ -185,33 +198,92 @@ fn build_document_create(
     built(&state_transition)
 }
 
-pub fn build_dpns_preorder(
-    identity_id: &[u8],
+/// Builds and signs a single-document create batch transition from a
+/// property map (documents without an upstream pure builder).
+#[allow(clippy::too_many_arguments)]
+fn build_document_create(
+    contract: SystemDataContract,
+    document_type_name: &str,
+    owner_id: [u8; 32],
     identity_contract_nonce: u64,
-    salted_domain_hash: &[u8],
+    properties: BTreeMap<String, Value>,
+    entropy: [u8; 32],
     key: &KeyInfo,
-    entropy: &[u8],
     sign_fn: SignFn<'_>,
 ) -> Result<BuiltTransition, String> {
-    let owner = id32(identity_id, "identity id")?;
-    let salted_domain_hash = id32(salted_domain_hash, "salted domain hash")?;
-    let entropy = id32(entropy, "entropy")?;
-    let properties = BTreeMap::from([(
-        "saltedDomainHash".to_string(),
-        Value::Bytes32(salted_domain_hash),
-    )]);
-    build_document_create(
-        SystemDataContract::DPNS,
-        "preorder",
-        owner,
-        identity_contract_nonce,
+    let contract = load_contract(contract)?;
+    let owner_id = Identifier::from(owner_id);
+    let document_id =
+        Document::generate_document_id_v0(&contract.id(), &owner_id, document_type_name, &entropy);
+    let document = Document::V0(DocumentV0 {
+        id: document_id,
+        owner_id,
         properties,
+        ..Default::default()
+    });
+    build_document_create_transition(
+        &contract,
+        document_type_name,
+        document,
+        identity_contract_nonce,
         entropy,
         key,
         sign_fn,
     )
 }
 
+/// The salted domain hash the DPNS preorder blinds the name behind:
+/// sha256d(salt || "<normalized label>.dash"). Matches the preimage
+/// `build_dpns_preorder_and_domain_documents` hashes into the preorder's
+/// `saltedDomainHash` property.
+fn salted_domain_hash(salt: [u8; 32], label: &str) -> [u8; 32] {
+    let normalized = convert_to_homograph_safe_chars(label);
+    let mut preimage = salt.to_vec();
+    preimage.extend((normalized + ".dash").as_bytes());
+    hash_double(&preimage)
+}
+
+/// DPNS preorder create. The documents come from the upstream pure builder
+/// (dash-platform-queries); the salted domain hash doubles as the document
+/// entropy — it is already blinded and unique per (name, salt), so rebuilds
+/// of the same registration stay byte-identical.
+pub fn build_dpns_preorder(
+    identity_id: &[u8],
+    identity_contract_nonce: u64,
+    label: &str,
+    preorder_salt: &[u8],
+    key: &KeyInfo,
+    sign_fn: SignFn<'_>,
+) -> Result<BuiltTransition, String> {
+    let owner = id32(identity_id, "identity id")?;
+    let salt = id32(preorder_salt, "preorder salt")?;
+    let entropy = salted_domain_hash(salt, label);
+    let contract = load_contract(SystemDataContract::DPNS)?;
+    let (preorder, _domain) = build_dpns_preorder_and_domain_documents(
+        &contract,
+        Identifier::from(owner),
+        label,
+        entropy,
+        salt,
+    )
+    .map_err(|e| format!("unable to build DPNS preorder document: {e}"))?;
+    build_document_create_transition(
+        &contract,
+        "preorder",
+        preorder,
+        identity_contract_nonce,
+        entropy,
+        key,
+        sign_fn,
+    )
+}
+
+/// DPNS domain create. The preorder salt is drawn fresh per registration
+/// attempt, making it a suitable deterministic document entropy for the
+/// paired domain create. The contested-name vote-resolution prefund is
+/// computed by rs-dpp from the contested unique index of the DPNS domain
+/// type during DocumentCreateTransition::from_document; no explicit
+/// handling needed.
 #[allow(clippy::too_many_arguments)]
 pub fn build_dpns_domain(
     identity_id: &[u8],
@@ -220,59 +292,34 @@ pub fn build_dpns_domain(
     normalized_label: &str,
     parent_domain: &str,
     preorder_salt: &[u8],
-    entropy: &[u8],
     key: &KeyInfo,
     sign_fn: SignFn<'_>,
 ) -> Result<BuiltTransition, String> {
-    if label.is_empty() || normalized_label.is_empty() || parent_domain.is_empty() {
-        return Err("empty DPNS label or parent domain".to_string());
-    }
     if convert_to_homograph_safe_chars(label) != normalized_label {
         return Err("normalized label does not match label".to_string());
     }
+    // The upstream builder registers under the "dash" TLD; that is the only
+    // parent domain that exists.
+    if parent_domain != "dash" {
+        return Err(format!("unsupported parent domain {parent_domain:?}"));
+    }
     let owner = id32(identity_id, "identity id")?;
-    let preorder_salt = id32(preorder_salt, "preorder salt")?;
-    let entropy = id32(entropy, "entropy")?;
-    let properties = BTreeMap::from([
-        ("label".to_string(), Value::Text(label.to_string())),
-        (
-            "normalizedLabel".to_string(),
-            Value::Text(normalized_label.to_string()),
-        ),
-        (
-            "parentDomainName".to_string(),
-            Value::Text(parent_domain.to_string()),
-        ),
-        (
-            "normalizedParentDomainName".to_string(),
-            Value::Text(convert_to_homograph_safe_chars(parent_domain)),
-        ),
-        ("preorderSalt".to_string(), Value::Bytes32(preorder_salt)),
-        (
-            "records".to_string(),
-            Value::Map(vec![(
-                Value::Text("identity".to_string()),
-                Value::Identifier(owner),
-            )]),
-        ),
-        (
-            "subdomainRules".to_string(),
-            Value::Map(vec![(
-                Value::Text("allowSubdomains".to_string()),
-                Value::Bool(false),
-            )]),
-        ),
-    ]);
-    // The contested-name vote-resolution prefund is computed by rs-dpp from
-    // the contested unique index of the DPNS domain type during
-    // DocumentCreateTransition::from_document; no explicit handling needed.
-    build_document_create(
-        SystemDataContract::DPNS,
+    let salt = id32(preorder_salt, "preorder salt")?;
+    let contract = load_contract(SystemDataContract::DPNS)?;
+    let (_preorder, domain) = build_dpns_preorder_and_domain_documents(
+        &contract,
+        Identifier::from(owner),
+        label,
+        salt,
+        salt,
+    )
+    .map_err(|e| format!("unable to build DPNS domain document: {e}"))?;
+    build_document_create_transition(
+        &contract,
         "domain",
-        owner,
+        domain,
         identity_contract_nonce,
-        properties,
-        entropy,
+        salt,
         key,
         sign_fn,
     )
@@ -400,44 +447,37 @@ pub fn build_contact_request(
     let owner = id32(identity_id, "identity id")?;
     let to_user = id32(to_user_id, "to-user id")?;
     let entropy = id32(entropy, "entropy")?;
-    if encrypted_public_key.len() != 96 {
-        return Err("encrypted public key must be 96 bytes".to_string());
-    }
-    if !encrypted_account_label.is_empty()
-        && (encrypted_account_label.len() < 48 || encrypted_account_label.len() > 80)
-    {
-        return Err("encrypted account label must be 48-80 bytes".to_string());
-    }
-    // $createdAt and $createdAtCoreBlockHeight are chain-assigned system
-    // fields, so they do not serialize into the transition.
-    let mut properties = BTreeMap::from([
-        ("toUserId".to_string(), Value::Identifier(to_user)),
-        (
-            "encryptedPublicKey".to_string(),
-            Value::Bytes(encrypted_public_key.to_vec()),
-        ),
-        ("senderKeyIndex".to_string(), Value::U32(sender_key_index)),
-        (
-            "recipientKeyIndex".to_string(),
-            Value::U32(recipient_key_index),
-        ),
-        (
-            "accountReference".to_string(),
-            Value::U32(account_reference),
-        ),
-    ]);
-    if !encrypted_account_label.is_empty() {
-        properties.insert(
-            "encryptedAccountLabel".to_string(),
-            Value::Bytes(encrypted_account_label.to_vec()),
-        );
-    }
-    build_document_create(
-        SystemDataContract::Dashpay,
-        "contactRequest",
-        owner,
-        identity_contract_nonce,
+    let contract = load_contract(SystemDataContract::Dashpay)?;
+    // The upstream builder validates the crypto-material sizes and assembles
+    // the DIP-15 property map; $createdAt and $createdAtCoreBlockHeight are
+    // chain-assigned system fields, so they do not enter the transition.
+    let (document_id, properties) = build_contact_request_document(
+        &contract,
+        ContactRequestDocumentParams {
+            sender_id: Identifier::from(owner),
+            recipient_id: Identifier::from(to_user),
+            sender_key_index,
+            recipient_key_index,
+            account_reference,
+            encrypted_public_key: encrypted_public_key.to_vec(),
+            encrypted_account_label: (!encrypted_account_label.is_empty())
+                .then(|| encrypted_account_label.to_vec()),
+            auto_accept_proof: None,
+            entropy,
+        },
+    )
+    .map_err(|e| format!("unable to build contact request document: {e}"))?;
+    let document = Document::V0(DocumentV0 {
+        id: document_id,
+        owner_id: Identifier::from(owner),
         properties,
+        ..Default::default()
+    });
+    build_document_create_transition(
+        &contract,
+        "contactRequest",
+        document,
+        identity_contract_nonce,
         entropy,
         key,
         sign_fn,

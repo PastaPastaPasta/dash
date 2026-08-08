@@ -113,9 +113,9 @@ fn dpns_preorder() {
     let built = st::build_dpns_preorder(
         &hexv(vector["owner_id_hex"].as_str().unwrap()),
         vector["identity_contract_nonce"].as_u64().unwrap(),
-        &hexv(vector["salted_domain_hash_hex"].as_str().unwrap()),
+        vector["label"].as_str().unwrap(),
+        &hexv(vector["salt_hex"].as_str().unwrap()),
         &high_key(&doc),
-        &hexv(vector["entropy_hex"].as_str().unwrap()),
         &|key_id, digest| signer.sign(key_id, digest),
     )
     .expect("build DPNS preorder");
@@ -130,7 +130,6 @@ fn build_domain(doc: &Value, vector: &Value, signer: &TestSigner) -> dash_platfo
         vector["normalized_label"].as_str().unwrap(),
         "dash",
         &hexv(vector["salt_hex"].as_str().unwrap()),
-        &hexv(vector["entropy_hex"].as_str().unwrap()),
         &high_key(doc),
         &|key_id, digest| signer.sign(key_id, digest),
     )
@@ -169,7 +168,6 @@ fn dpns_domain_rejects_bad_normalization() {
         "Alice",
         "alice", // wrong: o->0, l/i->1 normalization gives "a11ce"
         "dash",
-        &[0x55; 32],
         &[0x55; 32],
         &high_key(&doc),
         &|key_id, digest| signer.sign(key_id, digest),
@@ -384,9 +382,9 @@ fn signer_failure_is_reported() {
     let err = st::build_dpns_preorder(
         &hexv(vector["owner_id_hex"].as_str().unwrap()),
         2,
-        &hexv(vector["salted_domain_hash_hex"].as_str().unwrap()),
+        vector["label"].as_str().unwrap(),
+        &hexv(vector["salt_hex"].as_str().unwrap()),
         &high_key(&doc),
-        &hexv(vector["entropy_hex"].as_str().unwrap()),
         &|_key_id, _digest| None, // wallet refuses
     )
     .unwrap_err();

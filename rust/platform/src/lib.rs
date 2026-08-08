@@ -326,10 +326,10 @@ mod ffi {
         fn st_build_dpns_preorder(
             identity_id: &[u8],
             identity_contract_nonce: u64,
-            salted_domain_hash: &[u8],
+            label: &str,
+            preorder_salt: &[u8],
             signature_public_key_id: u32,
             key: FfiIdentityKey,
-            entropy: &[u8],
             signer: &WalletSigner,
         ) -> Result<FfiBuiltTransition>;
         fn st_build_dpns_domain(
@@ -339,7 +339,6 @@ mod ffi {
             normalized_label: &str,
             parent_domain: &str,
             preorder_salt: &[u8],
-            entropy: &[u8],
             signature_public_key_id: u32,
             key: FfiIdentityKey,
             signer: &WalletSigner,
@@ -803,10 +802,10 @@ fn check_key_id(signature_public_key_id: u32, key: &ffi::FfiIdentityKey) -> Resu
 fn st_build_dpns_preorder(
     identity_id: &[u8],
     identity_contract_nonce: u64,
-    salted_domain_hash: &[u8],
+    label: &str,
+    preorder_salt: &[u8],
     signature_public_key_id: u32,
     key: ffi::FfiIdentityKey,
-    entropy: &[u8],
     signer: &ffi::WalletSigner,
 ) -> Result<ffi::FfiBuiltTransition, String> {
     check_key_id(signature_public_key_id, &key)?;
@@ -815,9 +814,9 @@ fn st_build_dpns_preorder(
     st::build_dpns_preorder(
         identity_id,
         identity_contract_nonce,
-        salted_domain_hash,
+        label,
+        preorder_salt,
         &key_info(&key),
-        entropy,
         &sign_fn,
     )
     .map(ffi_built)
@@ -831,7 +830,6 @@ fn st_build_dpns_domain(
     normalized_label: &str,
     parent_domain: &str,
     preorder_salt: &[u8],
-    entropy: &[u8],
     signature_public_key_id: u32,
     key: ffi::FfiIdentityKey,
     signer: &ffi::WalletSigner,
@@ -846,7 +844,6 @@ fn st_build_dpns_domain(
         normalized_label,
         parent_domain,
         preorder_salt,
-        entropy,
         &key_info(&key),
         &sign_fn,
     )

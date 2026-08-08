@@ -263,11 +263,13 @@ BOOST_AUTO_TEST_CASE(dpns_preorder)
 
     const uint256 digest{DigestOf(vec)};
     const auto result{st::BuildDpnsPreorder(owner, vec["identity_contract_nonce"].getInt<uint64_t>(),
-                                            salted_hash, vec["signature_public_key_id"].getInt<uint32_t>(),
+                                            vec["label"].get_str(), salt,
+                                            vec["signature_public_key_id"].getInt<uint32_t>(),
                                             MakeSigner(high_priv, &digest))};
     CheckBuilt(result, vec);
 
-    // The preorder document id derives from the salted-domain-hash entropy.
+    // The preorder document id derives from the salted-domain-hash entropy
+    // (the bridge recomputes the hash from label and salt).
     const auto doc_id{GenerateDocumentId(DPNS_CONTRACT_ID, owner, "preorder", salted_hash)};
     BOOST_CHECK_EQUAL(HexStr(doc_id), vec["document_id_hex"].get_str());
 }

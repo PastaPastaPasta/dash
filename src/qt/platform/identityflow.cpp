@@ -395,14 +395,12 @@ void IdentityFlow::confirmIdentity()
 
 void IdentityFlow::broadcastPreorder()
 {
-    const auto salted_hash{platform::st::SaltedDomainHash(m_record.preorder_salt, m_record.normalized_label, "dash")};
-
     m_step_in_flight = true;
     QPointer<IdentityFlow> self{this};
     m_service.client().getIdentityContractNonce(m_record.identity_id, platform::DPNS_CONTRACT_ID,
-        [self, salted_hash](platform::Result<uint64_t> nonce_res) {
+        [self](platform::Result<uint64_t> nonce_res) {
         if (!self) return;
-        self->m_service.post([self, salted_hash, nonce_res = std::move(nonce_res)] {
+        self->m_service.post([self, nonce_res = std::move(nonce_res)] {
             if (!self) return;
             self->m_step_in_flight = false;
             if (!nonce_res.ok()) return;
@@ -412,7 +410,8 @@ void IdentityFlow::broadcastPreorder()
                 return wallet.signPlatformDigest(PlatformKeyType::IdentityAuth, 0, 1, digest, sig);
             };
             auto built{platform::st::BuildDpnsPreorder(self->m_record.identity_id, *nonce_res.value + 1,
-                                                       salted_hash, /*signature_public_key_id=*/1, signer)};
+                                                       self->m_record.label, self->m_record.preorder_salt,
+                                                       /*signature_public_key_id=*/1, signer)};
             if (!built.ok()) {
                 self->fail(tr("preorder"), QString::fromStdString(built.error), /*retryable=*/true);
                 return;

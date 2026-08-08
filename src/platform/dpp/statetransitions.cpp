@@ -185,20 +185,20 @@ Result<BuiltTransition> BuildIdentityCreate(
 Result<BuiltTransition> BuildDpnsPreorder(
     const Identifier& identity,
     uint64_t identity_contract_nonce,
-    const std::array<uint8_t, 32>& salted_domain_hash,
+    const std::string& label,
+    const std::array<uint8_t, 32>& preorder_salt,
     uint32_t signature_public_key_id,
     const Signer& signer)
 {
     if (!signer) return {std::nullopt, "no signer provided"};
     const platform_ffi::WalletSigner ffi_signer{SingleKeySigner(signer)};
     try {
-        // The preorder document has no natural id source; the salted domain
-        // hash is already blinded and unique per (name, salt), so it doubles
-        // as the document entropy.
+        // The preorder document has no natural id source; the bridge derives
+        // the salted domain hash — already blinded and unique per
+        // (name, salt) — and doubles it as the document entropy.
         return FromFfi(platform_ffi::st_build_dpns_preorder(
-            ToSlice(identity), identity_contract_nonce, ToSlice(salted_domain_hash),
-            signature_public_key_id, HighAuthKey(signature_public_key_id),
-            ToSlice(salted_domain_hash), ffi_signer));
+            ToSlice(identity), identity_contract_nonce, label, ToSlice(preorder_salt),
+            signature_public_key_id, HighAuthKey(signature_public_key_id), ffi_signer));
     } catch (const rust::Error& e) {
         return {std::nullopt, e.what()};
     }
@@ -217,12 +217,12 @@ Result<BuiltTransition> BuildDpnsDomain(
     if (!signer) return {std::nullopt, "no signer provided"};
     const platform_ffi::WalletSigner ffi_signer{SingleKeySigner(signer)};
     try {
-        // The preorder salt is drawn fresh per registration attempt, making
-        // it a suitable deterministic document entropy for the paired domain
-        // create.
+        // The preorder salt is drawn fresh per registration attempt; the
+        // bridge doubles it as the deterministic document entropy for the
+        // paired domain create.
         return FromFfi(platform_ffi::st_build_dpns_domain(
             ToSlice(identity), identity_contract_nonce, label, normalized_label, parent_domain,
-            ToSlice(preorder_salt), ToSlice(preorder_salt), signature_public_key_id,
+            ToSlice(preorder_salt), signature_public_key_id,
             HighAuthKey(signature_public_key_id), ffi_signer));
     } catch (const rust::Error& e) {
         return {std::nullopt, e.what()};
