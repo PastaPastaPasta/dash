@@ -730,13 +730,8 @@ libdash_platform_a_SOURCES = \
   platform/dpp/identity.cpp \
   platform/dpp/identity.h \
   platform/dpp/statetransitions.cpp \
-  platform/drive/hash256.h \
   platform/drive/queries.cpp \
   platform/drive/queries.h \
-  platform/drive/quorumsig.cpp \
-  platform/drive/quorumsig.h \
-  platform/drive/verify.cpp \
-  platform/drive/verify.h \
   platform/ffi/signer.h \
   platform/params.cpp \
   platform/params.h \

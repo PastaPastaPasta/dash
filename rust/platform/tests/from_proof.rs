@@ -520,7 +520,9 @@ fn placeholder_documents_fail_decoding_cleanly() {
     let response = documents_response(proof_msg(hexv(&q.grovedb_proof_hex)));
     let err = dash_platform_ffi::verify::verify_get_documents(&request, &response)
         .expect_err("placeholder documents must not decode");
-    assert!(!err.is_empty());
+    // The failure must come from the DPP decode, not from the grovedb
+    // replay: a query-shape drift would surface as a "grovedb:" proof error.
+    assert!(!err.contains("grovedb"), "unexpected proof-layer error: {err}");
 }
 
 // --- negative cases (quorum binding) ---------------------------------------

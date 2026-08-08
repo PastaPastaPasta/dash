@@ -100,12 +100,16 @@ struct BroadcastResult {
     uint32_t error_code{0};
 };
 
-//! Metadata every proved response is verified against.
+//! Metadata every proved response is verified against. All fields are
+//! covered by the Tenderdash quorum signature (they enter the StateId /
+//! CanonicalVote sign bytes), so they are trustworthy once verification
+//! succeeded.
 struct ResponseMetadata {
     uint64_t height{0};              //!< platform block height
     uint32_t core_chain_locked_height{0};
     uint64_t time_ms{0};
     uint32_t protocol_version{0};
+    std::string chain_id;            //!< tenderdash chain id
 };
 
 } // namespace platform

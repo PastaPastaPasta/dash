@@ -5,8 +5,6 @@
 #include <platform/client.h>
 
 #include <platform/drive/queries.h>
-#include <platform/drive/quorumsig.h>
-#include <platform/drive/verify.h>
 #include <platform/dpp/document.h>
 #include <platform/transport/cbor.h>
 #include <platform/transport/endpoint_retry.h>
@@ -41,64 +39,19 @@ pb::Writer VersionWrap(pb::Writer inner)
     return w;
 }
 
-//! Extract a DAPI response's v0 body, its Proof (result field 2) and its
-//! ResponseMetadata (field 3).
-struct ParsedResponse {
-    std::optional<Span<const uint8_t>> v0;
-    std::optional<Span<const uint8_t>> non_proof; // result field 1 (value/documents)
-    std::optional<Span<const uint8_t>> proof;     // result field 2
-    std::optional<Span<const uint8_t>> metadata;  // field 3
-};
-
-ParsedResponse ParseResponse(Span<const uint8_t> msg)
-{
-    ParsedResponse r;
-    r.v0 = pb::GetLenField(msg, 1);
-    if (!r.v0) return r;
-    r.non_proof = pb::GetLenField(*r.v0, 1);
-    r.proof = pb::GetLenField(*r.v0, 2);
-    r.metadata = pb::GetLenField(*r.v0, 3);
-    return r;
-}
-
-//! Decode a DAPI Proof message into a drive::ProofEnvelope + its grovedb bytes.
-bool DecodeProof(Span<const uint8_t> proof_msg, drive::ProofEnvelope& env,
-                 std::vector<uint8_t>& grovedb_out)
-{
-    auto gdb = pb::GetLenField(proof_msg, 1);
-    auto qh = pb::GetLenField(proof_msg, 2);
-    auto sig = pb::GetLenField(proof_msg, 3);
-    auto round = pb::GetVarintField(proof_msg, 4);
-    auto bid = pb::GetLenField(proof_msg, 5);
-    auto qt = pb::GetVarintField(proof_msg, 6);
-    if (!gdb || !qh || !sig || !bid) return false;
-    if (qh->size() != 32 || bid->size() != 32 || sig->size() != 96) return false;
-    grovedb_out.assign(gdb->begin(), gdb->end());
-    std::copy(qh->begin(), qh->end(), env.quorum_hash.begin());
-    std::copy(bid->begin(), bid->end(), env.block_id_hash.begin());
-    std::copy(sig->begin(), sig->end(), env.signature.begin());
-    env.round = round ? static_cast<int32_t>(*round) : 0;
-    env.quorum_type = qt ? static_cast<uint8_t>(*qt) : 0;
-    return true;
-}
-
-drive::BlockContext DecodeMetadata(std::optional<Span<const uint8_t>> md, const std::string& chain_id)
-{
-    drive::BlockContext ctx;
-    ctx.chain_id = chain_id;
-    if (!md) return ctx;
-    if (auto h = pb::GetVarintField(*md, 1)) ctx.height = *h;
-    if (auto c = pb::GetVarintField(*md, 2)) ctx.core_chain_locked_height = static_cast<uint32_t>(*c);
-    if (auto t = pb::GetVarintField(*md, 4)) ctx.time_ms = *t;
-    if (auto p = pb::GetVarintField(*md, 5)) ctx.protocol_version = *p;
-    return ctx;
-}
-
 class GrpcWebClient final : public PlatformClient
 {
 public:
     explicit GrpcWebClient(Params params) : m_params(std::move(params))
     {
+        // Push the network context into the bridge's verification provider.
+        // The Platform activation height is only consulted by FromProof
+        // paths the GUI does not use, so 0 ("unknown") is passed until a
+        // caller needs it.
+        std::string err;
+        if (!drive::SetContext(m_params.network_id, /*platform_activation_height=*/0, err)) {
+            LogPrintf("Platform client: unable to set verification context: %s\n", err);
+        }
         m_worker = std::thread([this] { Run(); });
     }
     ~GrpcWebClient() override { shutdown(); }
@@ -122,9 +75,24 @@ public:
     }
     void updateQuorumKeys(uint8_t llmq_type, std::vector<QuorumKey> keys) override
     {
-        std::lock_guard<std::mutex> lk(m_mtx);
-        m_quorum_type = llmq_type;
-        m_quorum_keys = std::move(keys);
+        // Quorum-signature verification happens inside the Rust bridge; hand
+        // the keys over in the byte order DAPI proofs carry the quorum hash
+        // (display order, the reverse of uint256's internal order — the
+        // representation boundary QuorumKey::matchesProofHash documents).
+        std::vector<drive::BridgeQuorumKey> bridge_keys;
+        bridge_keys.reserve(keys.size());
+        for (const QuorumKey& key : keys) {
+            drive::BridgeQuorumKey bridge_key;
+            for (size_t i = 0; i < bridge_key.proof_hash.size(); ++i) {
+                bridge_key.proof_hash[i] = key.quorum_hash.begin()[bridge_key.proof_hash.size() - 1 - i];
+            }
+            bridge_key.pubkey = key.pubkey;
+            bridge_keys.push_back(std::move(bridge_key));
+        }
+        std::string err;
+        if (!drive::UpdateQuorumKeys(llmq_type, bridge_keys, err)) {
+            LogPrintf("Platform client: unable to update quorum keys: %s\n", err);
+        }
     }
     void updateCoreChainLockedHeight(int32_t height) override
     {
@@ -241,30 +209,23 @@ private:
                                        std::string(SVC) + method, req, CALL_TIMEOUT_MS);
     }
 
-    drive::QuorumKeyLookup MakeLookup()
+    //! Post-verification checks on the signature-authenticated metadata of a
+    //! proved response: the tenderdash chain id must be this network's (the
+    //! quorum signature covers it, so a cross-chain replay cannot forge it),
+    //! and the response must be fresh (transport::FreshnessTracker) so an
+    //! on-path attacker (TLS is unauthenticated by design) cannot feed a
+    //! stale-but-validly-signed response. `endpoint_key` identifies the
+    //! answering node so a lagging honest node is not rejected merely
+    //! because a different node was ahead.
+    bool AcceptMeta(const ResponseMetadata& meta, const std::string& endpoint_key, std::string& err)
     {
+        if (meta.chain_id != m_params.tenderdash_chain_id) {
+            err = "response signed for tenderdash chain '" + meta.chain_id + "', expected '" +
+                  m_params.tenderdash_chain_id + "'";
+            return false;
+        }
         std::lock_guard<std::mutex> lk(m_mtx);
-        auto keys = m_quorum_keys;
-        return [keys](uint8_t, const drive::Hash256& qh) -> std::optional<std::vector<uint8_t>> {
-            for (const auto& k : keys) {
-                if (k.matchesProofHash(qh)) return k.pubkey;
-            }
-            return std::nullopt;
-        };
-    }
-
-    //! Verifies the quorum-signed root binding and then enforces freshness
-    //! (transport::FreshnessTracker) so an on-path attacker (TLS is
-    //! unauthenticated by design) cannot feed a stale-but-validly-signed
-    //! response. `endpoint_key` identifies the answering node so a lagging
-    //! honest node is not rejected merely because a different node was ahead.
-    bool BindAndCheckFresh(const drive::Hash256& root, const drive::ProofEnvelope& env,
-                           const drive::BlockContext& ctx, const drive::QuorumKeyLookup& lookup,
-                           const std::string& endpoint_key, std::string& err)
-    {
-        if (!drive::VerifyRootBinding(root, env, ctx, lookup, err)) return false;
-        std::lock_guard<std::mutex> lk(m_mtx);
-        return m_freshness.Accept(endpoint_key, ctx.height, ctx.core_chain_locked_height, err);
+        return m_freshness.Accept(endpoint_key, meta.height, meta.core_chain_locked_height, err);
     }
 
     //! Rotating single-shot call with transport-level failover across
@@ -319,123 +280,60 @@ private:
             v0.Bool(2, true);
             method = "getIdentityNonce";
         }
+        const std::vector<uint8_t> request{VersionWrap(std::move(v0)).take()};
         std::string terr, endpoint_key;
-        auto r = Call(method, VersionWrap(std::move(v0)).data(), terr, &endpoint_key);
+        auto r = Call(method, request, terr, &endpoint_key);
         Result<uint64_t> out;
         if (!r.transport_ok || r.grpc_status != 0) { out.error = r.transport_ok ? r.grpc_message : terr; cb(out); return; }
-        auto p = ParseResponse(r.message);
-        if (!p.proof) { out.error = method + ": no proof in response"; cb(out); return; }
-        drive::ProofEnvelope env;
-        std::vector<uint8_t> proof;
-        if (!DecodeProof(*p.proof, env, proof)) { out.error = method + ": bad proof envelope"; cb(out); return; }
-        drive::Hash256 root;
         std::optional<uint64_t> nonce;
+        ResponseMetadata meta;
         std::string err;
         const bool verified = contract
-            ? drive::VerifyIdentityContractNonce(proof, id, *contract, nonce, root, err)
-            : drive::VerifyIdentityNonce(proof, id, nonce, root, err);
-        if (!verified || !BindAndCheckFresh(root, env,
-                DecodeMetadata(p.metadata, m_params.tenderdash_chain_id), MakeLookup(), endpoint_key, err)) {
+            ? drive::VerifyGetIdentityContractNonce(request, r.message, nonce, meta, err)
+            : drive::VerifyGetIdentityNonce(request, r.message, nonce, meta, err);
+        if (!verified || !AcceptMeta(meta, endpoint_key, err)) {
             out.error = method + ": proof verification failed: " + err; cb(out); return;
         }
         out.value = nonce.value_or(0);
+        out.metadata = std::move(meta);
         cb(out);
     }
 
     void DoGetIdentity(const Identifier& id, const Callback<std::optional<Identity>>& cb)
     {
-        // Proof-verified full identity: three simple proved sub-queries that
-        // must all commit to the same GroveDB state root (the invariant
-        // drive::VerifyFullIdentity enforces). Because the three are separate
-        // DAPI requests, they are pinned to a single endpoint per attempt so
-        // honest nodes at slightly different platform heights cannot produce
-        // mismatched roots; a failed attempt retries the whole operation
-        // against another endpoint.
-        auto lookup = MakeLookup();
+        // Proof-verified full identity: a single getIdentity request whose
+        // proof covers balance, revision and keys at one height
+        // (Drive::verify_full_identity_by_identity_id inside the bridge). A
+        // response that fails verification retries against another endpoint.
         Result<std::optional<Identity>> out;
 
         size_t start{0};
         const std::vector<Endpoint> endpoints{SnapshotEndpoints(start)};
         if (endpoints.empty()) { out.error = "no evonode endpoints available"; cb(out); return; }
 
-        struct ProvedResponse {
-            std::vector<uint8_t> proof;
-            drive::ProofEnvelope envelope;
-            drive::BlockContext context;
-        };
+        pb::Writer v0;
+        v0.Bytes(1, std::vector<uint8_t>(id.begin(), id.end()));
+        v0.Bool(2, true); // prove
+        const std::vector<uint8_t> request{VersionWrap(std::move(v0)).take()};
 
         bool succeeded{false};
         transport::RetryAcrossEndpoints(endpoints, start, MAX_OP_ATTEMPTS,
             [&](const Endpoint& ep, size_t) -> transport::AttemptStatus {
-                const std::string key{EndpointKey(ep)};
-                ProvedResponse balance, revision, keys;
-
-                // getIdentityBalance / getIdentityBalanceAndRevision take
-                // {id=1, prove=2}; getIdentityKeys takes {id=1, request_type=2
-                // (an AllKeys sub-message), prove=5} — see platform.proto. All
-                // three go to the pinned endpoint `ep`.
-                auto fetch = [&](const std::string& method, bool keys_request, ProvedResponse& proved) -> bool {
-                    pb::Writer v0;
-                    v0.Bytes(1, std::vector<uint8_t>(id.begin(), id.end()));
-                    if (keys_request) {
-                        pb::Writer all_keys;         // AllKeys {}
-                        pb::Writer request_type;     // KeyRequestType { all_keys = 1 }
-                        request_type.Message(1, all_keys.take());
-                        v0.Message(2, request_type.take());
-                        v0.Bool(5, true);            // prove
-                    } else {
-                        v0.Bool(2, true);            // prove
-                    }
-                    auto r = CallOn(ep, method, VersionWrap(std::move(v0)).data());
-                    if (!r.transport_ok || r.grpc_status != 0) { out.error = r.transport_ok ? r.grpc_message : r.transport_error; return false; }
-                    auto p = ParseResponse(r.message);
-                    if (!p.proof) { out.error = method + ": no proof in response"; return false; }
-                    if (!DecodeProof(*p.proof, proved.envelope, proved.proof)) { out.error = method + ": bad proof envelope"; return false; }
-                    proved.context = DecodeMetadata(p.metadata, m_params.tenderdash_chain_id);
-                    return true;
-                };
-
-                if (!fetch("getIdentityBalance", false, balance) ||
-                    !fetch("getIdentityBalanceAndRevision", false, revision) ||
-                    !fetch("getIdentityKeys", true, keys)) {
+                auto r = CallOn(ep, "getIdentity", request);
+                if (!r.transport_ok || r.grpc_status != 0) {
+                    out.error = r.transport_ok ? r.grpc_message : r.transport_error;
                     return transport::AttemptStatus::Retry;
                 }
-
-                std::optional<uint64_t> balance_value, revision_value;
-                std::optional<std::vector<IdentityPublicKey>> key_values;
-                drive::Hash256 balance_root, revision_root, keys_root;
+                std::optional<Identity> identity;
+                ResponseMetadata meta;
                 std::string err;
-                const bool proofs_ok =
-                    drive::VerifyIdentityBalance(balance.proof, id, balance_value, balance_root, err) &&
-                    BindAndCheckFresh(balance_root, balance.envelope, balance.context, lookup, key, err) &&
-                    drive::VerifyIdentityRevision(revision.proof, id, revision_value, revision_root, err) &&
-                    BindAndCheckFresh(revision_root, revision.envelope, revision.context, lookup, key, err) &&
-                    drive::VerifyIdentityKeys(keys.proof, id, key_values, keys_root, err) &&
-                    BindAndCheckFresh(keys_root, keys.envelope, keys.context, lookup, key, err);
-                if (!proofs_ok) {
+                if (!drive::VerifyGetIdentity(request, r.message, identity, meta, err) ||
+                    !AcceptMeta(meta, EndpointKey(ep), err)) {
                     out.error = "identity proof verification failed: " + err;
                     return transport::AttemptStatus::Retry;
                 }
-                if (balance_root != revision_root || balance_root != keys_root) {
-                    // Block boundary landed mid-operation; another endpoint (or
-                    // a later poll) will answer at a single height.
-                    out.error = "identity sub-proofs commit to different state roots";
-                    return transport::AttemptStatus::Retry;
-                }
-
-                if (!balance_value && !revision_value && !key_values) {
-                    out.value = std::optional<Identity>{}; // proven fully absent
-                } else if (!balance_value || !revision_value || !key_values) {
-                    out.error = "identity proof components were inconsistent";
-                    return transport::AttemptStatus::Retry;
-                } else {
-                    Identity identity;
-                    identity.id = id;
-                    identity.balance = *balance_value;
-                    identity.revision = *revision_value;
-                    identity.public_keys = std::move(*key_values);
-                    out.value = std::move(identity);
-                }
+                out.value = std::move(identity);
+                out.metadata = std::move(meta);
                 out.error.clear();
                 succeeded = true;
                 return transport::AttemptStatus::Success;
@@ -447,39 +345,37 @@ private:
 
     void DoGetIdentityByPubKeyHash(const std::array<uint8_t, 20>& h, const Callback<std::optional<Identity>>& cb)
     {
+        // One proof resolves the unique key hash to the full identity
+        // (Drive::verify_full_identity_by_unique_public_key_hash inside the
+        // bridge); no follow-up getIdentity round trip is needed.
         pb::Writer v0;
         v0.Bytes(1, std::vector<uint8_t>(h.begin(), h.end()));
         v0.Bool(2, true);
+        const std::vector<uint8_t> request{VersionWrap(std::move(v0)).take()};
         std::string terr, endpoint_key;
-        auto r = Call("getIdentityByPublicKeyHash", VersionWrap(std::move(v0)).data(), terr, &endpoint_key);
+        auto r = Call("getIdentityByPublicKeyHash", request, terr, &endpoint_key);
         Result<std::optional<Identity>> out;
         if (!r.transport_ok || r.grpc_status != 0) { out.error = r.transport_ok ? r.grpc_message : terr; cb(out); return; }
-        auto p = ParseResponse(r.message);
-        if (!p.proof) { out.error = "no proof"; cb(out); return; }
-        drive::ProofEnvelope env; std::vector<uint8_t> gp;
-        if (!DecodeProof(*p.proof, env, gp)) { out.error = "bad proof"; cb(out); return; }
-        auto ctx = DecodeMetadata(p.metadata, m_params.tenderdash_chain_id);
-        std::optional<Identifier> id_out; std::string err;
-        drive::Hash256 root;
-        if (!drive::VerifyIdentityIdByPublicKeyHash(gp, h, id_out, root, err) ||
-            !BindAndCheckFresh(root, env, ctx, MakeLookup(), endpoint_key, err)) {
+        std::optional<Identity> identity;
+        ResponseMetadata meta;
+        std::string err;
+        if (!drive::VerifyGetIdentityByPubKeyHash(request, r.message, identity, meta, err) ||
+            !AcceptMeta(meta, endpoint_key, err)) {
             out.error = err; cb(out); return;
         }
-        if (!id_out) { out.value = std::optional<Identity>{}; cb(out); return; }
-        // Follow the id to the full identity.
-        DoGetIdentity(*id_out, cb);
+        out.value = std::move(identity);
+        out.metadata = std::move(meta);
+        cb(out);
     }
 
-    using DocumentVerifier = std::function<bool(Span<const uint8_t>, std::vector<Bytes>&,
-                                                drive::Hash256&, std::string&)>;
-
     // Document queries (DPNS domain / DashPay profile & contactRequest). The
-    // server returns only a GroveDB proof; the requested Drive index path is
-    // reconstructed locally, including cryptographic absence, and the root is
-    // bound to a locally-known Platform LLMQ key before document bytes escape.
+    // server returns only a GroveDB proof; the bridge reconstructs the
+    // requested Drive query from the request bytes — including cryptographic
+    // absence — and binds the proven root to a locally-known Platform LLMQ
+    // key before document bytes escape.
     std::vector<std::vector<uint8_t>> GetDocuments(const Identifier& contract, const std::string& doc_type,
                                                    const std::vector<uint8_t>& where_cbor, uint32_t limit,
-                                                   const DocumentVerifier& verifier, std::string& err,
+                                                   std::string& err,
                                                    const std::vector<uint8_t>& order_by_cbor = {})
     {
         pb::Writer v0;
@@ -489,27 +385,22 @@ private:
         if (!order_by_cbor.empty()) v0.Bytes(4, order_by_cbor);
         if (limit) v0.Varint(5, limit);
         v0.Bool(8, true); // prove
+        const std::vector<uint8_t> request{VersionWrap(std::move(v0)).take()};
         std::string terr, endpoint_key;
-        auto r = Call("getDocuments", VersionWrap(std::move(v0)).data(), terr, &endpoint_key);
+        auto r = Call("getDocuments", request, terr, &endpoint_key);
         std::vector<std::vector<uint8_t>> docs;
         if (!r.transport_ok || r.grpc_status != 0) {
             err = r.transport_ok ? r.grpc_message : terr;
             LogPrintf("Platform getDocuments(%s) failed: %s\n", doc_type, err);
             return docs;
         }
-        auto p = ParseResponse(r.message);
-        if (!p.proof) { err = "getDocuments response did not contain a proof"; return docs; }
-        drive::ProofEnvelope env;
-        std::vector<uint8_t> grovedb_proof;
-        if (!DecodeProof(*p.proof, env, grovedb_proof)) { err = "bad document proof envelope"; return docs; }
-        drive::Hash256 root;
-        if (!verifier(grovedb_proof, docs, root, err)) {
+        ResponseMetadata meta;
+        if (!drive::VerifyGetDocuments(request, r.message, docs, meta, err)) {
             LogPrintf("Platform getDocuments(%s) proof verification failed: %s\n", doc_type, err);
             return {};
         }
-        const auto ctx = DecodeMetadata(p.metadata, m_params.tenderdash_chain_id);
-        if (!BindAndCheckFresh(root, env, ctx, MakeLookup(), endpoint_key, err)) {
-            LogPrintf("Platform getDocuments(%s) root binding failed: %s\n", doc_type, err);
+        if (!AcceptMeta(meta, endpoint_key, err)) {
+            LogPrintf("Platform getDocuments(%s) metadata rejected: %s\n", doc_type, err);
             return {};
         }
         return docs;
@@ -551,35 +442,25 @@ private:
         v0.Bool(6, true); // allow_include_locked_and_abstaining_vote_tally
         v0.Varint(8, CONTESTED_VOTE_COUNT);
         v0.Bool(9, true); // prove
+        const std::vector<uint8_t> request{VersionWrap(std::move(v0)).take()};
         std::string terr, endpoint_key;
-        auto r = Call("getContestedResourceVoteState", VersionWrap(std::move(v0)).data(), terr, &endpoint_key);
+        auto r = Call("getContestedResourceVoteState", request, terr, &endpoint_key);
         Result<ContestedNameState> out;
         if (!r.transport_ok || r.grpc_status != 0) {
             out.error = r.transport_ok ? r.grpc_message : terr;
             cb(out);
             return;
         }
-        auto p = ParseResponse(r.message);
-        if (!p.proof) { out.error = "getContestedResourceVoteState: no proof in response"; cb(out); return; }
-        drive::ProofEnvelope env;
-        std::vector<uint8_t> grovedb_proof;
-        if (!DecodeProof(*p.proof, env, grovedb_proof)) { out.error = "bad contested vote proof envelope"; cb(out); return; }
-
-        // Index values as raw tree keys (strings encode to their utf8 bytes,
-        // DocumentPropertyType::encode_value_for_tree_keys).
-        const std::vector<Bytes> index_values{Bytes{'d', 'a', 's', 'h'},
-                                              Bytes(normalized_label.begin(), normalized_label.end())};
         drive::ContestedVoteState state;
-        drive::Hash256 root;
+        ResponseMetadata meta;
         std::string err;
-        if (!drive::VerifyContestedVoteState(grovedb_proof, DPNS_CONTRACT_ID, "domain", index_values,
-                                             CONTESTED_VOTE_COUNT, state, root, err) ||
-            !BindAndCheckFresh(root, env, DecodeMetadata(p.metadata, m_params.tenderdash_chain_id),
-                               MakeLookup(), endpoint_key, err)) {
+        if (!drive::VerifyGetContestedVoteState(request, r.message, state, meta, err) ||
+            !AcceptMeta(meta, endpoint_key, err)) {
             out.error = "contested vote state proof verification failed: " + err;
             cb(out);
             return;
         }
+        out.metadata = std::move(meta);
 
         ContestedNameState result;
         result.normalized_label = normalized_label;
@@ -622,11 +503,7 @@ private:
     void DoResolveName(const std::string& normalized_label, const Callback<std::optional<DpnsName>>& cb)
     {
         std::string err;
-        auto docs = GetDocuments(DPNS_CONTRACT_ID, "domain", DpnsWhere(normalized_label, false), 1,
-            [&normalized_label](Span<const uint8_t> proof, std::vector<Bytes>& out,
-                                drive::Hash256& root, std::string& verify_error) {
-                return drive::VerifyDpnsNameExact(proof, normalized_label, out, root, verify_error);
-            }, err);
+        auto docs = GetDocuments(DPNS_CONTRACT_ID, "domain", DpnsWhere(normalized_label, false), 1, err);
         Result<std::optional<DpnsName>> out;
         if (!err.empty()) { out.error = err; cb(out); return; }
         if (docs.empty()) { out.value = std::optional<DpnsName>{}; cb(out); return; } // available / absent
@@ -643,12 +520,8 @@ private:
     void DoSearchNames(const std::string& prefix, uint32_t limit, const Callback<std::vector<DpnsName>>& cb)
     {
         std::string err;
-        auto docs = GetDocuments(DPNS_CONTRACT_ID, "domain", DpnsWhere(prefix, true), limit,
-            [&prefix, limit](Span<const uint8_t> proof, std::vector<Bytes>& out,
-                             drive::Hash256& root, std::string& verify_error) {
-                return drive::VerifyDpnsNamePrefix(proof, prefix, static_cast<uint16_t>(limit),
-                                                   out, root, verify_error);
-            }, err, DpnsPrefixOrderBy());
+        auto docs = GetDocuments(DPNS_CONTRACT_ID, "domain", DpnsWhere(prefix, true), limit, err,
+                                 DpnsPrefixOrderBy());
         Result<std::vector<DpnsName>> out;
         if (!err.empty()) { out.error = err; cb(out); return; }
         std::vector<DpnsName> names;
@@ -665,11 +538,7 @@ private:
         w.Bytes(Span<const uint8_t>{identity.data(), identity.size()});
         std::string err;
         constexpr uint32_t limit{100};
-        auto docs = GetDocuments(DPNS_CONTRACT_ID, "domain", w.take(), limit,
-            [&identity](Span<const uint8_t> proof, std::vector<Bytes>& out,
-                        drive::Hash256& root, std::string& verify_error) {
-                return drive::VerifyDpnsNamesByIdentity(proof, identity, 100, out, root, verify_error);
-            }, err);
+        auto docs = GetDocuments(DPNS_CONTRACT_ID, "domain", w.take(), limit, err);
         Result<std::vector<DpnsName>> out;
         if (!err.empty()) { out.error = err; cb(out); return; }
         std::vector<DpnsName> names;
@@ -684,11 +553,7 @@ private:
         w.Array(1);
         w.Array(3); w.Text("$ownerId"); w.Text("=="); w.Bytes(Span<const uint8_t>{owner_id.data(), owner_id.size()});
         std::string err;
-        auto docs = GetDocuments(DASHPAY_CONTRACT_ID, "profile", w.take(), 1,
-            [&owner_id](Span<const uint8_t> proof, std::vector<Bytes>& out,
-                        drive::Hash256& root, std::string& verify_error) {
-                return drive::VerifyDashPayProfileByOwner(proof, owner_id, out, root, verify_error);
-            }, err);
+        auto docs = GetDocuments(DASHPAY_CONTRACT_ID, "profile", w.take(), 1, err);
         Result<std::optional<Profile>> out;
         if (!err.empty()) { out.error = err; cb(out); return; }
         if (docs.empty()) { out.value = std::optional<Profile>{}; cb(out); return; }
@@ -713,12 +578,8 @@ private:
         order_by.Text("$createdAt");
         order_by.Text("asc");
         std::string err;
-        auto docs = GetDocuments(DASHPAY_CONTRACT_ID, "contactRequest", w.take(), 100,
-            [&identity, to_me](Span<const uint8_t> proof, std::vector<Bytes>& docs_out,
-                               drive::Hash256& root, std::string& verify_error) {
-                return drive::VerifyDashPayContactRequests(proof, identity, to_me, 100,
-                                                           docs_out, root, verify_error);
-            }, err, order_by.take());
+        auto docs = GetDocuments(DASHPAY_CONTRACT_ID, "contactRequest", w.take(), 100, err,
+                                 order_by.take());
         Result<std::vector<ContactRequest>> out;
         if (!err.empty()) { out.error = err; cb(out); return; }
         std::vector<ContactRequest> reqs;
@@ -735,8 +596,6 @@ private:
     bool m_stop{false};
     std::vector<Endpoint> m_endpoints;
     size_t m_ep_index{0};
-    uint8_t m_quorum_type{0};
-    std::vector<QuorumKey> m_quorum_keys;
     //! Per-endpoint replay/staleness guard (guarded by m_mtx).
     transport::FreshnessTracker m_freshness;
 };

@@ -5,10 +5,9 @@
 #ifndef BITCOIN_PLATFORM_DRIVE_QUERIES_H
 #define BITCOIN_PLATFORM_DRIVE_QUERIES_H
 
-#include <platform/drive/hash256.h>
 #include <platform/serialize.h>
-#include <span.h>
 #include <platform/types.h>
+#include <span.h>
 
 #include <array>
 #include <cstdint>
@@ -16,92 +15,81 @@
 #include <string>
 #include <vector>
 
-//! Per-query Drive proof verification for the DAPI queries the dash-qt
-//! Platform GUI makes. Each function is a thin adapter over the Rust bridge
-//! (rust/platform, cxx namespace platform_ffi), which verifies the real
-//! GroveDB proof with the upstream rs-drive `verify` feature slice, decodes
-//! the typed result, and reports the proven root hash. std::nullopt means the
-//! object was cryptographically proven absent.
+//! Proved-response verification for the DAPI queries the dash-qt Platform
+//! GUI makes. Each adapter hands the exact protobuf request the transport
+//! sent plus the full protobuf response it received to the Rust bridge
+//! (rust/platform, cxx namespace platform_ffi), where drive-proof-verifier's
+//! FromProof reconstructs the query from the request, replays the GroveDB
+//! proof, and verifies the Tenderdash BLS quorum threshold signature against
+//! the quorum keys previously pushed via UpdateQuorumKeys. On success,
+//! `meta_out` carries the signature-authenticated ResponseMetadata fields
+//! (height, core-chain-locked height, time, chain id) the caller feeds to
+//! the freshness tracker.
 namespace platform::drive {
 
 using platform::Identifier;
 using platform::Identity;
-using platform::IdentityPublicKey;
-using platform::merk::Hash256;
+using platform::ResponseMetadata;
 
-//! getIdentityBalance: proof over balance_path [[96]] keyed by identity id.
-//! `balance_out` is std::nullopt when the identity has no balance entry.
-bool VerifyIdentityBalance(Span<const uint8_t> proof, const Identifier& identity_id,
-                           std::optional<uint64_t>& balance_out, Hash256& root_out,
-                           std::string& error);
+//! Pushes the network context into the bridge's verification provider:
+//! the chain name ("main", "test", "regtest", "devnet") selects the dpp
+//! network, and `platform_activation_height` is the core height Platform
+//! activated at (0 = unknown; only consulted by query paths the GUI does
+//! not use). Must be called before any Verify* adapter.
+bool SetContext(const std::string& network_id, uint32_t platform_activation_height,
+                std::string& error);
 
-//! getIdentity revision: proof over [[32], id] keyed by [192].
-bool VerifyIdentityRevision(Span<const uint8_t> proof, const Identifier& identity_id,
-                            std::optional<uint64_t>& revision_out, Hash256& root_out,
+//! A quorum BLS public key in the byte order DAPI proofs carry the quorum
+//! hash (display order — the reverse of Dash Core's internal uint256 byte
+//! order).
+struct BridgeQuorumKey {
+    std::array<uint8_t, 32> proof_hash{};
+    std::vector<uint8_t> pubkey; //!< 48-byte basic-scheme BLS public key
+};
+
+//! Replaces the bridge-side key set of `llmq_type` with `keys` (the client
+//! pushes the full active Platform-LLMQ set on every update).
+bool UpdateQuorumKeys(uint8_t llmq_type, const std::vector<BridgeQuorumKey>& keys,
+                      std::string& error);
+
+//! getIdentityNonce / getIdentityContractNonce. `nonce_out` is std::nullopt
+//! when the nonce is cryptographically proven absent.
+bool VerifyGetIdentityNonce(Span<const uint8_t> request, Span<const uint8_t> response,
+                            std::optional<uint64_t>& nonce_out, ResponseMetadata& meta_out,
                             std::string& error);
+bool VerifyGetIdentityContractNonce(Span<const uint8_t> request, Span<const uint8_t> response,
+                                    std::optional<uint64_t>& nonce_out,
+                                    ResponseMetadata& meta_out, std::string& error);
 
-//! getIdentityNonce: proof over [[32], id] keyed by [64].
-bool VerifyIdentityNonce(Span<const uint8_t> proof, const Identifier& identity_id,
-                         std::optional<uint64_t>& nonce_out, Hash256& root_out, std::string& error);
-bool VerifyIdentityContractNonce(Span<const uint8_t> proof, const Identifier& identity_id,
-                                 const Identifier& contract_id, std::optional<uint64_t>& nonce_out,
-                                 Hash256& root_out, std::string& error);
+//! getIdentity: one proof covering balance, revision and keys
+//! (Drive::verify_full_identity_by_identity_id). `identity_out` is
+//! std::nullopt when the identity is proven absent.
+bool VerifyGetIdentity(Span<const uint8_t> request, Span<const uint8_t> response,
+                       std::optional<Identity>& identity_out, ResponseMetadata& meta_out,
+                       std::string& error);
 
-//! getIdentityKeys (all keys): proof over the identity key tree
-//! [[32], id, [128]] (range-full). Each leaf is a platform-serialized
-//! IdentityPublicKey. `keys_out` is std::nullopt only if the key tree itself
-//! is absent; an existing-but-empty key tree yields an empty vector.
-bool VerifyIdentityKeys(Span<const uint8_t> proof, const Identifier& identity_id,
-                        std::optional<std::vector<IdentityPublicKey>>& keys_out, Hash256& root_out,
+//! getIdentityByPublicKeyHash: one proof resolving the unique key hash to
+//! the full identity. `identity_out` is std::nullopt when no identity has
+//! registered that key hash.
+bool VerifyGetIdentityByPubKeyHash(Span<const uint8_t> request, Span<const uint8_t> response,
+                                   std::optional<Identity>& identity_out,
+                                   ResponseMetadata& meta_out, std::string& error);
+
+//! getDocuments (DPNS domain / DashPay profile & contactRequest). The Drive
+//! query — including cryptographic absence — is reconstructed from the
+//! request's contract id, document type, where/order-by clauses and limit;
+//! the verified documents come back platform-serialized (the input format
+//! of the dpp::Decode* helpers). An empty vector means proven "no matches".
+bool VerifyGetDocuments(Span<const uint8_t> request, Span<const uint8_t> response,
+                        std::vector<Bytes>& documents_out, ResponseMetadata& meta_out,
                         std::string& error);
-
-//! getIdentityByPublicKeyHash (id only): proof over
-//! UniquePublicKeyHashesToIdentities [[24]] keyed by the 20-byte hash. The
-//! leaf is the 32-byte identity id. `identity_out` is std::nullopt when the
-//! hash is proven absent (no identity registered that key hash).
-bool VerifyIdentityIdByPublicKeyHash(Span<const uint8_t> proof,
-                                     const std::array<uint8_t, 20>& public_key_hash,
-                                     std::optional<Identifier>& identity_out, Hash256& root_out,
-                                     std::string& error);
-
-//! getIdentity (full): the GUI issues three simple proofs — balance, revision,
-//! and all-keys — each independently proof-verified, then assembles the
-//! identity. This avoids replicating Drive's PathQuery::merge while proving
-//! every field. All three proofs must commit to the same GroveDB root.
-//! `identity_out` is std::nullopt when the identity is proven fully absent
-//! (no balance, no revision, no keys).
-bool VerifyFullIdentity(Span<const uint8_t> balance_proof, Span<const uint8_t> revision_proof,
-                        Span<const uint8_t> keys_proof, const Identifier& identity_id,
-                        std::optional<Identity>& identity_out, Hash256& root_out,
-                        std::string& error);
-
-//! Proof-backed document query shapes used by the DashPay GUI. These mirror
-//! DriveDocumentQuery::construct_path_query for the pinned DPNS/DashPay v1
-//! system-contract indexes and return the serialized document items resolved
-//! through GroveDB index references.
-bool VerifyDpnsNameExact(Span<const uint8_t> proof, const std::string& normalized_label,
-                         std::vector<Bytes>& documents_out, Hash256& root_out, std::string& error);
-bool VerifyDpnsNamePrefix(Span<const uint8_t> proof, const std::string& normalized_prefix,
-                          uint16_t limit, std::vector<Bytes>& documents_out, Hash256& root_out,
-                          std::string& error);
-bool VerifyDpnsNamesByIdentity(Span<const uint8_t> proof, const Identifier& identity_id,
-                               uint16_t limit, std::vector<Bytes>& documents_out,
-                               Hash256& root_out, std::string& error);
-bool VerifyDashPayProfileByOwner(Span<const uint8_t> proof, const Identifier& owner_id,
-                                 std::vector<Bytes>& documents_out, Hash256& root_out,
-                                 std::string& error);
-bool VerifyDashPayContactRequests(Span<const uint8_t> proof, const Identifier& identity_id,
-                                  bool to_identity, uint16_t limit,
-                                  std::vector<Bytes>& documents_out, Hash256& root_out,
-                                  std::string& error);
 
 //! Decoded contested-resource vote state
 //! (getContestedResourceVoteState, result type VoteTally with locked and
-//! abstaining tallies). Mirrors rs-drive
-//! src/verify/voting/verify_vote_poll_vote_state_proof/v0/mod.rs.
+//! abstaining tallies).
 struct ContestedVoteState {
-    //! False when the contenders tree is proven absent (no active or
-    //! finished contest for the resource).
+    //! False when the contest is proven absent (no active or finished
+    //! contest for the resource).
     bool contest_found{false};
     std::vector<std::pair<Identifier, uint32_t>> contenders; //!< identity -> votes
     std::optional<uint32_t> abstain_votes;
@@ -114,16 +102,11 @@ struct ContestedVoteState {
     uint64_t finished_at_time_ms{0};
 };
 
-//! getContestedResourceVoteState (VoteTally +
-//! allow_include_locked_and_abstaining_vote_tally): proof over the
-//! contenders tree [[112], [0x63], [0x70], contract, doc_type, [1],
-//! index values...] (rs-drive src/drive/votes/paths.rs). `index_values` are
-//! the tree-key-encoded index values (raw utf8 for DPNS strings); `count`
-//! must match the server-side query limit (drive-abci defaults to 100).
-bool VerifyContestedVoteState(Span<const uint8_t> proof, const Identifier& contract_id,
-                              const std::string& document_type,
-                              const std::vector<Bytes>& index_values, uint16_t count,
-                              ContestedVoteState& out, Hash256& root_out, std::string& error);
+//! getContestedResourceVoteState: the poll (contract, document type, index
+//! values, tally options, count) is reconstructed from the request.
+bool VerifyGetContestedVoteState(Span<const uint8_t> request, Span<const uint8_t> response,
+                                 ContestedVoteState& out, ResponseMetadata& meta_out,
+                                 std::string& error);
 
 } // namespace platform::drive
 

@@ -8,11 +8,12 @@ used exclusively by the dash-qt GUI when configured with
   (`params.*`);
 - a protobuf wire-format subset for the DAPI gRPC messages;
 - thin adapters (`dpp/`, `drive/queries.*`) over the Rust bridge
-  (`rust/platform`, cxx namespace `platform_ffi`) for GroveDB/Drive proof
+  (`rust/platform`, cxx namespace `platform_ffi`) for proved-response
   verification, DPP object decoding and state-transition construction —
-  backed by the real dashpay/platform crates;
-- the Tenderdash quorum-signature check that binds a proof's root hash to a
-  Platform block signed by an LLMQ quorum (`drive/quorumsig.*`);
+  backed by the real dashpay/platform crates. Verification hands the exact
+  protobuf (request, response) pair to drive-proof-verifier's `FromProof`,
+  which replays the GroveDB proof and checks the Tenderdash quorum
+  threshold signature against locally synced LLMQ keys;
 - a DAPI client speaking gRPC-Web over HTTP/1.1 + TLS (mbedtls) to evonodes.
 
 ## Isolation rules

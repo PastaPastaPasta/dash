@@ -17,35 +17,6 @@ pub struct KeyInfo {
     pub disabled_at: Option<u64>,
 }
 
-/// Root hash plus an optional u64 value (balance / revision / nonce).
-#[derive(Debug, Clone)]
-pub struct U64Result {
-    pub root_hash: [u8; 32],
-    pub value: Option<u64>,
-}
-
-/// Root hash plus the identity's keys; `keys` is `None` when the identity
-/// is proven absent.
-#[derive(Debug, Clone)]
-pub struct KeysResult {
-    pub root_hash: [u8; 32],
-    pub keys: Option<Vec<KeyInfo>>,
-}
-
-/// Root hash plus an optional identity id.
-#[derive(Debug, Clone)]
-pub struct IdResult {
-    pub root_hash: [u8; 32],
-    pub id: Option<[u8; 32]>,
-}
-
-/// Root hash plus serialized documents.
-#[derive(Debug, Clone)]
-pub struct DocsResult {
-    pub root_hash: [u8; 32],
-    pub documents: Vec<Vec<u8>>,
-}
-
 /// Decoded contested-resource vote state (getContestedResourceVoteState,
 /// result type VoteTally with locked and abstaining tallies).
 #[derive(Debug, Clone, Default)]
@@ -59,12 +30,6 @@ pub struct ContestedVoteState {
     pub locked: bool,
     pub winner: Option<[u8; 32]>,
     pub finished_at_time_ms: u64,
-}
-
-#[derive(Debug, Clone)]
-pub struct ContestedResult {
-    pub root_hash: [u8; 32],
-    pub state: ContestedVoteState,
 }
 
 /// Decoded identity.

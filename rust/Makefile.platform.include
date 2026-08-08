@@ -25,7 +25,6 @@ LIBRUST_PLATFORM_SRCS = \
 
 LIBRUST_PLATFORM_TESTS = \
 	$(LIBRUST_PLATFORM_CRATE_DIR)/tests/decoders.rs \
-	$(LIBRUST_PLATFORM_CRATE_DIR)/tests/drive_vectors.rs \
 	$(LIBRUST_PLATFORM_CRATE_DIR)/tests/from_proof.rs \
 	$(LIBRUST_PLATFORM_CRATE_DIR)/tests/signing.rs
 

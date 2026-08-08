@@ -22,7 +22,7 @@ pub mod st;
 pub mod types;
 pub mod verify;
 
-use types::{BuiltTransition, ContestedResult, DocsResult, IdResult, KeyInfo, U64Result};
+use types::{BuiltTransition, KeyInfo};
 
 #[cxx::bridge(namespace = "platform_ffi")]
 mod ffi {
@@ -31,14 +31,6 @@ mod ffi {
     #[derive(Clone)]
     struct FfiBytes {
         data: Vec<u8>,
-    }
-
-    /// Proven root hash plus an optional u64 value; `present == false`
-    /// means the value was cryptographically proven absent.
-    struct FfiU64Result {
-        root_hash: Vec<u8>,
-        present: bool,
-        value: u64,
     }
 
     /// One identity public key. `has_disabled_at == false` means the key is
@@ -55,52 +47,12 @@ mod ffi {
         disabled_at: u64,
     }
 
-    /// Proven root hash plus the identity's keys; `present == false` means
-    /// the identity was proven absent.
-    struct FfiKeysResult {
-        root_hash: Vec<u8>,
-        present: bool,
-        keys: Vec<FfiIdentityKey>,
-    }
-
-    /// Proven root hash plus an optional 32-byte identity id.
-    struct FfiIdResult {
-        root_hash: Vec<u8>,
-        present: bool,
-        id: Vec<u8>,
-    }
-
-    /// Proven root hash plus the matching serialized documents.
-    struct FfiDocsResult {
-        root_hash: Vec<u8>,
-        documents: Vec<FfiBytes>,
-    }
-
     /// One contender of a contested resource: identity id and its vote
     /// tally (when requested/available).
     struct FfiContender {
         identity: Vec<u8>,
         has_votes: bool,
         votes: u32,
-    }
-
-    /// Decoded contested-resource vote state.
-    struct FfiContestedResult {
-        root_hash: Vec<u8>,
-        /// False when the contest was cryptographically proven absent.
-        contest_found: bool,
-        contenders: Vec<FfiContender>,
-        has_abstain: bool,
-        abstain_votes: u32,
-        has_lock: bool,
-        lock_votes: u32,
-        /// True once the poll finished (awarded or locked); the tallies and
-        /// contenders then come from the final vote event.
-        finished: bool,
-        locked: bool,
-        has_winner: bool,
-        winner: Vec<u8>,
-        finished_at_time_ms: u64,
     }
 
     /// Decoded identity.
@@ -272,49 +224,6 @@ mod ffi {
             response: &[u8],
         ) -> Result<FfiVerifiedContested>;
 
-        // --- Drive proof verification -----------------------------------
-        fn verify_identity_balance(proof: &[u8], identity_id: &[u8]) -> Result<FfiU64Result>;
-        fn verify_identity_revision(proof: &[u8], identity_id: &[u8]) -> Result<FfiU64Result>;
-        fn verify_identity_nonce(proof: &[u8], identity_id: &[u8]) -> Result<FfiU64Result>;
-        fn verify_identity_contract_nonce(
-            proof: &[u8],
-            identity_id: &[u8],
-            contract_id: &[u8],
-        ) -> Result<FfiU64Result>;
-        fn verify_identity_keys(proof: &[u8], identity_id: &[u8]) -> Result<FfiKeysResult>;
-        fn verify_identity_id_by_pubkey_hash(
-            proof: &[u8],
-            pubkey_hash: &[u8],
-        ) -> Result<FfiIdResult>;
-        fn verify_dpns_name_exact(proof: &[u8], normalized_label: &str) -> Result<FfiDocsResult>;
-        fn verify_dpns_name_prefix(
-            proof: &[u8],
-            normalized_prefix: &str,
-            limit: u16,
-        ) -> Result<FfiDocsResult>;
-        fn verify_dpns_names_by_identity(
-            proof: &[u8],
-            identity_id: &[u8],
-            limit: u16,
-        ) -> Result<FfiDocsResult>;
-        fn verify_dashpay_profile_by_owner(
-            proof: &[u8],
-            owner_id: &[u8],
-        ) -> Result<FfiDocsResult>;
-        fn verify_dashpay_contact_requests(
-            proof: &[u8],
-            identity_id: &[u8],
-            to_identity: bool,
-            limit: u16,
-        ) -> Result<FfiDocsResult>;
-        fn verify_contested_vote_state(
-            proof: &[u8],
-            contract_id: &[u8],
-            document_type: &str,
-            index_values: Vec<String>,
-            count: u16,
-        ) -> Result<FfiContestedResult>;
-
         // --- DPP decoders -----------------------------------------------
         fn decode_identity(bytes: &[u8]) -> Result<FfiIdentity>;
         fn decode_identity_public_key(bytes: &[u8]) -> Result<FfiIdentityKey>;
@@ -390,14 +299,6 @@ mod ffi {
 // Conversions between the plain-Rust core types and the flat FFI structs.
 // ---------------------------------------------------------------------------
 
-fn ffi_u64(result: U64Result) -> ffi::FfiU64Result {
-    ffi::FfiU64Result {
-        root_hash: result.root_hash.to_vec(),
-        present: result.value.is_some(),
-        value: result.value.unwrap_or(0),
-    }
-}
-
 fn ffi_key(key: &KeyInfo) -> ffi::FfiIdentityKey {
     ffi::FfiIdentityKey {
         id: key.id,
@@ -420,51 +321,6 @@ fn key_info(key: &ffi::FfiIdentityKey) -> KeyInfo {
         read_only: key.read_only,
         data: key.data.clone(),
         disabled_at: key.has_disabled_at.then_some(key.disabled_at),
-    }
-}
-
-fn ffi_docs(result: DocsResult) -> ffi::FfiDocsResult {
-    ffi::FfiDocsResult {
-        root_hash: result.root_hash.to_vec(),
-        documents: result
-            .documents
-            .into_iter()
-            .map(|data| ffi::FfiBytes { data })
-            .collect(),
-    }
-}
-
-fn ffi_id_result(result: IdResult) -> ffi::FfiIdResult {
-    ffi::FfiIdResult {
-        root_hash: result.root_hash.to_vec(),
-        present: result.id.is_some(),
-        id: result.id.map(|id| id.to_vec()).unwrap_or_default(),
-    }
-}
-
-fn ffi_contested(result: ContestedResult) -> ffi::FfiContestedResult {
-    let state = result.state;
-    ffi::FfiContestedResult {
-        root_hash: result.root_hash.to_vec(),
-        contest_found: state.contest_found,
-        contenders: state
-            .contenders
-            .iter()
-            .map(|(identity, votes)| ffi::FfiContender {
-                identity: identity.to_vec(),
-                has_votes: votes.is_some(),
-                votes: votes.unwrap_or(0),
-            })
-            .collect(),
-        has_abstain: state.abstain_votes.is_some(),
-        abstain_votes: state.abstain_votes.unwrap_or(0),
-        has_lock: state.lock_votes.is_some(),
-        lock_votes: state.lock_votes.unwrap_or(0),
-        finished: state.finished,
-        locked: state.locked,
-        has_winner: state.winner.is_some(),
-        winner: state.winner.map(|id| id.to_vec()).unwrap_or_default(),
-        finished_at_time_ms: state.finished_at_time_ms,
     }
 }
 
@@ -616,101 +472,6 @@ fn verify_get_contested_vote_state(
         finished_at_time_ms: state.finished_at_time_ms,
         meta: ffi_meta(meta),
     })
-}
-
-// ---------------------------------------------------------------------------
-// Bridge implementations.
-// ---------------------------------------------------------------------------
-
-fn verify_identity_balance(proof: &[u8], identity_id: &[u8]) -> Result<ffi::FfiU64Result, String> {
-    verify::verify_identity_balance(proof, identity_id).map(ffi_u64)
-}
-
-fn verify_identity_revision(proof: &[u8], identity_id: &[u8]) -> Result<ffi::FfiU64Result, String> {
-    verify::verify_identity_revision(proof, identity_id).map(ffi_u64)
-}
-
-fn verify_identity_nonce(proof: &[u8], identity_id: &[u8]) -> Result<ffi::FfiU64Result, String> {
-    verify::verify_identity_nonce(proof, identity_id).map(ffi_u64)
-}
-
-fn verify_identity_contract_nonce(
-    proof: &[u8],
-    identity_id: &[u8],
-    contract_id: &[u8],
-) -> Result<ffi::FfiU64Result, String> {
-    verify::verify_identity_contract_nonce(proof, identity_id, contract_id).map(ffi_u64)
-}
-
-fn verify_identity_keys(proof: &[u8], identity_id: &[u8]) -> Result<ffi::FfiKeysResult, String> {
-    let result = verify::verify_identity_keys(proof, identity_id)?;
-    Ok(ffi::FfiKeysResult {
-        root_hash: result.root_hash.to_vec(),
-        present: result.keys.is_some(),
-        keys: result
-            .keys
-            .unwrap_or_default()
-            .iter()
-            .map(ffi_key)
-            .collect(),
-    })
-}
-
-fn verify_identity_id_by_pubkey_hash(
-    proof: &[u8],
-    pubkey_hash: &[u8],
-) -> Result<ffi::FfiIdResult, String> {
-    verify::verify_identity_id_by_pubkey_hash(proof, pubkey_hash).map(ffi_id_result)
-}
-
-fn verify_dpns_name_exact(
-    proof: &[u8],
-    normalized_label: &str,
-) -> Result<ffi::FfiDocsResult, String> {
-    verify::verify_dpns_name_exact(proof, normalized_label).map(ffi_docs)
-}
-
-fn verify_dpns_name_prefix(
-    proof: &[u8],
-    normalized_prefix: &str,
-    limit: u16,
-) -> Result<ffi::FfiDocsResult, String> {
-    verify::verify_dpns_name_prefix(proof, normalized_prefix, limit).map(ffi_docs)
-}
-
-fn verify_dpns_names_by_identity(
-    proof: &[u8],
-    identity_id: &[u8],
-    limit: u16,
-) -> Result<ffi::FfiDocsResult, String> {
-    verify::verify_dpns_names_by_identity(proof, identity_id, limit).map(ffi_docs)
-}
-
-fn verify_dashpay_profile_by_owner(
-    proof: &[u8],
-    owner_id: &[u8],
-) -> Result<ffi::FfiDocsResult, String> {
-    verify::verify_dashpay_profile_by_owner(proof, owner_id).map(ffi_docs)
-}
-
-fn verify_dashpay_contact_requests(
-    proof: &[u8],
-    identity_id: &[u8],
-    to_identity: bool,
-    limit: u16,
-) -> Result<ffi::FfiDocsResult, String> {
-    verify::verify_dashpay_contact_requests(proof, identity_id, to_identity, limit).map(ffi_docs)
-}
-
-fn verify_contested_vote_state(
-    proof: &[u8],
-    contract_id: &[u8],
-    document_type: &str,
-    index_values: Vec<String>,
-    count: u16,
-) -> Result<ffi::FfiContestedResult, String> {
-    verify::verify_contested_vote_state(proof, contract_id, document_type, index_values, count)
-        .map(ffi_contested)
 }
 
 fn decode_identity(bytes: &[u8]) -> Result<ffi::FfiIdentity, String> {
