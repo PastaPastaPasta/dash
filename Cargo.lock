@@ -697,6 +697,7 @@ name = "dash-platform-ffi"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "ciborium",
  "cxx",
  "dapi-grpc",
  "dash-context-provider",

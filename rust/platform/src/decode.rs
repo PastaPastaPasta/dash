@@ -20,34 +20,9 @@ use platform_version::version::PlatformVersion;
 
 use crate::types::{ContactRequest, DpnsName, IdentityInfo, KeyInfo, Profile};
 
-pub fn decode_identity(bytes: &[u8]) -> Result<IdentityInfo, String> {
-    let identity =
-        Identity::deserialize_from_bytes(bytes).map_err(|e| format!("bad identity: {e}"))?;
-    let keys = identity
-        .public_keys()
-        .values()
-        .map(|key| KeyInfo {
-            id: key.id(),
-            purpose: key.purpose() as u8,
-            security_level: key.security_level() as u8,
-            key_type: key.key_type() as u8,
-            read_only: key.read_only(),
-            data: key.data().to_vec(),
-            disabled_at: key.disabled_at(),
-        })
-        .collect();
-    Ok(IdentityInfo {
-        id: identity.id().to_buffer(),
-        balance: identity.balance(),
-        revision: identity.revision(),
-        keys,
-    })
-}
-
-pub fn decode_identity_public_key(bytes: &[u8]) -> Result<KeyInfo, String> {
-    let key = IdentityPublicKey::deserialize_from_bytes(bytes)
-        .map_err(|e| format!("bad identity public key: {e}"))?;
-    Ok(KeyInfo {
+/// Flattens a dpp key into the FFI form.
+pub(crate) fn key_info(key: &IdentityPublicKey) -> KeyInfo {
+    KeyInfo {
         id: key.id(),
         purpose: key.purpose() as u8,
         security_level: key.security_level() as u8,
@@ -55,7 +30,29 @@ pub fn decode_identity_public_key(bytes: &[u8]) -> Result<KeyInfo, String> {
         read_only: key.read_only(),
         data: key.data().to_vec(),
         disabled_at: key.disabled_at(),
-    })
+    }
+}
+
+/// Flattens a dpp identity into the FFI form.
+pub(crate) fn identity_info(identity: &Identity) -> IdentityInfo {
+    IdentityInfo {
+        id: identity.id().to_buffer(),
+        balance: identity.balance(),
+        revision: identity.revision(),
+        keys: identity.public_keys().values().map(key_info).collect(),
+    }
+}
+
+pub fn decode_identity(bytes: &[u8]) -> Result<IdentityInfo, String> {
+    let identity =
+        Identity::deserialize_from_bytes(bytes).map_err(|e| format!("bad identity: {e}"))?;
+    Ok(identity_info(&identity))
+}
+
+pub fn decode_identity_public_key(bytes: &[u8]) -> Result<KeyInfo, String> {
+    let key = IdentityPublicKey::deserialize_from_bytes(bytes)
+        .map_err(|e| format!("bad identity public key: {e}"))?;
+    Ok(key_info(&key))
 }
 
 fn decode_document(

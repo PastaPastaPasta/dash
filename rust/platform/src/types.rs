@@ -118,6 +118,19 @@ pub struct ContactRequest {
     pub created_at: u64,
 }
 
+/// The authenticated ResponseMetadata fields of a proved DAPI response. The
+/// Tenderdash quorum signature covers all of them (they enter the StateId /
+/// CanonicalVote sign bytes), so after `FromProof` verification succeeds the
+/// C++ freshness tracker can trust them.
+#[derive(Debug, Clone, Default)]
+pub struct Meta {
+    pub height: u64,
+    pub core_chain_locked_height: u32,
+    pub time_ms: u64,
+    pub protocol_version: u32,
+    pub chain_id: String,
+}
+
 /// A built, signed state transition.
 #[derive(Debug, Clone)]
 pub struct BuiltTransition {

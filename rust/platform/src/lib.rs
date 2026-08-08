@@ -17,6 +17,7 @@
 //! src/platform/ffi/signer.h) so private keys never leave the wallet.
 
 pub mod decode;
+pub mod provider;
 pub mod st;
 pub mod types;
 pub mod verify;
@@ -149,6 +150,66 @@ mod ffi {
         document_id: Vec<u8>,
     }
 
+    /// A quorum BLS public key pushed from the node's LLMQ store.
+    /// `quorum_hash` (32 bytes) is in the byte order DAPI proofs carry it
+    /// (display order); `pubkey` is the 48-byte basic-scheme public key.
+    #[derive(Clone)]
+    struct FfiQuorumKey {
+        quorum_hash: Vec<u8>,
+        pubkey: Vec<u8>,
+    }
+
+    /// Authenticated ResponseMetadata fields of a verified response (the
+    /// quorum signature covers them via the StateId sign bytes).
+    #[derive(Clone)]
+    struct FfiMeta {
+        height: u64,
+        core_chain_locked_height: u32,
+        time_ms: u64,
+        protocol_version: u32,
+        chain_id: String,
+    }
+
+    /// Verified optional u64 (nonce); `present == false` means proven
+    /// absent.
+    struct FfiVerifiedU64 {
+        present: bool,
+        value: u64,
+        meta: FfiMeta,
+    }
+
+    /// Verified optional identity; `present == false` means proven absent.
+    struct FfiVerifiedIdentity {
+        present: bool,
+        identity: FfiIdentity,
+        meta: FfiMeta,
+    }
+
+    /// Verified document query result (serialized documents; empty means
+    /// proven no matches).
+    struct FfiVerifiedDocs {
+        documents: Vec<FfiBytes>,
+        meta: FfiMeta,
+    }
+
+    /// Verified contested-resource vote state.
+    struct FfiVerifiedContested {
+        /// False when the contest was cryptographically proven absent.
+        contest_found: bool,
+        contenders: Vec<FfiContender>,
+        has_abstain: bool,
+        abstain_votes: u32,
+        has_lock: bool,
+        lock_votes: u32,
+        /// True once the poll finished (awarded or locked).
+        finished: bool,
+        locked: bool,
+        has_winner: bool,
+        winner: Vec<u8>,
+        finished_at_time_ms: u64,
+        meta: FfiMeta,
+    }
+
     /// A public key to register with a new identity.
     struct FfiNewIdentityKey {
         id: u32,
@@ -183,6 +244,34 @@ mod ffi {
     }
 
     extern "Rust" {
+        // --- Node-local verification context ----------------------------
+        /// Sets the network ("main"/"test"/"regtest"/"devnet") and the
+        /// Platform activation core height (0 = unknown; only consulted by
+        /// query paths the GUI does not use).
+        fn set_context(network_id: &str, platform_activation_height: u32) -> Result<()>;
+        /// Replaces the stored quorum keys of `quorum_type` with `keys`.
+        fn update_quorum_keys(quorum_type: u8, keys: Vec<FfiQuorumKey>) -> Result<()>;
+
+        // --- FromProof verification over (request, response) bytes ------
+        fn verify_get_identity_nonce(
+            request: &[u8],
+            response: &[u8],
+        ) -> Result<FfiVerifiedU64>;
+        fn verify_get_identity_contract_nonce(
+            request: &[u8],
+            response: &[u8],
+        ) -> Result<FfiVerifiedU64>;
+        fn verify_get_identity(request: &[u8], response: &[u8]) -> Result<FfiVerifiedIdentity>;
+        fn verify_get_identity_by_pubkey_hash(
+            request: &[u8],
+            response: &[u8],
+        ) -> Result<FfiVerifiedIdentity>;
+        fn verify_get_documents(request: &[u8], response: &[u8]) -> Result<FfiVerifiedDocs>;
+        fn verify_get_contested_vote_state(
+            request: &[u8],
+            response: &[u8],
+        ) -> Result<FfiVerifiedContested>;
+
         // --- Drive proof verification -----------------------------------
         fn verify_identity_balance(proof: &[u8], identity_id: &[u8]) -> Result<FfiU64Result>;
         fn verify_identity_revision(proof: &[u8], identity_id: &[u8]) -> Result<FfiU64Result>;
@@ -385,6 +474,149 @@ fn ffi_built(built: BuiltTransition) -> ffi::FfiBuiltTransition {
         bytes: built.bytes,
         hash: built.hash.to_vec(),
     }
+}
+
+fn ffi_meta(meta: types::Meta) -> ffi::FfiMeta {
+    ffi::FfiMeta {
+        height: meta.height,
+        core_chain_locked_height: meta.core_chain_locked_height,
+        time_ms: meta.time_ms,
+        protocol_version: meta.protocol_version,
+        chain_id: meta.chain_id,
+    }
+}
+
+fn ffi_verified_u64((value, meta): (Option<u64>, types::Meta)) -> ffi::FfiVerifiedU64 {
+    ffi::FfiVerifiedU64 {
+        present: value.is_some(),
+        value: value.unwrap_or(0),
+        meta: ffi_meta(meta),
+    }
+}
+
+fn ffi_identity(identity: &types::IdentityInfo) -> ffi::FfiIdentity {
+    ffi::FfiIdentity {
+        id: identity.id.to_vec(),
+        balance: identity.balance,
+        revision: identity.revision,
+        keys: identity.keys.iter().map(ffi_key).collect(),
+    }
+}
+
+fn ffi_verified_identity(
+    (identity, meta): (Option<types::IdentityInfo>, types::Meta),
+) -> ffi::FfiVerifiedIdentity {
+    ffi::FfiVerifiedIdentity {
+        present: identity.is_some(),
+        identity: identity
+            .as_ref()
+            .map(ffi_identity)
+            .unwrap_or_else(|| ffi::FfiIdentity {
+                id: Vec::new(),
+                balance: 0,
+                revision: 0,
+                keys: Vec::new(),
+            }),
+        meta: ffi_meta(meta),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Bridge implementations: verification context.
+// ---------------------------------------------------------------------------
+
+fn set_context(network_id: &str, platform_activation_height: u32) -> Result<(), String> {
+    provider::set_context(network_id, platform_activation_height)
+}
+
+fn update_quorum_keys(quorum_type: u8, keys: Vec<ffi::FfiQuorumKey>) -> Result<(), String> {
+    let keys = keys
+        .into_iter()
+        .map(|key| {
+            Ok(provider::QuorumKey {
+                quorum_hash: types::id32(&key.quorum_hash, "quorum hash")?,
+                public_key: key
+                    .pubkey
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| format!("quorum public key must be 48 bytes, got {}", key.pubkey.len()))?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    provider::update_quorum_keys(quorum_type, keys);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Bridge implementations: FromProof verification.
+// ---------------------------------------------------------------------------
+
+fn verify_get_identity_nonce(
+    request: &[u8],
+    response: &[u8],
+) -> Result<ffi::FfiVerifiedU64, String> {
+    verify::verify_get_identity_nonce(request, response).map(ffi_verified_u64)
+}
+
+fn verify_get_identity_contract_nonce(
+    request: &[u8],
+    response: &[u8],
+) -> Result<ffi::FfiVerifiedU64, String> {
+    verify::verify_get_identity_contract_nonce(request, response).map(ffi_verified_u64)
+}
+
+fn verify_get_identity(
+    request: &[u8],
+    response: &[u8],
+) -> Result<ffi::FfiVerifiedIdentity, String> {
+    verify::verify_get_identity(request, response).map(ffi_verified_identity)
+}
+
+fn verify_get_identity_by_pubkey_hash(
+    request: &[u8],
+    response: &[u8],
+) -> Result<ffi::FfiVerifiedIdentity, String> {
+    verify::verify_get_identity_by_pubkey_hash(request, response).map(ffi_verified_identity)
+}
+
+fn verify_get_documents(request: &[u8], response: &[u8]) -> Result<ffi::FfiVerifiedDocs, String> {
+    let (documents, meta) = verify::verify_get_documents(request, response)?;
+    Ok(ffi::FfiVerifiedDocs {
+        documents: documents
+            .into_iter()
+            .map(|data| ffi::FfiBytes { data })
+            .collect(),
+        meta: ffi_meta(meta),
+    })
+}
+
+fn verify_get_contested_vote_state(
+    request: &[u8],
+    response: &[u8],
+) -> Result<ffi::FfiVerifiedContested, String> {
+    let (state, meta) = verify::verify_get_contested_vote_state(request, response)?;
+    Ok(ffi::FfiVerifiedContested {
+        contest_found: state.contest_found,
+        contenders: state
+            .contenders
+            .iter()
+            .map(|(identity, votes)| ffi::FfiContender {
+                identity: identity.to_vec(),
+                has_votes: votes.is_some(),
+                votes: votes.unwrap_or(0),
+            })
+            .collect(),
+        has_abstain: state.abstain_votes.is_some(),
+        abstain_votes: state.abstain_votes.unwrap_or(0),
+        has_lock: state.lock_votes.is_some(),
+        lock_votes: state.lock_votes.unwrap_or(0),
+        finished: state.finished,
+        locked: state.locked,
+        has_winner: state.winner.is_some(),
+        winner: state.winner.map(|id| id.to_vec()).unwrap_or_default(),
+        finished_at_time_ms: state.finished_at_time_ms,
+        meta: ffi_meta(meta),
+    })
 }
 
 // ---------------------------------------------------------------------------
