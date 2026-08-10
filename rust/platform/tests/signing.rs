@@ -52,7 +52,11 @@ impl TestSigner {
         TestSigner {
             master_sk: hex32(doc["keys"]["master"]["private_key_hex"].as_str().unwrap()),
             high_sk: hex32(doc["keys"]["high"]["private_key_hex"].as_str().unwrap()),
-            asset_lock_sk: hex32(doc["keys"]["asset_lock"]["private_key_hex"].as_str().unwrap()),
+            asset_lock_sk: hex32(
+                doc["keys"]["asset_lock"]["private_key_hex"]
+                    .as_str()
+                    .unwrap(),
+            ),
             digests: Mutex::new(Vec::new()),
         }
     }
@@ -65,7 +69,9 @@ impl TestSigner {
             ASSET_LOCK_KEY_ID => self.asset_lock_sk,
             _ => return None,
         };
-        dash_signer::sign_hash(&digest, &sk).ok().map(|s| s.to_vec())
+        dash_signer::sign_hash(&digest, &sk)
+            .ok()
+            .map(|s| s.to_vec())
     }
 }
 
@@ -122,7 +128,11 @@ fn dpns_preorder() {
     check_built(&built, vector, &signer, 1);
 }
 
-fn build_domain(doc: &Value, vector: &Value, signer: &TestSigner) -> dash_platform_ffi::types::BuiltTransition {
+fn build_domain(
+    doc: &Value,
+    vector: &Value,
+    signer: &TestSigner,
+) -> dash_platform_ffi::types::BuiltTransition {
     st::build_dpns_domain(
         &hexv(vector["owner_id_hex"].as_str().unwrap()),
         vector["identity_contract_nonce"].as_u64().unwrap(),
@@ -264,7 +274,11 @@ fn identity_keys(doc: &Value) -> Vec<NewIdentityKey> {
     ]
 }
 
-fn check_identity_create(built: &dash_platform_ffi::types::BuiltTransition, vector: &Value, signer: &TestSigner) {
+fn check_identity_create(
+    built: &dash_platform_ffi::types::BuiltTransition,
+    vector: &Value,
+    signer: &TestSigner,
+) {
     assert_eq!(
         hex::encode(&built.bytes),
         vector["serialized_hex"].as_str().unwrap(),
@@ -388,5 +402,8 @@ fn signer_failure_is_reported() {
         &|_key_id, _digest| None, // wallet refuses
     )
     .unwrap_err();
-    assert!(err.contains("signing failed") || err.contains("locked"), "{err}");
+    assert!(
+        err.contains("signing failed") || err.contains("locked"),
+        "{err}"
+    );
 }

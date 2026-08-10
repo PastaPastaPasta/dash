@@ -66,8 +66,14 @@ fn decode_stored_dpns_domain() {
     let vector = &doc["stored_documents"]["domain"];
     let name = decode::decode_dpns_domain(&hexv(vector["serialized_hex"].as_str().unwrap()))
         .expect("decode DPNS domain");
-    assert_eq!(hex::encode(name.document_id), vector["id_hex"].as_str().unwrap());
-    assert_eq!(hex::encode(name.owner_id), vector["owner_id_hex"].as_str().unwrap());
+    assert_eq!(
+        hex::encode(name.document_id),
+        vector["id_hex"].as_str().unwrap()
+    );
+    assert_eq!(
+        hex::encode(name.owner_id),
+        vector["owner_id_hex"].as_str().unwrap()
+    );
     assert_eq!(
         hex::encode(name.identity),
         vector["identity_id_hex"].as_str().unwrap()
@@ -86,10 +92,19 @@ fn decode_stored_dashpay_profile() {
     let vector = &doc["stored_documents"]["profile"];
     let profile = decode::decode_dashpay_profile(&hexv(vector["serialized_hex"].as_str().unwrap()))
         .expect("decode DashPay profile");
-    assert_eq!(hex::encode(profile.document_id), vector["id_hex"].as_str().unwrap());
-    assert_eq!(hex::encode(profile.owner_id), vector["owner_id_hex"].as_str().unwrap());
+    assert_eq!(
+        hex::encode(profile.document_id),
+        vector["id_hex"].as_str().unwrap()
+    );
+    assert_eq!(
+        hex::encode(profile.owner_id),
+        vector["owner_id_hex"].as_str().unwrap()
+    );
     assert_eq!(Some(profile.revision), vector["revision"].as_u64());
-    assert_eq!(profile.display_name, vector["display_name"].as_str().unwrap());
+    assert_eq!(
+        profile.display_name,
+        vector["display_name"].as_str().unwrap()
+    );
     assert_eq!(
         profile.public_message,
         vector["public_message"].as_str().unwrap()
@@ -105,11 +120,16 @@ fn decode_stored_dashpay_profile() {
 fn decode_stored_contact_request() {
     let doc = st_vectors();
     let vector = &doc["stored_documents"]["contact"];
-    let request =
-        decode::decode_contact_request(&hexv(vector["serialized_hex"].as_str().unwrap()))
-            .expect("decode contact request");
-    assert_eq!(hex::encode(request.document_id), vector["id_hex"].as_str().unwrap());
-    assert_eq!(hex::encode(request.owner_id), vector["owner_id_hex"].as_str().unwrap());
+    let request = decode::decode_contact_request(&hexv(vector["serialized_hex"].as_str().unwrap()))
+        .expect("decode contact request");
+    assert_eq!(
+        hex::encode(request.document_id),
+        vector["id_hex"].as_str().unwrap()
+    );
+    assert_eq!(
+        hex::encode(request.owner_id),
+        vector["owner_id_hex"].as_str().unwrap()
+    );
     assert_eq!(
         hex::encode(request.to_user_id),
         vector["to_user_id_hex"].as_str().unwrap()

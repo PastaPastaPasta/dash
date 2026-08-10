@@ -128,14 +128,15 @@ pub fn verify_get_identity(
     let request: GetIdentityRequest = decode_message(request, "GetIdentityRequest")?;
     let response: GetIdentityResponse = decode_message(response, "GetIdentityResponse")?;
     let version = response_version(&response);
-    let (identity, mtd, _) = <Identity as FromProof<GetIdentityRequest>>::maybe_from_proof_with_metadata(
-        request,
-        response,
-        network()?,
-        version,
-        provider(),
-    )
-    .map_err(|e| format!("identity proof verification failed: {e}"))?;
+    let (identity, mtd, _) =
+        <Identity as FromProof<GetIdentityRequest>>::maybe_from_proof_with_metadata(
+            request,
+            response,
+            network()?,
+            version,
+            provider(),
+        )
+        .map_err(|e| format!("identity proof verification failed: {e}"))?;
     Ok((identity.as_ref().map(identity_info), meta_from(&mtd)))
 }
 
@@ -223,8 +224,12 @@ pub fn verify_get_documents(
     let version = response_version(&response);
 
     let (contract_id_bytes, document_type_name) = match &request.version {
-        Some(GetDocumentsVersion::V0(v0)) => (v0.data_contract_id.clone(), v0.document_type.clone()),
-        Some(GetDocumentsVersion::V1(v1)) => (v1.data_contract_id.clone(), v1.document_type.clone()),
+        Some(GetDocumentsVersion::V0(v0)) => {
+            (v0.data_contract_id.clone(), v0.document_type.clone())
+        }
+        Some(GetDocumentsVersion::V1(v1)) => {
+            (v1.data_contract_id.clone(), v1.document_type.clone())
+        }
         None => return Err("GetDocumentsRequest has no version set".to_string()),
     };
     let contract_id = crate::types::id32(&contract_id_bytes, "contract id")?;

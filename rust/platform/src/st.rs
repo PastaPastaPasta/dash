@@ -21,6 +21,7 @@ use dash_platform_queries::dpns_usernames::build_dpns_preorder_and_domain_docume
 use dash_platform_queries::transition::put_document::{
     ensure_entropy_matches_document_id, prepare_document_for_transition,
 };
+use dpp::address_funds::AddressWitness;
 use dpp::dashcore::consensus::Decodable;
 use dpp::dashcore::hashes::{sha256, Hash};
 use dpp::dashcore::{InstantLock, OutPoint, Transaction};
@@ -33,7 +34,6 @@ use dpp::identity::signer::Signer;
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
-use dpp::address_funds::AddressWitness;
 use dpp::platform_value::{BinaryData, Value};
 use dpp::prelude::{AssetLockProof, Identifier};
 use dpp::serialization::{PlatformSerializable, Signable};
