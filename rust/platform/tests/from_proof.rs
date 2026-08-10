@@ -664,9 +664,8 @@ fn identity_by_pubkey_hash_rejects_id_mapping_only_proof() {
     setup();
     let file = drive_vectors();
     let q = query(&file, "identity_by_public_key_hash_present");
-    let request = identity_by_pubkey_hash_request(hexv(
-        &q.query["public_key_hash"].as_str().unwrap().to_string(),
-    ));
+    let request =
+        identity_by_pubkey_hash_request(hexv(q.query["public_key_hash"].as_str().unwrap()));
     let response = identity_by_pubkey_hash_response(proof_msg(hexv(&q.grovedb_proof_hex)));
     let err = dash_platform_ffi::verify::verify_get_identity_by_pubkey_hash(&request, &response)
         .expect_err("id-mapping-only proof must not satisfy full-identity verification");

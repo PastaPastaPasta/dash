@@ -49,10 +49,10 @@ struct Params {
     std::string tenderdash_chain_id;
     //! Default amount (in duffs) locked to fund a new identity when
     //! registering a username. Matches the DashPay mobile wallet defaults.
-    int64_t default_identity_funding_amount;
+    int64_t default_identity_funding_amount{0};
     //! Funding used for contested names. Includes the 0.2 DASH protocol vote
     //! reserve plus headroom for identity/domain transition fees.
-    int64_t contested_identity_funding_amount;
+    int64_t contested_identity_funding_amount{0};
 
     //! Minimum credit conversion: 1 duff == 1000 platform credits.
     static constexpr int64_t CREDITS_PER_DUFF{1000};

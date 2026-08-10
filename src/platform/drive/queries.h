@@ -5,7 +5,6 @@
 #ifndef BITCOIN_PLATFORM_DRIVE_QUERIES_H
 #define BITCOIN_PLATFORM_DRIVE_QUERIES_H
 
-#include <platform/serialize.h>
 #include <platform/types.h>
 #include <span.h>
 

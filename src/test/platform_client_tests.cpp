@@ -12,20 +12,115 @@
 #include <platform/client.h>
 #include <platform/transport/endpoint_retry.h>
 #include <platform/transport/freshness.h>
+#include <platform/transport/grpcweb.h>
 
 #include <test/util/setup_common.h>
 
 #include <boost/test/unit_test.hpp>
 
+#include <charconv>
+#include <iterator>
 #include <string>
 #include <vector>
 
 using platform::Endpoint;
 using platform::transport::AttemptStatus;
 using platform::transport::FreshnessTracker;
+using platform::transport::ParseGrpcWebResponse;
 using platform::transport::RetryAcrossEndpoints;
 
 BOOST_FIXTURE_TEST_SUITE(platform_client_tests, BasicTestingSetup)
+
+namespace {
+
+std::vector<uint8_t> GrpcFrame(uint8_t flags, Span<const uint8_t> data)
+{
+    const uint32_t size{static_cast<uint32_t>(data.size())};
+    std::vector<uint8_t> frame{flags, static_cast<uint8_t>(size >> 24), static_cast<uint8_t>(size >> 16),
+                               static_cast<uint8_t>(size >> 8), static_cast<uint8_t>(size)};
+    frame.insert(frame.end(), data.begin(), data.end());
+    return frame;
+}
+
+std::vector<uint8_t> HttpResponse(const std::vector<uint8_t>& body, const std::string& headers = {},
+                                  const std::string& status = "200 OK")
+{
+    const std::string head{"HTTP/1.1 " + status + "\r\n" + headers + "\r\n"};
+    std::vector<uint8_t> response(head.begin(), head.end());
+    response.insert(response.end(), body.begin(), body.end());
+    return response;
+}
+
+std::vector<uint8_t> ValidGrpcBody()
+{
+    const std::vector<uint8_t> message{1, 2, 3};
+    const std::string trailers{"grpc-status: 0\r\n"};
+    const std::vector<uint8_t> trailer_bytes(trailers.begin(), trailers.end());
+    auto body{GrpcFrame(0x00, message)};
+    const auto trailer_frame{GrpcFrame(0x80, trailer_bytes)};
+    body.insert(body.end(), trailer_frame.begin(), trailer_frame.end());
+    return body;
+}
+
+} // namespace
+
+BOOST_AUTO_TEST_CASE(grpcweb_valid_response)
+{
+    const auto result{ParseGrpcWebResponse(HttpResponse(ValidGrpcBody()))};
+    BOOST_CHECK(result.transport_ok);
+    BOOST_CHECK_EQUAL(result.grpc_status, 0);
+    const std::vector<uint8_t> expected{1, 2, 3};
+    BOOST_CHECK_EQUAL_COLLECTIONS(result.message.begin(), result.message.end(), expected.begin(), expected.end());
+}
+
+BOOST_AUTO_TEST_CASE(grpcweb_valid_chunked_response)
+{
+    const auto body{ValidGrpcBody()};
+    char size_buffer[2 * sizeof(size_t) + 1];
+    const auto [size_end, ec]{std::to_chars(std::begin(size_buffer), std::end(size_buffer), body.size(), 16)};
+    BOOST_REQUIRE(ec == std::errc{});
+    const std::string chunk_header(size_buffer, size_end);
+    std::vector<uint8_t> chunked(chunk_header.begin(), chunk_header.end());
+    chunked.insert(chunked.end(), {'\r', '\n'});
+    chunked.insert(chunked.end(), body.begin(), body.end());
+    const std::string final{"\r\n0\r\n\r\n"};
+    chunked.insert(chunked.end(), final.begin(), final.end());
+
+    const auto result{ParseGrpcWebResponse(HttpResponse(chunked, "Transfer-Encoding: chunked\r\n"))};
+    BOOST_CHECK(result.transport_ok);
+    BOOST_CHECK_EQUAL(result.grpc_status, 0);
+}
+
+BOOST_AUTO_TEST_CASE(grpcweb_rejects_http_and_missing_status)
+{
+    BOOST_CHECK(!ParseGrpcWebResponse(HttpResponse({}, {}, "500 Internal Server Error")).transport_ok);
+    BOOST_CHECK(!ParseGrpcWebResponse(HttpResponse({})).transport_ok);
+    BOOST_CHECK(!ParseGrpcWebResponse(HttpResponse({}, "grpc-status: 0\r\n")).transport_ok);
+    const auto grpc_error{ParseGrpcWebResponse(HttpResponse({}, "grpc-status: 3\r\n"))};
+    BOOST_CHECK(grpc_error.transport_ok);
+    BOOST_CHECK_EQUAL(grpc_error.grpc_status, 3);
+    BOOST_CHECK(!ParseGrpcWebResponse(HttpResponse({}, "grpc-status: invalid\r\n")).transport_ok);
+}
+
+BOOST_AUTO_TEST_CASE(grpcweb_rejects_malformed_chunk_framing)
+{
+    const std::string oversized{"ffffffffffffffff\r\nx\r\n0\r\n\r\n"};
+    const std::vector<uint8_t> oversized_bytes(oversized.begin(), oversized.end());
+    BOOST_CHECK(!ParseGrpcWebResponse(HttpResponse(oversized_bytes, "Transfer-Encoding: chunked\r\n")).transport_ok);
+
+    const std::string unterminated{"1\r\nx0\r\n\r\n"};
+    const std::vector<uint8_t> unterminated_bytes(unterminated.begin(), unterminated.end());
+    BOOST_CHECK(!ParseGrpcWebResponse(HttpResponse(unterminated_bytes, "Transfer-Encoding: chunked\r\n")).transport_ok);
+}
+
+BOOST_AUTO_TEST_CASE(grpcweb_rejects_malformed_frames)
+{
+    const std::vector<uint8_t> truncated_header{0x00, 0x00};
+    BOOST_CHECK(!ParseGrpcWebResponse(HttpResponse(truncated_header, "grpc-status: 0\r\n")).transport_ok);
+
+    const std::vector<uint8_t> truncated_frame{0x00, 0x00, 0x00, 0x00, 0x02, 0x01};
+    BOOST_CHECK(!ParseGrpcWebResponse(HttpResponse(truncated_frame, "grpc-status: 0\r\n")).transport_ok);
+}
 
 // ---------------------------------------------------------------------------
 // FreshnessTracker

@@ -735,8 +735,6 @@ libdash_platform_a_SOURCES = \
   platform/ffi/signer.h \
   platform/params.cpp \
   platform/params.h \
-  platform/serialize.cpp \
-  platform/serialize.h \
   platform/statetransitions.h \
   platform/transport/cbor.h \
   platform/transport/client.cpp \

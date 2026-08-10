@@ -6,12 +6,11 @@
 
 #include <common/url.h>
 #include <platform/transport/tls.h>
-#include <util/strencodings.h>
 #include <util/string.h>
 
 #include <algorithm>
 #include <charconv>
-#include <cstring>
+#include <iterator>
 #include <optional>
 
 namespace platform::transport {
@@ -42,14 +41,182 @@ std::string ToLower(std::string s)
     return s;
 }
 
+std::optional<std::string> HeaderValue(const std::string& headers, const std::string& name)
+{
+    const std::string lower_headers{ToLower(headers)};
+    const std::string needle{ToLower(name) + ":"};
+    size_t pos{lower_headers.find(needle)};
+    while (pos != std::string::npos && pos != 0 && lower_headers[pos - 1] != '\n') {
+        pos = lower_headers.find(needle, pos + 1);
+    }
+    if (pos == std::string::npos) return std::nullopt;
+    size_t start{pos + needle.size()};
+    while (start < headers.size() && (headers[start] == ' ' || headers[start] == '\t'))
+        ++start;
+    const size_t line_end{headers.find("\r\n", start)};
+    return headers.substr(start, line_end == std::string::npos ? std::string::npos : line_end - start);
+}
+
+bool ParseGrpcStatus(const std::string& value, int& status)
+{
+    const char* first{value.data()};
+    const char* last{first + value.size()};
+    const auto [ptr, ec] = std::from_chars(first, last, status);
+    return !value.empty() && ec == std::errc{} && ptr == last && status >= 0 && status <= 16;
+}
+
+bool Dechunk(const std::vector<uint8_t>& payload, std::vector<uint8_t>& out, std::string& error)
+{
+    static constexpr uint8_t CRLF[]{'\r', '\n'};
+    static constexpr uint8_t HEADER_END[]{'\r', '\n', '\r', '\n'};
+    size_t pos{0};
+    while (pos < payload.size()) {
+        const auto line_end{std::search(payload.begin() + pos, payload.end(), std::begin(CRLF), std::end(CRLF))};
+        if (line_end == payload.end()) {
+            error = "malformed chunk size";
+            return false;
+        }
+        std::string hexlen(payload.begin() + pos, line_end);
+        if (const size_t ext{hexlen.find(';')}; ext != std::string::npos) hexlen.resize(ext);
+        size_t chunk_len{0};
+        const char* first{hexlen.data()};
+        const char* last{first + hexlen.size()};
+        const auto [ptr, ec] = std::from_chars(first, last, chunk_len, 16);
+        if (hexlen.empty() || ec != std::errc{} || ptr != last) {
+            error = "invalid chunk size";
+            return false;
+        }
+        pos = static_cast<size_t>(line_end - payload.begin()) + 2;
+        if (chunk_len == 0) {
+            if (payload.size() - pos == 2 && payload[pos] == '\r' && payload[pos + 1] == '\n') return true;
+            const auto trailer_end{
+                std::search(payload.begin() + pos, payload.end(), std::begin(HEADER_END), std::end(HEADER_END))};
+            if (trailer_end != payload.end() && trailer_end + std::size(HEADER_END) == payload.end()) return true;
+            error = "malformed final chunk";
+            return false;
+        }
+        if (chunk_len > payload.size() - pos) {
+            error = "truncated chunk";
+            return false;
+        }
+        out.insert(out.end(), payload.begin() + pos, payload.begin() + pos + chunk_len);
+        pos += chunk_len;
+        if (payload.size() - pos < 2 || payload[pos] != '\r' || payload[pos + 1] != '\n') {
+            error = "missing chunk terminator";
+            return false;
+        }
+        pos += 2;
+    }
+    error = "missing final chunk";
+    return false;
+}
+
 } // namespace
 
+GrpcCallResult ParseGrpcWebResponse(Span<const uint8_t> response)
+{
+    GrpcCallResult result;
+    static constexpr uint8_t HEADER_END[]{'\r', '\n', '\r', '\n'};
+    const auto header_end{std::search(response.begin(), response.end(), std::begin(HEADER_END), std::end(HEADER_END))};
+    if (header_end == response.end()) {
+        result.transport_error = "malformed HTTP response";
+        return result;
+    }
+    const std::string headers(response.begin(), header_end);
+    std::vector<uint8_t> payload(header_end + std::size(HEADER_END), response.end());
+
+    const size_t eol{headers.find("\r\n")};
+    const std::string status_line{headers.substr(0, eol)};
+    const size_t code_start{status_line.find(' ')};
+    const size_t code_end{code_start == std::string::npos ? std::string::npos : status_line.find(' ', code_start + 1)};
+    if (status_line.rfind("HTTP/1.", 0) != 0 || code_start == std::string::npos ||
+        status_line.substr(code_start + 1, code_end - code_start - 1) != "200") {
+        result.transport_error = "HTTP error: " + status_line;
+        return result;
+    }
+
+    if (const auto transfer_encoding{HeaderValue(headers, "transfer-encoding")};
+        transfer_encoding && ToLower(*transfer_encoding).find("chunked") != std::string::npos) {
+        std::vector<uint8_t> dechunked;
+        if (!Dechunk(payload, dechunked, result.transport_error)) return result;
+        payload = std::move(dechunked);
+    }
+
+    bool saw_status{false};
+    if (const auto status{HeaderValue(headers, "grpc-status")}) {
+        if (!ParseGrpcStatus(*status, result.grpc_status)) {
+            result.transport_error = "invalid grpc-status header";
+            return result;
+        }
+        saw_status = true;
+    }
+    if (const auto message{HeaderValue(headers, "grpc-message")}) result.grpc_message = urlDecode(*message);
+
+    size_t pos{0};
+    bool saw_data{false};
+    bool saw_trailers{false};
+    while (pos < payload.size()) {
+        if (saw_trailers) {
+            result.transport_error = "data after gRPC-Web trailers";
+            return result;
+        }
+        if (payload.size() - pos < 5) {
+            result.transport_error = "truncated gRPC-Web frame header";
+            return result;
+        }
+        const uint8_t flags{payload[pos]};
+        const uint32_t len = (static_cast<uint32_t>(payload[pos + 1]) << 24) |
+                             (static_cast<uint32_t>(payload[pos + 2]) << 16) |
+                             (static_cast<uint32_t>(payload[pos + 3]) << 8) | static_cast<uint32_t>(payload[pos + 4]);
+        pos += 5;
+        if (len > payload.size() - pos) {
+            result.transport_error = "truncated gRPC-Web frame";
+            return result;
+        }
+        const Span<const uint8_t> frame{payload.data() + pos, len};
+        pos += len;
+
+        if (flags == 0x80) {
+            const std::string trailers(frame.begin(), frame.end());
+            const auto status{HeaderValue(trailers, "grpc-status")};
+            if (!status || !ParseGrpcStatus(*status, result.grpc_status)) {
+                result.transport_error = "missing or invalid grpc-status trailer";
+                return result;
+            }
+            saw_status = true;
+            saw_trailers = true;
+            if (const auto message{HeaderValue(trailers, "grpc-message")}) result.grpc_message = urlDecode(*message);
+        } else if (flags == 0x00) {
+            if (saw_data) {
+                result.transport_error = "multiple messages in unary gRPC-Web response";
+                return result;
+            }
+            result.message.assign(frame.begin(), frame.end());
+            saw_data = true;
+        } else {
+            result.transport_error = "unsupported gRPC-Web frame flags";
+            return result;
+        }
+    }
+
+    if (!saw_status) {
+        result.transport_error = "missing grpc-status";
+        return result;
+    }
+    if (result.grpc_status == 0 && !saw_data) {
+        result.transport_error = "missing unary response message";
+        return result;
+    }
+    result.transport_ok = true;
+    return result;
+}
+
 GrpcCallResult GrpcWebUnary(const std::string& host, uint16_t port, const std::string& path,
-                            const std::vector<uint8_t>& request, int timeout_ms)
+                            const std::vector<uint8_t>& request, int timeout_ms, const std::function<bool()>& interrupted)
 {
     GrpcCallResult result;
 
-    auto conn = TlsConnection::Connect(host, port, timeout_ms, result.transport_error);
+    auto conn = TlsConnection::Connect(host, port, timeout_ms, result.transport_error, interrupted);
     if (!conn) return result;
 
     const std::vector<uint8_t> body = FrameMessage(request);
@@ -60,7 +227,8 @@ GrpcCallResult GrpcWebUnary(const std::string& host, uint16_t port, const std::s
     head += "Content-Type: application/grpc-web+proto\r\n";
     head += "Accept: application/grpc-web+proto\r\n";
     head += "X-Grpc-Web: 1\r\n";
-    head += "Te: trailers\r\n";
+    head += "t"
+            "e: trailers\r\n";
     head += "Content-Length: " + ToString(body.size()) + "\r\n";
     head += "Connection: close\r\n\r\n";
 
@@ -82,119 +250,7 @@ GrpcCallResult GrpcWebUnary(const std::string& host, uint16_t port, const std::s
         }
     }
 
-    // Split HTTP headers from body.
-    static const uint8_t sep[4] = {'\r', '\n', '\r', '\n'};
-    auto it = std::search(resp.begin(), resp.end(), sep, sep + 4);
-    if (it == resp.end()) {
-        result.transport_error = "malformed HTTP response";
-        return result;
-    }
-    const std::string headers(resp.begin(), it);
-    std::vector<uint8_t> payload(it + 4, resp.end());
-
-    // HTTP status line.
-    {
-        const auto eol = headers.find("\r\n");
-        const std::string status_line = headers.substr(0, eol);
-        // "HTTP/1.1 200 OK"
-        const auto sp = status_line.find(' ');
-        if (sp == std::string::npos || status_line.substr(sp + 1, 3) != "200") {
-            result.transport_error = "HTTP error: " + status_line;
-            // gRPC-Web may still deliver grpc-status in headers on non-200; but
-            // treat as transport error for simplicity.
-            return result;
-        }
-    }
-
-    // Envoy may return the response chunked (Transfer-Encoding: chunked). Undo
-    // chunk framing if present.
-    if (ToLower(headers).find("transfer-encoding: chunked") != std::string::npos) {
-        std::vector<uint8_t> dechunked;
-        size_t p = 0;
-        while (p < payload.size()) {
-            // read hex length line
-            size_t line_end = p;
-            while (line_end + 1 < payload.size() && !(payload[line_end] == '\r' && payload[line_end + 1] == '\n')) {
-                ++line_end;
-            }
-            if (line_end + 1 >= payload.size()) break;
-            std::string hexlen(payload.begin() + p, payload.begin() + line_end);
-            // A chunk-size line may carry optional ";"-delimited chunk
-            // extensions (RFC 9112 sec 7.1.1), e.g. "1a;ext=value"; only the
-            // leading hex is the size. Locale-independent hex parse via
-            // std::from_chars (std::stoul would consult the locale).
-            const size_t ext{hexlen.find(';')};
-            if (ext != std::string::npos) hexlen.resize(ext);
-            size_t chunk_len = 0;
-            {
-                const char* first{hexlen.c_str()};
-                const char* last{first + hexlen.size()};
-                const auto [ptr, ec] = std::from_chars(first, last, chunk_len, 16);
-                if (hexlen.empty() || ec != std::errc{} || ptr != last) break;
-            }
-            p = line_end + 2;
-            if (chunk_len == 0) break;
-            if (p + chunk_len > payload.size()) break;
-            dechunked.insert(dechunked.end(), payload.begin() + p, payload.begin() + p + chunk_len);
-            p += chunk_len + 2; // skip trailing CRLF
-        }
-        payload.swap(dechunked);
-    }
-
-    result.transport_ok = true;
-
-    // Parse gRPC-Web frames: data frame(s) then a trailers frame (0x80).
-    result.grpc_status = 0; // default OK unless headers/trailers override
-    // Envoy is also allowed to return grpc-status/grpc-message as HTTP
-    // headers, notably for validation errors with an empty response body.
-    // Capture those first; a trailers frame below remains authoritative.
-    const std::string lower_headers{ToLower(headers)};
-    const auto header_value = [&](const std::string& name) -> std::optional<std::string> {
-        const std::string needle{name + ":"};
-        size_t pos{lower_headers.find(needle)};
-        while (pos != std::string::npos && pos != 0 && lower_headers[pos - 1] != '\n') {
-            pos = lower_headers.find(needle, pos + 1);
-        }
-        if (pos == std::string::npos) return std::nullopt;
-        size_t start{pos + needle.size()};
-        while (start < headers.size() && (headers[start] == ' ' || headers[start] == '\t')) ++start;
-        const size_t end{headers.find("\r\n", start)};
-        return headers.substr(start, end == std::string::npos ? std::string::npos : end - start);
-    };
-    if (const auto status{header_value("grpc-status")}) result.grpc_status = LocaleIndependentAtoi<int>(*status);
-    if (const auto message{header_value("grpc-message")}) result.grpc_message = urlDecode(*message);
-    size_t p = 0;
-    while (p + 5 <= payload.size()) {
-        const uint8_t flags = payload[p];
-        const uint32_t len = (static_cast<uint32_t>(payload[p + 1]) << 24) |
-                             (static_cast<uint32_t>(payload[p + 2]) << 16) |
-                             (static_cast<uint32_t>(payload[p + 3]) << 8) |
-                             static_cast<uint32_t>(payload[p + 4]);
-        p += 5;
-        if (p + len > payload.size()) break;
-        Span<const uint8_t> frame(payload.data() + p, len);
-        p += len;
-        if (flags & 0x80) {
-            // Trailers frame: "grpc-status: N\r\ngrpc-message: ...\r\n"
-            const std::string trailers(frame.begin(), frame.end());
-            const auto lower = ToLower(trailers);
-            auto spos = lower.find("grpc-status:");
-            if (spos != std::string::npos) {
-                result.grpc_status = LocaleIndependentAtoi<int>(trailers.substr(spos + 12));
-            }
-            auto mpos = lower.find("grpc-message:");
-            if (mpos != std::string::npos) {
-                auto start = mpos + 13;
-                while (start < trailers.size() && trailers[start] == ' ') ++start;
-                auto end = trailers.find("\r\n", start);
-                result.grpc_message = trailers.substr(start, end == std::string::npos ? std::string::npos : end - start);
-            }
-        } else {
-            result.message.assign(frame.begin(), frame.end());
-        }
-    }
-
-    return result;
+    return ParseGrpcWebResponse(resp);
 }
 
 } // namespace platform::transport

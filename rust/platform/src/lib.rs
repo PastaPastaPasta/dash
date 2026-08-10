@@ -6,7 +6,7 @@
 //! dashpay/platform crates:
 //!
 //! - `verify`: Drive/GroveDB proof verification for the DAPI queries the
-//!   Platform GUI makes (replaces src/platform/drive/queries.cpp);
+//!   Platform GUI makes, exposed through src/platform/drive/queries.cpp;
 //! - `decode`: DPP decoders for identities and DPNS/DashPay documents
 //!   (replaces src/platform/dpp/{identity,document}.cpp);
 //! - `st`: DPP state transition construction with wallet-callback signing

@@ -6,6 +6,7 @@
 #define BITCOIN_PLATFORM_TRANSPORT_TLS_H
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <span.h>
 #include <string>
@@ -31,8 +32,8 @@ public:
 
     //! Connect to host:port with a timeout. Returns nullptr on failure
     //! (error set).
-    static std::unique_ptr<TlsConnection> Connect(const std::string& host, uint16_t port,
-                                                  int timeout_ms, std::string& error);
+    static std::unique_ptr<TlsConnection> Connect(const std::string& host, uint16_t port, int timeout_ms,
+                                                  std::string& error, const std::function<bool()>& interrupted = {});
 
     //! Write all bytes. Returns false on error.
     bool WriteAll(Span<const uint8_t> data, std::string& error);

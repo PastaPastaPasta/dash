@@ -25,7 +25,6 @@
 #include <platform/client.h>
 #include <platform/drive/queries.h>
 #include <platform/params.h>
-#include <platform/serialize.h>
 #include <platform/transport/cbor.h>
 #include <platform/transport/protobuf.h>
 #include <platform/types.h>

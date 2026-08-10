@@ -592,9 +592,7 @@ void PlatformService::updateNodeContext()
         });
     }
     LogPrintf("Platform GUI: loaded %d evonode HTTPS endpoints\n", endpoints.size());
-    if (!endpoints.empty()) {
-        m_client->updateEndpoints(std::move(endpoints));
-    }
+    m_client->updateEndpoints(std::move(endpoints));
 
     // Best local ChainLock height: a coarse freshness floor letting the
     // client reject stale (validly signed) platform proofs replayed by an
@@ -604,12 +602,10 @@ void PlatformService::updateNodeContext()
     // Platform-signing quorum public keys for proof verification.
     const auto llmq_type{static_cast<uint8_t>(Params().GetConsensus().llmqTypePlatform)};
     auto quorums{node.llmq().getPlatformQuorums(llmq_type)};
-    if (!quorums.empty()) {
-        std::vector<platform::QuorumKey> keys;
-        keys.reserve(quorums.size());
-        for (auto& q : quorums) {
-            keys.push_back(platform::QuorumKey{q.m_quorum_hash, std::move(q.m_pubkey), q.m_height});
-        }
-        m_client->updateQuorumKeys(llmq_type, std::move(keys));
+    std::vector<platform::QuorumKey> keys;
+    keys.reserve(quorums.size());
+    for (auto& q : quorums) {
+        keys.push_back(platform::QuorumKey{q.m_quorum_hash, std::move(q.m_pubkey), q.m_height});
     }
+    m_client->updateQuorumKeys(llmq_type, std::move(keys));
 }

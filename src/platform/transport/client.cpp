@@ -58,10 +58,10 @@ public:
 
     void shutdown() override
     {
+        if (m_stop.exchange(true)) return;
         {
             std::lock_guard<std::mutex> lk(m_mtx);
-            if (m_stop) return;
-            m_stop = true;
+            m_queue.clear();
         }
         m_cv.notify_all();
         if (m_worker.joinable()) m_worker.join();
@@ -165,7 +165,7 @@ private:
             {
                 std::unique_lock<std::mutex> lk(m_mtx);
                 m_cv.wait(lk, [this] { return m_stop || !m_queue.empty(); });
-                if (m_stop && m_queue.empty()) return;
+                if (m_stop) return;
                 task = std::move(m_queue.front());
                 m_queue.pop_front();
             }
@@ -205,8 +205,9 @@ private:
     transport::GrpcCallResult CallOn(const Endpoint& ep, const std::string& method,
                                      const std::vector<uint8_t>& req)
     {
-        return transport::GrpcWebUnary(ep.service.ToStringAddr(), ep.service.GetPort(),
-                                       std::string(SVC) + method, req, CALL_TIMEOUT_MS);
+        if (m_stop) return {.transport_error = "Platform request interrupted"};
+        return transport::GrpcWebUnary(ep.service.ToStringAddr(), ep.service.GetPort(), std::string(SVC) + method, req,
+                                       CALL_TIMEOUT_MS, [this] { return m_stop.load(); });
     }
 
     //! Post-verification checks on the signature-authenticated metadata of a
@@ -239,6 +240,10 @@ private:
         const size_t n = [&] { std::lock_guard<std::mutex> lk(m_mtx); return std::max<size_t>(1, m_endpoints.size()); }();
         transport::GrpcCallResult last;
         for (size_t i = 0; i < n; ++i) {
+            if (m_stop) {
+                transport_err = "Platform request interrupted";
+                return last;
+            }
             const auto ep = NextEndpoint();
             if (!ep) { transport_err = "no evonode endpoints available"; return {}; }
             last = CallOn(*ep, method, req);
@@ -525,7 +530,10 @@ private:
         Result<std::vector<DpnsName>> out;
         if (!err.empty()) { out.error = err; cb(out); return; }
         std::vector<DpnsName> names;
-        for (auto& d : docs) { DpnsName n; if (dpp::DecodeDpnsDomain(d, n)) names.push_back(std::move(n)); }
+        for (const auto& d : docs) {
+            DpnsName n;
+            if (dpp::DecodeDpnsDomain(d, n)) names.push_back(std::move(n));
+        }
         out.value = std::move(names);
         cb(out);
     }
@@ -542,7 +550,10 @@ private:
         Result<std::vector<DpnsName>> out;
         if (!err.empty()) { out.error = err; cb(out); return; }
         std::vector<DpnsName> names;
-        for (auto& d : docs) { DpnsName n; if (dpp::DecodeDpnsDomain(d, n)) names.push_back(std::move(n)); }
+        for (const auto& d : docs) {
+            DpnsName n;
+            if (dpp::DecodeDpnsDomain(d, n)) names.push_back(std::move(n));
+        }
         out.value = std::move(names);
         cb(out);
     }
@@ -583,7 +594,10 @@ private:
         Result<std::vector<ContactRequest>> out;
         if (!err.empty()) { out.error = err; cb(out); return; }
         std::vector<ContactRequest> reqs;
-        for (auto& d : docs) { ContactRequest cr; if (dpp::DecodeDashPayContactRequest(d, cr)) reqs.push_back(std::move(cr)); }
+        for (const auto& d : docs) {
+            ContactRequest cr;
+            if (dpp::DecodeDashPayContactRequest(d, cr)) reqs.push_back(std::move(cr));
+        }
         out.value = std::move(reqs);
         cb(out);
     }
@@ -593,7 +607,7 @@ private:
     std::mutex m_mtx;
     std::condition_variable m_cv;
     std::deque<std::function<void()>> m_queue;
-    bool m_stop{false};
+    std::atomic_bool m_stop{false};
     std::vector<Endpoint> m_endpoints;
     size_t m_ep_index{0};
     //! Per-endpoint replay/staleness guard (guarded by m_mtx).

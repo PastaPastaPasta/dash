@@ -7,9 +7,11 @@
 
 #include <rust/cxx.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <iterator>
 #include <utility>
 #include <vector>
 
@@ -50,7 +52,7 @@ public:
         }
         sig_out.clear();
         sig_out.reserve(signature.size());
-        for (const uint8_t byte : signature) sig_out.push_back(byte);
+        std::copy(signature.begin(), signature.end(), std::back_inserter(sig_out));
         return true;
     }
 

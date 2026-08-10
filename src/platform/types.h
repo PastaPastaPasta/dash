@@ -15,6 +15,8 @@
 
 namespace platform {
 
+using Bytes = std::vector<uint8_t>;
+
 //! Identity public key record (DPP IdentityPublicKey, subset the GUI needs).
 struct IdentityPublicKey {
     enum class Type : uint8_t { ECDSA_SECP256K1 = 0, BLS12_381 = 1, ECDSA_HASH160 = 2, BIP13_SCRIPT_HASH = 3, EDDSA_25519_HASH160 = 4 };

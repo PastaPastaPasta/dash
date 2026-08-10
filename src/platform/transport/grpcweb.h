@@ -6,6 +6,8 @@
 #define BITCOIN_PLATFORM_TRANSPORT_GRPCWEB_H
 
 #include <cstdint>
+#include <functional>
+#include <span.h>
 #include <string>
 #include <vector>
 
@@ -31,11 +33,16 @@ struct GrpcCallResult {
     std::string transport_error;  //!< set when transport_ok is false
 };
 
+//! Parse a complete HTTP/1.1 gRPC-Web response. Exposed for focused tests of
+//! the untrusted response framing; callers normally use GrpcWebUnary.
+GrpcCallResult ParseGrpcWebResponse(Span<const uint8_t> response);
+
 //! Perform a unary gRPC-Web call. `path` is the full gRPC method path, e.g.
 //! "/org.dash.platform.dapi.v0.Platform/getIdentity". `request` is the
 //! serialized request protobuf. Blocking; intended to run on a worker thread.
 GrpcCallResult GrpcWebUnary(const std::string& host, uint16_t port, const std::string& path,
-                            const std::vector<uint8_t>& request, int timeout_ms);
+                            const std::vector<uint8_t>& request, int timeout_ms,
+                            const std::function<bool()>& interrupted = {});
 
 } // namespace platform::transport
 
