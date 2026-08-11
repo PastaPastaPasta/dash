@@ -5,8 +5,8 @@
 #include <qt/platform/profiledialog.h>
 
 #include <qt/platform/platformservice.h>
-#include <qt/walletmodel.h>
 
+#include <QCloseEvent>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QLabel>
@@ -56,10 +56,10 @@ ProfileDialog::ProfileDialog(PlatformService& service, QWidget* parent) :
     m_status->setWordWrap(true);
     layout->addWidget(m_status);
 
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
-    layout->addWidget(buttons);
-    connect(buttons, &QDialogButtonBox::accepted, this, &ProfileDialog::save);
-    connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    m_buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
+    layout->addWidget(m_buttons);
+    connect(m_buttons, &QDialogButtonBox::accepted, this, &ProfileDialog::save);
+    connect(m_buttons, &QDialogButtonBox::rejected, this, &ProfileDialog::reject);
     connect(&m_service, &PlatformService::profileUpdated, this, &ProfileDialog::onProfileUpdated);
     connect(&m_service, &PlatformService::profileLoaded, this,
             [this](const QString&, const QString& display, const QString& message, const QString& avatar) {
@@ -76,19 +76,40 @@ void ProfileDialog::save()
         m_status->setText(tr("Public message is limited to 140 characters."));
         return;
     }
-    WalletModel::UnlockContext ctx{m_service.walletModel().requestUnlock()};
-    if (!ctx.isValid()) return;
+    if (m_pending) return;
+    m_pending = true;
+    m_buttons->setEnabled(false);
     m_status->setText(tr("Publishing profile…"));
-    m_service.updateProfile(m_display_name->text().trimmed(),
-                            QString::fromStdString(m_public_message->toPlainText().toStdString()),
-                            m_avatar_url->text().trimmed());
+    QString error;
+    if (!m_service.updateProfile(m_display_name->text().trimmed(),
+                                 QString::fromStdString(m_public_message->toPlainText().toStdString()),
+                                 m_avatar_url->text().trimmed(), error)) {
+        onProfileUpdated(false, error);
+    }
 }
 
 void ProfileDialog::onProfileUpdated(bool ok, const QString& error)
 {
+    if (!m_pending) return;
+    m_pending = false;
     if (ok) {
         accept();
     } else {
+        m_buttons->setEnabled(true);
         m_status->setText(tr("Failed: %1").arg(error));
     }
+}
+
+void ProfileDialog::closeEvent(QCloseEvent* event)
+{
+    if (m_pending) {
+        event->ignore();
+        return;
+    }
+    QDialog::closeEvent(event);
+}
+
+void ProfileDialog::reject()
+{
+    if (!m_pending) QDialog::reject();
 }

@@ -37,6 +37,7 @@ namespace {
 constexpr int TICK_INTERVAL_MS{5'000};
 //! Endpoint + quorum key refresh cadence.
 constexpr int CONTEXT_INTERVAL_MS{60'000};
+constexpr int AVATAR_TIMEOUT_MS{15'000};
 constexpr qsizetype MAX_AVATAR_BYTES{2 * 1024 * 1024};
 } // namespace
 
@@ -56,10 +57,12 @@ PlatformService::PlatformService(WalletModel& wallet_model, ClientModel& client_
     connect(m_identity_flow.get(), &IdentityFlow::failed, this, &PlatformService::flowFailed);
 
     m_contact_flow = std::make_unique<ContactFlow>(*this, this);
-    connect(m_contact_flow.get(), &ContactFlow::requestSent, this,
-            [this](const QString& id) { Q_EMIT contactRequestFinished(id, true, {}); refreshContacts(); });
+    connect(m_contact_flow.get(), &ContactFlow::requestSent, this, [this](const QString& id) {
+        finishContactRequest(id, true, {});
+        refreshContacts();
+    });
     connect(m_contact_flow.get(), &ContactFlow::requestFailed, this,
-            [this](const QString& id, const QString& error) { Q_EMIT contactRequestFinished(id, false, error); });
+            [this](const QString& id, const QString& error) { finishContactRequest(id, false, error); });
 
     m_tick_timer = new QTimer(this);
     m_tick_timer->setInterval(TICK_INTERVAL_MS);
@@ -350,11 +353,50 @@ void PlatformService::hydrateContactMetadata(const platform::Identifier& identit
         });
 }
 
-void PlatformService::sendContactRequest(const QString& identity_hex)
+bool PlatformService::beginSigningOperation(SigningOperation operation, const QString& identity_hex, QString& error)
+{
+    if (m_signing_unlock) {
+        error = tr("another DashPay operation is still in progress");
+        return false;
+    }
+    auto unlock{m_wallet_model.requestUnlock()};
+    if (!unlock.isValid()) {
+        error = tr("wallet unlock was cancelled");
+        return false;
+    }
+    m_signing_operation = operation;
+    m_signing_identity = identity_hex;
+    m_signing_unlock = std::make_unique<WalletModel::UnlockContext>(std::move(unlock));
+    return true;
+}
+
+void PlatformService::finishContactRequest(const QString& identity_hex, bool ok, const QString& error)
+{
+    if (m_signing_operation != SigningOperation::CONTACT || m_signing_identity != identity_hex) return;
+    m_signing_operation = SigningOperation::NONE;
+    m_signing_identity.clear();
+    m_signing_unlock.reset();
+    Q_EMIT contactRequestFinished(identity_hex, ok, error);
+}
+
+void PlatformService::finishProfileUpdate(bool ok, const QString& error)
+{
+    if (m_signing_operation != SigningOperation::PROFILE) return;
+    m_signing_operation = SigningOperation::NONE;
+    m_signing_identity.clear();
+    m_signing_unlock.reset();
+    Q_EMIT profileUpdated(ok, error);
+}
+
+bool PlatformService::sendContactRequest(const QString& identity_hex, QString& error)
 {
     platform::Identifier identity{};
     const auto bytes{ParseHex(identity_hex.toStdString())};
-    if (bytes.size() != identity.size()) { Q_EMIT contactRequestFinished(identity_hex, false, tr("invalid identity")); return; }
+    if (bytes.size() != identity.size()) {
+        error = tr("invalid identity");
+        return false;
+    }
+    if (!beginSigningOperation(SigningOperation::CONTACT, identity_hex, error)) return false;
     std::copy(bytes.begin(), bytes.end(), identity.begin());
     QPointer<PlatformService> self{this};
     m_client->getIdentity(identity, [self, identity, identity_hex](platform::Result<std::optional<platform::Identity>> result) {
@@ -362,7 +404,7 @@ void PlatformService::sendContactRequest(const QString& identity_hex)
         self->post([self, identity, identity_hex, result = std::move(result)] {
             if (!self) return;
             if (!result.ok() || !result.value->has_value()) {
-                Q_EMIT self->contactRequestFinished(identity_hex, false, tr("identity proof failed"));
+                self->finishContactRequest(identity_hex, false, tr("identity proof failed"));
                 return;
             }
             const auto& keys{(**result.value).public_keys};
@@ -371,23 +413,26 @@ void PlatformService::sendContactRequest(const QString& identity_hex)
                        key.type == platform::IdentityPublicKey::Type::ECDSA_SECP256K1;
             })};
             if (it == keys.end()) {
-                Q_EMIT self->contactRequestFinished(identity_hex, false, tr("recipient has no usable encryption key"));
+                self->finishContactRequest(identity_hex, false, tr("recipient has no usable encryption key"));
                 return;
             }
             self->m_contact_flow->sendRequest(identity, it->id, *it);
         });
     });
+    return true;
 }
 
-void PlatformService::acceptContact(const QString& identity_hex)
+bool PlatformService::acceptContact(const QString& identity_hex, QString& error)
 {
     const auto it{std::find_if(m_incoming_contacts.begin(), m_incoming_contacts.end(),
         [&identity_hex](const auto& request) { return QString::fromStdString(HexStr(request.owner_id)) == identity_hex; })};
     if (it == m_incoming_contacts.end()) {
-        Q_EMIT contactRequestFinished(identity_hex, false, tr("incoming request is no longer available"));
-        return;
+        error = tr("incoming request is no longer available");
+        return false;
     }
+    if (!beginSigningOperation(SigningOperation::CONTACT, identity_hex, error)) return false;
     m_contact_flow->accept(*it);
+    return true;
 }
 
 void PlatformService::resolvePaymentAddress(const QString& username)
@@ -437,42 +482,67 @@ void PlatformService::resolvePaymentAddress(const QString& username)
     });
 }
 
-void PlatformService::updateProfile(const QString& display_name, const QString& public_message,
-                                    const QString& avatar_url)
+bool PlatformService::updateProfile(const QString& display_name, const QString& public_message,
+                                    const QString& avatar_url, QString& error)
 {
     const auto my_id{myIdentityId()};
-    if (!my_id) { Q_EMIT profileUpdated(false, tr("register a username first")); return; }
-    if (public_message.size() > 140) { Q_EMIT profileUpdated(false, tr("public message is limited to 140 characters")); return; }
-    if (!avatar_url.isEmpty() && !avatar_url.startsWith("https://", Qt::CaseInsensitive)) {
-        Q_EMIT profileUpdated(false, tr("avatar URL must use HTTPS")); return;
+    if (!my_id) {
+        error = tr("register a username first");
+        return false;
     }
+    if (public_message.size() > 140) {
+        error = tr("public message is limited to 140 characters");
+        return false;
+    }
+    if (!avatar_url.isEmpty() && !avatar_url.startsWith("https://", Qt::CaseInsensitive)) {
+        error = tr("avatar URL must use HTTPS");
+        return false;
+    }
+    if (!beginSigningOperation(SigningOperation::PROFILE, {}, error)) return false;
     platform::Profile profile;
     profile.owner_id = *my_id;
     profile.display_name = display_name.toStdString();
     profile.public_message = public_message.toStdString();
     profile.avatar_url = avatar_url.toStdString();
 
-    if (avatar_url.isEmpty()) { publishProfile(std::move(profile)); return; }
+    if (avatar_url.isEmpty()) {
+        publishProfile(std::move(profile));
+        return true;
+    }
 
     auto* manager{new QNetworkAccessManager(this)};
     QNetworkRequest request{QUrl{avatar_url}};
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
     QNetworkReply* reply{manager->get(request)};
+    auto* timeout{new QTimer(reply)};
+    timeout->setSingleShot(true);
+    connect(timeout, &QTimer::timeout, reply, &QNetworkReply::abort);
+    timeout->start(AVATAR_TIMEOUT_MS);
     auto bytes{std::make_shared<QByteArray>()};
     connect(reply, &QNetworkReply::readyRead, this, [reply, bytes] {
         bytes->append(reply->readAll());
         if (bytes->size() > MAX_AVATAR_BYTES) reply->abort();
     });
-    connect(reply, &QNetworkReply::finished, this, [this, manager, reply, bytes, profile = std::move(profile)]() mutable {
+    connect(reply, &QNetworkReply::finished, this, [this, manager, reply, timeout, bytes, profile = std::move(profile)]() mutable {
+        timeout->stop();
         bytes->append(reply->readAll());
         const bool oversized{bytes->size() > MAX_AVATAR_BYTES};
         const bool network_ok{reply->error() == QNetworkReply::NoError};
         reply->deleteLater();
         manager->deleteLater();
-        if (oversized) { Q_EMIT profileUpdated(false, tr("avatar image exceeds 2 MiB")); return; }
-        if (!network_ok) { Q_EMIT profileUpdated(false, tr("avatar image could not be downloaded")); return; }
+        if (oversized) {
+            finishProfileUpdate(false, tr("avatar image exceeds 2 MiB"));
+            return;
+        }
+        if (!network_ok) {
+            finishProfileUpdate(false, tr("avatar image could not be downloaded"));
+            return;
+        }
         QImage image{QImage::fromData(*bytes)};
-        if (image.isNull()) { Q_EMIT profileUpdated(false, tr("avatar URL did not return a supported image")); return; }
+        if (image.isNull()) {
+            finishProfileUpdate(false, tr("avatar URL did not return a supported image"));
+            return;
+        }
         const QByteArray hash{QCryptographicHash::hash(*bytes, QCryptographicHash::Sha256)};
         profile.avatar_hash.assign(hash.begin(), hash.end());
         const QImage sample{image.scaled(9, 8, Qt::IgnoreAspectRatio, Qt::SmoothTransformation)
@@ -487,6 +557,7 @@ void PlatformService::updateProfile(const QString& display_name, const QString& 
         }
         publishProfile(std::move(profile));
     });
+    return true;
 }
 
 void PlatformService::publishProfile(platform::Profile profile)
@@ -497,7 +568,10 @@ void PlatformService::publishProfile(platform::Profile profile)
         if (!self) return;
         self->post([self, profile, current_res = std::move(current_res)]() mutable {
             if (!self) return;
-            if (!current_res.ok()) { Q_EMIT self->profileUpdated(false, tr("could not verify the current profile")); return; }
+            if (!current_res.ok()) {
+                self->finishProfileUpdate(false, tr("could not verify the current profile"));
+                return;
+            }
             std::optional<platform::Identifier> existing_id;
             uint64_t revision{1};
             if (current_res.value->has_value()) {
@@ -509,21 +583,29 @@ void PlatformService::publishProfile(platform::Profile profile)
                 if (!self) return;
                 self->post([self, profile, existing_id, revision, nonce_res = std::move(nonce_res)] {
                     if (!self) return;
-                    if (!nonce_res.ok()) { Q_EMIT self->profileUpdated(false, tr("could not fetch identity nonce")); return; }
+                    if (!nonce_res.ok()) {
+                        self->finishProfileUpdate(false, tr("could not fetch identity nonce"));
+                        return;
+                    }
                     interfaces::Wallet& wallet{self->m_wallet_model.wallet()};
                     const auto signer = [&wallet](const uint256& digest, std::vector<uint8_t>& sig) {
                         return wallet.signPlatformDigest(interfaces::Wallet::PlatformKeyType::IdentityAuth, 0, 1, digest, sig);
                     };
                     auto built{platform::st::BuildProfile(profile.owner_id, *nonce_res.value + 1, profile,
                                                           revision, existing_id, /*signature_public_key_id=*/1, signer)};
-                    if (!built.ok()) { Q_EMIT self->profileUpdated(false, QString::fromStdString(built.error)); return; }
+                    if (!built.ok()) {
+                        self->finishProfileUpdate(false, QString::fromStdString(built.error));
+                        return;
+                    }
                     self->m_client->broadcastStateTransition(built.value->bytes,
                         [self, profile, revision](platform::Result<platform::BroadcastResult> broadcast) {
                         if (!self) return;
                         self->post([self, profile, revision, broadcast = std::move(broadcast)] {
                             if (!self) return;
                             if (!broadcast.ok() || (!broadcast.value->accepted && broadcast.value->error.find("already") == std::string::npos)) {
-                                Q_EMIT self->profileUpdated(false, broadcast.ok() ? QString::fromStdString(broadcast.value->error) : tr("broadcast failed"));
+                                self->finishProfileUpdate(false, broadcast.ok()
+                                                                     ? QString::fromStdString(broadcast.value->error)
+                                                                     : tr("broadcast failed"));
                                 return;
                             }
                             auto attempts{std::make_shared<int>(12)};
@@ -539,12 +621,13 @@ void PlatformService::publishProfile(platform::Profile profile)
                                             const auto& got{**proved.value};
                                             if (got.revision == revision && got.display_name == profile.display_name &&
                                                 got.public_message == profile.public_message && got.avatar_url == profile.avatar_url) {
-                                                Q_EMIT self->profileUpdated(true, {});
+                                                self->finishProfileUpdate(true, {});
                                                 return;
                                             }
                                         }
                                         if (--*attempts == 0) {
-                                            Q_EMIT self->profileUpdated(false, tr("profile update was not confirmed by a proof"));
+                                            self->finishProfileUpdate(false, tr("profile update was not confirmed by a "
+                                                                                "proof"));
                                             return;
                                         }
                                         QTimer::singleShot(2500, self, *confirm);
@@ -591,7 +674,7 @@ void PlatformService::updateNodeContext()
             }
         });
     }
-    LogPrintf("Platform GUI: loaded %d evonode HTTPS endpoints\n", endpoints.size());
+    LogPrint(BCLog::QT, "Platform GUI: loaded %d evonode HTTPS endpoints\n", endpoints.size());
     m_client->updateEndpoints(std::move(endpoints));
 
     // Best local ChainLock height: a coarse freshness floor letting the

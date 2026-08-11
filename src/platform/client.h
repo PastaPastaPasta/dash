@@ -44,6 +44,11 @@ struct QuorumKey {
 struct Endpoint {
     CService service;      //!< platform HTTPS (gRPC-Web gateway) addr:port
     uint256 pro_tx_hash{};
+
+    friend bool operator==(const Endpoint& lhs, const Endpoint& rhs)
+    {
+        return lhs.service == rhs.service && lhs.pro_tx_hash == rhs.pro_tx_hash;
+    }
 };
 
 template <typename T>

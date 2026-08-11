@@ -62,25 +62,7 @@ UsernameSearchDialog::UsernameSearchDialog(PlatformService& service, QWidget* pa
     connect(m_list, &QListWidget::currentItemChanged, this, &UsernameSearchDialog::updateActions);
     connect(m_add, &QPushButton::clicked, this, [this] { addSelected(); });
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
-    connect(&m_service, &PlatformService::contactRequestFinished, this,
-            [this](const QString& id, bool ok, const QString& error) {
-        if (m_pending_identity != id) return;
-        m_unlock.reset();
-        m_pending_identity.clear();
-        m_input->setEnabled(true);
-        m_list->setEnabled(true);
-        updateActions();
-        if (ok) {
-            m_status->setStyleSheet(QString{"QLabel { color: %1; }"}
-                .arg(GUIUtil::getThemedQColor(GUIUtil::ThemedColor::GREEN).name()));
-            m_status->setText(tr("Contact request sent to %1. You will be connected as soon as "
-                                 "they accept it.").arg(m_service.contactDisplayString(id)));
-        } else {
-            m_status->setStyleSheet(QString{"QLabel { color: %1; }"}
-                .arg(GUIUtil::getThemedQColor(GUIUtil::ThemedColor::RED).name()));
-            m_status->setText(tr("Could not send the request: %1").arg(error));
-        }
-    });
+    connect(&m_service, &PlatformService::contactRequestFinished, this, &UsernameSearchDialog::onContactRequestFinished);
 
     updateActions();
 }
@@ -134,20 +116,49 @@ void UsernameSearchDialog::updateActions()
 {
     const auto* item{m_list->currentItem()};
     const bool valid_selection{item && !item->data(Qt::UserRole).toString().isEmpty()};
-    m_add->setEnabled(valid_selection && !m_searching && !m_unlock);
+    m_add->setEnabled(valid_selection && !m_searching && m_pending_identity.isEmpty());
 }
 
 void UsernameSearchDialog::addSelected()
 {
     auto* item = m_list->currentItem();
     if (!item) return;
-    auto unlock{m_service.walletModel().requestUnlock()};
-    if (!unlock.isValid()) return;
-    m_unlock = std::make_unique<WalletModel::UnlockContext>(std::move(unlock));
     m_pending_identity = item->data(Qt::UserRole).toString();
     m_input->setEnabled(false);
     m_list->setEnabled(false);
     updateActions();
     m_status->setText(tr("Sending and verifying contact request…"));
-    m_service.sendContactRequest(m_pending_identity);
+    QString error;
+    if (!m_service.sendContactRequest(m_pending_identity, error)) {
+        onContactRequestFinished(m_pending_identity, false, error);
+    }
+}
+
+void UsernameSearchDialog::onContactRequestFinished(const QString& id, bool ok, const QString& error)
+{
+    if (m_pending_identity != id) return;
+    m_pending_identity.clear();
+    m_input->setEnabled(true);
+    m_list->setEnabled(true);
+    if (ok) {
+        for (int i = 0; i < m_list->count(); ++i) {
+            auto* item{m_list->item(i)};
+            if (item->data(Qt::UserRole).toString() != id) continue;
+            item->setText(item->text() + QStringLiteral(" ") + tr("(request already sent)"));
+            item->setFlags(item->flags() & ~Qt::ItemIsSelectable & ~Qt::ItemIsEnabled);
+            m_list->clearSelection();
+            m_list->setCurrentItem(nullptr);
+            break;
+        }
+        m_status->setStyleSheet(
+            QString{"QLabel { color: %1; }"}.arg(GUIUtil::getThemedQColor(GUIUtil::ThemedColor::GREEN).name()));
+        m_status->setText(tr("Contact request sent to %1. You will be connected as soon as "
+                             "they accept it.")
+                              .arg(m_service.contactDisplayString(id)));
+    } else {
+        m_status->setStyleSheet(
+            QString{"QLabel { color: %1; }"}.arg(GUIUtil::getThemedQColor(GUIUtil::ThemedColor::RED).name()));
+        m_status->setText(tr("Could not send the request: %1").arg(error));
+    }
+    updateActions();
 }

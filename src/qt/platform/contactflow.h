@@ -16,6 +16,7 @@
 #include <vector>
 
 class PlatformService;
+class CPubKey;
 
 /**
  * Sends a DashPay contact request and imports the resulting friendship
@@ -23,8 +24,10 @@ class PlatformService;
  *
  * A contact request carries our DIP-15 receiving xpub, ECDH-encrypted
  * (AES-256-CBC) to the recipient's identity key so only they can read it.
- * Accepting an incoming request is symmetric: we decrypt their xpub, import
- * it as a watch-only sending chain, and send our own request back.
+ * The private receiving chain is imported before the request is sent, so the
+ * recipient can safely pay as soon as they accept. Accepting an incoming
+ * request decrypts and stores their xpub for outbound payments, then sends our
+ * request back.
  *
  * Per-contact state is persisted under "contact/out/<id>" and
  * "contact/in/<id>" platform data records so requests survive restarts and
@@ -47,8 +50,8 @@ public:
     //! sending keychain, and send a request back.
     void accept(const platform::ContactRequest& incoming);
 
-    //! Import our receiving keychain and (for accept) their sending keychain
-    //! into the wallet so addresses are watched. creation_time (unix seconds,
+    //! Validate the contact's sending material while ensuring our receiving
+    //! keychain is watched by the wallet. creation_time (unix seconds,
     //! 0 = unknown) bounds later rescans of the imported descriptor.
     bool importKeychains(const platform::Identifier& their_identity,
                          const std::vector<uint8_t>& their_xpub_serialized,
@@ -60,6 +63,8 @@ Q_SIGNALS:
     void contactAdded(const QString& identity_hex);
 
 private:
+    bool prepareReceivingKeychain(const platform::Identifier& their_identity, CPubKey& pubkey, uint256& chaincode,
+                                  QString& error);
     void confirmRequest(const platform::Identifier& to_identity, int attempts_left);
     //! ECDH+AES helpers (encrypt our xpub for them / decrypt theirs for us).
     bool encryptXpub(const platform::IdentityPublicKey& their_key, const std::vector<uint8_t>& our_xpub,

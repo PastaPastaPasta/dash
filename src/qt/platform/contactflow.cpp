@@ -99,15 +99,11 @@ void ContactFlow::sendRequest(const platform::Identifier& to_identity, uint32_t 
         return;
     }
 
-    Wallet& wallet{m_service.walletModel().wallet()};
-
-    // Our DIP-15 receiving xpub for this friendship (userA = me, userB = them).
     CPubKey xpubkey;
     uint256 chaincode;
-    uint256 my_id_hash{uint256(std::vector<uint8_t>(my_id->begin(), my_id->end()))};
-    uint256 their_id_hash{uint256(std::vector<uint8_t>(to_identity.begin(), to_identity.end()))};
-    if (!wallet.getFriendshipXpub(/*account=*/0, my_id_hash, their_id_hash, xpubkey, chaincode)) {
-        Q_EMIT requestFailed(QString::fromStdString(HexStr(to_identity)), tr("unable to derive friendship key (unlock the wallet)"));
+    QString keychain_error;
+    if (!prepareReceivingKeychain(to_identity, xpubkey, chaincode, keychain_error)) {
+        Q_EMIT requestFailed(QString::fromStdString(HexStr(to_identity)), keychain_error);
         return;
     }
 
@@ -232,8 +228,6 @@ bool ContactFlow::importKeychains(const platform::Identifier& their_identity,
         error = tr("invalid friendship public key in contact request");
         return false;
     }
-    const auto my_id{m_service.myIdentityId()};
-    if (!my_id) { error = tr("register a username first"); return false; }
     // Validate the decrypted material before it is persisted; the contact's
     // chain itself never enters the wallet (see importFriendshipKeychains).
     const CPubKey pubkey{their_xpub_serialized.begin(), their_xpub_serialized.begin() + 33};
@@ -241,27 +235,41 @@ bool ContactFlow::importKeychains(const platform::Identifier& their_identity,
         error = tr("invalid friendship public key in contact request");
         return false;
     }
+    CPubKey our_pubkey;
+    uint256 our_chaincode;
+    return prepareReceivingKeychain(their_identity, our_pubkey, our_chaincode, error);
+}
+
+bool ContactFlow::prepareReceivingKeychain(const platform::Identifier& their_identity, CPubKey& pubkey,
+                                           uint256& chaincode, QString& error)
+{
+    const auto my_id{m_service.myIdentityId()};
+    if (!my_id) {
+        error = tr("register a username first");
+        return false;
+    }
     const uint256 my_hash{std::vector<uint8_t>(my_id->begin(), my_id->end())};
     const uint256 their_hash{std::vector<uint8_t>(their_identity.begin(), their_identity.end())};
+    Wallet& wallet{m_service.walletModel().wallet()};
+    if (!wallet.getFriendshipXpub(/*account=*/0, my_hash, their_hash, pubkey, chaincode)) {
+        error = tr("unable to derive friendship key (unlock the wallet)");
+        return false;
+    }
+
     const std::string label{
         m_service.contactAddressLabel(QString::fromStdString(HexStr(their_identity))).toStdString()};
-    Wallet& wallet{m_service.walletModel().wallet()};
     std::string wallet_error;
     if (!wallet.importFriendshipKeychains(/*account=*/0, my_hash, their_hash, creation_time, label, wallet_error)) {
         error = QString::fromStdString(wallet_error);
         return false;
     }
+
     // Ranged descriptors cannot carry an address-book label, so label the
-    // receiving chain explicitly: incoming payments from this contact then
-    // show up in transaction history under their username.
-    CPubKey our_pubkey;
-    uint256 our_chaincode;
-    if (wallet.getFriendshipXpub(/*account=*/0, my_hash, their_hash, our_pubkey, our_chaincode)) {
-        for (uint32_t i = 0; i < 20; ++i) {
-            CTxDestination destination;
-            if (!wallet.getFriendshipPaymentDestination(our_pubkey, our_chaincode, i, destination)) break;
-            wallet.setAddressBook(destination, label, "receive");
-        }
+    // receiving chain explicitly for transaction history.
+    for (uint32_t i = 0; i < 20; ++i) {
+        CTxDestination destination;
+        if (!wallet.getFriendshipPaymentDestination(pubkey, chaincode, i, destination)) break;
+        wallet.setAddressBook(destination, label, "receive");
     }
     return true;
 }

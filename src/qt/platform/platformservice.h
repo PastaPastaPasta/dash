@@ -9,6 +9,7 @@
 #include <platform/client.h>
 #include <platform/params.h>
 #include <platform/types.h>
+#include <qt/walletmodel.h>
 #include <uint256.h>
 
 #include <QObject>
@@ -24,8 +25,6 @@
 class ClientModel;
 class ContactFlow;
 class IdentityFlow;
-class WalletModel;
-
 /**
  * Per-wallet orchestrator for all Dash Platform interactions. This is the
  * only object GUI pages talk to. It owns the flows (identity/username
@@ -56,16 +55,16 @@ public:
     void refreshContacts();
 
     //! Resolve an identity proof and send/accept a DashPay contact request.
-    void sendContactRequest(const QString& identity_hex);
-    void acceptContact(const QString& identity_hex);
+    bool sendContactRequest(const QString& identity_hex, QString& error);
+    bool acceptContact(const QString& identity_hex, QString& error);
 
     //! Resolve an established contact username to the next DIP-15 payment
     //! address. Emits paymentAddressResolved().
     void resolvePaymentAddress(const QString& username);
 
-    //! Broadcast a DashPay profile create/update. Requires an unlocked wallet.
-    void updateProfile(const QString& display_name, const QString& public_message,
-                       const QString& avatar_url);
+    //! Broadcast a DashPay profile create/update.
+    bool updateProfile(const QString& display_name, const QString& public_message, const QString& avatar_url,
+                       QString& error);
 
     //! The registered username of this wallet's identity, if any.
     QString myUsername() const;
@@ -133,6 +132,15 @@ private Q_SLOTS:
     void updateNodeContext();
 
 private:
+    enum class SigningOperation {
+        NONE,
+        CONTACT,
+        PROFILE,
+    };
+
+    bool beginSigningOperation(SigningOperation operation, const QString& identity_hex, QString& error);
+    void finishContactRequest(const QString& identity_hex, bool ok, const QString& error);
+    void finishProfileUpdate(bool ok, const QString& error);
     void hydrateContactMetadata(const platform::Identifier& identity);
     void setContactMetadata(const QString& identity_hex, const char* field, const QString& value);
     void publishProfile(platform::Profile profile);
@@ -146,6 +154,9 @@ private:
     std::vector<platform::ContactRequest> m_incoming_contacts;
     std::vector<platform::ContactRequest> m_outgoing_contacts;
     QSet<QString> m_contact_metadata_pending;
+    SigningOperation m_signing_operation{SigningOperation::NONE};
+    QString m_signing_identity;
+    std::unique_ptr<WalletModel::UnlockContext> m_signing_unlock;
     QTimer* m_tick_timer{nullptr};         //!< drives flow advance/retry
     QTimer* m_context_timer{nullptr};      //!< refreshes endpoints/quorum keys
 };

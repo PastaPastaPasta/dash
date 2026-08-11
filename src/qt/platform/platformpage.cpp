@@ -22,6 +22,7 @@
 #include <util/strencodings.h>
 
 #include <QEvent>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPainter>
@@ -36,6 +37,8 @@
 
 namespace {
 constexpr int AVATAR_SIZE{56};
+constexpr int WELCOME_MIN_WIDTH{520};
+constexpr int WELCOME_MAX_WIDTH{620};
 
 void SetMinimumLineHeight(QLabel* label, int lines = 1)
 {
@@ -55,13 +58,20 @@ public:
 protected:
     void resizeEvent(QResizeEvent* event) override
     {
-        setMinimumHeight(heightForWidth(width()));
+        updateMinimumHeight();
         QLabel::resizeEvent(event);
     }
     void changeEvent(QEvent* event) override
     {
-        if (event->type() == QEvent::FontChange) setMinimumHeight(heightForWidth(width()));
+        if (event->type() == QEvent::FontChange) updateMinimumHeight();
         QLabel::changeEvent(event);
+    }
+
+private:
+    void updateMinimumHeight()
+    {
+        // heightForWidth() returns -1 before an empty label has been laid out.
+        setMinimumHeight(std::max(0, heightForWidth(width())));
     }
 };
 } // namespace
@@ -76,24 +86,77 @@ PlatformPage::PlatformPage(QWidget* parent) :
     // Page 0: welcome / upsell.
     auto* welcome_page = new QWidget(this);
     auto* wl = new QVBoxLayout(welcome_page);
-    auto* title = new QLabel(tr("DashPay"), welcome_page);
-    GUIUtil::setFont({title}, GUIUtil::FontWeight::Bold, 20);
-    m_welcome = new WrappedLabel(welcome_page);
+    auto* welcome_content = new QWidget(welcome_page);
+    welcome_content->setMinimumWidth(WELCOME_MIN_WIDTH);
+    welcome_content->setMaximumWidth(WELCOME_MAX_WIDTH);
+    auto* content_layout = new QVBoxLayout(welcome_content);
+    content_layout->setContentsMargins(24, 24, 24, 24);
+    content_layout->setSpacing(12);
+
+    auto* title = new QLabel(tr("DashPay"), welcome_content);
+    title->setAlignment(Qt::AlignHCenter);
+    GUIUtil::setFont({title}, GUIUtil::FontWeight::Bold, 24);
+    m_welcome = new WrappedLabel(welcome_content);
     m_welcome->setWordWrap(true);
-    m_welcome->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+    m_welcome->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     m_welcome->setAlignment(Qt::AlignHCenter);
-    m_welcome_steps = new WrappedLabel(welcome_page);
-    m_welcome_steps->setWordWrap(true);
-    m_welcome_steps->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
-    m_welcome_steps->setTextFormat(Qt::RichText);
-    m_create_button = new QPushButton(tr("Create a username"), welcome_page);
+
+    m_welcome_steps = new QWidget(welcome_content);
+    auto* welcome_steps_layout = new QVBoxLayout(m_welcome_steps);
+    welcome_steps_layout->setContentsMargins(0, 0, 0, 0);
+    welcome_steps_layout->setSpacing(12);
+    auto* steps = new QWidget(m_welcome_steps);
+    auto* steps_layout = new QGridLayout(steps);
+    steps_layout->setContentsMargins(12, 8, 12, 8);
+    steps_layout->setHorizontalSpacing(14);
+    steps_layout->setVerticalSpacing(14);
+    steps_layout->setColumnStretch(1, 1);
+    const auto add_step = [steps, steps_layout](int row, const QString& heading, const QString& detail) {
+        auto* number = new QLabel(QString::number(row + 1), steps);
+        number->setFixedWidth(24);
+        number->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
+        number->setStyleSheet(
+            QString{"QLabel { color: %1; }"}.arg(GUIUtil::getThemedQColor(GUIUtil::ThemedColor::BLUE).name()));
+        GUIUtil::setFont({number}, GUIUtil::FontWeight::Bold, 18);
+
+        auto* text_layout = new QVBoxLayout();
+        text_layout->setContentsMargins(0, 0, 0, 0);
+        text_layout->setSpacing(2);
+        auto* step_heading = new QLabel(heading, steps);
+        GUIUtil::setFont({step_heading}, GUIUtil::FontWeight::Bold, 16);
+        auto* step_detail = new WrappedLabel(detail, steps);
+        step_detail->setWordWrap(true);
+        step_detail->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+        text_layout->addWidget(step_heading);
+        text_layout->addWidget(step_detail);
+
+        steps_layout->addWidget(number, row, 0);
+        steps_layout->addLayout(text_layout, row, 1);
+    };
+    add_step(0, tr("Claim your name"), tr("Register a unique username on Dash Platform."));
+    add_step(1, tr("Connect with people"), tr("Exchange contact requests with people you know."));
+    add_step(2, tr("Pay privately by name"),
+             tr("Each payment uses a fresh address that only you and your contact can link."));
+
+    auto* registration_note = new WrappedLabel(tr("Registration uses a small payment from this wallet to create and "
+                                                  "fund your Platform identity."),
+                                               welcome_content);
+    registration_note->setWordWrap(true);
+    registration_note->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    registration_note->setAlignment(Qt::AlignHCenter);
+    welcome_steps_layout->addWidget(steps);
+    welcome_steps_layout->addWidget(registration_note);
+
+    m_create_button = new QPushButton(tr("Create a username"), welcome_content);
     connect(m_create_button, &QPushButton::clicked, this, &PlatformPage::openWizard);
+    content_layout->addWidget(title);
+    content_layout->addWidget(m_welcome);
+    content_layout->addSpacing(4);
+    content_layout->addWidget(m_welcome_steps);
+    content_layout->addSpacing(4);
+    content_layout->addWidget(m_create_button, 0, Qt::AlignHCenter);
     wl->addStretch();
-    wl->addWidget(title, 0, Qt::AlignHCenter);
-    wl->addWidget(m_welcome);
-    wl->addWidget(m_welcome_steps, 0, Qt::AlignHCenter);
-    wl->addSpacing(8);
-    wl->addWidget(m_create_button, 0, Qt::AlignHCenter);
+    wl->addWidget(welcome_content, 0, Qt::AlignHCenter);
     wl->addStretch();
     m_stack->addWidget(welcome_page);
 
@@ -110,21 +173,19 @@ PlatformPage::PlatformPage(QWidget* parent) :
     auto* header_text = new QVBoxLayout();
     m_dashboard_username = new QLabel(dash_page);
     GUIUtil::setFont({m_dashboard_username}, GUIUtil::FontWeight::Bold, 18);
-    m_dashboard_username->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+    m_dashboard_username->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     m_dashboard_profile = new QLabel(dash_page);
-    m_dashboard_profile->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+    m_dashboard_profile->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     m_dashboard_profile->setWordWrap(true);
     m_dashboard_balance = new QLabel(dash_page);
-    m_dashboard_balance->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+    m_dashboard_balance->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     m_dashboard_balance->setToolTip(tr("Credits pay Dash Platform fees such as profile updates and "
                                        "contact requests. They were funded by your username "
                                        "registration and are separate from your wallet balance."));
     m_dashboard_balance->hide();
-    header_text->addStretch();
     header_text->addWidget(m_dashboard_username);
     header_text->addWidget(m_dashboard_profile);
     header_text->addWidget(m_dashboard_balance);
-    header_text->addStretch();
     header->addLayout(header_text, /*stretch=*/1);
     auto* edit_profile = new QPushButton(tr("Edit profile"), dash_page);
     edit_profile->setToolTip(tr("Set the display name, message and picture other DashPay users see"));
@@ -176,14 +237,6 @@ PlatformPage::PlatformPage(QWidget* parent) :
         m_create_button->setEnabled(false);
     } else {
         m_welcome->setText(tr("DashPay lets you send and receive Dash using names instead of addresses."));
-        m_welcome_steps->setText(
-            "<ol style='margin:0'>"
-            "<li>" + tr("Register a unique username on Dash Platform.").toHtmlEscaped() + "</li>"
-            "<li>" + tr("Connect with people you know by exchanging contact requests.").toHtmlEscaped() + "</li>"
-            "<li>" + tr("Pay contacts by username — every payment goes to a fresh address only "
-                        "the two of you can link.").toHtmlEscaped() + "</li>"
-            "</ol>"
-            "<p>" + tr("Registration makes a small payment from this wallet to fund your identity.").toHtmlEscaped() + "</p>");
     }
 
     GUIUtil::updateFonts();
@@ -285,8 +338,10 @@ void PlatformPage::maybeCreateService()
         if (pending > 0) {
             m_pending_banner->setStyleSheet(QString{"QLabel { color: %1; }"}
                 .arg(GUIUtil::getThemedQColor(GUIUtil::ThemedColor::ORANGE).name()));
-            m_pending_banner->setText(tr("%n person(s) want(s) to connect with you — select the request "
-                                         "in the list below and choose Accept.", "", pending));
+            m_pending_banner->setText(
+                pending == 1
+                    ? tr("One person wants to connect with you — select the request below and choose Accept.")
+                    : tr("%1 people want to connect with you — select a request below and choose Accept.").arg(pending));
         }
         m_pending_banner->setVisible(pending > 0);
     });

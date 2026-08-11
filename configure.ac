@@ -132,11 +132,14 @@ dnl Rust toolchain detection. These programs are required only when a
 dnl Rust-dependent component is explicitly enabled.
 AC_PATH_PROG([CARGO], [cargo])
 AC_PATH_PROG([CXXBRIDGE], [cxxbridge])
+AC_PATH_PROG([PROTOC], [protoc])
 AC_PATH_PROG([RUSTC], [rustc])
 CXXBRIDGE_REQUIRED_VERSION="1.0.198"
 RUSTC_REQUIRED_VERSION="1.92.0"
 CARGO_REQUIRED_VERSION="$RUSTC_REQUIRED_VERSION"
 AC_SUBST([CXXBRIDGE_REQUIRED_VERSION])
+
+AC_ARG_VAR([PROTOC_INCLUDE], [Directory containing the protobuf well-known type definitions])
 
 AC_ARG_VAR([CARGO_INCREMENTAL], [Enable incremental compilation for Rust])
 if test "${CARGO_INCREMENTAL+set}" != "set"; then
@@ -2221,6 +2224,22 @@ if test "$enable_platform_gui" = "yes"; then
     AC_CHECK_LIB([mbedx509], [main], [MBEDTLS_LIBS="-lmbedx509 $MBEDTLS_LIBS"], [AC_MSG_ERROR([libmbedx509 not found (required by --enable-platform-gui)])], [$MBEDTLS_LIBS])
     AC_CHECK_LIB([mbedtls], [mbedtls_ssl_init], [MBEDTLS_LIBS="-lmbedtls $MBEDTLS_LIBS"], [AC_MSG_ERROR([libmbedtls not found (required by --enable-platform-gui)])], [$MBEDTLS_LIBS])
   fi
+  dnl cargo/rustc/cxxbridge are validated by the --enable-rust block above
+  dnl (implied by --enable-platform-gui); protoc is a platform-only need
+  dnl (tenderdash-proto codegen inside the FFI crate build).
+  if test -z "$PROTOC"; then
+    AC_MSG_ERROR([protoc is required by --enable-platform-gui])
+  fi
+  if test -z "$PROTOC_INCLUDE"; then
+    protoc_include_candidate="${PROTOC%/*}/../include"
+    if test -f "$protoc_include_candidate/google/protobuf/descriptor.proto"; then
+      PROTOC_INCLUDE="$protoc_include_candidate"
+    else
+      AC_MSG_ERROR([protobuf includes not found; set PROTOC_INCLUDE to the directory containing google/protobuf/descriptor.proto])
+    fi
+  elif test ! -f "$PROTOC_INCLUDE/google/protobuf/descriptor.proto"; then
+    AC_MSG_ERROR([PROTOC_INCLUDE does not contain google/protobuf/descriptor.proto])
+  fi
   AC_DEFINE([ENABLE_PLATFORM_GUI], [1], [Define this symbol to enable Dash Platform support in the GUI])
 fi
 AM_CONDITIONAL([ENABLE_PLATFORM_GUI], [test "$enable_platform_gui" = "yes"])
@@ -2458,6 +2477,8 @@ echo "  CXXBRIDGE                    = $CXXBRIDGE"
 echo "  NATIVE_AR                    = $NATIVE_AR"
 echo "  NATIVE_CC                    = $NATIVE_CC"
 echo "  NATIVE_CXX                   = $NATIVE_CXX"
+echo "  PROTOC                       = $PROTOC"
+echo "  PROTOC_INCLUDE               = $PROTOC_INCLUDE"
 echo "  RUSTC                        = $RUSTC"
 echo "  RUSTFLAGS                    = $RUSTFLAGS"
 echo "  RUST_MACOS_DEPLOYMENT_TARGET = $RUST_MACOS_DEPLOYMENT_TARGET"

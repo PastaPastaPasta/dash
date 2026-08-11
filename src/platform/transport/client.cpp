@@ -70,8 +70,9 @@ public:
     void updateEndpoints(std::vector<Endpoint> endpoints) override
     {
         std::lock_guard<std::mutex> lk(m_mtx);
+        if (m_endpoints == endpoints) return;
         m_endpoints = std::move(endpoints);
-        m_ep_index = 0;
+        m_ep_index = m_endpoints.empty() ? 0 : m_ep_index % m_endpoints.size();
     }
     void updateQuorumKeys(uint8_t llmq_type, std::vector<QuorumKey> keys) override
     {

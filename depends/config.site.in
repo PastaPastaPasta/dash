@@ -191,6 +191,10 @@ fi
 if test -x "${depends_prefix}/native/bin/cxxbridge"; then
   CXXBRIDGE="${depends_prefix}/native/bin/cxxbridge"
 fi
+if test -x "${depends_prefix}/native/bin/protoc"; then
+  PROTOC="${depends_prefix}/native/bin/protoc"
+  PROTOC_INCLUDE="${depends_prefix}/native/include"
+fi
 if test -z "$RUST_VENDORED_SOURCES"; then
   RUST_VENDORED_SOURCES="${depends_prefix}/vendored-sources"
 fi

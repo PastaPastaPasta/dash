@@ -139,6 +139,7 @@ void CreateUsernameWizard::updateButtons()
     m_back->setVisible(id == PAGE_COST);
     m_next->setText(id == PAGE_PROGRESS ? tr("Finish") : tr("Next"));
     m_next->setEnabled(currentPage()->isComplete());
+    m_cancel->setVisible(id != PAGE_PROGRESS || !currentPage()->isComplete());
 }
 
 // ---- Entry page -------------------------------------------------------------

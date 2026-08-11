@@ -211,6 +211,7 @@ endif
 
 ifeq ($(platform_packages_),)
 packages += $(platform_packages)
+native_packages += $(platform_native_packages)
 endif
 
 all_packages = $(packages) $(native_packages)

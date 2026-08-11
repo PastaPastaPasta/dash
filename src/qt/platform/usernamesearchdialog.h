@@ -9,10 +9,6 @@
 #include <QString>
 #include <QVector>
 
-#include <qt/walletmodel.h>
-
-#include <memory>
-
 class PlatformService;
 
 QT_BEGIN_NAMESPACE
@@ -36,6 +32,7 @@ private Q_SLOTS:
     void onResults(const QString& prefix, const QVector<QPair<QString, QString>>& results);
     void addSelected();
     void updateActions();
+    void onContactRequestFinished(const QString& id, bool ok, const QString& error);
 
 private:
     PlatformService& m_service;
@@ -46,7 +43,6 @@ private:
     QTimer* m_debounce{nullptr};
     QString m_pending_identity;
     bool m_searching{false};
-    std::unique_ptr<WalletModel::UnlockContext> m_unlock;
 };
 
 #endif // BITCOIN_QT_PLATFORM_USERNAMESEARCHDIALOG_H

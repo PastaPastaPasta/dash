@@ -13,6 +13,8 @@ QT_BEGIN_NAMESPACE
 class QLineEdit;
 class QPlainTextEdit;
 class QLabel;
+class QDialogButtonBox;
+class QCloseEvent;
 QT_END_NAMESPACE
 
 /** View / edit this wallet's DashPay profile (display name, message, avatar). */
@@ -27,12 +29,18 @@ private Q_SLOTS:
     void save();
     void onProfileUpdated(bool ok, const QString& error);
 
+protected:
+    void closeEvent(QCloseEvent* event) override;
+    void reject() override;
+
 private:
     PlatformService& m_service;
     QLineEdit* m_display_name{nullptr};
     QPlainTextEdit* m_public_message{nullptr};
     QLineEdit* m_avatar_url{nullptr};
     QLabel* m_status{nullptr};
+    QDialogButtonBox* m_buttons{nullptr};
+    bool m_pending{false};
 };
 
 #endif // BITCOIN_QT_PLATFORM_PROFILEDIALOG_H

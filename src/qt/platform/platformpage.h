@@ -63,7 +63,7 @@ private:
 
     // Welcome page.
     QLabel* m_welcome{nullptr};
-    QLabel* m_welcome_steps{nullptr};
+    QWidget* m_welcome_steps{nullptr};
     QPushButton* m_create_button{nullptr};
 
     // Dashboard page.

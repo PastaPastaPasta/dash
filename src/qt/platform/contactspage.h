@@ -5,10 +5,8 @@
 #ifndef BITCOIN_QT_PLATFORM_CONTACTSPAGE_H
 #define BITCOIN_QT_PLATFORM_CONTACTSPAGE_H
 
+#include <QString>
 #include <QWidget>
-#include <qt/walletmodel.h>
-
-#include <memory>
 
 class ContactsModel;
 class PlatformService;
@@ -39,6 +37,7 @@ private Q_SLOTS:
     void sendToSelected();
     void updateActions();
     void showContextMenu(const QPoint& pos);
+    void onContactRequestFinished(const QString& id, bool ok, const QString& error);
 
 private:
     PlatformService& m_service;
@@ -48,7 +47,7 @@ private:
     QLabel* m_status{nullptr};
     QPushButton* m_accept_button{nullptr};
     QPushButton* m_send_button{nullptr};
-    std::unique_ptr<WalletModel::UnlockContext> m_unlock;
+    QString m_accepting_identity;
 };
 
 #endif // BITCOIN_QT_PLATFORM_CONTACTSPAGE_H

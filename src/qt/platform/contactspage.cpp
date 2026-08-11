@@ -71,23 +71,7 @@ ContactsPage::ContactsPage(PlatformService& service, QWidget* parent) :
     connect(m_view, &QTableView::doubleClicked, this, &ContactsPage::sendToSelected);
     connect(m_view, &QTableView::customContextMenuRequested, this, &ContactsPage::showContextMenu);
     connect(m_model, &QAbstractItemModel::modelReset, this, &ContactsPage::updateActions);
-    connect(&m_service, &PlatformService::contactRequestFinished, this,
-            [this](const QString& id, bool ok, const QString& error) {
-                m_unlock.reset();
-                if (ok) {
-                    m_status->setStyleSheet(QString{"QLabel { color: %1; }"}
-                        .arg(GUIUtil::getThemedQColor(GUIUtil::ThemedColor::GREEN).name()));
-                    m_status->setText(tr("You and %1 are now contacts.")
-                                          .arg(m_service.contactDisplayString(id)));
-                } else {
-                    m_status->setStyleSheet(QString{"QLabel { color: %1; }"}
-                        .arg(GUIUtil::getThemedQColor(GUIUtil::ThemedColor::RED).name()));
-                    m_status->setText(tr("Could not accept the request from %1: %2")
-                                          .arg(m_service.contactDisplayString(id), error));
-                }
-                updateActions();
-                m_model->refresh();
-            });
+    connect(&m_service, &PlatformService::contactRequestFinished, this, &ContactsPage::onContactRequestFinished);
 
     updateActions();
     m_model->refresh();
@@ -96,7 +80,7 @@ ContactsPage::ContactsPage(PlatformService& service, QWidget* parent) :
 void ContactsPage::updateActions()
 {
     const auto* row{m_model->rowAt(m_view->currentIndex().row())};
-    m_accept_button->setEnabled(row && row->kind == ContactsModel::Kind::Incoming && !m_unlock);
+    m_accept_button->setEnabled(row && row->kind == ContactsModel::Kind::Incoming && m_accepting_identity.isEmpty());
     m_send_button->setEnabled(row && row->kind == ContactsModel::Kind::Established &&
                               !row->username.isEmpty());
     const bool have_rows{m_model->rowCount() > 0};
@@ -108,13 +92,31 @@ void ContactsPage::acceptSelected()
 {
     const auto* row{m_model->rowAt(m_view->currentIndex().row())};
     if (!row || row->kind != ContactsModel::Kind::Incoming) return;
-    auto unlock{m_service.walletModel().requestUnlock()};
-    if (!unlock.isValid()) return;
-    m_unlock = std::make_unique<WalletModel::UnlockContext>(std::move(unlock));
+    m_accepting_identity = row->identity_hex;
     m_status->setStyleSheet({});
     m_status->setText(tr("Accepting the request from %1…").arg(m_service.contactDisplayString(row->identity_hex)));
     updateActions();
-    m_service.acceptContact(row->identity_hex);
+    QString error;
+    if (!m_service.acceptContact(row->identity_hex, error)) {
+        onContactRequestFinished(row->identity_hex, false, error);
+    }
+}
+
+void ContactsPage::onContactRequestFinished(const QString& id, bool ok, const QString& error)
+{
+    if (id != m_accepting_identity) return;
+    m_accepting_identity.clear();
+    if (ok) {
+        m_status->setStyleSheet(
+            QString{"QLabel { color: %1; }"}.arg(GUIUtil::getThemedQColor(GUIUtil::ThemedColor::GREEN).name()));
+        m_status->setText(tr("You and %1 are now contacts.").arg(m_service.contactDisplayString(id)));
+    } else {
+        m_status->setStyleSheet(
+            QString{"QLabel { color: %1; }"}.arg(GUIUtil::getThemedQColor(GUIUtil::ThemedColor::RED).name()));
+        m_status->setText(tr("Could not accept the request from %1: %2").arg(m_service.contactDisplayString(id), error));
+    }
+    updateActions();
+    m_model->refresh();
 }
 
 void ContactsPage::sendToSelected()
@@ -142,7 +144,7 @@ void ContactsPage::showContextMenu(const QPoint& pos)
     }
     case ContactsModel::Kind::Incoming: {
         auto* accept{menu.addAction(tr("Accept contact request"))};
-        accept->setEnabled(!m_unlock);
+        accept->setEnabled(m_accepting_identity.isEmpty());
         connect(accept, &QAction::triggered, this, &ContactsPage::acceptSelected);
         break;
     }
