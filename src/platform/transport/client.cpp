@@ -206,7 +206,15 @@ private:
     transport::GrpcCallResult CallOn(const Endpoint& ep, const std::string& method,
                                      const std::vector<uint8_t>& req)
     {
-        if (m_stop) return {.transport_error = "Platform request interrupted"};
+        if (m_stop) {
+            return {
+                .transport_ok = false,
+                .grpc_status = -1,
+                .grpc_message = {},
+                .message = {},
+                .transport_error = "Platform request interrupted",
+            };
+        }
         return transport::GrpcWebUnary(ep.service.ToStringAddr(), ep.service.GetPort(), std::string(SVC) + method, req,
                                        CALL_TIMEOUT_MS, [this] { return m_stop.load(); });
     }
