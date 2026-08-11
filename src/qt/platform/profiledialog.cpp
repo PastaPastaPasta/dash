@@ -28,6 +28,7 @@ ProfileDialog::ProfileDialog(PlatformService& service, QWidget* parent) :
     layout->addWidget(hint);
 
     auto* form = new QFormLayout();
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
     m_display_name = new QLineEdit(this);
     m_display_name->setMaxLength(25);
