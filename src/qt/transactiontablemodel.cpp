@@ -437,6 +437,12 @@ QString TransactionTableModel::formatTxType(const TransactionRecord *wtx) const
         return tr("Data Transaction");
     case TransactionRecord::DustReceive:
         return tr("Dust Receive");
+    case TransactionRecord::MasternodeRegistration:
+        return tr("Masternode Registration");
+    case TransactionRecord::MasternodeUpdate:
+        return tr("Masternode Update");
+    case TransactionRecord::MasternodeDissolve:
+        return tr("Masternode Dissolution");
 
     case TransactionRecord::CoinJoinMixing:
         return tr("%1 Mixing").arg(QString::fromStdString(gCoinJoinName));
@@ -486,12 +492,16 @@ QString TransactionTableModel::formatTxToAddress(const TransactionRecord *wtx, b
     case TransactionRecord::SendToOther:
         return QString::fromStdString(wtx->strAddress) + watchAddress;
     case TransactionRecord::SendToSelf:
+    case TransactionRecord::MasternodeRegistration:
+    case TransactionRecord::MasternodeDissolve:
         return formatAddressLabel(wtx->strAddress, wtx->label, tooltip) + watchAddress;
     case TransactionRecord::CoinJoinMixing:
     case TransactionRecord::CoinJoinCollateralPayment:
     case TransactionRecord::CoinJoinMakeCollaterals:
     case TransactionRecord::CoinJoinCreateDenominations:
     case TransactionRecord::DataTransaction:
+    // An update only ever pays a fee, it has no payee to show
+    case TransactionRecord::MasternodeUpdate:
     case TransactionRecord::Other:
         break; // use fail-over here
     } // no default case, so the compiler can warn about missing cases
@@ -521,6 +531,9 @@ QVariant TransactionTableModel::addressColor(const TransactionRecord *wtx) const
     case TransactionRecord::CoinJoinMakeCollaterals:
     case TransactionRecord::CoinJoinCollateralPayment:
     case TransactionRecord::DataTransaction:
+    case TransactionRecord::MasternodeRegistration:
+    case TransactionRecord::MasternodeUpdate:
+    case TransactionRecord::MasternodeDissolve:
         return GUIUtil::getThemedQColor(GUIUtil::ThemedColor::BAREADDRESS);
     case TransactionRecord::SendToOther:
     case TransactionRecord::RecvFromOther:
@@ -551,6 +564,7 @@ QVariant TransactionTableModel::amountColor(const TransactionRecord *rec) const
     case TransactionRecord::RecvWithAddress:
     case TransactionRecord::RecvFromOther:
     case TransactionRecord::PlatformTransfer:
+    case TransactionRecord::MasternodeDissolve:
         return GUIUtil::getThemedQColor(GUIUtil::ThemedColor::GREEN);
     case TransactionRecord::CoinJoinSend:
     case TransactionRecord::SendToAddress:
@@ -564,6 +578,8 @@ QVariant TransactionTableModel::amountColor(const TransactionRecord *rec) const
     case TransactionRecord::CoinJoinMakeCollaterals:
     case TransactionRecord::CoinJoinCreateDenominations:
     case TransactionRecord::DustReceive:
+    case TransactionRecord::MasternodeRegistration:
+    case TransactionRecord::MasternodeUpdate:
         return GUIUtil::getThemedQColor(GUIUtil::ThemedColor::ORANGE);
     }
     return GUIUtil::getThemedQColor(GUIUtil::ThemedColor::DEFAULT);
@@ -617,6 +633,19 @@ QString TransactionTableModel::formatTooltip(const TransactionRecord *rec) const
        rec->type==TransactionRecord::SendToAddress || rec->type==TransactionRecord::RecvWithAddress)
     {
         tooltip += QString(" ") + formatTxToAddress(rec, true);
+    }
+    switch (rec->type) {
+    case TransactionRecord::MasternodeRegistration:
+        tooltip += QString("\n") + tr("Registers a masternode and locks its collateral. The amount is the change in this wallet's balance, so it only shows the network fee when the collateral stays in this wallet.");
+        break;
+    case TransactionRecord::MasternodeUpdate:
+        tooltip += QString("\n") + tr("Updates the registration of an existing masternode. Only the network fee is spent.");
+        break;
+    case TransactionRecord::MasternodeDissolve:
+        tooltip += QString("\n") + tr("Dissolves a shared masternode and releases its collateral to the shareholders.");
+        break;
+    default:
+        break;
     }
     return tooltip;
 }

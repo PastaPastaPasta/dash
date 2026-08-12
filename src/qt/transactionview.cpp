@@ -96,6 +96,9 @@ TransactionView::TransactionView(QWidget* parent) :
     typeWidget->addItem(tr("To yourself"), TransactionFilterProxy::TYPE(TransactionRecord::SendToSelf));
     typeWidget->addItem(tr("Mined"), TransactionFilterProxy::TYPE(TransactionRecord::Generated));
     typeWidget->addItem(tr("Platform Transfer"), TransactionFilterProxy::TYPE(TransactionRecord::PlatformTransfer));
+    typeWidget->addItem(tr("Masternode"), TransactionFilterProxy::TYPE(TransactionRecord::MasternodeRegistration) |
+                                     TransactionFilterProxy::TYPE(TransactionRecord::MasternodeUpdate) |
+                                     TransactionFilterProxy::TYPE(TransactionRecord::MasternodeDissolve));
     typeWidget->addItem(tr("Data Transaction"), TransactionFilterProxy::TYPE(TransactionRecord::DataTransaction));
     typeWidget->addItem(tr("Dust Receive"), TransactionFilterProxy::TYPE(TransactionRecord::DustReceive));
     typeWidget->addItem(tr("Other"), TransactionFilterProxy::TYPE(TransactionRecord::Other));
@@ -790,10 +793,17 @@ void TransactionView::updateCoinJoinVisibility()
     int idx = fEnabled ? 0 : 1;
     chooseType(idx);
     typeWidget->setCurrentIndex(idx);
-    // Hide all CoinJoin related filters
+    // Hide all CoinJoin related filters. Look the entries up by their filter mask instead of by
+    // row index so that adding or reordering entries above cannot silently break this.
     QListView* typeList = qobject_cast<QListView*>(typeWidget->view());
-    std::vector<int> vecRows{4, 5, 6, 7, 8};
-    for (auto nRow : vecRows) {
-        typeList->setRowHidden(nRow, !fEnabled);
+    for (const quint32 nTypeFilter : {TransactionFilterProxy::TYPE(TransactionRecord::CoinJoinSend),
+                                      TransactionFilterProxy::TYPE(TransactionRecord::CoinJoinMakeCollaterals),
+                                      TransactionFilterProxy::TYPE(TransactionRecord::CoinJoinCreateDenominations),
+                                      TransactionFilterProxy::TYPE(TransactionRecord::CoinJoinMixing),
+                                      TransactionFilterProxy::TYPE(TransactionRecord::CoinJoinCollateralPayment)}) {
+        const int nRow = typeWidget->findData(nTypeFilter);
+        if (nRow >= 0) {
+            typeList->setRowHidden(nRow, !fEnabled);
+        }
     }
 }

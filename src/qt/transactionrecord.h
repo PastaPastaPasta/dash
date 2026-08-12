@@ -70,7 +70,9 @@ struct TransactionStatus {
 class TransactionRecord
 {
 public:
-    // Update EXCLUDED_TYPES in TransactionFilterProxy when adding a new type
+    // Update EXCLUDED_TYPES in TransactionFilterProxy when adding a new type.
+    // New types must be appended at the end: the values double as bit positions in
+    // TransactionFilterProxy's type filter and are persisted as combo box indices.
     enum Type
     {
         Other,
@@ -89,6 +91,13 @@ public:
         PlatformTransfer,
         DustReceive,
         DataTransaction,
+        /// ProRegTx: creates a masternode and locks its collateral
+        MasternodeRegistration,
+        /// ProUpServTx/ProUpRegTx/ProUpRevTx and their shared-masternode variants: metadata-only
+        /// updates to an existing masternode, they only ever cost the network fee
+        MasternodeUpdate,
+        /// ProDisTx: dissolves a shared masternode and releases its collateral
+        MasternodeDissolve,
     };
 
     /** Number of confirmation recommended for accepting a transaction */

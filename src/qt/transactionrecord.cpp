@@ -8,10 +8,12 @@
 #include <chain.h>
 #include <interfaces/wallet.h>
 #include <interfaces/node.h>
+#include <primitives/transaction.h>
 
 #include <wallet/ismine.h>
 
 #include <cstdint>
+#include <optional>
 
 using wallet::ISMINE_SPENDABLE;
 using wallet::ISMINE_WATCH_ONLY;
@@ -24,6 +26,30 @@ bool TransactionRecord::showTransaction()
     // There are currently no cases where we hide transactions, but
     // we may want to use this in the future for things like RBF.
     return true;
+}
+
+/* Map a provider special transaction onto its record type, or nullopt for anything that is not
+ * masternode related. Non-provider special transactions (asset locks, platform transfers, quorum
+ * commitments, ...) keep their existing classification.
+ */
+static std::optional<TransactionRecord::Type> MasternodeRecordType(const CTransaction& tx)
+{
+    if (!tx.IsSpecialTxVersion()) return std::nullopt;
+
+    switch (tx.nType) {
+    case TRANSACTION_PROVIDER_REGISTER:
+        return TransactionRecord::MasternodeRegistration;
+    case TRANSACTION_PROVIDER_UPDATE_SERVICE:
+    case TRANSACTION_PROVIDER_UPDATE_REGISTRAR:
+    case TRANSACTION_PROVIDER_UPDATE_REVOKE:
+    case TRANSACTION_PROVIDER_UPDATE_SHARE:
+    case TRANSACTION_PROVIDER_UPDATE_SHARED_REGISTRAR:
+        return TransactionRecord::MasternodeUpdate;
+    case TRANSACTION_PROVIDER_DISSOLVE:
+        return TransactionRecord::MasternodeDissolve;
+    default:
+        return std::nullopt;
+    }
 }
 
 /*
@@ -40,6 +66,9 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(interfaces::Nod
     uint256 hash = wtx.tx->GetHash();
     std::map<std::string, std::string> mapValue = wtx.value_map;
     auto& coinJoinOptions = node.coinJoinOptions();
+    // Masternode special transactions get their own record types, otherwise a self-funded
+    // registration is indistinguishable from a payment to yourself
+    const std::optional<TransactionRecord::Type> mn_type = MasternodeRecordType(*wtx.tx);
 
     // Check if any inputs belong to this wallet (for dust detection)
     bool isFromMe = false;
@@ -89,6 +118,12 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(interfaces::Nod
                 {
                     // Withdrawal from platform
                     sub.type = TransactionRecord::PlatformTransfer;
+                }
+                if (mn_type)
+                {
+                    // Collateral received by this wallet (externally funded registration) or a
+                    // share of a dissolved masternode's collateral
+                    sub.type = *mn_type;
                 }
 
                 // Check for dust attack: external receive with small amount
@@ -150,7 +185,14 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(interfaces::Nod
                 sub.strAddress += EncodeDestination(*it);
             }
 
-            if(mapValue["DS"] == "1")
+            if (mn_type)
+            {
+                // Self-funded masternode transaction: the collateral (if any) stays in this wallet,
+                // so the amount below is just the network fee. The type carries the meaning.
+                sub.type = *mn_type;
+                sub.idx = parts.size();
+            }
+            else if(mapValue["DS"] == "1")
             {
                 sub.type = TransactionRecord::CoinJoinSend;
                 CTxDestination address;
@@ -219,7 +261,7 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(interfaces::Nod
             CAmount nTxFee = nDebit - wtx.tx->GetValueOut();
 
             bool fDone = false;
-            if(wtx.tx->vin.size() == 1 && wtx.tx->vout.size() == 1
+            if(!mn_type && wtx.tx->vin.size() == 1 && wtx.tx->vout.size() == 1
                 && coinJoinOptions.isCollateralAmount(nDebit)
                 && nCredit == 0 // OP_RETURN
                 && coinJoinOptions.isCollateralAmount(-nNet))
@@ -273,6 +315,12 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(interfaces::Nod
                     sub.type = TransactionRecord::CoinJoinSend;
                 }
 
+                if (mn_type)
+                {
+                    // Funded by this wallet, collateral (or the reward destination) is external
+                    sub.type = *mn_type;
+                }
+
                 CAmount nValue = txout.nValue;
                 /* Add fee to first output */
                 if (nTxFee > 0)
@@ -290,7 +338,7 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(interfaces::Nod
             //
             // Mixed debit transaction, can't break down payees
             //
-            parts.append(TransactionRecord(hash, nTime, TransactionRecord::Other, "", nNet, 0));
+            parts.append(TransactionRecord(hash, nTime, mn_type.value_or(TransactionRecord::Other), "", nNet, 0));
             parts.last().involvesWatchAddress = involvesWatchAddress;
         }
     }
