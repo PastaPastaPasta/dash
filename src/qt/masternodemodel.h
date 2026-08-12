@@ -104,7 +104,8 @@ public:
         // reconcile() keeps serving the stale entry
         return std::tie(m_banned, m_last_paid_height, m_next_payment_height, m_pose_penalty, m_service,
                         m_operator_reward_pct, m_payout_address, m_voting_address, m_operator_reward,
-                        m_pub_key_operator, m_shares_fingerprint);
+                        m_pub_key_operator, m_shares_fingerprint, m_network_addresses, m_platform_node_id,
+                        m_platform_p2p_addresses, m_platform_https_addresses);
     }
     QString toHtml(int current_height = 0, const QSet<int>& my_share_indexes = {}) const;
 };

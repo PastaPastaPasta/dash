@@ -137,7 +137,7 @@ MasternodeList::MasternodeList(QWidget* parent) :
     QMenu* filterMenu = contextMenuDIP3->addMenu(tr("Filter by"));
     filterMenu->addAction(tr("Collateral Address"), this, &MasternodeList::filterByCollateralAddress);
     filterMenu->addAction(tr("Payout Address"), this, &MasternodeList::filterByPayoutAddress);
-    filterMenu->addAction(tr("Owner Address"), this, &MasternodeList::filterByOwnerAddress);
+    m_action_filter_owner = filterMenu->addAction(tr("Owner Address"), this, &MasternodeList::filterByOwnerAddress);
     filterMenu->addAction(tr("Voting Address"), this, &MasternodeList::filterByVotingAddress);
 
     ui->btnRegisterMasternode->setEnabled(false);
@@ -177,9 +177,13 @@ void MasternodeList::changeEvent(QEvent* event)
 void MasternodeList::setClientModel(ClientModel* model)
 {
     this->clientModel = model;
+    updateActionButtons();
     if (!clientModel) {
         return;
     }
+    // Re-check the v24 gate as the chain advances so the Shared Masternode button
+    // unlocks when the fork activates
+    connect(clientModel, &ClientModel::numBlocksChanged, this, &MasternodeList::updateActionButtons);
     m_feed = clientModel->feedMasternode();
     if (m_feed) {
         connect(m_feed, &MasternodeFeed::dataReady, this, &MasternodeList::updateMasternodeList);
@@ -194,16 +198,32 @@ void MasternodeList::setWalletModel(WalletModel* model)
     ui->btnRegisterMasternode->setEnabled(walletModel != nullptr);
     if (!walletModel) {
         ui->btnRegisterMasternode->setToolTip(tr("Registering a masternode requires a wallet"));
-        ui->btnSharedMasternode->setToolTip(tr("Managing shared masternodes requires a wallet"));
-    } else if (clientModel && !clientModel->node().isV24Active()) {
-        ui->btnSharedMasternode->setToolTip(tr("Shared masternodes require the v24 hard fork, which is not active on this network yet"));
     } else {
-        ui->btnSharedMasternode->setEnabled(true);
-    }
-    if (walletModel) {
         QSettings settings;
         ui->checkBoxOwned->setChecked(settings.value("mnListOwnedOnly", false).toBool());
     }
+    updateActionButtons();
+}
+
+void MasternodeList::updateActionButtons()
+{
+    // setWalletModel runs before setClientModel (WalletView constructor vs.
+    // WalletFrame::setClientModel), so the v24 gate is re-evaluated whenever either
+    // model is set and on every tip change until the fork activates
+    if (!walletModel) {
+        ui->btnSharedMasternode->setEnabled(false);
+        ui->btnSharedMasternode->setToolTip(tr("Managing shared masternodes requires a wallet"));
+        return;
+    }
+    if (!m_v24_active && clientModel) {
+        // Latched once active: isV24Active() takes cs_main, so avoid re-locking on
+        // every block signal after activation
+        m_v24_active = clientModel->node().isV24Active();
+    }
+    ui->btnSharedMasternode->setEnabled(clientModel != nullptr && m_v24_active);
+    ui->btnSharedMasternode->setToolTip(
+        m_v24_active ? QString{} :
+                       tr("Shared masternodes require the v24 hard fork, which is not active on this network yet"));
 }
 
 void MasternodeList::showRegisterWizard()
@@ -240,10 +260,16 @@ void MasternodeList::showContextMenuDIP3(const QPoint& point)
     const bool can_update_registrar{have_wallet && !entry->isShared() &&
                                     walletModel->wallet().isSpendable(PKHash(entry->keyIdOwnerRaw()))};
     m_action_update_registrar->setEnabled(can_update_registrar);
-    m_action_update_registrar->setToolTip(
-        !have_wallet || can_update_registrar ? QString{} :
-        entry->isShared() ? tr("Shared masternodes update their keys with a unanimous key rotation instead") :
-                            tr("Requires this masternode's owner key in the wallet"));
+    QString registrar_tooltip;
+    if (have_wallet && !can_update_registrar) {
+        registrar_tooltip = entry->isShared() ? tr("Shared masternodes update their keys with a unanimous key rotation instead")
+                                              : tr("Requires this masternode's owner key in the wallet");
+    }
+    m_action_update_registrar->setToolTip(registrar_tooltip);
+
+    // Every shared masternode renders the null owner key as the same placeholder
+    // address, so filtering by it would match all shared entries
+    m_action_filter_owner->setEnabled(entry != nullptr && !entry->isShared());
 
     // Shared-only actions need one of this masternode's share owner keys in the wallet
     bool owns_share{false};
@@ -253,10 +279,12 @@ void MasternodeList::showContextMenuDIP3(const QPoint& point)
             return walletModel->wallet().isSpendable(PKHash(share.keyIDOwner));
         });
     }
-    const QString shared_tooltip{!have_wallet ? QString{} :
-                                 !entry->isShared() ? tr("Only available for shared masternodes") :
-                                 !owns_share       ? tr("Requires one of this masternode's share owner keys in the wallet") :
-                                                     QString{}};
+    QString shared_tooltip;
+    if (have_wallet && !entry->isShared()) {
+        shared_tooltip = tr("Only available for shared masternodes");
+    } else if (have_wallet && !owns_share) {
+        shared_tooltip = tr("Requires one of this masternode's share owner keys in the wallet");
+    }
     for (auto* action : {m_action_update_share, m_action_dissolve, m_action_rotate_keys}) {
         action->setEnabled(owns_share);
         action->setToolTip(shared_tooltip);
@@ -271,64 +299,64 @@ void MasternodeList::showContextMenuDIP3(const QPoint& point)
     contextMenuDIP3->exec(QCursor::pos());
 }
 
-void MasternodeList::onUpdateService()
+const MasternodeEntry* MasternodeList::selectedEntryForDialog(std::optional<bool> shared)
 {
     const auto* entry = GetSelectedEntry();
     if (!entry || !clientModel || !walletModel) {
-        return;
+        return nullptr;
     }
-    UpdateServiceDialog dlg(clientModel->node(), walletModel, *entry, this);
-    dlg.exec();
+    if (shared && entry->isShared() != *shared) {
+        return nullptr;
+    }
+    return entry;
+}
+
+void MasternodeList::onUpdateService()
+{
+    if (const auto* entry = selectedEntryForDialog()) {
+        UpdateServiceDialog dlg(clientModel->node(), walletModel, *entry, this);
+        dlg.exec();
+    }
 }
 
 void MasternodeList::onUpdateRegistrar()
 {
-    const auto* entry = GetSelectedEntry();
-    if (!entry || !clientModel || !walletModel || entry->isShared()) {
-        return;
+    if (const auto* entry = selectedEntryForDialog(/*shared=*/false)) {
+        UpdateRegistrarDialog dlg(clientModel->node(), walletModel, *entry, this);
+        dlg.exec();
     }
-    UpdateRegistrarDialog dlg(clientModel->node(), walletModel, *entry, this);
-    dlg.exec();
 }
 
 void MasternodeList::onRevoke()
 {
-    const auto* entry = GetSelectedEntry();
-    if (!entry || !clientModel || !walletModel) {
-        return;
+    if (const auto* entry = selectedEntryForDialog()) {
+        RevokeDialog dlg(clientModel->node(), walletModel, *entry, this);
+        dlg.exec();
     }
-    RevokeDialog dlg(clientModel->node(), walletModel, *entry, this);
-    dlg.exec();
 }
 
 void MasternodeList::onUpdateShare()
 {
-    const auto* entry = GetSelectedEntry();
-    if (!entry || !clientModel || !walletModel || !entry->isShared()) {
-        return;
+    if (const auto* entry = selectedEntryForDialog(/*shared=*/true)) {
+        UpdateShareDialog dlg(clientModel->node(), walletModel, *entry, this);
+        dlg.exec();
     }
-    UpdateShareDialog dlg(clientModel->node(), walletModel, *entry, this);
-    dlg.exec();
 }
 
 void MasternodeList::onDissolve()
 {
-    const auto* entry = GetSelectedEntry();
-    if (!entry || !clientModel || !walletModel || !entry->isShared()) {
-        return;
+    if (const auto* entry = selectedEntryForDialog(/*shared=*/true)) {
+        DissolveDialog dlg(clientModel->node(), walletModel, *entry, m_model->currentHeight(), this);
+        dlg.exec();
     }
-    DissolveDialog dlg(clientModel->node(), walletModel, *entry, m_model->currentHeight(), this);
-    dlg.exec();
 }
 
 void MasternodeList::onRotateSharedKeys()
 {
-    const auto* entry = GetSelectedEntry();
-    if (!entry || !clientModel || !walletModel || !entry->isShared()) {
-        return;
+    if (const auto* entry = selectedEntryForDialog(/*shared=*/true)) {
+        RotateSharedKeysDialog dlg(clientModel->node(), walletModel, *entry, this);
+        dlg.exec();
     }
-    RotateSharedKeysDialog dlg(clientModel->node(), walletModel, *entry, this);
-    dlg.exec();
 }
 
 void MasternodeList::updateMasternodeList()
@@ -535,7 +563,9 @@ void MasternodeList::filterByPayoutAddress()
 void MasternodeList::filterByOwnerAddress()
 {
     const auto* entry = GetSelectedEntry();
-    if (entry) {
+    // Shared masternodes have a null owner key rendered as the same placeholder
+    // address for every shared entry, so filtering by it would match them all
+    if (entry && !entry->isShared()) {
         ui->filterText->setText(entry->ownerAddress());
     }
 }

@@ -16,6 +16,7 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 
 class ClientModel;
 class MasternodeFeed;
@@ -96,11 +97,17 @@ private:
     QAction* m_action_update_share{nullptr};
     QAction* m_action_dissolve{nullptr};
     QAction* m_action_rotate_keys{nullptr};
+    QAction* m_action_filter_owner{nullptr};
     WalletModel* walletModel{nullptr};
+    bool m_v24_active{false};
 
     void setMasternodeList(MasternodeData&& data, QSet<QString>&& owned_mns);
+    void updateActionButtons();
 
     const MasternodeEntry* GetSelectedEntry();
+    //! GetSelectedEntry plus the guards every action dialog needs: both models set and,
+    //! if given, a matching isShared(). Returns nullptr when any guard fails.
+    const MasternodeEntry* selectedEntryForDialog(std::optional<bool> shared = std::nullopt);
 
 Q_SIGNALS:
     void doubleClicked(const QModelIndex&);

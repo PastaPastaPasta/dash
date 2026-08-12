@@ -960,6 +960,8 @@ public:
     bool isLoadingBlocks() override { return node::fReindex || node::fImporting; }
     bool isV24Active() override
     {
+        // Can briefly block the calling (GUI) thread while validation holds
+        // cs_main; callers that poll should cache the result once it turns true
         LOCK(::cs_main);
         return DeploymentActiveAfter(chainman().ActiveChain().Tip(), chainman(), Consensus::DEPLOYMENT_V24);
     }

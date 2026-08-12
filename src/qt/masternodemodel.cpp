@@ -343,7 +343,9 @@ QVariant MasternodeModel::data(const QModelIndex& index, int role) const
             entry->payoutAddress() + " " +
             entry->operatorReward() + " " +
             entry->collateralAddress() + " " +
-            entry->ownerAddress() + " " +
+            // Shared masternodes have a null owner key; its placeholder address is
+            // identical for all of them, so it must not be searchable
+            (entry->isShared() ? QString{} : entry->ownerAddress() + " ") +
             entry->votingAddress() + " " +
             entry->proTxHash() +
             (entry->isShared() ? " " + entry->shareAddresses() : QString{})
