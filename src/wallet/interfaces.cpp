@@ -256,6 +256,48 @@ public:
         return true;
     }
     bool canStoreMasternodeOperatorKey() override { return m_wallet->CanStoreMasternodeOperatorKey(); }
+    bool canDeriveMasternodeOperatorKey() override { return m_wallet->CanDeriveMasternodeOperatorKey(); }
+    bool deriveMasternodeOperatorKey(std::vector<unsigned char>& secret, std::string& path, std::string& error) override
+    {
+        if (!m_wallet->CanDeriveMasternodeOperatorKey()) {
+            error = _("This wallet cannot derive masternode operator keys from its recovery phrase.").translated;
+            return false;
+        }
+        CBLSSecretKey sk;
+        uint32_t index{0};
+        if (!m_wallet->DeriveNextMasternodeOperatorKey(sk, index)) {
+            error = _("Failed to derive the masternode operator key, please make sure the wallet is unlocked.").translated;
+            return false;
+        }
+        auto secret_bytes{sk.ToBytes(/*specificLegacyScheme=*/false)};
+        secret.assign(secret_bytes.begin(), secret_bytes.end());
+        memory_cleanse(secret_bytes.data(), secret_bytes.size());
+        path = m_wallet->GetMasternodeOperatorKeyPath(index);
+        return true;
+    }
+    bool getMasternodeOperatorKey(const std::vector<unsigned char>& pubkey, std::vector<unsigned char>& secret,
+                                  std::string& path, std::string& error) override
+    {
+        CBLSPublicKey pk;
+        pk.SetBytes(pubkey, /*specificLegacyScheme=*/false);
+        if (!pk.IsValid()) {
+            error = _("The masternode operator key is not valid.").translated;
+            return false;
+        }
+        CBLSSecretKey sk;
+        if (!m_wallet->GetMasternodeOperatorKey(pk, sk, &path)) {
+            error = _("Failed to read the masternode operator key, please make sure the wallet is unlocked.").translated;
+            return false;
+        }
+        auto secret_bytes{sk.ToBytes(/*specificLegacyScheme=*/false)};
+        secret.assign(secret_bytes.begin(), secret_bytes.end());
+        memory_cleanse(secret_bytes.data(), secret_bytes.size());
+        return true;
+    }
+    std::vector<std::vector<unsigned char>> listMasternodeOperatorKeys() override
+    {
+        return m_wallet->ListMasternodeOperatorKeys();
+    }
     bool isSpendable(const CScript& script) override
     {
         LOCK(m_wallet->cs_wallet);

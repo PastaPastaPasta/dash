@@ -768,6 +768,24 @@ bool LegacyScriptPubKeyMan::SignSpecialTxPayload(const uint256& hash, const CKey
     return CHashSigner::SignHash(hash, key, vchSig);
 }
 
+bool LegacyScriptPubKeyMan::HasBIP39Seed() const
+{
+    CHDChain hd_chain;
+    return GetHDChain(hd_chain);
+}
+
+bool LegacyScriptPubKeyMan::GetBIP39Seed(SecureVector& seed) const
+{
+    CHDChain hd_chain;
+    if (!GetDecryptedHDChain(hd_chain)) return false;
+
+    SecureVector chain_seed{hd_chain.GetSeed()};
+    if (chain_seed.empty()) return false;
+
+    seed = std::move(chain_seed);
+    return true;
+}
+
 TransactionError LegacyScriptPubKeyMan::FillPSBT(PartiallySignedTransaction& psbtx, const PrecomputedTransactionData& txdata, int sighash_type, bool sign, bool bip32derivs, int* n_signed, bool finalize) const
 {
     if (n_signed) {
@@ -2714,6 +2732,23 @@ bool DescriptorScriptPubKeyMan::SignSpecialTxPayload(const uint256& hash, const 
     }
 
     return CHashSigner::SignHash(hash, key, vchSig);
+}
+
+bool DescriptorScriptPubKeyMan::HasBIP39Seed() const
+{
+    LOCK(cs_desc_man);
+    // More than one mnemonic cannot be matched to a single seed, see GetMnemonicString()
+    return m_mnemonics.size() + m_crypted_mnemonics.size() == 1;
+}
+
+bool DescriptorScriptPubKeyMan::GetBIP39Seed(SecureVector& seed) const
+{
+    SecureString mnemonic;
+    SecureString mnemonic_passphrase;
+    if (!GetMnemonicString(mnemonic, mnemonic_passphrase) || mnemonic.empty()) return false;
+
+    CMnemonic::ToSeed(mnemonic, mnemonic_passphrase, seed);
+    return !seed.empty();
 }
 
 TransactionError DescriptorScriptPubKeyMan::FillPSBT(PartiallySignedTransaction& psbtx, const PrecomputedTransactionData& txdata, int sighash_type, bool sign, bool bip32derivs, int* n_signed, bool finalize) const

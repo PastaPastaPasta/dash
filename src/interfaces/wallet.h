@@ -135,6 +135,22 @@ public:
     virtual bool addMasternodeOperatorKey(const std::vector<unsigned char>& secret, std::string& error) = 0;
     //! Whether this wallet can store masternode operator keys (false for watch-only wallets)
     virtual bool canStoreMasternodeOperatorKey() = 0;
+    //! Whether this wallet can derive operator keys from its HD seed
+    virtual bool canDeriveMasternodeOperatorKey() = 0;
+    //! Derive the next unused masternode operator key from this wallet's HD seed,
+    //! persist the index it used and return the 32-byte secret plus the human
+    //! readable derivation path. Requires an unlocked wallet.
+    virtual bool deriveMasternodeOperatorKey(std::vector<unsigned char>& secret, std::string& path,
+                                             std::string& error) = 0;
+    //! Fetch an operator secret this wallet holds, by its 48-byte public key.
+    //! Works for both derived and stored keys. Requires an unlocked wallet.
+    //! `path` comes back holding the derivation path of a key derived from the HD
+    //! seed, and empty for a key stored in the wallet.
+    virtual bool getMasternodeOperatorKey(const std::vector<unsigned char>& pubkey,
+                                          std::vector<unsigned char>& secret, std::string& path,
+                                          std::string& error) = 0;
+    //! Public keys (48 bytes each) of every operator key this wallet holds
+    virtual std::vector<std::vector<unsigned char>> listMasternodeOperatorKeys() = 0;
 
     //! Return whether wallet has private key.
     virtual bool isSpendable(const CScript& script) = 0;

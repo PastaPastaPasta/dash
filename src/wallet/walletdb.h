@@ -84,6 +84,7 @@ extern const std::string KEY;
 extern const std::string KEYMETA;
 extern const std::string LOCKED_UTXO;
 extern const std::string MASTER_KEY;
+extern const std::string MASTERNODE_OPERATOR_INDEX;
 extern const std::string MASTERNODE_OPERATOR_KEY;
 extern const std::string MINVERSION;
 extern const std::string NAME;
@@ -234,6 +235,11 @@ public:
      *  record removes the plaintext one for the same public key. */
     bool WriteMasternodeOperatorKey(const std::vector<unsigned char>& pubkey, const CKeyingMaterial& secret);
     bool WriteCryptedMasternodeOperatorKey(const std::vector<unsigned char>& pubkey, const std::vector<unsigned char>& crypted_secret);
+
+    /** Derivation index of a masternode operator key derived from this wallet's HD seed, keyed
+     *  by the same serialized public key. The secret is never written for these: the seed and
+     *  this index reproduce it, and a wallet backup already covers the seed. */
+    bool WriteMasternodeOperatorIndex(const std::vector<unsigned char>& pubkey, uint32_t index);
 
     /** Write a CGovernanceObject to the database */
     bool WriteGovernanceObject(const Governance::Object& obj);
