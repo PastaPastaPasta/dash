@@ -130,6 +130,12 @@ public:
     //! Sign special transaction payload
     virtual bool signSpecialTxPayload(const uint256& hash, const CKeyID& keyid, std::vector<unsigned char>& vchSig) = 0;
 
+    //! Store a masternode operator BLS secret key (32 raw bytes) in this wallet, keyed by
+    //! its public key. Returns false and fills error when it cannot be stored.
+    virtual bool addMasternodeOperatorKey(const std::vector<unsigned char>& secret, std::string& error) = 0;
+    //! Whether this wallet can store masternode operator keys (false for watch-only wallets)
+    virtual bool canStoreMasternodeOperatorKey() = 0;
+
     //! Return whether wallet has private key.
     virtual bool isSpendable(const CScript& script) = 0;
     virtual bool isSpendable(const CTxDestination& dest) = 0;

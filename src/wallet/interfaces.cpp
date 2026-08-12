@@ -4,6 +4,7 @@
 
 #include <interfaces/wallet.h>
 
+#include <bls/bls.h>
 #include <chain.h>
 #include <coinjoin/client.h>
 #include <consensus/amount.h>
@@ -237,6 +238,24 @@ public:
     {
         return m_wallet->SignSpecialTxPayload(hash, keyid, vchSig);
     }
+    bool addMasternodeOperatorKey(const std::vector<unsigned char>& secret, std::string& error) override
+    {
+        if (!m_wallet->CanStoreMasternodeOperatorKey()) {
+            error = _("This wallet cannot store masternode operator keys.").translated;
+            return false;
+        }
+        const CBLSSecretKey sk{secret};
+        if (secret.size() != CBLSSecretKey::SerSize || !sk.IsValid() || !sk.GetPublicKey().IsValid()) {
+            error = _("The masternode operator key is not valid.").translated;
+            return false;
+        }
+        if (!m_wallet->AddMasternodeOperatorKey(sk)) {
+            error = _("Failed to store the masternode operator key, please make sure the wallet is unlocked.").translated;
+            return false;
+        }
+        return true;
+    }
+    bool canStoreMasternodeOperatorKey() override { return m_wallet->CanStoreMasternodeOperatorKey(); }
     bool isSpendable(const CScript& script) override
     {
         LOCK(m_wallet->cs_wallet);

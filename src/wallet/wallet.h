@@ -49,6 +49,8 @@
 
 #include <boost/signals2/signal.hpp>
 
+class CBLSPublicKey;
+class CBLSSecretKey;
 class CKey;
 class CScript;
 class CTxDSIn;
@@ -424,6 +426,18 @@ private:
 
     //! Whether the CoinJoin client is mixing with this wallet
     std::atomic<bool> m_mixing{false};
+
+    /** Masternode operator BLS secret keys stored in this wallet, keyed by the serialized
+     *  (basic scheme) public key. Plaintext secrets are only held for a wallet without
+     *  encryption keys, an encrypted wallet holds the ciphertext and decrypts on use.
+     */
+    std::map<std::vector<unsigned char>, CKeyingMaterial> m_mn_operator_keys GUARDED_BY(cs_wallet);
+    std::map<std::vector<unsigned char>, std::vector<unsigned char>> m_mn_operator_crypted_keys GUARDED_BY(cs_wallet);
+
+    /** Re-encrypt the operator keys stored while this wallet was still unencrypted. Only used
+     *  by EncryptWallet(), which supplies the freshly created master key.
+     */
+    bool EncryptMasternodeOperatorKeys(const CKeyingMaterial& master_key, WalletBatch& batch) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
     /** Height of last block processed is used by wallet to know depth of transactions
      * without relying on Chain interface beyond asynchronous updates. For safety, we
@@ -996,6 +1010,24 @@ public:
     bool WriteGovernanceObject(const Governance::Object& obj) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     /** Returns a vector containing pointers to the governance objects in m_gobjects */
     std::vector<const Governance::Object*> GetGovernanceObjects() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+
+    /** Load a plaintext masternode operator secret key from the wallet database. Returns false
+     *  if the record does not describe a usable key, in which case it is dropped. */
+    bool LoadMasternodeOperatorKey(const std::vector<unsigned char>& pubkey, const CKeyingMaterial& secret) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    /** Load an encrypted masternode operator secret key from the wallet database. The ciphertext
+     *  can only be checked once the wallet is unlocked, so this only validates the public key. */
+    bool LoadCryptedMasternodeOperatorKey(const std::vector<unsigned char>& pubkey, const std::vector<unsigned char>& crypted_secret) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+
+    /** Store a masternode operator secret key, keyed by its public key, so that it is covered by
+     *  wallet backups. An encrypted wallet stores the secret encrypted and must be unlocked. */
+    bool AddMasternodeOperatorKey(const CBLSSecretKey& secret);
+    /** Retrieve a stored masternode operator secret key. Decrypts on demand, so an encrypted
+     *  wallet must be unlocked. */
+    bool GetMasternodeOperatorKey(const CBLSPublicKey& pubkey, CBLSSecretKey& secret) const;
+    /** Whether an operator secret key for the given public key is stored in this wallet. */
+    bool HaveMasternodeOperatorKey(const CBLSPublicKey& pubkey) const;
+    /** Whether this wallet can store operator secret keys at all. */
+    bool CanStoreMasternodeOperatorKey() const;
 
     /**
      * Blocks until the wallet state is up-to-date to /at least/ the current

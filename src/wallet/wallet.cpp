@@ -7,12 +7,14 @@
 #include <wallet/wallet.h>
 
 #include <blockfilter.h>
+#include <bls/bls.h>
 #include <chain.h>
 #include <chainparams.h>
 #include <consensus/amount.h>
 #include <consensus/consensus.h>
 #include <crypto/common.h>
 #include <external_signer.h>
+#include <hash.h>
 #include <interfaces/chain.h>
 #include <interfaces/wallet.h>
 #include <key.h>
@@ -850,6 +852,18 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
                 // die and let the user reload the unencrypted wallet.
                 assert(false);
             }
+        }
+
+        // Masternode operator keys are stored by this wallet but not owned by any
+        // ScriptPubKeyMan, so they have to be re-encrypted explicitly. Leaving them behind
+        // would keep them in plaintext in the database for the lifetime of the wallet.
+        if (!EncryptMasternodeOperatorKeys(_vMasterKey, *encrypted_batch)) {
+            encrypted_batch->TxnAbort();
+            delete encrypted_batch;
+            encrypted_batch = nullptr;
+            // We now probably have half of our keys encrypted in memory, and half not...
+            // die and let the user reload the unencrypted wallet.
+            assert(false);
         }
 
 
@@ -3809,6 +3823,138 @@ std::vector<const Governance::Object*> CWallet::GetGovernanceObjects()
         vecObjects.push_back(&obj.second);
     }
     return vecObjects;
+}
+
+//! Serialization used for the operator public key both as database key and as encryption IV.
+//! The basic scheme is picked explicitly because the record has to survive a scheme activation.
+static std::vector<unsigned char> MasternodeOperatorPubKeyBytes(const CBLSPublicKey& pubkey)
+{
+    return pubkey.ToByteVector(/*specificLegacyScheme=*/false);
+}
+
+static CBLSSecretKey MasternodeOperatorSecretKey(const CKeyingMaterial& secret)
+{
+    if (secret.size() != CBLSSecretKey::SerSize) return CBLSSecretKey{};
+    return CBLSSecretKey{Span<const unsigned char>{secret.data(), secret.size()}};
+}
+
+bool CWallet::LoadMasternodeOperatorKey(const std::vector<unsigned char>& pubkey, const CKeyingMaterial& secret)
+{
+    AssertLockHeld(cs_wallet);
+    const CBLSSecretKey sk{MasternodeOperatorSecretKey(secret)};
+    if (!sk.IsValid() || MasternodeOperatorPubKeyBytes(sk.GetPublicKey()) != pubkey) {
+        return false;
+    }
+    m_mn_operator_keys[pubkey] = secret;
+    return true;
+}
+
+bool CWallet::LoadCryptedMasternodeOperatorKey(const std::vector<unsigned char>& pubkey, const std::vector<unsigned char>& crypted_secret)
+{
+    AssertLockHeld(cs_wallet);
+    CBLSPublicKey pk;
+    pk.SetBytes(pubkey, /*specificLegacyScheme=*/false);
+    if (!pk.IsValid() || crypted_secret.empty()) {
+        // The secret itself can only be checked once the wallet is unlocked, see GetMasternodeOperatorKey()
+        return false;
+    }
+    m_mn_operator_crypted_keys[pubkey] = crypted_secret;
+    return true;
+}
+
+bool CWallet::AddMasternodeOperatorKey(const CBLSSecretKey& secret)
+{
+    if (!CanStoreMasternodeOperatorKey() || !secret.IsValid()) return false;
+
+    const CBLSPublicKey pubkey{secret.GetPublicKey()};
+    if (!pubkey.IsValid()) return false;
+    const std::vector<unsigned char> pubkey_bytes{MasternodeOperatorPubKeyBytes(pubkey)};
+
+    LOCK(cs_wallet);
+    if (m_mn_operator_keys.count(pubkey_bytes) > 0 || m_mn_operator_crypted_keys.count(pubkey_bytes) > 0) {
+        return true;
+    }
+
+    auto secret_bytes{secret.ToBytes(/*specificLegacyScheme=*/false)};
+    const CKeyingMaterial secret_material(secret_bytes.begin(), secret_bytes.end());
+    memory_cleanse(secret_bytes.data(), secret_bytes.size());
+
+    WalletBatch batch(GetDatabase());
+    if (!HasEncryptionKeys()) {
+        if (!batch.WriteMasternodeOperatorKey(pubkey_bytes, secret_material)) return false;
+        m_mn_operator_keys[pubkey_bytes] = secret_material;
+        return true;
+    }
+
+    // An encrypted wallet only ever holds the ciphertext, so it has to be unlocked to store a key
+    if (IsLocked(/*fForMixing=*/true)) return false;
+
+    std::vector<unsigned char> crypted_secret;
+    if (!WithEncryptionKey([&](const CKeyingMaterial& encryption_key) {
+            return EncryptSecret(encryption_key, secret_material, Hash(pubkey_bytes), crypted_secret);
+        })) {
+        return false;
+    }
+    if (!batch.WriteCryptedMasternodeOperatorKey(pubkey_bytes, crypted_secret)) return false;
+    m_mn_operator_crypted_keys[pubkey_bytes] = crypted_secret;
+    return true;
+}
+
+bool CWallet::GetMasternodeOperatorKey(const CBLSPublicKey& pubkey, CBLSSecretKey& secret) const
+{
+    if (!pubkey.IsValid()) return false;
+    const std::vector<unsigned char> pubkey_bytes{MasternodeOperatorPubKeyBytes(pubkey)};
+
+    LOCK(cs_wallet);
+    if (const auto it{m_mn_operator_keys.find(pubkey_bytes)}; it != m_mn_operator_keys.end()) {
+        secret = MasternodeOperatorSecretKey(it->second);
+        return secret.IsValid();
+    }
+
+    const auto it{m_mn_operator_crypted_keys.find(pubkey_bytes)};
+    if (it == m_mn_operator_crypted_keys.end()) return false;
+    // Handing out a plaintext secret needs a full unlock, not a mixing-only one
+    if (IsLocked()) return false;
+
+    CKeyingMaterial secret_material;
+    if (!WithEncryptionKey([&](const CKeyingMaterial& encryption_key) {
+            return DecryptSecret(encryption_key, it->second, Hash(pubkey_bytes), secret_material);
+        })) {
+        return false;
+    }
+    secret = MasternodeOperatorSecretKey(secret_material);
+    return secret.IsValid();
+}
+
+bool CWallet::HaveMasternodeOperatorKey(const CBLSPublicKey& pubkey) const
+{
+    if (!pubkey.IsValid()) return false;
+    const std::vector<unsigned char> pubkey_bytes{MasternodeOperatorPubKeyBytes(pubkey)};
+
+    LOCK(cs_wallet);
+    return m_mn_operator_keys.count(pubkey_bytes) > 0 || m_mn_operator_crypted_keys.count(pubkey_bytes) > 0;
+}
+
+bool CWallet::CanStoreMasternodeOperatorKey() const
+{
+    return !IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS);
+}
+
+bool CWallet::EncryptMasternodeOperatorKeys(const CKeyingMaterial& master_key, WalletBatch& batch)
+{
+    AssertLockHeld(cs_wallet);
+    for (const auto& [pubkey_bytes, secret] : m_mn_operator_keys) {
+        std::vector<unsigned char> crypted_secret;
+        if (!EncryptSecret(master_key, secret, Hash(pubkey_bytes), crypted_secret)) {
+            return false;
+        }
+        if (!batch.WriteCryptedMasternodeOperatorKey(pubkey_bytes, crypted_secret)) {
+            return false;
+        }
+        m_mn_operator_crypted_keys[pubkey_bytes] = crypted_secret;
+    }
+    m_mn_operator_keys.clear();
+    return true;
 }
 
 CKeyPool::CKeyPool()
