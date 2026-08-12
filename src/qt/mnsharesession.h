@@ -224,6 +224,15 @@ private:
     //! refresh each contribution's changeIndex
     bool rebuildFundingTx(QString& error);
     const Signature* findSignature(int share_index) const;
+    //! Decode m_protx and require its CProRegTx payload's share table and terms
+    //! to match the envelope's displayed m_shares/m_terms exactly. The displayed
+    //! terms are what a participant reviews before signing, but the wallet signs
+    //! the digest of the *payload*, so a mismatch means the file shows one set of
+    //! terms while a different set would be registered — it must never verify.
+    bool payloadMatchesEnvelope(QString& error) const;
+    //! True when the draft-editable state (shares, terms, contributions) of two
+    //! copies is identical; used to reject silent merges of diverging drafts
+    bool sameDraftState(const MnShareSession& other) const;
 
     QString m_network;
     QString m_session_id;

@@ -328,10 +328,17 @@ bool MnShareSession::fromJson(const UniValue& json, QString& error)
                         error = Tr("Contribution entry %1 in the session file is malformed.").arg(i + 1);
                         return false;
                     }
+                    const int64_t vout{in.find_value("vout").getInt<int64_t>()};
+                    const int64_t sequence{in.find_value("sequence").getInt<int64_t>()};
+                    if (vout < 0 || vout > std::numeric_limits<uint32_t>::max() ||
+                        sequence < 0 || sequence > std::numeric_limits<uint32_t>::max()) {
+                        error = Tr("Contribution entry %1 in the session file is malformed.").arg(i + 1);
+                        return false;
+                    }
                     Input input;
                     input.txid = QString::fromStdString(in.find_value("txid").get_str());
-                    input.vout = static_cast<uint32_t>(in.find_value("vout").getInt<int64_t>());
-                    input.sequence = static_cast<uint32_t>(in.find_value("sequence").getInt<int64_t>());
+                    input.vout = static_cast<uint32_t>(vout);
+                    input.sequence = static_cast<uint32_t>(sequence);
                     if (!IsTxidHex(input.txid)) {
                         error = Tr("Contribution entry %1 in the session file is malformed.").arg(i + 1);
                         return false;
@@ -346,6 +353,10 @@ bool MnShareSession::fromJson(const UniValue& json, QString& error)
                     contribution.hasChange = true;
                     contribution.changeAddress = QString::fromStdString(change.find_value("address").get_str());
                     contribution.changeAmount = change.find_value("amount").getInt<int64_t>();
+                    if (contribution.changeAmount < 0) {
+                        error = Tr("Contribution entry %1 in the session file is malformed.").arg(i + 1);
+                        return false;
+                    }
                 }
                 if (const UniValue& v{entry.find_value("changeIndex")}; v.isNum()) contribution.changeIndex = v.getInt<int>();
                 parsed.m_contributions.push_back(contribution);
@@ -373,6 +384,11 @@ bool MnShareSession::fromJson(const UniValue& json, QString& error)
                 Signature sig;
                 sig.shareIndex = entry.find_value("shareIndex").getInt<int>();
                 sig.signatureB64 = QString::fromStdString(entry.find_value("signature").get_str());
+                if (std::any_of(parsed.m_sigs.begin(), parsed.m_sigs.end(),
+                                [&](const Signature& s) { return s.shareIndex == sig.shareIndex; })) {
+                    error = Tr("The session file lists more than one signature for share %1.").arg(sig.shareIndex + 1);
+                    return false;
+                }
                 parsed.m_sigs.push_back(sig);
             }
         }
@@ -380,10 +396,28 @@ bool MnShareSession::fromJson(const UniValue& json, QString& error)
         if (const UniValue& v{json.find_value("prepareWallet")}; v.isStr()) parsed.m_prepare_wallet = QString::fromStdString(v.get_str());
         if (const UniValue& v{json.find_value("operatorSecretHolder")}; v.isStr()) parsed.m_operator_secret_holder = QString::fromStdString(v.get_str());
 
-        if (parsed.m_stage != Stage::Draft && (parsed.m_protx.isEmpty() || parsed.m_consent_hash.isEmpty())) {
-            error = Tr("The session file is marked \"%1\" but is missing its frozen transaction or consent hash.")
-                        .arg(StageName(parsed.m_stage));
-            return false;
+        if (parsed.m_stage != Stage::Draft) {
+            if (parsed.m_protx.isEmpty() || parsed.m_consent_hash.isEmpty()) {
+                error = Tr("The session file is marked \"%1\" but is missing its frozen transaction or consent hash.")
+                            .arg(StageName(parsed.m_stage));
+                return false;
+            }
+            // A frozen file must register exactly the shares/terms it displays,
+            // and its prepared transaction must match its consent hash
+            CMutableTransaction frozen_tx;
+            CProRegTx frozen_payload;
+            if (!DecodeSharedProTx(parsed.m_protx, frozen_tx, frozen_payload, error)) return false;
+            if (frozen_payload.MakeSharedRegConsentHash(CTransaction(frozen_tx)) != uint256S(parsed.m_consent_hash.toStdString())) {
+                error = Tr("The session file's prepared transaction does not match its consent hash. Do not use it; request a fresh copy.");
+                return false;
+            }
+            if (!parsed.payloadMatchesEnvelope(error)) return false;
+            for (const auto& sig : parsed.m_sigs) {
+                if (sig.shareIndex < 0 || static_cast<size_t>(sig.shareIndex) >= parsed.m_shares.size()) {
+                    error = Tr("The session file has a signature for a share that does not exist.");
+                    return false;
+                }
+            }
         }
 
         *this = std::move(parsed);
@@ -420,7 +454,11 @@ QStringList MnShareSession::validateShares() const
         const QString row{Tr("Share %1:").arg(i + 1)};
         std::optional<CKeyID> key_id;
         if (CTxDestination dest{DecodeDestination(m_shares[i].ownerAddress.toStdString())}; const auto* pkhash = std::get_if<PKHash>(&dest)) {
-            key_id = ToKeyID(*pkhash);
+            if (const CKeyID id{ToKeyID(*pkhash)}; id.IsNull()) {
+                errors << row + QLatin1Char(' ') + Tr("the owner address must be a valid P2PKH address.");
+            } else {
+                key_id = id;
+            }
         } else {
             errors << row + QLatin1Char(' ') + Tr("the owner address must be a valid P2PKH address.");
         }
@@ -612,7 +650,13 @@ bool MnShareSession::freeze(const QString& protx_hex, const QString& consent_has
         error = Tr("The collateral output index does not match the prepared transaction.");
         return false;
     }
+    // The share table and terms the user reviewed must be exactly what the
+    // prepared transaction registers, otherwise the displayed session lies
     m_protx = protx_hex;
+    if (!payloadMatchesEnvelope(error)) {
+        m_protx.clear();
+        return false;
+    }
     m_consent_hash = consent_hash_hex.toLower();
     m_collateral_index = collateral_index;
     m_sigs.clear();
@@ -650,6 +694,9 @@ bool MnShareSession::verifySignature(int share_index, const QString& sig_b64, QS
         error = Tr("The session file is internally inconsistent: its prepared transaction no longer matches its consent hash. Do not sign; request a fresh copy.");
         return false;
     }
+    // A signature over the payload digest is meaningless if the payload is not
+    // the share table the participant reviewed
+    if (!payloadMatchesEnvelope(error)) return false;
     const auto sig{DecodeBase64(sig_b64.toStdString())};
     if (!sig) {
         error = Tr("The signature is not valid base64.");
@@ -685,6 +732,73 @@ const MnShareSession::Signature* MnShareSession::findSignature(int share_index) 
         if (sig.shareIndex == share_index) return &sig;
     }
     return nullptr;
+}
+
+bool MnShareSession::payloadMatchesEnvelope(QString& error) const
+{
+    CMutableTransaction tx;
+    CProRegTx payload;
+    if (!DecodeSharedProTx(m_protx, tx, payload, error)) return false;
+
+    if (payload.shares.size() != m_shares.size()) {
+        error = Tr("The session file's share table does not match its prepared transaction. Do not sign; request a fresh copy.");
+        return false;
+    }
+    for (size_t i = 0; i < m_shares.size(); ++i) {
+        const Share& share{m_shares[i]};
+        const CCollateralShare& signed_share{payload.shares[i]};
+
+        const CTxDestination owner{DecodeDestination(share.ownerAddress.toStdString())};
+        const auto* owner_pkhash{std::get_if<PKHash>(&owner)};
+        if (!owner_pkhash || ToKeyID(*owner_pkhash) != signed_share.keyIDOwner ||
+            share.amount != signed_share.amount ||
+            GetScriptForDestination(DecodeDestination(share.refundAddress.toStdString())) != signed_share.scriptRefund) {
+            error = Tr("Share %1 in the session file does not match its prepared transaction. Do not sign; request a fresh copy.").arg(i + 1);
+            return false;
+        }
+        const CScript expected_reward{share.rewardAddress.isEmpty()
+                                          ? CScript()
+                                          : GetScriptForDestination(DecodeDestination(share.rewardAddress.toStdString()))};
+        if (expected_reward != signed_share.scriptReward) {
+            error = Tr("Share %1's reward address in the session file does not match its prepared transaction. Do not sign; request a fresh copy.").arg(i + 1);
+            return false;
+        }
+    }
+
+    const CTxDestination voting{DecodeDestination(m_terms.votingAddress.toStdString())};
+    const auto* voting_pkhash{std::get_if<PKHash>(&voting)};
+    const bool operator_matches{QString::fromStdString(payload.pubKeyOperator.Get().ToString(/*specificLegacyScheme=*/false))
+                                    .compare(m_terms.operatorPubKey, Qt::CaseInsensitive) == 0};
+    if (!voting_pkhash || ToKeyID(*voting_pkhash) != payload.keyIDVoting ||
+        !operator_matches ||
+        m_terms.operatorReward != payload.nOperatorReward ||
+        m_terms.earlyPeriodBlocks != payload.nEarlyPeriodBlocks ||
+        m_terms.earlyPenalty != payload.nEarlyPenalty) {
+        error = Tr("The terms shown in the session file do not match its prepared transaction. Do not sign; request a fresh copy.");
+        return false;
+    }
+    return true;
+}
+
+bool MnShareSession::sameDraftState(const MnShareSession& other) const
+{
+    if (m_funding_tx != other.m_funding_tx) return false;
+    if (m_shares.size() != other.m_shares.size()) return false;
+    for (size_t i = 0; i < m_shares.size(); ++i) {
+        const Share& a{m_shares[i]};
+        const Share& b{other.m_shares[i]};
+        // Labels are local annotations, not consensus terms; ignore them
+        if (a.amount != b.amount || a.ownerAddress != b.ownerAddress ||
+            a.refundAddress != b.refundAddress || a.rewardAddress != b.rewardAddress) {
+            return false;
+        }
+    }
+    return m_terms.coreP2PAddrs == other.m_terms.coreP2PAddrs &&
+           m_terms.operatorPubKey == other.m_terms.operatorPubKey &&
+           m_terms.votingAddress == other.m_terms.votingAddress &&
+           m_terms.operatorReward == other.m_terms.operatorReward &&
+           m_terms.earlyPeriodBlocks == other.m_terms.earlyPeriodBlocks &&
+           m_terms.earlyPenalty == other.m_terms.earlyPenalty;
 }
 
 bool MnShareSession::addSignature(int share_index, const QString& sig_b64, QString& error)
@@ -770,8 +884,8 @@ MnShareSession::MergeResult MnShareSession::mergeEnvelope(const MnShareSession& 
         return MergeResult::Conflict;
     }
     if (!frozen) {
-        if (m_funding_tx != other.m_funding_tx) {
-            error = Tr("Both copies claim revision %1 but contain different funding contributions. They cannot be merged — the participant who changed funding must bump the revision and re-circulate the file.")
+        if (!sameDraftState(other)) {
+            error = Tr("Both copies claim revision %1 but their share tables, terms or funding differ. They cannot be merged — whoever changed the draft must bump the revision and re-circulate the file.")
                         .arg(m_revision);
             return MergeResult::Conflict;
         }
@@ -787,8 +901,18 @@ MnShareSession::MergeResult MnShareSession::mergeEnvelope(const MnShareSession& 
     }
     // Adopt a further-advanced stage together with its transaction (the protx
     // field evolves along the stages: combined join sigs, then funding
-    // signatures live in the same transaction hex)
+    // signatures live in the same transaction hex). Validate the incoming
+    // transaction the same way the direct setters do so a tampered "advanced"
+    // copy can neither overwrite a good protx nor fake completion.
     if (other.m_stage > m_stage) {
+        CMutableTransaction tx;
+        CProRegTx payload;
+        QString decode_error;
+        if (!DecodeSharedProTx(other.m_protx, tx, payload, decode_error) ||
+            payload.MakeSharedRegConsentHash(CTransaction(tx)) != uint256S(m_consent_hash.toStdString())) {
+            error = Tr("The imported copy claims to be further along but its transaction does not match the terms everyone signed. It was not adopted.");
+            return MergeResult::Conflict;
+        }
         m_stage = other.m_stage;
         m_protx = other.m_protx;
     }
@@ -918,11 +1042,19 @@ MnShareSession::PenaltyPreview MnShareSession::PenaltyPreviewFor(const std::vect
     // to the last non-actor share, so the payouts always sum exactly
     CAmount non_actor_total{0};
     size_t last_non_actor{0};
+    bool have_non_actor{false};
     for (size_t i = 0; i < share_amounts.size(); ++i) {
         if (static_cast<int>(i) != actor_index) {
             non_actor_total += share_amounts[i];
             last_non_actor = i;
+            have_non_actor = true;
         }
+    }
+    // A valid shared masternode always has at least two shares, but guard the
+    // division anyway so a malformed table cannot divide by zero
+    if (!have_non_actor || non_actor_total <= 0) {
+        preview.error = Tr("A unilateral dissolution needs at least one other share to receive the penalty.");
+        return preview;
     }
     preview.payouts.assign(share_amounts.size(), 0);
     CAmount distributed{0};
