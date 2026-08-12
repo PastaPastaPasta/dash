@@ -13,6 +13,7 @@
 #include <qt/guiutil.h>
 #include <qt/masternodedialogs.h>
 #include <qt/masternodewizard.h>
+#include <qt/sharedmncreatedialog.h>
 #include <qt/walletmodel.h>
 
 #include <QApplication>
@@ -137,6 +138,8 @@ MasternodeList::MasternodeList(QWidget* parent) :
 
     ui->btnRegisterMasternode->setEnabled(false);
     connect(ui->btnRegisterMasternode, &QPushButton::clicked, this, &MasternodeList::showRegisterWizard);
+    ui->btnSharedMasternode->setEnabled(false);
+    connect(ui->btnSharedMasternode, &QPushButton::clicked, this, &MasternodeList::showSharedMnCreateDialog);
 
     connect(ui->tableViewMasternodes, &QTableView::customContextMenuRequested, this, &MasternodeList::showContextMenuDIP3);
     connect(ui->tableViewMasternodes, &QTableView::doubleClicked, this, &MasternodeList::extraInfoDIP3_clicked);
@@ -187,6 +190,11 @@ void MasternodeList::setWalletModel(WalletModel* model)
     ui->btnRegisterMasternode->setEnabled(walletModel != nullptr);
     if (!walletModel) {
         ui->btnRegisterMasternode->setToolTip(tr("Registering a masternode requires a wallet"));
+        ui->btnSharedMasternode->setToolTip(tr("Managing shared masternodes requires a wallet"));
+    } else if (clientModel && !clientModel->node().isV24Active()) {
+        ui->btnSharedMasternode->setToolTip(tr("Shared masternodes require the v24 hard fork, which is not active on this network yet"));
+    } else {
+        ui->btnSharedMasternode->setEnabled(true);
     }
     if (walletModel) {
         QSettings settings;
@@ -200,6 +208,15 @@ void MasternodeList::showRegisterWizard()
         return;
     }
     RegisterMasternodeWizard dlg(clientModel->node(), walletModel, this);
+    dlg.exec();
+}
+
+void MasternodeList::showSharedMnCreateDialog()
+{
+    if (!clientModel || !walletModel) {
+        return;
+    }
+    SharedMnCreateDialog dlg(clientModel->node(), walletModel, this);
     dlg.exec();
 }
 

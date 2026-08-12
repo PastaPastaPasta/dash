@@ -108,6 +108,16 @@
            </property>
           </widget>
          </item>
+         <item>
+          <widget class="QPushButton" name="btnSharedMasternode">
+           <property name="toolTip">
+            <string>Create a masternode with collateral pooled by multiple parties, or continue a saved session</string>
+           </property>
+           <property name="text">
+            <string>Shared Masternode…</string>
+           </property>
+          </widget>
+         </item>
         </layout>
        </item>
        <item row="1" column="0">
