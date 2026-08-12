@@ -88,6 +88,28 @@ QString FormatDash(CAmount amount)
     return BitcoinUnits::formatWithUnit(BitcoinUnits::Unit::DASH, amount);
 }
 
+void ShowStatusLabel(QLabel* label, const QString& message, bool error)
+{
+    label->setStyleSheet(GUIUtil::getThemedStyleQString(error ? GUIUtil::ThemedStyle::TS_ERROR
+                                                              : GUIUtil::ThemedStyle::TS_SUCCESS));
+    label->setText(message);
+    label->setVisible(!message.isEmpty());
+}
+
+//! Fill `combo` with the shares whose owner key `wallet_model` can sign with;
+//! the item data is the share index
+void FillMyShareCombo(QComboBox* combo, const std::vector<interfaces::MnShare>& shares, WalletModel* wallet_model)
+{
+    if (!wallet_model || wallet_model->wallet().privateKeysDisabled()) return;
+    for (size_t i = 0; i < shares.size(); ++i) {
+        if (!wallet_model->wallet().isSpendable(PKHash(shares[i].keyIDOwner))) continue;
+        combo->addItem(QCoreApplication::translate("SharedMnDialog", "Share #%1 — %2 — %3")
+                           .arg(i)
+                           .arg(FormatDash(shares[i].amount), OwnerAddress(shares[i])),
+                       static_cast<int>(i));
+    }
+}
+
 //! "block N (~date)" for a block `blocks_ahead` past the current tip
 QString ApproxBlockDate(int blocks_ahead)
 {
@@ -160,13 +182,7 @@ UpdateShareDialog::UpdateShareDialog(interfaces::Node& node, WalletModel* wallet
     auto* form = new QFormLayout();
 
     m_share_combo = new QComboBox(this);
-    const auto& shares = entry.shares();
-    for (size_t i = 0; i < shares.size(); ++i) {
-        if (!wallet_model || wallet_model->wallet().privateKeysDisabled()) break;
-        if (!wallet_model->wallet().isSpendable(PKHash(shares[i].keyIDOwner))) continue;
-        m_share_combo->addItem(tr("Share #%1 — %2 — %3").arg(i).arg(FormatDash(shares[i].amount), OwnerAddress(shares[i])),
-                               static_cast<int>(i));
-    }
+    FillMyShareCombo(m_share_combo, entry.shares(), wallet_model);
     connect(m_share_combo, qOverload<int>(&QComboBox::currentIndexChanged), this, &UpdateShareDialog::validate);
     form->addRow(tr("My share:"), m_share_combo);
 
@@ -483,11 +499,7 @@ void SharedSigCollector::pasteEnvelope()
 {
     QString error;
     const bool ok{importEnvelope(QApplication::clipboard()->text(), error)};
-    if (!ok) {
-        showStatus(error, /*error=*/true);
-    } else {
-        showStatus(error.isEmpty() ? tr("Session imported.") : error, /*error=*/!error.isEmpty());
-    }
+    showStatus(ok && error.isEmpty() ? tr("Session imported.") : error, /*error=*/!ok || !error.isEmpty());
 }
 
 void SharedSigCollector::loadEnvelope()
@@ -504,11 +516,7 @@ void SharedSigCollector::loadEnvelope()
     file.close();
     QString error;
     const bool ok{importEnvelope(text, error)};
-    if (!ok) {
-        showStatus(error, /*error=*/true);
-    } else {
-        showStatus(error.isEmpty() ? tr("Session imported.") : error, /*error=*/!error.isEmpty());
-    }
+    showStatus(ok && error.isEmpty() ? tr("Session imported.") : error, /*error=*/!ok || !error.isEmpty());
 }
 
 void SharedSigCollector::refreshUi()
@@ -532,10 +540,7 @@ void SharedSigCollector::refreshUi()
 
 void SharedSigCollector::showStatus(const QString& message, bool error)
 {
-    m_status_label->setStyleSheet(GUIUtil::getThemedStyleQString(error ? GUIUtil::ThemedStyle::TS_ERROR
-                                                                       : GUIUtil::ThemedStyle::TS_SUCCESS));
-    m_status_label->setText(message);
-    m_status_label->setVisible(!message.isEmpty());
+    ShowStatusLabel(m_status_label, message, error);
 }
 
 // ----------------------------------------------------------------------------
@@ -554,6 +559,15 @@ SharedMnDialog::SharedMnDialog(interfaces::Node& node, WalletModel* wallet_model
     m_v24_active{node.isV24Active()},
     m_sender{new ProTxSender(node, this)}
 {
+}
+
+void SharedMnDialog::reject()
+{
+    // Esc or the window-manager close button must not dismiss the dialog
+    // while runCommand() waits on an in-flight command; QDialog::closeEvent
+    // keeps the window open when reject() leaves it visible
+    if (m_busy) return;
+    QDialog::reject();
 }
 
 bool SharedMnDialog::canSign() const
@@ -640,38 +654,127 @@ bool SharedMnDialog::txInputsUnspent(const QString& tx_hex, QString& error)
     }
     for (const CTxIn& txin : tx.vin) {
         Coin coin;
-        if (!m_node.getUnspentOutput(txin.prevout, coin)) {
-            error = tr("Input %1:%2 of the prepared transaction has been spent — this session is dead and cannot be continued. Start a new one.")
-                        .arg(QString::fromStdString(txin.prevout.hash.ToString()))
-                        .arg(txin.prevout.n);
-            return false;
+        if (m_node.getUnspentOutput(txin.prevout, coin)) continue;
+        // Not in the confirmed UTXO set. A fee input funded from a
+        // still-unconfirmed output of this wallet (e.g. fresh change selected
+        // by the prepare call) is unspent and merely waiting for a
+        // confirmation — only a positively spent input kills the session.
+        if (m_wallet_model) {
+            const auto coins{m_wallet_model->wallet().getCoins({txin.prevout})};
+            if (coins.size() == 1 && !coins[0].is_spent && coins[0].depth_in_main_chain >= 0) continue;
         }
+        error = tr("Input %1:%2 of the prepared transaction has been spent — this session is dead and cannot be continued. Start a new one.")
+                    .arg(QString::fromStdString(txin.prevout.hash.ToString()))
+                    .arg(txin.prevout.n);
+        return false;
     }
     return true;
-}
-
-std::vector<int> SharedMnDialog::myShareIndexes() const
-{
-    std::vector<int> ret;
-    if (!canSign()) return ret;
-    for (size_t i = 0; i < m_shares.size(); ++i) {
-        if (m_wallet_model->wallet().isSpendable(PKHash(m_shares[i].keyIDOwner))) {
-            ret.push_back(static_cast<int>(i));
-        }
-    }
-    return ret;
 }
 
 QComboBox* SharedMnDialog::makeMyShareCombo(QWidget* parent)
 {
     auto* combo = new QComboBox(parent);
-    for (const int i : myShareIndexes()) {
-        combo->addItem(tr("Share #%1 — %2 — %3").arg(i).arg(FormatDash(m_shares[i].amount), OwnerAddress(m_shares[i])), i);
-    }
+    FillMyShareCombo(combo, m_shares, m_wallet_model);
     if (combo->count() == 0) {
         combo->setToolTip(tr("This wallet does not hold any of this masternode's share owner keys."));
     }
     return combo;
+}
+
+bool SharedMnDialog::adoptPreparedTx(SharedSigCollector* collector, const ProTxResult& result, QLabel* status)
+{
+    QString error;
+    const QString tx_hex{QString::fromStdString(result.value.find_value("tx").get_str())};
+    if (!collector->setTransaction(tx_hex, error)) {
+        ShowStatusLabel(status, error, /*error=*/true);
+        return false;
+    }
+    // Cross-check our native sign-hash mirror against the node's answer, so a
+    // drifted mirror can never let a bad signature through verification
+    const QString rpc_hash{QString::fromStdString(result.value.find_value("signHash").get_str())};
+    if (collector->signHashHex().compare(rpc_hash, Qt::CaseInsensitive) != 0) {
+        ShowStatusLabel(status, tr("Internal error: the locally computed signing digest does not match the node's. Do not sign; please report this."), /*error=*/true);
+        return false;
+    }
+    return true;
+}
+
+void SharedMnDialog::signWithWallet(SharedSigCollector* collector, QLabel* status)
+{
+    if (!collector->hasTransaction()) return;
+
+    UniValue params(UniValue::VOBJ);
+    params.pushKV("tx", collector->txHex().toStdString());
+
+    ProTxResult result;
+    QString error;
+    if (!runCommand(QStringLiteral("protx shared_sign"), params, result, error)) {
+        ShowStatusLabel(status, error, /*error=*/true);
+        return;
+    }
+
+    QString sig_error;
+    const int absorbed{collector->addSignatures(result.value, sig_error)};
+    const bool problems{!sig_error.isEmpty()};
+    ShowStatusLabel(status,
+                    problems ? sig_error
+                             : tr("Signed %n share(s). Now copy or save the session and send it to the other participants.",
+                                  nullptr, absorbed),
+                    problems);
+}
+
+void SharedMnDialog::combineAndSubmit(SharedSigCollector* collector, QLabel* status, QLineEdit* result_edit,
+                                      QPushButton* sign_button, QPushButton* combine_button,
+                                      const QString& success_text, const QString& failure_hint)
+{
+    if (!collector->complete()) return;
+
+    UniValue params(UniValue::VOBJ);
+    params.pushKV("tx", collector->txHex().toStdString());
+    params.pushKV("signatures", collector->signaturesArray());
+    params.pushKV("submit", true);
+
+    ProTxResult result;
+    QString error;
+    if (!runCommand(QStringLiteral("protx shared_combine"), params, result, error)) {
+        ShowStatusLabel(status, failure_hint.isEmpty() ? error : error + QLatin1Char('\n') + failure_hint,
+                        /*error=*/true);
+        return;
+    }
+
+    result_edit->setText(QString::fromStdString(result.value.get_str()));
+    result_edit->setVisible(true);
+    ShowStatusLabel(status, success_text, /*error=*/false);
+    sign_button->setEnabled(false);
+    combine_button->setEnabled(false);
+}
+
+bool SharedMnDialog::gateSessionButtons(SharedSigCollector* collector, QLabel* status, QPushButton* primary_button,
+                                        QPushButton* sign_button, QPushButton* combine_button)
+{
+    // A8 liveness: a spent input makes the prepared transaction permanently
+    // unbroadcastable, so the session is dead
+    if (collector->hasTransaction()) {
+        if (QString liveness_error; !txInputsUnspent(collector->txHex(), liveness_error)) {
+            ShowStatusLabel(status, liveness_error, /*error=*/true);
+            primary_button->setEnabled(false);
+            sign_button->setEnabled(false);
+            combine_button->setEnabled(false);
+            return false;
+        }
+    }
+    if (gateButton(sign_button)) {
+        sign_button->setEnabled(collector->hasTransaction());
+    }
+    if (gateButton(combine_button)) {
+        combine_button->setEnabled(collector->complete());
+        if (!collector->complete()) {
+            combine_button->setToolTip(tr("Every share must be signed first (%1 of %2 so far).")
+                                           .arg(collector->signedCount())
+                                           .arg(m_shares.size()));
+        }
+    }
+    return true;
 }
 
 // ----------------------------------------------------------------------------
@@ -881,9 +984,28 @@ void DissolveDialog::submitNow()
     if (m_now_actor->currentIndex() < 0) return;
     const int actor{m_now_actor->currentData().toInt()};
 
-    // Re-derive the early decision the RPC will make so payPenalty is explicit
-    const bool early{static_cast<int64_t>(m_current_height) + 1 - m_registered_height <
-                     static_cast<int64_t>(m_early_period_blocks)};
+    // Re-derive the early decision the RPC will make so payPenalty is
+    // explicit — from a fresh tip height, not the height captured at dialog
+    // open: crossing the penalty-free boundary while the dialog was open must
+    // never submit an avoidable payPenalty=true.
+    const auto is_early = [this](int height) {
+        return static_cast<int64_t>(height) + 1 - m_registered_height < static_cast<int64_t>(m_early_period_blocks);
+    };
+    const auto refresh_on_boundary_crossing = [this, &is_early](int fresh_height) {
+        const bool crossed{is_early(fresh_height) != is_early(m_current_height)};
+        if (fresh_height != m_current_height) {
+            m_current_height = fresh_height;
+            updateNowPreview();
+        }
+        if (crossed) {
+            ShowStatusLabel(m_now_status,
+                            tr("The chain crossed the penalty-free boundary while this dialog was open. The preview above has been refreshed — review it and click Dissolve now again."),
+                            /*error=*/false);
+        }
+        return crossed;
+    };
+    if (refresh_on_boundary_crossing(m_node.getNumBlocks())) return;
+    const bool early{is_early(m_current_height)};
     if (early && !m_now_accept->isChecked()) return;
 
     if (QMessageBox::question(this, windowTitle(),
@@ -891,6 +1013,9 @@ void DissolveDialog::submitNow()
         QMessageBox::Yes) {
         return;
     }
+
+    // The confirmation prompt can also stay open across the boundary
+    if (refresh_on_boundary_crossing(m_node.getNumBlocks())) return;
 
     UniValue params(UniValue::VOBJ);
     params.pushKV("proTxHash", m_protx_hash.toStdString());
@@ -902,17 +1027,13 @@ void DissolveDialog::submitNow()
     ProTxResult result;
     QString error;
     if (!runCommand(QStringLiteral("protx dissolve"), params, result, error)) {
-        m_now_status->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
-        m_now_status->setText(error);
-        m_now_status->setVisible(true);
+        ShowStatusLabel(m_now_status, error, /*error=*/true);
         return;
     }
 
     m_now_result->setText(QString::fromStdString(result.value.get_str()));
     m_now_result->setVisible(true);
-    m_now_status->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_SUCCESS));
-    m_now_status->setText(tr("The dissolution was sent successfully."));
-    m_now_status->setVisible(true);
+    ShowStatusLabel(m_now_status, tr("The dissolution was sent successfully."), /*error=*/false);
     m_now_submit->setEnabled(false);
     m_now_actor->setEnabled(false);
     m_now_fee->setEnabled(false);
@@ -974,33 +1095,10 @@ QWidget* DissolveDialog::buildUnanimousTab()
 void DissolveDialog::refreshUnanimousUi()
 {
     if (!m_un_start) return;
-    // A8 liveness: a spent input (the collateral — the masternode was already
-    // dissolved) makes the session permanently dead
-    if (m_un_collector->hasTransaction()) {
-        if (QString liveness_error; !txInputsUnspent(m_un_collector->txHex(), liveness_error)) {
-            m_un_status->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
-            m_un_status->setText(liveness_error);
-            m_un_status->setVisible(true);
-            m_un_start->setEnabled(false);
-            m_un_sign->setEnabled(false);
-            m_un_combine->setEnabled(false);
-            return;
-        }
-    }
+    if (!gateSessionButtons(m_un_collector, m_un_status, m_un_start, m_un_sign, m_un_combine)) return;
     if (gateButton(m_un_start)) {
         m_un_start->setEnabled(!m_un_collector->hasTransaction() && m_un_actor->count() > 0);
         if (m_un_actor->count() == 0) m_un_start->setToolTip(tr("This wallet does not hold any of this masternode's share owner keys."));
-    }
-    if (gateButton(m_un_sign)) {
-        m_un_sign->setEnabled(m_un_collector->hasTransaction());
-    }
-    if (gateButton(m_un_combine)) {
-        m_un_combine->setEnabled(m_un_collector->complete());
-        if (!m_un_collector->complete()) {
-            m_un_combine->setToolTip(tr("Every share must be signed first (%1 of %2 so far).")
-                                         .arg(m_un_collector->signedCount())
-                                         .arg(m_shares.size()));
-        }
     }
 }
 
@@ -1016,31 +1114,12 @@ void DissolveDialog::startUnanimous()
     ProTxResult result;
     QString error;
     if (!runCommand(QStringLiteral("protx dissolve_prepare"), params, result, error)) {
-        m_un_status->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
-        m_un_status->setText(error);
-        m_un_status->setVisible(true);
+        ShowStatusLabel(m_un_status, error, /*error=*/true);
         return;
     }
 
-    const QString tx_hex{QString::fromStdString(result.value.find_value("tx").get_str())};
-    if (!m_un_collector->setTransaction(tx_hex, error)) {
-        m_un_status->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
-        m_un_status->setText(error);
-        m_un_status->setVisible(true);
-        return;
-    }
-    // Cross-check our native sign-hash mirror against the node's answer, so a
-    // drifted mirror can never let a bad signature through verification
-    const QString rpc_hash{QString::fromStdString(result.value.find_value("signHash").get_str())};
-    if (m_un_collector->signHashHex().compare(rpc_hash, Qt::CaseInsensitive) != 0) {
-        m_un_status->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
-        m_un_status->setText(tr("Internal error: the locally computed signing digest does not match the node's. Do not sign; please report this."));
-        m_un_status->setVisible(true);
-        return;
-    }
-    m_un_status->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_SUCCESS));
-    m_un_status->setText(tr("Prepared. Sign with this wallet, then pass the session to the other participants."));
-    m_un_status->setVisible(true);
+    if (!adoptPreparedTx(m_un_collector, result, m_un_status)) return;
+    ShowStatusLabel(m_un_status, tr("Prepared. Sign with this wallet, then pass the session to the other participants."), /*error=*/false);
     m_un_fee->setEnabled(false);
     m_un_actor->setEnabled(false);
     refreshUnanimousUi();
@@ -1048,56 +1127,13 @@ void DissolveDialog::startUnanimous()
 
 void DissolveDialog::signUnanimous()
 {
-    if (!m_un_collector->hasTransaction()) return;
-
-    UniValue params(UniValue::VOBJ);
-    params.pushKV("tx", m_un_collector->txHex().toStdString());
-
-    ProTxResult result;
-    QString error;
-    if (!runCommand(QStringLiteral("protx shared_sign"), params, result, error)) {
-        m_un_status->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
-        m_un_status->setText(error);
-        m_un_status->setVisible(true);
-        return;
-    }
-
-    QString sig_error;
-    const int absorbed{m_un_collector->addSignatures(result.value, sig_error)};
-    const bool problems{!sig_error.isEmpty()};
-    m_un_status->setStyleSheet(GUIUtil::getThemedStyleQString(problems ? GUIUtil::ThemedStyle::TS_ERROR
-                                                                       : GUIUtil::ThemedStyle::TS_SUCCESS));
-    m_un_status->setText(problems ? sig_error
-                                  : tr("Signed %n share(s). Now copy or save the session and send it to the other participants.",
-                                       nullptr, absorbed));
-    m_un_status->setVisible(true);
+    signWithWallet(m_un_collector, m_un_status);
 }
 
 void DissolveDialog::combineUnanimous()
 {
-    if (!m_un_collector->complete()) return;
-
-    UniValue params(UniValue::VOBJ);
-    params.pushKV("tx", m_un_collector->txHex().toStdString());
-    params.pushKV("signatures", m_un_collector->signaturesArray());
-    params.pushKV("submit", true);
-
-    ProTxResult result;
-    QString error;
-    if (!runCommand(QStringLiteral("protx shared_combine"), params, result, error)) {
-        m_un_status->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
-        m_un_status->setText(error);
-        m_un_status->setVisible(true);
-        return;
-    }
-
-    m_un_result->setText(QString::fromStdString(result.value.get_str()));
-    m_un_result->setVisible(true);
-    m_un_status->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_SUCCESS));
-    m_un_status->setText(tr("The dissolution was sent successfully."));
-    m_un_status->setVisible(true);
-    m_un_sign->setEnabled(false);
-    m_un_combine->setEnabled(false);
+    combineAndSubmit(m_un_collector, m_un_status, m_un_result, m_un_sign, m_un_combine,
+                     tr("The dissolution was sent successfully."), /*failure_hint=*/QString{});
 }
 
 QWidget* DissolveDialog::buildStandbyTab()
@@ -1114,7 +1150,6 @@ QWidget* DissolveDialog::buildStandbyTab()
     connect(m_sb_actor, qOverload<int>(&QComboBox::currentIndexChanged), tab, [this] {
         m_sb_view_a->clear();
         m_sb_view_b->clear();
-        m_sb_saved_a = m_sb_saved_b = false;
     });
     form->addRow(tr("My share:"), m_sb_actor);
     m_sb_fee = new QSpinBox(tab);
@@ -1127,57 +1162,46 @@ QWidget* DissolveDialog::buildStandbyTab()
     const int penalty_free_height{m_registered_height + static_cast<int>(m_early_period_blocks)};
     const int blocks_left{std::max(penalty_free_height - m_current_height - 1, 0)};
 
-    auto* generate_a = new QPushButton(tr("Generate Standby A — pays the %1 penalty, broadcastable immediately (it pays the penalty forever, even after the early period ends)")
-                                           .arg(FormatDash(m_early_penalty)),
-                                       tab);
-    connect(generate_a, &QPushButton::clicked, tab, [this] { generateStandby(/*pay_penalty=*/true); });
-    gateButton(generate_a);
-    layout->addWidget(generate_a);
+    // One column group per standby variant: generate button, transaction hex
+    // view, copy/save row
+    const auto build_variant = [this, tab, layout](bool pay_penalty, const QString& generate_text,
+                                                   const QString& placeholder, const QString& copy_text,
+                                                   const QString& save_text) {
+        auto* generate = new QPushButton(generate_text, tab);
+        connect(generate, &QPushButton::clicked, tab, [this, pay_penalty] { generateStandby(pay_penalty); });
+        gateButton(generate);
+        layout->addWidget(generate);
 
-    m_sb_view_a = new QPlainTextEdit(tab);
-    m_sb_view_a->setReadOnly(true);
-    m_sb_view_a->setFont(GUIUtil::fixedPitchFont());
-    m_sb_view_a->setMaximumHeight(70);
-    m_sb_view_a->setPlaceholderText(tr("Standby A transaction hex"));
-    layout->addWidget(m_sb_view_a);
+        auto* view = new QPlainTextEdit(tab);
+        view->setReadOnly(true);
+        view->setFont(GUIUtil::fixedPitchFont());
+        view->setMaximumHeight(70);
+        view->setPlaceholderText(placeholder);
+        layout->addWidget(view);
 
-    auto* row_a = new QHBoxLayout();
-    auto* copy_a = new QPushButton(tr("Copy A"), tab);
-    connect(copy_a, &QPushButton::clicked, tab, [this] {
-        if (!m_sb_view_a->toPlainText().isEmpty()) GUIUtil::setClipboard(m_sb_view_a->toPlainText());
-    });
-    row_a->addWidget(copy_a);
-    auto* save_a = new QPushButton(tr("Save A to file…"), tab);
-    connect(save_a, &QPushButton::clicked, tab, [this] { saveStandby(/*pay_penalty=*/true); });
-    row_a->addWidget(save_a);
-    row_a->addStretch();
-    layout->addLayout(row_a);
+        auto* row = new QHBoxLayout();
+        auto* copy = new QPushButton(copy_text, tab);
+        connect(copy, &QPushButton::clicked, tab, [view] {
+            if (!view->toPlainText().isEmpty()) GUIUtil::setClipboard(view->toPlainText());
+        });
+        row->addWidget(copy);
+        auto* save = new QPushButton(save_text, tab);
+        connect(save, &QPushButton::clicked, tab, [this, pay_penalty] { saveStandby(pay_penalty); });
+        row->addWidget(save);
+        row->addStretch();
+        layout->addLayout(row);
+        return view;
+    };
+
+    m_sb_view_a = build_variant(/*pay_penalty=*/true,
+                                tr("Generate Standby A — pays the %1 penalty, broadcastable immediately (it pays the penalty forever, even after the early period ends)")
+                                    .arg(FormatDash(m_early_penalty)),
+                                tr("Standby A transaction hex"), tr("Copy A"), tr("Save A to file…"));
 
     const QString b_when{blocks_left > 0 ? tr("valid only from block %1 (~%2)").arg(penalty_free_height).arg(ApproxBlockDate(blocks_left)) :
                                            tr("already valid — the early period has ended")};
-    auto* generate_b = new QPushButton(tr("Generate Standby B — full principal, %1").arg(b_when), tab);
-    connect(generate_b, &QPushButton::clicked, tab, [this] { generateStandby(/*pay_penalty=*/false); });
-    gateButton(generate_b);
-    layout->addWidget(generate_b);
-
-    m_sb_view_b = new QPlainTextEdit(tab);
-    m_sb_view_b->setReadOnly(true);
-    m_sb_view_b->setFont(GUIUtil::fixedPitchFont());
-    m_sb_view_b->setMaximumHeight(70);
-    m_sb_view_b->setPlaceholderText(tr("Standby B transaction hex"));
-    layout->addWidget(m_sb_view_b);
-
-    auto* row_b = new QHBoxLayout();
-    auto* copy_b = new QPushButton(tr("Copy B"), tab);
-    connect(copy_b, &QPushButton::clicked, tab, [this] {
-        if (!m_sb_view_b->toPlainText().isEmpty()) GUIUtil::setClipboard(m_sb_view_b->toPlainText());
-    });
-    row_b->addWidget(copy_b);
-    auto* save_b = new QPushButton(tr("Save B to file…"), tab);
-    connect(save_b, &QPushButton::clicked, tab, [this] { saveStandby(/*pay_penalty=*/false); });
-    row_b->addWidget(save_b);
-    row_b->addStretch();
-    layout->addLayout(row_b);
+    m_sb_view_b = build_variant(/*pay_penalty=*/false, tr("Generate Standby B — full principal, %1").arg(b_when),
+                                tr("Standby B transaction hex"), tr("Copy B"), tr("Save B to file…"));
 
     auto* which = new QLabel(tr("Which one to broadcast later: B whenever the early period is over (full principal); A only when you cannot wait for the boundary."), tab);
     which->setWordWrap(true);
@@ -1202,9 +1226,7 @@ QWidget* DissolveDialog::buildStandbyTab()
 void DissolveDialog::generateStandby(bool pay_penalty)
 {
     if (m_sb_actor->currentIndex() < 0) {
-        m_sb_status->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
-        m_sb_status->setText(tr("This wallet does not hold any of this masternode's share owner keys."));
-        m_sb_status->setVisible(true);
+        ShowStatusLabel(m_sb_status, tr("This wallet does not hold any of this masternode's share owner keys."), /*error=*/true);
         return;
     }
 
@@ -1218,16 +1240,14 @@ void DissolveDialog::generateStandby(bool pay_penalty)
     ProTxResult result;
     QString error;
     if (!runCommand(QStringLiteral("protx dissolve"), params, result, error)) {
-        m_sb_status->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
-        m_sb_status->setText(error);
-        m_sb_status->setVisible(true);
+        ShowStatusLabel(m_sb_status, error, /*error=*/true);
         return;
     }
 
     (pay_penalty ? m_sb_view_a : m_sb_view_b)->setPlainText(QString::fromStdString(result.value.get_str()));
-    m_sb_status->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_SUCCESS));
-    m_sb_status->setText(tr("Standby %1 generated — save it to a file now.").arg(pay_penalty ? QStringLiteral("A") : QStringLiteral("B")));
-    m_sb_status->setVisible(true);
+    ShowStatusLabel(m_sb_status,
+                    tr("Standby %1 generated — save it to a file now.").arg(pay_penalty ? QStringLiteral("A") : QStringLiteral("B")),
+                    /*error=*/false);
 }
 
 void DissolveDialog::saveStandby(bool pay_penalty)
@@ -1241,26 +1261,29 @@ void DissolveDialog::saveStandby(bool pay_penalty)
     if (filename.isEmpty()) return;
     QFile file(filename);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        m_sb_status->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
-        m_sb_status->setText(tr("Could not write to %1.").arg(filename));
-        m_sb_status->setVisible(true);
+        ShowStatusLabel(m_sb_status, tr("Could not write to %1.").arg(filename), /*error=*/true);
         return;
     }
     QTextStream out(&file);
     out << hex << '\n';
     file.close();
 
-    (pay_penalty ? m_sb_saved_a : m_sb_saved_b) = true;
-    m_sb_status->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_SUCCESS));
-    m_sb_status->setText(tr("Standby %1 saved to %2.").arg(pay_penalty ? QStringLiteral("A") : QStringLiteral("B"), filename));
-    m_sb_status->setVisible(true);
+    // Persist the per-variant flag so saving A and B in different dialog
+    // sessions still counts as "both stored"
+    QSettings().setValue((pay_penalty ? QStringLiteral("mnStandbySavedA/") : QStringLiteral("mnStandbySavedB/")) + m_protx_hash,
+                         true);
+    ShowStatusLabel(m_sb_status,
+                    tr("Standby %1 saved to %2.").arg(pay_penalty ? QStringLiteral("A") : QStringLiteral("B"), filename),
+                    /*error=*/false);
     maybeMarkStandbyStored();
 }
 
 void DissolveDialog::maybeMarkStandbyStored()
 {
-    if (!m_sb_saved_a || !m_sb_saved_b) return;
-    QSettings().setValue(QStringLiteral("mnStandbyStored/") + m_protx_hash, true);
+    QSettings settings;
+    if (!settings.value(QStringLiteral("mnStandbySavedA/") + m_protx_hash, false).toBool()) return;
+    if (!settings.value(QStringLiteral("mnStandbySavedB/") + m_protx_hash, false).toBool()) return;
+    settings.setValue(QStringLiteral("mnStandbyStored/") + m_protx_hash, true);
     m_sb_stored_label->setVisible(true);
 }
 
@@ -1360,19 +1383,7 @@ void RotateSharedKeysDialog::validateForm()
 
 void RotateSharedKeysDialog::refreshButtons()
 {
-    // A8 liveness: a spent fee input makes the prepared transaction
-    // permanently unbroadcastable
-    if (m_collector->hasTransaction()) {
-        if (QString liveness_error; !txInputsUnspent(m_collector->txHex(), liveness_error)) {
-            m_status_label->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
-            m_status_label->setText(liveness_error);
-            m_status_label->setVisible(true);
-            m_prepare_button->setEnabled(false);
-            m_sign_button->setEnabled(false);
-            m_combine_button->setEnabled(false);
-            return;
-        }
-    }
+    if (!gateSessionButtons(m_collector, m_status_label, m_prepare_button, m_sign_button, m_combine_button)) return;
     if (gateButton(m_prepare_button)) {
         const QString operator_key{m_operator_edit->text().trimmed()};
         const bool operator_ok{operator_key.isEmpty() ||
@@ -1382,17 +1393,6 @@ void RotateSharedKeysDialog::refreshButtons()
         const bool voting_ok{m_voting_edit->text().isEmpty() || m_voting_edit->isValid()};
         m_prepare_button->setEnabled(!m_collector->hasTransaction() && any_change && operator_ok && voting_ok &&
                                      !m_fee_source->selectedAddress().isEmpty());
-    }
-    if (gateButton(m_sign_button)) {
-        m_sign_button->setEnabled(m_collector->hasTransaction());
-    }
-    if (gateButton(m_combine_button)) {
-        m_combine_button->setEnabled(m_collector->complete());
-        if (!m_collector->complete()) {
-            m_combine_button->setToolTip(tr("Every share must be signed first (%1 of %2 so far).")
-                                             .arg(m_collector->signedCount())
-                                             .arg(m_shares.size()));
-        }
     }
 }
 
@@ -1408,88 +1408,30 @@ void RotateSharedKeysDialog::prepare()
     ProTxResult result;
     QString error;
     if (!runCommand(QStringLiteral("protx update_shared_registrar_prepare"), params, result, error)) {
-        m_status_label->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
-        m_status_label->setText(error);
-        m_status_label->setVisible(true);
+        ShowStatusLabel(m_status_label, error, /*error=*/true);
         return;
     }
 
-    const QString tx_hex{QString::fromStdString(result.value.find_value("tx").get_str())};
-    if (!m_collector->setTransaction(tx_hex, error)) {
-        m_status_label->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
-        m_status_label->setText(error);
-        m_status_label->setVisible(true);
-        return;
-    }
-    const QString rpc_hash{QString::fromStdString(result.value.find_value("signHash").get_str())};
-    if (m_collector->signHashHex().compare(rpc_hash, Qt::CaseInsensitive) != 0) {
-        m_status_label->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
-        m_status_label->setText(tr("Internal error: the locally computed signing digest does not match the node's. Do not sign; please report this."));
-        m_status_label->setVisible(true);
-        return;
-    }
+    if (!adoptPreparedTx(m_collector, result, m_status_label)) return;
 
     m_operator_edit->setEnabled(false);
     m_voting_edit->setEnabled(false);
     m_fee_source->setEnabled(false);
-    m_status_label->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_SUCCESS));
-    m_status_label->setText(tr("Prepared. Sign with this wallet, pass the session to the other participants, then finish here once every share has signed."));
-    m_status_label->setVisible(true);
+    ShowStatusLabel(m_status_label,
+                    tr("Prepared. Sign with this wallet, pass the session to the other participants, then finish here once every share has signed."),
+                    /*error=*/false);
     refreshButtons();
 }
 
 void RotateSharedKeysDialog::signMine()
 {
-    if (!m_collector->hasTransaction()) return;
-
-    UniValue params(UniValue::VOBJ);
-    params.pushKV("tx", m_collector->txHex().toStdString());
-
-    ProTxResult result;
-    QString error;
-    if (!runCommand(QStringLiteral("protx shared_sign"), params, result, error)) {
-        m_status_label->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
-        m_status_label->setText(error);
-        m_status_label->setVisible(true);
-        return;
-    }
-
-    QString sig_error;
-    const int absorbed{m_collector->addSignatures(result.value, sig_error)};
-    const bool problems{!sig_error.isEmpty()};
-    m_status_label->setStyleSheet(GUIUtil::getThemedStyleQString(problems ? GUIUtil::ThemedStyle::TS_ERROR
-                                                                          : GUIUtil::ThemedStyle::TS_SUCCESS));
-    m_status_label->setText(problems ? sig_error
-                                     : tr("Signed %n share(s). Now copy or save the session and send it to the other participants.",
-                                          nullptr, absorbed));
-    m_status_label->setVisible(true);
+    signWithWallet(m_collector, m_status_label);
 }
 
 void RotateSharedKeysDialog::combineAndSend()
 {
-    if (!m_collector->complete()) return;
-
-    UniValue params(UniValue::VOBJ);
-    params.pushKV("tx", m_collector->txHex().toStdString());
-    params.pushKV("signatures", m_collector->signaturesArray());
-    params.pushKV("submit", true);
-
-    ProTxResult result;
-    QString error;
-    if (!runCommand(QStringLiteral("protx shared_combine"), params, result, error)) {
-        m_status_label->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
-        // Combining re-signs the fee inputs, which only the preparing wallet can do
-        m_status_label->setText(error + QLatin1Char('\n') +
-                                tr("If the error mentions signing the transaction inputs, this is not the wallet that prepared it — finish on that wallet."));
-        m_status_label->setVisible(true);
-        return;
-    }
-
-    m_result_edit->setText(QString::fromStdString(result.value.get_str()));
-    m_result_edit->setVisible(true);
-    m_status_label->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_SUCCESS));
-    m_status_label->setText(tr("The key rotation was sent successfully."));
-    m_status_label->setVisible(true);
-    m_sign_button->setEnabled(false);
-    m_combine_button->setEnabled(false);
+    // Combining re-signs the fee inputs, which only the preparing wallet can do
+    combineAndSubmit(m_collector, m_status_label, m_result_edit, m_sign_button, m_combine_button,
+                     tr("The key rotation was sent successfully."),
+                     tr("If the error mentions signing the transaction inputs, this is not the wallet that prepared it — finish on that wallet."));
 }

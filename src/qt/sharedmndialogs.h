@@ -123,6 +123,11 @@ class SharedMnDialog : public QDialog
 {
     Q_OBJECT
 
+public:
+    //! Ignores Esc and window-close while a command runs in runCommand()'s
+    //! nested event loop, so a flow cannot be dismissed mid-flight
+    void reject() override;
+
 protected:
     SharedMnDialog(interfaces::Node& node, WalletModel* wallet_model, const MasternodeEntry& entry, QWidget* parent);
 
@@ -138,14 +143,31 @@ protected:
     //! command could not run or failed.
     bool runCommand(const QString& method, const UniValue& params, ProTxResult& result, QString& error);
 
-    //! True when every input of `tx_hex` is still unspent. A spent input makes
-    //! the transaction permanently unbroadcastable: the session is dead and a
-    //! new one must be started.
+    //! True when no input of `tx_hex` is positively spent. An input that is
+    //! merely waiting for its confirmation (an unconfirmed own-wallet fee
+    //! input) counts as unspent; a spent input makes the transaction
+    //! permanently unbroadcastable: the session is dead and a new one must be
+    //! started.
     bool txInputsUnspent(const QString& tx_hex, QString& error);
 
-    //! Indexes into m_shares whose owner key this wallet can sign with
-    std::vector<int> myShareIndexes() const;
-    //! Combo box over myShareIndexes(): "Share #i — amount — owner address"
+    //! Adopt a "..._prepare" result into `collector` and cross-check the
+    //! locally computed signing digest against the node's; reports into
+    //! `status` and returns false when the transaction must not be signed
+    bool adoptPreparedTx(SharedSigCollector* collector, const ProTxResult& result, QLabel* status);
+    //! "protx shared_sign" the collector's transaction with every share owner
+    //! key this wallet holds and absorb the resulting signatures
+    void signWithWallet(SharedSigCollector* collector, QLabel* status);
+    //! "protx shared_combine" the fully signed transaction and submit it
+    void combineAndSubmit(SharedSigCollector* collector, QLabel* status, QLineEdit* result_edit,
+                          QPushButton* sign_button, QPushButton* combine_button, const QString& success_text,
+                          const QString& failure_hint);
+    //! Session liveness guard plus the shared sign/combine gating; disables
+    //! all three buttons and returns false when the session is dead
+    bool gateSessionButtons(SharedSigCollector* collector, QLabel* status, QPushButton* primary_button,
+                            QPushButton* sign_button, QPushButton* combine_button);
+
+    //! Combo box over the shares whose owner key this wallet can sign with:
+    //! "Share #i — amount — owner address"
     QComboBox* makeMyShareCombo(QWidget* parent);
 
     interfaces::Node& m_node;
@@ -198,7 +220,8 @@ private:
     void maybeMarkStandbyStored();
     void refreshUnanimousUi();
 
-    const int m_current_height;
+    //! Height captured at dialog open, refreshed from the tip in submitNow()
+    int m_current_height;
 
     // Dissolve now
     QComboBox* m_now_actor{nullptr};
@@ -229,8 +252,6 @@ private:
     QPlainTextEdit* m_sb_view_b{nullptr};
     QLabel* m_sb_stored_label{nullptr};
     QLabel* m_sb_status{nullptr};
-    bool m_sb_saved_a{false};
-    bool m_sb_saved_b{false};
 };
 
 //! Rotate a shared masternode's operator and/or voting key ("protx
