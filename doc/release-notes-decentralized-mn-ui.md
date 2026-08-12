@@ -22,10 +22,18 @@ wallet without hand-assembling `protx` commands in the debug console.
   existing collateral output already held by the wallet, or external collateral
   held in another wallet or on a hardware device (prepare, sign the message
   out-of-band, then submit).
-- Owner and voting addresses are generated from the wallet; the operator BLS key
-  is either generated (its secret shown once, behind a confirmation, with the
-  matching `masternodeblsprivkey` line for `dash.conf`) or supplied as a hosting
-  provider's public key.
+- Owner and voting addresses are generated from the wallet, so its backup covers
+  them. The operator BLS key is generated and saved in the wallet (new default),
+  generated without saving (its secret shown once, behind a confirmation), or
+  supplied as a hosting provider's public key. Either way the matching
+  `masternodeblsprivkey` line for the masternode server's `dash.conf` is shown.
+
+## Transaction history
+
+- Dash special transactions now have their own types in the transaction list:
+  Masternode Registration, Masternode Update and Masternode Dissolution, with a
+  matching entry in the type filter. A registration previously appeared as a
+  "Payment to yourself" whose amount was only the network fee.
 
 ## Maintenance
 
