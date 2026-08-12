@@ -25,7 +25,8 @@
 
 bool MasternodeListSortFilterProxyModel::filterAcceptsRow(int source_row, const QModelIndex& source_parent) const
 {
-    // "Type" filter
+    // "Type" filter. Shared masternodes are MnType::Regular but surface as MasternodeModel::TYPE_SHARED
+    // here, so the "Regular" filter shows only single-owner masternodes.
     if (m_type_filter != TypeFilter::All) {
         QModelIndex idx = sourceModel()->index(source_row, MasternodeModel::TYPE, source_parent);
         int type = sourceModel()->data(idx, Qt::EditRole).toInt();
@@ -33,6 +34,9 @@ bool MasternodeListSortFilterProxyModel::filterAcceptsRow(int source_row, const 
             return false;
         }
         if (m_type_filter == TypeFilter::Evo && type != static_cast<int>(MnType::Evo)) {
+            return false;
+        }
+        if (m_type_filter == TypeFilter::Shared && type != MasternodeModel::TYPE_SHARED) {
             return false;
         }
     }
@@ -231,9 +235,8 @@ void MasternodeList::updateMasternodeList()
         })};
         bool fMyMasternode{setOutpts.count(entry->collateralOutpointRaw()) ||
                            walletModel->wallet().isSpendable(PKHash(entry->keyIdOwnerRaw())) ||
-                           owns_share ||
                            walletModel->wallet().isSpendable(PKHash(entry->keyIdVotingRaw())) ||
-                           owns_payout ||
+                           owns_payout || owns_share ||
                            walletModel->wallet().isSpendable(entry->scriptOperatorPayoutRaw())};
         if (fMyMasternode) {
             owned_mns.insert(entry->proTxHash());
@@ -335,7 +338,17 @@ void MasternodeList::extraInfoDIP3_clicked()
         return;
     }
 
-    auto* dialog = new DescriptionDialog(tr("Details for Masternode %1").arg(entry->proTxHash()), entry->toHtml(), /*parent=*/this);
+    QSet<int> my_share_indexes;
+    if (walletModel && entry->isShared()) {
+        const auto& shares{entry->shares()};
+        for (size_t i = 0; i < shares.size(); ++i) {
+            if (walletModel->wallet().isSpendable(PKHash(shares[i].keyIDOwner))) {
+                my_share_indexes.insert(static_cast<int>(i));
+            }
+        }
+    }
+    auto* dialog = new DescriptionDialog(tr("Details for Masternode %1").arg(entry->proTxHash()),
+                                         entry->toHtml(m_model->currentHeight(), my_share_indexes), /*parent=*/this);
     dialog->resize(1000, 500);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     dialog->show();
