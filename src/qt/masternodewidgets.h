@@ -99,8 +99,7 @@ private:
 //! Operator key selection: derive a BLS key pair from the wallet's HD seed,
 //! generate a fresh one (basic scheme), or paste an existing operator public
 //! key. A derived or generated secret is kept only in memory here; the owning
-//! dialog is responsible for deriving it, storing it in the wallet, or showing
-//! it to the user once.
+//! dialog is responsible for deriving it or for showing it to the user once.
 class OperatorKeyWidget : public QWidget
 {
     Q_OBJECT
@@ -108,10 +107,9 @@ class OperatorKeyWidget : public QWidget
 public:
     //! Where the operator key comes from and what happens to its secret
     enum class Mode {
-        Derive,           //!< derived by the wallet from its HD seed; see setDerivedKey()
-        GenerateAndStore, //!< generated here; the caller stores the secret in the wallet
-        GenerateOnly,     //!< generated here; the secret exists only in this dialog
-        Existing,         //!< an operator public key supplied by the user
+        Derive,       //!< derived by the wallet from its HD seed; see setDerivedKey()
+        GenerateOnly, //!< generated here; the secret exists only in this dialog
+        Existing,     //!< an operator public key supplied by the user
     };
 
     explicit OperatorKeyWidget(QWidget* parent = nullptr);
@@ -122,13 +120,6 @@ public:
     //! hands it back through setDerivedKey(). Only callers doing that may call
     //! this. Meant to be called once while setting the widget up.
     void offerDerived();
-
-    //! Offer the "generate and save in this wallet" choice and select it. Only
-    //! callers that actually store secretHex() after a successful registration
-    //! may enable it, so it stays hidden until this is called. `enabled` false
-    //! shows the choice but leaves it unselectable, explaining why through
-    //! `disabled_reason`. Meant to be called once while setting the widget up.
-    void offerStoreInWallet(bool enabled, const QString& disabled_reason = QString());
 
     //! Adopt the key the wallet derived: `secret` is its raw 32-byte BLS secret
     //! and `path` the derivation path to show beside it. False when `secret` is
@@ -162,13 +153,10 @@ private Q_SLOTS:
 
 private:
     QFrame* m_derive_card;
-    QFrame* m_store_card;
     QRadioButton* m_derive_radio;
-    QRadioButton* m_store_radio;
     QRadioButton* m_generate_radio;
     QRadioButton* m_existing_radio;
     QWidget* m_derive_body;
-    QWidget* m_store_body;
     QWidget* m_generate_body;
     QWidget* m_existing_body;
     QLabel* m_derive_pending;

@@ -374,19 +374,15 @@ QWidget* RegisterMasternodeWizard::createKeysPage()
                                           "registered on-chain."),
                                        page));
     m_operator_widget = new OperatorKeyWidget(page);
-    if (m_walletModel != nullptr) {
-        // Only the best choice this wallet can make is offered; the ones it
-        // cannot make would be dead options. When it can make none, the store
-        // choice stays visible but disabled to explain why.
-        if (m_walletModel->wallet().canDeriveMasternodeOperatorKey()) {
-            m_operator_widget->offerDerived();
-        } else {
-            const bool can_store{m_walletModel->wallet().canStoreMasternodeOperatorKey()};
-            m_operator_widget->offerStoreInWallet(
-                can_store, can_store ? QString() :
-                                       tr("This wallet can neither derive an operator key from its recovery phrase "
-                                          "nor store one, so the secret key can only be shown once."));
-        }
+    // Deriving is only offered to wallets that can do it; the others fall back to
+    // the generate/paste pair, which the hint explains before the choices appear.
+    if (m_walletModel != nullptr && m_walletModel->wallet().canDeriveMasternodeOperatorKey()) {
+        m_operator_widget->offerDerived();
+    } else {
+        operator_block->addWidget(MakeHint(tr("This wallet cannot derive an operator key from a recovery phrase, so "
+                                              "a generated secret key is shown once after registering and you have "
+                                              "to save it yourself."),
+                                           page));
     }
     operator_block->addWidget(m_operator_widget);
     layout->addStretch();
@@ -709,9 +705,9 @@ CAmount RegisterMasternodeWizard::collateralAmount() const
 
 bool RegisterMasternodeWizard::secretGateRequired() const
 {
-    // A key the wallet derives or stores can be looked up again, so only a secret
-    // that exists nowhere but on the result page is worth gating on
-    return m_operator_widget->hasGeneratedSecret() && !m_operator_key_derived && !m_operator_key_saved;
+    // A derived key can be looked up again, so only a secret that exists nowhere
+    // but on the result page is worth gating on
+    return m_operator_widget->hasGeneratedSecret() && !m_operator_key_derived;
 }
 
 bool RegisterMasternodeWizard::secretConfirmed() const
@@ -1169,13 +1165,12 @@ QString RegisterMasternodeWizard::operatorKeyProvenance() const
     switch (m_operator_widget->mode()) {
     case OperatorKeyWidget::Mode::Derive:
         return m_operator_widget->derivationPath().isEmpty() ?
-                   tr("Derived from this wallet's recovery phrase") :
-                   tr("Derived from this wallet's recovery phrase (path %1)")
+                   tr("Comes from this wallet's recovery phrase and can be seen again from the Masternodes tab") :
+                   tr("Comes from this wallet's recovery phrase (path %1) and can be seen again from the "
+                      "Masternodes tab")
                        .arg(m_operator_widget->derivationPath());
-    case OperatorKeyWidget::Mode::GenerateAndStore:
-        return tr("Newly generated, saved in this wallet");
     case OperatorKeyWidget::Mode::GenerateOnly:
-        return tr("Newly generated, shown once after registration");
+        return tr("Newly generated, shown once after registration and kept nowhere else");
     case OperatorKeyWidget::Mode::Existing:
         return tr("Supplied by whoever runs the node");
     }
@@ -1251,10 +1246,21 @@ bool RegisterMasternodeWizard::ensureOperatorKey()
         return false;
     }
 
+    // Every operator key already registered on-chain, so a wallet restored from
+    // its recovery phrase does not hand out a key another masternode is using
+    std::vector<std::vector<unsigned char>> in_use;
+    if (const auto mn_list{m_node.evo().getListAtChainTip().first}) {
+        mn_list->forEachMN(/*only_valid=*/false, [&in_use](const interfaces::MnEntryCPtr& dmn) {
+            if (!dmn) return;
+            auto pubkey{dmn->getOperatorPubKeyBytes()};
+            if (!pubkey.empty()) in_use.push_back(std::move(pubkey));
+        });
+    }
+
     std::vector<unsigned char> secret;
     std::string path;
     std::string error;
-    if (!m_walletModel->wallet().deriveMasternodeOperatorKey(secret, path, error)) {
+    if (!m_walletModel->wallet().deriveMasternodeOperatorKey(in_use, secret, path, error)) {
         showError(tr("This wallet could not derive an operator key: %1. Go back and choose another way to get "
                      "one.")
                       .arg(QString::fromStdString(error)));
@@ -1320,9 +1326,6 @@ void RegisterMasternodeWizard::onRpcFinished(const ProTxResult& result)
 {
     const Stage stage{m_stage};
     m_stage = Stage::None;
-    const bool registered{result.ok && (stage == Stage::Register || stage == Stage::Submit)};
-    // Store the operator secret while the registration still holds the unlock
-    if (registered) saveOperatorKeyIfChosen();
     m_unlock.reset();
     setBusy(false);
 
@@ -1360,24 +1363,6 @@ void RegisterMasternodeWizard::onRpcFinished(const ProTxResult& result)
     }
 }
 
-void RegisterMasternodeWizard::saveOperatorKeyIfChosen()
-{
-    m_operator_key_saved = false;
-    if (m_walletModel == nullptr || m_operator_widget->mode() != OperatorKeyWidget::Mode::GenerateAndStore) {
-        return;
-    }
-    const std::vector<unsigned char> secret{
-        ParseHex(m_operator_widget->secretHex().toStdString())};
-    std::string error;
-    if (m_walletModel->wallet().addMasternodeOperatorKey(secret, error)) {
-        m_operator_key_saved = true;
-    } else {
-        // Never claim the key was saved: the result page falls back to the
-        // show-once presentation and the user still has the secret on screen
-        m_operator_save_error = QString::fromStdString(error);
-    }
-}
-
 void RegisterMasternodeWizard::populateResult(const QString& pro_tx_hash)
 {
     m_registered = true;
@@ -1404,22 +1389,13 @@ void RegisterMasternodeWizard::populateResult(const QString& pro_tx_hash)
                                           "phrase restores this key.")
                                            .arg(path));
             m_secret_note->setStyleSheet(QString());
-        } else if (m_operator_key_saved) {
-            m_secret_note->setText(tr("Saved in this wallet — include it in your wallet backup. Your masternode "
-                                      "server still needs the line below."));
-            m_secret_note->setStyleSheet(QString());
-        } else if (!m_operator_save_error.isEmpty()) {
-            m_secret_note->setText(tr("This wallet could not store the key (%1), so save it now — it is not kept "
-                                      "anywhere and will never be shown again.")
-                                       .arg(m_operator_save_error));
-            m_secret_note->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
         } else {
-            m_secret_note->setText(tr("Save it now — it is not kept anywhere and will never be shown again."));
+            m_secret_note->setText(tr("Save it now — it is kept nowhere else and will never be shown again."));
             m_secret_note->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
         }
-        // Both only apply while the wallet actually keeps the key: the show-once
-        // case cannot promise a later look, and it is the only one whose friction
-        // buys anything
+        // Both only apply while the wallet can produce the key again: the
+        // show-once case cannot promise a later look, and it is the only one
+        // whose friction buys anything
         m_secret_recall->setVisible(!secretGateRequired());
         m_confirm_box->setVisible(secretGateRequired());
     }

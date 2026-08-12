@@ -118,13 +118,11 @@ private:
     //! reason in the error label and returns false when the wallet stayed locked
     //! or could not derive, so the caller can let the user pick another mode.
     bool ensureOperatorKey();
-    //! Store the generated operator secret in the wallet when that mode is
-    //! selected. Call while the wallet is still unlocked by the registration.
-    void saveOperatorKeyIfChosen();
     void populateReview();
     //! Width of the review's label column, shared by every section
     int reviewLabelWidth(const QWidget* card) const;
-    //! One line saying where the operator key comes from and where it will live
+    //! One line saying where the operator key comes from and whether it can be
+    //! seen again
     QString operatorKeyProvenance() const;
     void populateResult(const QString& pro_tx_hash);
     UniValue buildRegisterParams() const;
@@ -144,10 +142,6 @@ private:
     bool m_registered{false};
     //! Whether the operator secret was derived from this wallet's HD seed
     bool m_operator_key_derived{false};
-    //! Whether addMasternodeOperatorKey() stored the generated secret
-    bool m_operator_key_saved{false};
-    //! Why storing the generated secret failed, empty when it did not fail
-    QString m_operator_save_error;
 
     QStackedWidget* m_pages;
     QLabel* m_error_label;

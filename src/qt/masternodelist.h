@@ -110,10 +110,10 @@ private:
     //! GetSelectedEntry plus the guards every action dialog needs: both models set and,
     //! if given, a matching isShared(). Returns nullptr when any guard fails.
     const MasternodeEntry* selectedEntryForDialog(std::optional<bool> shared = std::nullopt);
-    //! This wallet's own copy of `entry`'s registered operator public key, empty when
-    //! the wallet does not hold that key. Returned as the wallet's own 48 bytes, so
-    //! getMasternodeOperatorKey() gets back exactly what listMasternodeOperatorKeys() gave.
-    std::vector<unsigned char> heldOperatorKey(const MasternodeEntry& entry) const;
+    //! `entry`'s registered operator public key as the 48 basic-scheme bytes the
+    //! wallet interface expects, empty when the entry carries none or it does not
+    //! decode. Says nothing about whether this wallet holds the matching secret.
+    static std::vector<unsigned char> registeredOperatorKey(const MasternodeEntry& entry);
 
 Q_SIGNALS:
     void doubleClicked(const QModelIndex&);

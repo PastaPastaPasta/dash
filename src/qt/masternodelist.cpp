@@ -7,7 +7,6 @@
 
 #include <bls/bls.h>
 #include <script/standard.h>
-#include <univalue.h>
 
 #include <qt/clientfeeds.h>
 #include <qt/clientmodel.h>
@@ -271,9 +270,13 @@ void MasternodeList::showContextMenuDIP3(const QPoint& point)
     }
     m_action_update_registrar->setToolTip(registrar_tooltip);
 
-    // Only offered when this wallet can actually produce the secret behind the
-    // registered operator public key
-    const bool have_operator_key{have_wallet && !heldOperatorKey(*entry).empty()};
+    // Only offered when this wallet can produce the secret behind the registered
+    // operator public key. The wallet answers optimistically for keys it may only
+    // be able to derive; the dialog reports the exact outcome.
+    const std::vector<unsigned char> operator_pubkey{have_wallet ? registeredOperatorKey(*entry) :
+                                                                   std::vector<unsigned char>{}};
+    const bool have_operator_key{!operator_pubkey.empty() &&
+                                 walletModel->wallet().haveMasternodeOperatorKey(operator_pubkey)};
     m_action_show_operator_key->setEnabled(have_operator_key);
     m_action_show_operator_key->setToolTip(
         have_operator_key ? QString() : tr("This wallet does not hold this masternode's operator secret key"));
@@ -362,37 +365,20 @@ void MasternodeList::onDissolve()
     }
 }
 
-std::vector<unsigned char> MasternodeList::heldOperatorKey(const MasternodeEntry& entry) const
+std::vector<unsigned char> MasternodeList::registeredOperatorKey(const MasternodeEntry& entry)
 {
-    if (!walletModel) {
+    const std::string registered{entry.operatorPubKey().toStdString()};
+    if (registered.empty()) {
         return {};
     }
-    // TODO: read the operator key off the entry once MasternodeEntry exposes it
-    // instead of only its JSON rendering
-    UniValue json;
-    if (!json.read(entry.toJson().toStdString())) {
-        return {};
-    }
-    const UniValue& state{json.find_value("state")};
-    if (!state.isObject()) {
-        return {};
-    }
-    const UniValue& registered{state.find_value("pubKeyOperator")};
-    if (!registered.isStr()) {
-        return {};
-    }
-    const QString registered_hex{QString::fromStdString(registered.get_str())};
-    for (const auto& raw : walletModel->wallet().listMasternodeOperatorKeys()) {
-        CBLSPublicKey key;
-        key.SetBytes(raw, /*specificLegacyScheme=*/false);
-        if (!key.IsValid()) {
-            continue;
-        }
-        // A masternode registered before the basic scheme renders its key the
-        // legacy way, so compare against both renderings of the wallet's own key
-        if (registered_hex == QString::fromStdString(key.ToString(/*specificLegacyScheme=*/false)) ||
-            registered_hex == QString::fromStdString(key.ToString(/*specificLegacyScheme=*/true))) {
-            return raw;
+    // A masternode registered before the basic scheme renders its key the legacy
+    // way. Re-encoding tells which of the two renderings the node used, so a key
+    // that only decodes under the other scheme is not mistaken for a different
+    // one; the wallet is always asked in basic-scheme bytes.
+    CBLSPublicKey key;
+    for (const bool legacy : {false, true}) {
+        if (key.SetHexStr(registered, legacy) && key.ToString(legacy) == registered) {
+            return key.ToByteVector(/*specificLegacyScheme=*/false);
         }
     }
     return {};
@@ -404,7 +390,7 @@ void MasternodeList::onShowOperatorKey()
     if (!entry) {
         return;
     }
-    const std::vector<unsigned char> pubkey{heldOperatorKey(*entry)};
+    const std::vector<unsigned char> pubkey{registeredOperatorKey(*entry)};
     if (pubkey.empty()) {
         return;
     }

@@ -175,9 +175,10 @@ class ShowOperatorKeyDialog : public QDialog
     Q_OBJECT
 
 public:
-    //! `operator_pubkey` must be one of listMasternodeOperatorKeys(), passed back
-    //! as the wallet's own bytes. The wallet is unlocked while constructing; when
-    //! that is refused the dialog shows the reason instead of the key.
+    //! `operator_pubkey` is the masternode's registered operator public key, 48
+    //! bytes in basic-scheme serialization. The wallet is unlocked while
+    //! constructing; when that is refused, or the key turns out not to be this
+    //! wallet's after all, the dialog says so instead of showing a key.
     ShowOperatorKeyDialog(WalletModel* wallet_model, const QString& protx_hash,
                           const std::vector<unsigned char>& operator_pubkey, QWidget* parent = nullptr);
 };

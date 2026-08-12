@@ -95,6 +95,10 @@ public:
     const QString& toJson() const { return m_json; }
     const QString& typeDescription() const { return m_type_description; }
     const QString& votingAddress() const { return m_voting_address; }
+    //! Registered operator public key, hex, exactly as the node renders it: legacy
+    //! scheme for a masternode registered before the basic scheme activated. Empty
+    //! when the entry carries none.
+    QString operatorPubKey() const { return m_pub_key_operator.value_or(QString()); }
     const uint256& proTxHashRaw() const { return m_dmn->getProTxHash(); }
 
     auto toTie() const

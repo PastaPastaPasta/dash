@@ -502,8 +502,12 @@ ShowOperatorKeyDialog::ShowOperatorKeyDialog(WalletModel* wallet_model, const QS
             failure = tr("The wallet stayed locked, so the operator secret key cannot be shown.");
         } else if (!wallet_model->wallet().getMasternodeOperatorKey(operator_pubkey, secret, derivation_path,
                                                                     error)) {
-            failure = tr("This wallet could not produce the operator secret key: %1")
-                          .arg(QString::fromStdString(error));
+            // Not a fault: the context menu offers this whenever the wallet might
+            // be able to derive the key, and only this lookup settles it
+            failure = error.empty() ?
+                          tr("This wallet cannot produce the operator key for this masternode.") :
+                          tr("This wallet cannot produce the operator key for this masternode: %1")
+                              .arg(QString::fromStdString(error));
         }
     }
 
@@ -530,15 +534,17 @@ ShowOperatorKeyDialog::ShowOperatorKeyDialog(WalletModel* wallet_model, const QS
                                             this));
         layout->addSpacing(GROUP_SPACING);
         layout->addWidget(makeHint(derivation_path.empty() ?
-                                       tr("This key is stored in this wallet — include it in your wallet backup.") :
-                                       tr("This key is derived from this wallet's recovery phrase (path %1), so "
+                                       tr("This key comes from this wallet's recovery phrase, so restoring that "
+                                          "phrase brings it back.") :
+                                       tr("This key comes from this wallet's recovery phrase (path %1), so "
                                           "restoring that phrase brings it back.")
                                            .arg(QString::fromStdString(derivation_path)),
                                    this));
     } else {
+        // A statement of fact, not an error: nothing went wrong when the key
+        // simply is not this wallet's
         auto* failure_label = new QLabel(failure, this);
         failure_label->setWordWrap(true);
-        failure_label->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
         layout->addWidget(failure_label);
     }
 

@@ -239,17 +239,6 @@ OperatorKeyWidget::OperatorKeyWidget(QWidget* parent) :
     m_generated_secret = QString::fromStdString(secret_key.ToString(/*specificLegacyScheme=*/false));
     m_generated_public = QString::fromStdString(secret_key.GetPublicKey().ToString(/*specificLegacyScheme=*/false));
 
-    // The key is 96 hex characters: it gets its own full-width line, otherwise it
-    // wraps against the edge of whatever sits beside it
-    const auto public_key_row = [this](QWidget* body) {
-        auto* column{new QVBoxLayout()};
-        column->setContentsMargins(0, 0, 0, 0);
-        column->setSpacing(TITLE_SPACING);
-        column->addWidget(makeHint(tr("Public key"), body));
-        column->addWidget(makeValue(chunked(m_generated_public), body, /*monospace=*/true));
-        return column;
-    };
-
     m_derive_radio = new QRadioButton(tr("Derive from this wallet's recovery phrase"), this);
     auto derive_card{makeOptionCard(this, m_derive_radio,
                                     tr("The secret key comes from this wallet's recovery phrase, so restoring that "
@@ -276,19 +265,16 @@ OperatorKeyWidget::OperatorKeyWidget(QWidget* parent) :
     m_derive_key_box->setVisible(false);
     derive_card.body_layout->addWidget(m_derive_key_box);
 
-    m_store_radio = new QRadioButton(tr("Generate and save in this wallet"), this);
-    auto store_card{makeOptionCard(this, m_store_radio,
-                                   tr("The secret key is stored in this wallet, so the wallet backup covers it."))};
-    m_store_card = store_card.card;
-    m_store_body = store_card.body;
-    store_card.body_layout->addLayout(public_key_row(m_store_body));
-
     m_generate_radio = new QRadioButton(tr("Generate without saving"), this);
     m_generate_radio->setChecked(true);
     auto generate_card{makeOptionCard(this, m_generate_radio,
                                       tr("The secret key is shown once after registering and kept nowhere else."))};
     m_generate_body = generate_card.body;
-    generate_card.body_layout->addLayout(public_key_row(m_generate_body));
+    // The key is 96 hex characters: it gets its own full-width line, otherwise it
+    // wraps against the edge of whatever sits beside it
+    generate_card.body_layout->addWidget(makeHint(tr("Public key"), m_generate_body));
+    generate_card.body_layout->addWidget(makeValue(chunked(m_generated_public), m_generate_body,
+                                                   /*monospace=*/true));
 
     m_existing_radio = new QRadioButton(tr("Use an existing operator public key"), this);
     auto existing_card{makeOptionCard(this, m_existing_radio,
@@ -304,7 +290,6 @@ OperatorKeyWidget::OperatorKeyWidget(QWidget* parent) :
     // longer applies and a button group has to keep them exclusive.
     auto* group{new QButtonGroup(this)};
     group->addButton(m_derive_radio);
-    group->addButton(m_store_radio);
     group->addButton(m_generate_radio);
     group->addButton(m_existing_radio);
 
@@ -312,17 +297,14 @@ OperatorKeyWidget::OperatorKeyWidget(QWidget* parent) :
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(TITLE_SPACING);
     layout->addWidget(m_derive_card);
-    layout->addWidget(m_store_card);
     layout->addWidget(generate_card.card);
     layout->addWidget(existing_card.card);
 
-    // Both stay hidden until a caller commits to deriving or storing the secret;
-    // dialogs that can do neither keep the generate/paste pair they always had.
+    // Stays hidden until a caller commits to deriving the secret; dialogs whose
+    // wallet cannot derive keep the generate/paste pair they always had.
     m_derive_card->setVisible(false);
-    m_store_card->setVisible(false);
 
     connect(m_derive_radio, &QRadioButton::toggled, this, &OperatorKeyWidget::updateState);
-    connect(m_store_radio, &QRadioButton::toggled, this, &OperatorKeyWidget::updateState);
     connect(m_generate_radio, &QRadioButton::toggled, this, &OperatorKeyWidget::updateState);
     connect(m_existing_radio, &QRadioButton::toggled, this, &OperatorKeyWidget::updateState);
     connect(m_existing_edit, &QLineEdit::textChanged, this, &OperatorKeyWidget::updateState);
@@ -355,28 +337,12 @@ bool OperatorKeyWidget::needsDerivation() const
     return mode() == Mode::Derive && m_derived_public.isEmpty();
 }
 
-void OperatorKeyWidget::offerStoreInWallet(bool enabled, const QString& disabled_reason)
-{
-    m_store_card->setVisible(true);
-    m_store_radio->setEnabled(enabled);
-    // A disabled radio button swallows tooltips, so the card carries it as well.
-    m_store_card->setToolTip(enabled ? QString() : disabled_reason);
-    m_store_radio->setToolTip(enabled ? QString() : disabled_reason);
-    if (enabled) {
-        m_store_radio->setChecked(true);
-    } else if (m_store_radio->isChecked()) {
-        m_generate_radio->setChecked(true);
-    }
-    updateState();
-}
-
 void OperatorKeyWidget::updateState()
 {
     const Mode current{mode()};
     m_derive_body->setVisible(current == Mode::Derive);
     m_derive_pending->setVisible(m_derived_public.isEmpty());
     m_derive_key_box->setVisible(!m_derived_public.isEmpty());
-    m_store_body->setVisible(current == Mode::GenerateAndStore);
     m_generate_body->setVisible(current == Mode::GenerateOnly);
     m_existing_body->setVisible(current == Mode::Existing);
     m_existing_edit->setEnabled(current == Mode::Existing);
@@ -392,7 +358,6 @@ OperatorKeyWidget::Mode OperatorKeyWidget::mode() const
 {
     if (m_existing_radio->isChecked()) return Mode::Existing;
     if (m_derive_radio->isChecked()) return Mode::Derive;
-    if (m_store_radio->isChecked()) return Mode::GenerateAndStore;
     return Mode::GenerateOnly;
 }
 
@@ -401,7 +366,6 @@ QString OperatorKeyWidget::publicKeyHex() const
     switch (mode()) {
     case Mode::Derive:
         return m_derived_public;
-    case Mode::GenerateAndStore:
     case Mode::GenerateOnly:
         return m_generated_public;
     case Mode::Existing:
@@ -415,7 +379,6 @@ QString OperatorKeyWidget::secretHex() const
     switch (mode()) {
     case Mode::Derive:
         return m_derived_secret;
-    case Mode::GenerateAndStore:
     case Mode::GenerateOnly:
         return m_generated_secret;
     case Mode::Existing:
