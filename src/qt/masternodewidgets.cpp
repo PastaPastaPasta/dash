@@ -13,10 +13,13 @@
 #include <util/strencodings.h>
 
 #include <qt/bitcoinunits.h>
+#include <qt/guiutil.h>
 #include <qt/optionsmodel.h>
 #include <qt/qvalidatedlineedit.h>
 #include <qt/walletmodel.h>
 
+#include <QButtonGroup>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QRadioButton>
@@ -69,6 +72,66 @@ bool isP2PKHorP2SHAddress(const QString& address)
 {
     const CTxDestination dest{DecodeDestination(address.trimmed().toStdString())};
     return std::holds_alternative<PKHash>(dest) || std::holds_alternative<ScriptHash>(dest);
+}
+
+QLabel* makeTitle(const QString& text, QWidget* parent, double point_size)
+{
+    auto* label{new QLabel(text, parent)};
+    label->setWordWrap(true);
+    GUIUtil::setFont({label}, GUIUtil::FontWeight::Bold, point_size);
+    return label;
+}
+
+QLabel* makeHint(const QString& text, QWidget* parent)
+{
+    auto* label{new QLabel(text, parent)};
+    label->setWordWrap(true);
+    label->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_SECONDARY));
+    return label;
+}
+
+QLabel* makeValue(const QString& text, QWidget* parent, bool monospace)
+{
+    auto* label{new QLabel(text, parent)};
+    label->setTextFormat(Qt::PlainText);
+    label->setWordWrap(true);
+    label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    if (monospace) label->setFont(GUIUtil::fixedPitchFont());
+    return label;
+}
+
+QFrame* makeCard(QWidget* parent)
+{
+    auto* card{new QFrame(parent)};
+    card->setObjectName("mnCard");
+    // The id selector keeps the border off the card's children. general.css
+    // clears borders for plain frames, so the color comes from the theme's own
+    // widget border color instead of a new one.
+    card->setStyleSheet(QString("QFrame#mnCard { border: 1px solid %1; border-radius: 3px; }")
+                            .arg(GUIUtil::getThemedQColor(GUIUtil::ThemedColor::BORDER_WIDGET).name()));
+    return card;
+}
+
+OptionCard makeOptionCard(QWidget* parent, QWidget* header, const QString& hint)
+{
+    OptionCard ret;
+    ret.card = makeCard(parent);
+    auto* card_layout{new QVBoxLayout(ret.card)};
+    card_layout->setContentsMargins(CARD_PADDING, CARD_PADDING, CARD_PADDING, CARD_PADDING);
+    card_layout->setSpacing(TITLE_SPACING);
+    card_layout->addWidget(header);
+    if (!hint.isEmpty()) {
+        auto* hint_row{new QHBoxLayout()};
+        hint_row->setContentsMargins(BODY_INDENT, 0, 0, 0);
+        hint_row->addWidget(makeHint(hint, ret.card), /*stretch=*/1);
+        card_layout->addLayout(hint_row);
+    }
+    ret.body = new QWidget(ret.card);
+    ret.body_layout = new QVBoxLayout(ret.body);
+    ret.body_layout->setContentsMargins(BODY_INDENT, 0, 0, 0);
+    ret.body_layout->setSpacing(ROW_SPACING);
+    card_layout->addWidget(ret.body);
+    return ret;
 }
 
 } // namespace MasternodeWidgetUtil
@@ -138,6 +201,8 @@ QString FeeSourcePicker::selectedAddress() const
 OperatorKeyWidget::OperatorKeyWidget(QWidget* parent) :
     QWidget(parent)
 {
+    using namespace MasternodeWidgetUtil;
+
     // Generate the key pair up front so toggling the radios never discards a
     // key the user may already have seen.
     CBLSSecretKey secret_key;
@@ -145,38 +210,89 @@ OperatorKeyWidget::OperatorKeyWidget(QWidget* parent) :
     m_generated_secret = QString::fromStdString(secret_key.ToString(/*specificLegacyScheme=*/false));
     m_generated_public = QString::fromStdString(secret_key.GetPublicKey().ToString(/*specificLegacyScheme=*/false));
 
-    m_generate_radio = new QRadioButton(tr("Generate a new operator key (recommended)"), this);
+    // The key is 96 hex characters: it gets its own full-width line, otherwise it
+    // wraps against the edge of whatever sits beside it
+    const auto public_key_row = [this](QWidget* body) {
+        auto* column{new QVBoxLayout()};
+        column->setContentsMargins(0, 0, 0, 0);
+        column->setSpacing(TITLE_SPACING);
+        column->addWidget(makeHint(tr("Public key"), body));
+        column->addWidget(makeValue(m_generated_public, body, /*monospace=*/true));
+        return column;
+    };
+
+    m_store_radio = new QRadioButton(tr("Generate and save in this wallet"), this);
+    auto store_card{makeOptionCard(this, m_store_radio,
+                                   tr("The secret key is stored in this wallet, so the wallet backup covers it."))};
+    m_store_card = store_card.card;
+    m_store_body = store_card.body;
+    store_card.body_layout->addLayout(public_key_row(m_store_body));
+
+    m_generate_radio = new QRadioButton(tr("Generate without saving"), this);
     m_generate_radio->setChecked(true);
-    m_generated_label = new QLabel(m_generated_public, this);
-    m_generated_label->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    m_generated_label->setWordWrap(true);
+    auto generate_card{makeOptionCard(this, m_generate_radio,
+                                      tr("The secret key is shown once after registering and kept nowhere else."))};
+    m_generate_body = generate_card.body;
+    generate_card.body_layout->addLayout(public_key_row(m_generate_body));
+
     m_existing_radio = new QRadioButton(tr("Use an existing operator public key"), this);
-    m_existing_edit = new QValidatedLineEdit(this);
+    auto existing_card{makeOptionCard(this, m_existing_radio,
+                                      tr("For a hosted node: the operator keeps the secret key and gives you the "
+                                         "public key."))};
+    m_existing_body = existing_card.body;
+    m_existing_edit = new QValidatedLineEdit(m_existing_body);
     m_existing_edit->setPlaceholderText(tr("Operator BLS public key (96 hexadecimal characters, basic scheme)"));
     m_existing_edit->setEnabled(false);
+    existing_card.body_layout->addWidget(m_existing_edit);
 
-    auto* layout = new QVBoxLayout(this);
+    // The radios live in separate cards, so auto-exclusivity by parent no
+    // longer applies and a button group has to keep them exclusive.
+    auto* group{new QButtonGroup(this)};
+    group->addButton(m_store_radio);
+    group->addButton(m_generate_radio);
+    group->addButton(m_existing_radio);
+
+    auto* layout{new QVBoxLayout(this)};
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->addWidget(m_generate_radio);
-    auto* generated_row = new QHBoxLayout();
-    generated_row->addSpacing(24);
-    generated_row->addWidget(m_generated_label, /*stretch=*/1);
-    layout->addLayout(generated_row);
-    layout->addWidget(m_existing_radio);
-    auto* existing_row = new QHBoxLayout();
-    existing_row->addSpacing(24);
-    existing_row->addWidget(m_existing_edit, /*stretch=*/1);
-    layout->addLayout(existing_row);
+    layout->setSpacing(TITLE_SPACING);
+    layout->addWidget(m_store_card);
+    layout->addWidget(generate_card.card);
+    layout->addWidget(existing_card.card);
 
+    // Hidden until a caller commits to storing the secret; dialogs that cannot
+    // do that keep the generate/paste pair they always had.
+    m_store_card->setVisible(false);
+
+    connect(m_store_radio, &QRadioButton::toggled, this, &OperatorKeyWidget::updateState);
     connect(m_generate_radio, &QRadioButton::toggled, this, &OperatorKeyWidget::updateState);
+    connect(m_existing_radio, &QRadioButton::toggled, this, &OperatorKeyWidget::updateState);
     connect(m_existing_edit, &QLineEdit::textChanged, this, &OperatorKeyWidget::updateState);
+    updateState();
+}
+
+void OperatorKeyWidget::offerStoreInWallet(bool enabled, const QString& disabled_reason)
+{
+    m_store_card->setVisible(true);
+    m_store_radio->setEnabled(enabled);
+    // A disabled radio button swallows tooltips, so the card carries it as well.
+    m_store_card->setToolTip(enabled ? QString() : disabled_reason);
+    m_store_radio->setToolTip(enabled ? QString() : disabled_reason);
+    if (enabled) {
+        m_store_radio->setChecked(true);
+    } else if (m_store_radio->isChecked()) {
+        m_generate_radio->setChecked(true);
+    }
+    updateState();
 }
 
 void OperatorKeyWidget::updateState()
 {
-    const bool use_existing{m_existing_radio->isChecked()};
-    m_existing_edit->setEnabled(use_existing);
-    if (use_existing) {
+    const Mode current{mode()};
+    m_store_body->setVisible(current == Mode::GenerateAndStore);
+    m_generate_body->setVisible(current == Mode::GenerateOnly);
+    m_existing_body->setVisible(current == Mode::Existing);
+    m_existing_edit->setEnabled(current == Mode::Existing);
+    if (current == Mode::Existing) {
         const QString text{m_existing_edit->text().trimmed()};
         // Leave the neutral style while empty; only flag actual invalid input
         m_existing_edit->setValid(text.isEmpty() || isValid());
@@ -184,9 +300,16 @@ void OperatorKeyWidget::updateState()
     Q_EMIT changed();
 }
 
+OperatorKeyWidget::Mode OperatorKeyWidget::mode() const
+{
+    if (m_existing_radio->isChecked()) return Mode::Existing;
+    if (m_store_radio->isChecked()) return Mode::GenerateAndStore;
+    return Mode::GenerateOnly;
+}
+
 QString OperatorKeyWidget::publicKeyHex() const
 {
-    if (m_generate_radio->isChecked()) return m_generated_public;
+    if (hasGeneratedSecret()) return m_generated_public;
     return isValid() ? m_existing_edit->text().trimmed() : QString();
 }
 
@@ -197,12 +320,12 @@ QString OperatorKeyWidget::secretHex() const
 
 bool OperatorKeyWidget::hasGeneratedSecret() const
 {
-    return m_generate_radio->isChecked();
+    return mode() != Mode::Existing;
 }
 
 bool OperatorKeyWidget::isValid() const
 {
-    if (m_generate_radio->isChecked()) return true;
+    if (hasGeneratedSecret()) return true;
     CBLSPublicKey pubkey;
     return pubkey.SetHexStr(m_existing_edit->text().trimmed().toStdString(), /*specificLegacyScheme=*/false);
 }

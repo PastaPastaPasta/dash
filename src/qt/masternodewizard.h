@@ -33,6 +33,7 @@ class QPushButton;
 class QRadioButton;
 class QSpinBox;
 class QStackedWidget;
+class QVBoxLayout;
 QT_END_NAMESPACE
 
 //! Multi-page dialog registering a masternode or evonode: collects collateral,
@@ -99,6 +100,9 @@ private:
     CAmount collateralAmount() const;
     //! True when the user typed the generated operator secret's last 4 characters
     bool secretConfirmed() const;
+    //! True while the generated operator secret exists nowhere but this dialog,
+    //! which is the only case worth gating the last page on
+    bool secretGateRequired() const;
 
     void rebuildOrder();
     void goToPage(Page page);
@@ -109,7 +113,14 @@ private:
     void showError(const QString& message);
 
     void refreshCollateralCandidates();
+    //! Store the generated operator secret in the wallet when that mode is
+    //! selected. Call while the wallet is still unlocked by the registration.
+    void saveOperatorKeyIfChosen();
     void populateReview();
+    //! Width of the review's label column, shared by every section
+    int reviewLabelWidth(const QWidget* card) const;
+    //! One line saying where the operator key comes from and where it will live
+    QString operatorKeyProvenance() const;
     void populateResult(const QString& pro_tx_hash);
     UniValue buildRegisterParams() const;
     void startRegistration();
@@ -126,6 +137,12 @@ private:
     int m_pos{0};
     bool m_busy{false};
     bool m_registered{false};
+    //! Whether addMasternodeOperatorKey() stored the generated secret
+    bool m_operator_key_saved{false};
+    //! Why storing the generated secret failed, empty when it did not fail
+    QString m_operator_save_error;
+    //! Why storing the generated secret failed; empty when it was not attempted
+    QString m_operator_store_error;
 
     QStackedWidget* m_pages;
     QLabel* m_error_label;
@@ -170,8 +187,10 @@ private:
     // Fee page
     FeeSourcePicker* m_fee_picker;
     QLabel* m_fee_explain;
-    // Review page
-    QLabel* m_review_label;
+    // Review page. The sections are rebuilt on every entry, so the layout owns
+    // the rows rather than a single rich-text label.
+    QWidget* m_review_container;
+    QVBoxLayout* m_review_layout;
     // Sign page (external collateral)
     QLabel* m_sign_address_label;
     QPlainTextEdit* m_sign_message;
@@ -179,9 +198,13 @@ private:
     QString m_prepared_tx;
     // Result page
     QLabel* m_result_label;
+    QLabel* m_result_hash;
+    QLabel* m_result_tx_note;
     QWidget* m_secret_box;
+    QLabel* m_secret_note;
     QLineEdit* m_secret_edit;
     QLineEdit* m_conf_line_edit;
+    QWidget* m_confirm_box;
     QLineEdit* m_confirm_edit;
     QLabel* m_next_steps;
 };
