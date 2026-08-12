@@ -98,6 +98,8 @@ public:
     virtual const int32_t& getPoSePenalty() const = 0;
     virtual const int32_t& getRegisteredHeight() const = 0;
     virtual const uint16_t& getOperatorReward() const = 0;
+    //! Registered operator public key, 48 bytes, basic-scheme serialization
+    virtual std::vector<unsigned char> getOperatorPubKeyBytes() const = 0;
     virtual const uint256& getProTxHash() const = 0;
     //! Whether this masternode's collateral is pooled by multiple parties (non-empty share table)
     virtual bool isShared() const = 0;

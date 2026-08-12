@@ -153,6 +153,12 @@ public:
     const int32_t& getPoSePenalty() const override { return m_dmn->pdmnState->nPoSePenalty; }
     const int32_t& getRegisteredHeight() const override { return m_dmn->pdmnState->nRegisteredHeight; }
     const uint16_t& getOperatorReward() const override { return m_dmn->nOperatorReward; }
+    std::vector<unsigned char> getOperatorPubKeyBytes() const override
+    {
+        // The basic scheme is picked explicitly so that the bytes stay the same across a scheme
+        // activation, which is what lets the wallet compare them against its own operator keys
+        return m_dmn->pdmnState->pubKeyOperator.Get().ToByteVector(/*specificLegacyScheme=*/false);
+    }
     const uint256& getProTxHash() const override { return m_dmn->proTxHash; }
     bool isShared() const override { return m_dmn->pdmnState->IsShared(); }
     std::vector<interfaces::MnShare> getShares() const override

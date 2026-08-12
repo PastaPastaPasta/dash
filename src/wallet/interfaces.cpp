@@ -238,26 +238,10 @@ public:
     {
         return m_wallet->SignSpecialTxPayload(hash, keyid, vchSig);
     }
-    bool addMasternodeOperatorKey(const std::vector<unsigned char>& secret, std::string& error) override
-    {
-        if (!m_wallet->CanStoreMasternodeOperatorKey()) {
-            error = _("This wallet cannot store masternode operator keys.").translated;
-            return false;
-        }
-        const CBLSSecretKey sk{secret};
-        if (secret.size() != CBLSSecretKey::SerSize || !sk.IsValid() || !sk.GetPublicKey().IsValid()) {
-            error = _("The masternode operator key is not valid.").translated;
-            return false;
-        }
-        if (!m_wallet->AddMasternodeOperatorKey(sk)) {
-            error = _("Failed to store the masternode operator key, please make sure the wallet is unlocked.").translated;
-            return false;
-        }
-        return true;
-    }
-    bool canStoreMasternodeOperatorKey() override { return m_wallet->CanStoreMasternodeOperatorKey(); }
     bool canDeriveMasternodeOperatorKey() override { return m_wallet->CanDeriveMasternodeOperatorKey(); }
-    bool deriveMasternodeOperatorKey(std::vector<unsigned char>& secret, std::string& path, std::string& error) override
+    bool deriveMasternodeOperatorKey(const std::vector<std::vector<unsigned char>>& in_use,
+                                     std::vector<unsigned char>& secret, std::string& path,
+                                     std::string& error) override
     {
         if (!m_wallet->CanDeriveMasternodeOperatorKey()) {
             error = _("This wallet cannot derive masternode operator keys from its recovery phrase.").translated;
@@ -265,7 +249,7 @@ public:
         }
         CBLSSecretKey sk;
         uint32_t index{0};
-        if (!m_wallet->DeriveNextMasternodeOperatorKey(sk, index)) {
+        if (!m_wallet->DeriveNextMasternodeOperatorKey(in_use, sk, index)) {
             error = _("Failed to derive the masternode operator key, please make sure the wallet is unlocked.").translated;
             return false;
         }
@@ -274,6 +258,12 @@ public:
         memory_cleanse(secret_bytes.data(), secret_bytes.size());
         path = m_wallet->GetMasternodeOperatorKeyPath(index);
         return true;
+    }
+    bool haveMasternodeOperatorKey(const std::vector<unsigned char>& pubkey) override
+    {
+        CBLSPublicKey pk;
+        pk.SetBytes(pubkey, /*specificLegacyScheme=*/false);
+        return pk.IsValid() && m_wallet->HaveMasternodeOperatorKey(pk);
     }
     bool getMasternodeOperatorKey(const std::vector<unsigned char>& pubkey, std::vector<unsigned char>& secret,
                                   std::string& path, std::string& error) override
@@ -293,10 +283,6 @@ public:
         secret.assign(secret_bytes.begin(), secret_bytes.end());
         memory_cleanse(secret_bytes.data(), secret_bytes.size());
         return true;
-    }
-    std::vector<std::vector<unsigned char>> listMasternodeOperatorKeys() override
-    {
-        return m_wallet->ListMasternodeOperatorKeys();
     }
     bool isSpendable(const CScript& script) override
     {

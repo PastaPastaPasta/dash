@@ -14,7 +14,6 @@
 #include <consensus/consensus.h>
 #include <crypto/common.h>
 #include <external_signer.h>
-#include <hash.h>
 #include <interfaces/chain.h>
 #include <interfaces/wallet.h>
 #include <key.h>
@@ -853,19 +852,6 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
                 assert(false);
             }
         }
-
-        // Masternode operator keys are stored by this wallet but not owned by any
-        // ScriptPubKeyMan, so they have to be re-encrypted explicitly. Leaving them behind
-        // would keep them in plaintext in the database for the lifetime of the wallet.
-        if (!EncryptMasternodeOperatorKeys(_vMasterKey, *encrypted_batch)) {
-            encrypted_batch->TxnAbort();
-            delete encrypted_batch;
-            encrypted_batch = nullptr;
-            // We now probably have half of our keys encrypted in memory, and half not...
-            // die and let the user reload the unencrypted wallet.
-            assert(false);
-        }
-
 
         // Encryption was introduced in version 0.4.0
         SetMinVersion(FEATURE_WALLETCRYPT, encrypted_batch);
@@ -3825,17 +3811,12 @@ std::vector<const Governance::Object*> CWallet::GetGovernanceObjects()
     return vecObjects;
 }
 
-//! Serialization used for the operator public key both as database key and as encryption IV.
-//! The basic scheme is picked explicitly because the record has to survive a scheme activation.
+//! Serialization used for the operator public key as a database key and when comparing against the
+//! operator keys registered on chain. The basic scheme is picked explicitly because the record has
+//! to survive a scheme activation.
 static std::vector<unsigned char> MasternodeOperatorPubKeyBytes(const CBLSPublicKey& pubkey)
 {
     return pubkey.ToByteVector(/*specificLegacyScheme=*/false);
-}
-
-static CBLSSecretKey MasternodeOperatorSecretKey(const CKeyingMaterial& secret)
-{
-    if (secret.size() != CBLSSecretKey::SerSize) return CBLSSecretKey{};
-    return CBLSSecretKey{Span<const unsigned char>{secret.data(), secret.size()}};
 }
 
 //! Levels of the masternode operator key derivation path, m/9'/coin'/3'/3'/index.
@@ -3846,6 +3827,16 @@ constexpr uint32_t BIP32_HARDENED{0x80000000};
 constexpr uint32_t MASTERNODE_PROVIDER_FEATURE{3};
 constexpr uint32_t MASTERNODE_OPERATOR_SUBFEATURE{3};
 
+//! How many indexes of the operator path this wallet walks. A wallet restored from its recovery
+//! phrase alone holds no record of the keys it handed out, so re-deriving the path is the only way
+//! back to them: without this walk, restoring the phrase would not restore the operator keys of the
+//! masternodes the wallet registered. The same bound applies when handing out a new index, so that
+//! no key is ever handed out that the walk could not find again. One index costs a child derivation
+//! plus the public key it is compared against, measured at about a tenth of a millisecond, so a
+//! full walk stays in the tens of milliseconds: short enough for a GUI action, and far more
+//! masternodes than one wallet is expected to operate.
+constexpr uint32_t MASTERNODE_OPERATOR_KEY_LIMIT{500};
+
 //! DashSync uses coin type 5 on mainnet and 1 on every other network, including devnets and
 //! regtest. Deriving with the same split is what keeps the two wallets compatible; the BIP44
 //! registered testnet coin type would give different keys.
@@ -3854,24 +3845,37 @@ static uint32_t MasternodeOperatorCoinType()
     return Params().NetworkIDString() == CBaseChainParams::MAIN ? 5 : 1;
 }
 
-//! The BLS master key comes from the BIP39 seed through the Chia "BLS HD seed" construction,
-//! and every level uses the legacy child derivation. DashSync derives this way regardless of
-//! which BLS scheme is active on the network, so this must not follow the scheme either.
+//! The account level of the operator path, m/9'/coin'/3'/3'. The BLS master key comes from the
+//! BIP39 seed through the Chia "BLS HD seed" construction, and every level uses the legacy child
+//! derivation. DashSync derives this way regardless of which BLS scheme is active on the network,
+//! so this must not follow the scheme either. Deriving the account on its own is what lets a walk
+//! over many indexes pay for one child derivation per index instead of five.
+static bls::ExtendedPrivateKey DeriveMasternodeOperatorAccount(const SecureVector& seed, uint32_t coin_type)
+{
+    return bls::ExtendedPrivateKey::FromSeed(bls::Bytes{seed.data(), seed.size()})
+        .PrivateChild(BIP32_HARDENED | BIP32_PURPOSE_FEATURE, /*fLegacy=*/true)
+        .PrivateChild(BIP32_HARDENED | coin_type, /*fLegacy=*/true)
+        .PrivateChild(BIP32_HARDENED | MASTERNODE_PROVIDER_FEATURE, /*fLegacy=*/true)
+        .PrivateChild(BIP32_HARDENED | MASTERNODE_OPERATOR_SUBFEATURE, /*fLegacy=*/true);
+}
+
+//! The leaf level of the operator path. Its index is the only one that is not hardened, again
+//! matching DashSync.
+static CBLSSecretKey DeriveMasternodeOperatorLeaf(const bls::ExtendedPrivateKey& account, uint32_t index)
+{
+    auto secret_bytes{account.PrivateChild(index, /*fLegacy=*/true).GetPrivateKey().SerializeToArray()};
+    CBLSSecretKey secret{Span<const unsigned char>{secret_bytes.data(), secret_bytes.size()}};
+    memory_cleanse(secret_bytes.data(), secret_bytes.size());
+    return secret;
+}
+
 static bool DeriveMasternodeOperatorSecret(const SecureVector& seed, uint32_t coin_type, uint32_t index,
                                            CBLSSecretKey& secret)
 {
     if (seed.empty() || index >= BIP32_HARDENED) return false;
 
     try {
-        const auto master{bls::ExtendedPrivateKey::FromSeed(bls::Bytes{seed.data(), seed.size()})};
-        const auto derived{master.PrivateChild(BIP32_HARDENED | BIP32_PURPOSE_FEATURE, /*fLegacy=*/true)
-                               .PrivateChild(BIP32_HARDENED | coin_type, /*fLegacy=*/true)
-                               .PrivateChild(BIP32_HARDENED | MASTERNODE_PROVIDER_FEATURE, /*fLegacy=*/true)
-                               .PrivateChild(BIP32_HARDENED | MASTERNODE_OPERATOR_SUBFEATURE, /*fLegacy=*/true)
-                               .PrivateChild(index, /*fLegacy=*/true)};
-        auto secret_bytes{derived.GetPrivateKey().SerializeToArray()};
-        secret = CBLSSecretKey{Span<const unsigned char>{secret_bytes.data(), secret_bytes.size()}};
-        memory_cleanse(secret_bytes.data(), secret_bytes.size());
+        secret = DeriveMasternodeOperatorLeaf(DeriveMasternodeOperatorAccount(seed, coin_type), index);
         return secret.IsValid();
     } catch (const std::exception& e) {
         LogPrintf("%s: BLS derivation failed: %s\n", __func__, e.what());
@@ -3879,28 +3883,28 @@ static bool DeriveMasternodeOperatorSecret(const SecureVector& seed, uint32_t co
     }
 }
 
-bool CWallet::LoadMasternodeOperatorKey(const std::vector<unsigned char>& pubkey, const CKeyingMaterial& secret)
+//! Derive the operator secrets at indexes 0 to count - 1 in turn, handing each index and the secret
+//! it derives to `visit` and stopping as soon as `visit` returns false. Returns false when the
+//! derivation itself failed, which the callers report as "unlock the wallet".
+static bool WalkMasternodeOperatorSecrets(const SecureVector& seed, uint32_t coin_type, uint32_t count,
+                                          const std::function<bool(uint32_t, const CBLSSecretKey&)>& visit)
 {
-    AssertLockHeld(cs_wallet);
-    const CBLSSecretKey sk{MasternodeOperatorSecretKey(secret)};
-    if (!sk.IsValid() || MasternodeOperatorPubKeyBytes(sk.GetPublicKey()) != pubkey) {
-        return false;
-    }
-    m_mn_operator_keys[pubkey] = secret;
-    return true;
-}
+    if (seed.empty()) return false;
+    // The leaf index is not hardened, so the walk must stay below the hardened range
+    count = std::min(count, BIP32_HARDENED);
 
-bool CWallet::LoadCryptedMasternodeOperatorKey(const std::vector<unsigned char>& pubkey, const std::vector<unsigned char>& crypted_secret)
-{
-    AssertLockHeld(cs_wallet);
-    CBLSPublicKey pk;
-    pk.SetBytes(pubkey, /*specificLegacyScheme=*/false);
-    if (!pk.IsValid() || crypted_secret.empty()) {
-        // The secret itself can only be checked once the wallet is unlocked, see GetMasternodeOperatorKey()
+    try {
+        const bls::ExtendedPrivateKey account{DeriveMasternodeOperatorAccount(seed, coin_type)};
+        for (uint32_t index{0}; index < count; ++index) {
+            const CBLSSecretKey secret{DeriveMasternodeOperatorLeaf(account, index)};
+            if (!secret.IsValid()) return false;
+            if (!visit(index, secret)) break;
+        }
+        return true;
+    } catch (const std::exception& e) {
+        LogPrintf("%s: BLS derivation failed: %s\n", __func__, e.what());
         return false;
     }
-    m_mn_operator_crypted_keys[pubkey] = crypted_secret;
-    return true;
 }
 
 bool CWallet::LoadMasternodeOperatorIndex(const std::vector<unsigned char>& pubkey, uint32_t index)
@@ -3917,50 +3921,11 @@ bool CWallet::LoadMasternodeOperatorIndex(const std::vector<unsigned char>& pubk
     return true;
 }
 
-bool CWallet::AddMasternodeOperatorKey(const CBLSSecretKey& secret)
+bool CWallet::GetMasternodeOperatorKey(const CBLSPublicKey& pubkey, CBLSSecretKey& secret, std::string* path)
 {
-    if (!CanStoreMasternodeOperatorKey() || !secret.IsValid()) return false;
-
-    const CBLSPublicKey pubkey{secret.GetPublicKey()};
-    if (!pubkey.IsValid()) return false;
-    const std::vector<unsigned char> pubkey_bytes{MasternodeOperatorPubKeyBytes(pubkey)};
-
-    LOCK(cs_wallet);
-    if (m_mn_operator_keys.count(pubkey_bytes) > 0 || m_mn_operator_crypted_keys.count(pubkey_bytes) > 0 ||
-        m_mn_operator_indexes.count(pubkey_bytes) > 0) {
-        return true;
-    }
-
-    auto secret_bytes{secret.ToBytes(/*specificLegacyScheme=*/false)};
-    const CKeyingMaterial secret_material(secret_bytes.begin(), secret_bytes.end());
-    memory_cleanse(secret_bytes.data(), secret_bytes.size());
-
-    WalletBatch batch(GetDatabase());
-    if (!HasEncryptionKeys()) {
-        if (!batch.WriteMasternodeOperatorKey(pubkey_bytes, secret_material)) return false;
-        m_mn_operator_keys[pubkey_bytes] = secret_material;
-        return true;
-    }
-
-    // An encrypted wallet only ever holds the ciphertext, so it has to be unlocked to store a key
-    if (IsLocked(/*fForMixing=*/true)) return false;
-
-    std::vector<unsigned char> crypted_secret;
-    if (!WithEncryptionKey([&](const CKeyingMaterial& encryption_key) {
-            return EncryptSecret(encryption_key, secret_material, Hash(pubkey_bytes), crypted_secret);
-        })) {
-        return false;
-    }
-    if (!batch.WriteCryptedMasternodeOperatorKey(pubkey_bytes, crypted_secret)) return false;
-    m_mn_operator_crypted_keys[pubkey_bytes] = crypted_secret;
-    return true;
-}
-
-bool CWallet::GetMasternodeOperatorKey(const CBLSPublicKey& pubkey, CBLSSecretKey& secret, std::string* path) const
-{
-    if (!pubkey.IsValid()) return false;
-    const std::vector<unsigned char> pubkey_bytes{MasternodeOperatorPubKeyBytes(pubkey)};
     if (path != nullptr) path->clear();
+    if (!pubkey.IsValid() || !CanDeriveMasternodeOperatorKey()) return false;
+    const std::vector<unsigned char> pubkey_bytes{MasternodeOperatorPubKeyBytes(pubkey)};
 
     LOCK(cs_wallet);
     if (const auto it{m_mn_operator_indexes.find(pubkey_bytes)}; it != m_mn_operator_indexes.end()) {
@@ -3973,49 +3938,46 @@ bool CWallet::GetMasternodeOperatorKey(const CBLSPublicKey& pubkey, CBLSSecretKe
         return true;
     }
 
-    if (const auto it{m_mn_operator_keys.find(pubkey_bytes)}; it != m_mn_operator_keys.end()) {
-        secret = MasternodeOperatorSecretKey(it->second);
-        return secret.IsValid();
+    // No record points at this key. The wallet may have been restored from its recovery phrase,
+    // which brings back the seed but not the indexes the wallet handed out, so walk the path to
+    // find the index this key came from.
+    SecureVector seed;
+    if (!GetHDSeed(seed)) return false;
+
+    CBLSSecretKey found;
+    uint32_t found_index{0};
+    const bool walked{WalkMasternodeOperatorSecrets(
+        seed, MasternodeOperatorCoinType(), MASTERNODE_OPERATOR_KEY_LIMIT,
+        [&](uint32_t index, const CBLSSecretKey& candidate) {
+            if (MasternodeOperatorPubKeyBytes(candidate.GetPublicKey()) != pubkey_bytes) return true;
+            found = candidate;
+            found_index = index;
+            return false;
+        })};
+    memory_cleanse(seed.data(), seed.size());
+    if (!walked || !found.IsValid()) return false;
+
+    // Record the index so that the next lookup of this key does not walk the path again. Failing
+    // to write it costs nothing but that speedup, so the key is still handed out.
+    WalletBatch batch(GetDatabase());
+    if (batch.WriteMasternodeOperatorIndex(pubkey_bytes, found_index)) {
+        m_mn_operator_indexes[pubkey_bytes] = found_index;
     }
 
-    const auto it{m_mn_operator_crypted_keys.find(pubkey_bytes)};
-    if (it == m_mn_operator_crypted_keys.end()) return false;
-    // Handing out a plaintext secret needs a full unlock, not a mixing-only one
-    if (IsLocked()) return false;
-
-    CKeyingMaterial secret_material;
-    if (!WithEncryptionKey([&](const CKeyingMaterial& encryption_key) {
-            return DecryptSecret(encryption_key, it->second, Hash(pubkey_bytes), secret_material);
-        })) {
-        return false;
-    }
-    secret = MasternodeOperatorSecretKey(secret_material);
-    return secret.IsValid();
+    secret = found;
+    if (path != nullptr) *path = GetMasternodeOperatorKeyPath(found_index);
+    return true;
 }
 
 bool CWallet::HaveMasternodeOperatorKey(const CBLSPublicKey& pubkey) const
 {
     if (!pubkey.IsValid()) return false;
-    const std::vector<unsigned char> pubkey_bytes{MasternodeOperatorPubKeyBytes(pubkey)};
 
     LOCK(cs_wallet);
-    return m_mn_operator_keys.count(pubkey_bytes) > 0 || m_mn_operator_crypted_keys.count(pubkey_bytes) > 0 ||
-           m_mn_operator_indexes.count(pubkey_bytes) > 0;
-}
-
-std::vector<std::vector<unsigned char>> CWallet::ListMasternodeOperatorKeys() const
-{
-    LOCK(cs_wallet);
-    std::set<std::vector<unsigned char>> pubkeys;
-    for (const auto& entry : m_mn_operator_keys) pubkeys.insert(entry.first);
-    for (const auto& entry : m_mn_operator_crypted_keys) pubkeys.insert(entry.first);
-    for (const auto& entry : m_mn_operator_indexes) pubkeys.insert(entry.first);
-    return {pubkeys.begin(), pubkeys.end()};
-}
-
-bool CWallet::CanStoreMasternodeOperatorKey() const
-{
-    return !IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS);
+    if (m_mn_operator_indexes.count(MasternodeOperatorPubKeyBytes(pubkey)) > 0) return true;
+    // Without a record the question can only be answered by deriving, which a locked wallet cannot
+    // do, so answer optimistically: GetMasternodeOperatorKey() is the one that reports precisely
+    return CanDeriveMasternodeOperatorKey();
 }
 
 bool CWallet::GetHDSeed(SecureVector& seed) const
@@ -4064,30 +4026,44 @@ bool CWallet::DeriveMasternodeOperatorKey(uint32_t index, CBLSSecretKey& secret)
     return derived;
 }
 
-bool CWallet::DeriveNextMasternodeOperatorKey(CBLSSecretKey& secret, uint32_t& index_out)
+bool CWallet::DeriveNextMasternodeOperatorKey(const std::vector<std::vector<unsigned char>>& in_use,
+                                              CBLSSecretKey& secret, uint32_t& index_out)
 {
     if (!CanDeriveMasternodeOperatorKey()) return false;
 
     LOCK(cs_wallet);
-    // Hand out the lowest unused index so that a wallet recovered from its mnemonic walks the
-    // same path in the same order and finds the keys it handed out before
-    std::set<uint32_t> used;
-    for (const auto& entry : m_mn_operator_indexes) used.insert(entry.second);
-    uint32_t index{0};
-    while (used.count(index) > 0) ++index;
+    SecureVector seed;
+    if (!GetHDSeed(seed)) return false;
 
-    CBLSSecretKey derived;
-    if (!DeriveMasternodeOperatorKey(index, derived)) return false;
-    const CBLSPublicKey pubkey{derived.GetPublicKey()};
-    if (!pubkey.IsValid()) return false;
-    const std::vector<unsigned char> pubkey_bytes{MasternodeOperatorPubKeyBytes(pubkey)};
+    // Hand out the lowest index whose key neither this wallet has handed out nor any masternode is
+    // using. Skipping the keys in use is what keeps two masternodes apart after a recovery from the
+    // mnemonic alone: the restored wallet has no records left, so on-chain registrations are the
+    // only trace of the indexes it handed out before.
+    std::set<std::vector<unsigned char>> taken{in_use.begin(), in_use.end()};
+    for (const auto& [pubkey_bytes, index] : m_mn_operator_indexes) taken.insert(pubkey_bytes);
+
+    CBLSSecretKey found;
+    uint32_t found_index{0};
+    std::vector<unsigned char> found_pubkey;
+    const bool walked{WalkMasternodeOperatorSecrets(
+        seed, MasternodeOperatorCoinType(), MASTERNODE_OPERATOR_KEY_LIMIT,
+        [&](uint32_t index, const CBLSSecretKey& candidate) {
+            std::vector<unsigned char> candidate_pubkey{MasternodeOperatorPubKeyBytes(candidate.GetPublicKey())};
+            if (taken.count(candidate_pubkey) > 0) return true;
+            found = candidate;
+            found_index = index;
+            found_pubkey = std::move(candidate_pubkey);
+            return false;
+        })};
+    memory_cleanse(seed.data(), seed.size());
+    if (!walked || !found.IsValid()) return false;
 
     WalletBatch batch(GetDatabase());
-    if (!batch.WriteMasternodeOperatorIndex(pubkey_bytes, index)) return false;
-    m_mn_operator_indexes[pubkey_bytes] = index;
+    if (!batch.WriteMasternodeOperatorIndex(found_pubkey, found_index)) return false;
+    m_mn_operator_indexes[found_pubkey] = found_index;
 
-    secret = derived;
-    index_out = index;
+    secret = found;
+    index_out = found_index;
     return true;
 }
 
@@ -4096,23 +4072,6 @@ std::string CWallet::GetMasternodeOperatorKeyPath(uint32_t index) const
     return strprintf("m/%d'/%d'/%d'/%d'/%d", static_cast<uint32_t>(BIP32_PURPOSE_FEATURE),
                      MasternodeOperatorCoinType(), MASTERNODE_PROVIDER_FEATURE,
                      MASTERNODE_OPERATOR_SUBFEATURE, index);
-}
-
-bool CWallet::EncryptMasternodeOperatorKeys(const CKeyingMaterial& master_key, WalletBatch& batch)
-{
-    AssertLockHeld(cs_wallet);
-    for (const auto& [pubkey_bytes, secret] : m_mn_operator_keys) {
-        std::vector<unsigned char> crypted_secret;
-        if (!EncryptSecret(master_key, secret, Hash(pubkey_bytes), crypted_secret)) {
-            return false;
-        }
-        if (!batch.WriteCryptedMasternodeOperatorKey(pubkey_bytes, crypted_secret)) {
-            return false;
-        }
-        m_mn_operator_crypted_keys[pubkey_bytes] = crypted_secret;
-    }
-    m_mn_operator_keys.clear();
-    return true;
 }
 
 CKeyPool::CKeyPool()

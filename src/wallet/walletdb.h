@@ -8,7 +8,6 @@
 
 #include <script/sign.h>
 #include <script/standard.h>
-#include <wallet/crypter.h>
 #include <wallet/db.h>
 #include <wallet/walletutil.h>
 #include <key.h>
@@ -70,7 +69,6 @@ extern const std::string BESTBLOCK;
 extern const std::string BESTBLOCK_NOMERKLE;
 extern const std::string CRYPTED_HDCHAIN;
 extern const std::string CRYPTED_KEY;
-extern const std::string CRYPTED_MASTERNODE_OPERATOR_KEY;
 extern const std::string COINJOIN_PENDING_OBS;
 extern const std::string COINJOIN_SALT;
 extern const std::string CSCRIPT;
@@ -85,7 +83,6 @@ extern const std::string KEYMETA;
 extern const std::string LOCKED_UTXO;
 extern const std::string MASTER_KEY;
 extern const std::string MASTERNODE_OPERATOR_INDEX;
-extern const std::string MASTERNODE_OPERATOR_KEY;
 extern const std::string MINVERSION;
 extern const std::string NAME;
 extern const std::string OLD_KEY;
@@ -230,15 +227,10 @@ public:
     bool ReadCoinJoinPendingObs(std::map<COutPoint, int64_t>& pending_obs);
     bool WriteCoinJoinPendingObs(const std::map<COutPoint, int64_t>& pending_obs);
 
-    /** Masternode operator BLS secret keys, keyed by the serialized (basic scheme) public key
-     *  so that keys for several masternodes can coexist in one wallet. Writing the encrypted
-     *  record removes the plaintext one for the same public key. */
-    bool WriteMasternodeOperatorKey(const std::vector<unsigned char>& pubkey, const CKeyingMaterial& secret);
-    bool WriteCryptedMasternodeOperatorKey(const std::vector<unsigned char>& pubkey, const std::vector<unsigned char>& crypted_secret);
-
-    /** Derivation index of a masternode operator key derived from this wallet's HD seed, keyed
-     *  by the same serialized public key. The secret is never written for these: the seed and
-     *  this index reproduce it, and a wallet backup already covers the seed. */
+    /** Derivation index of a masternode operator key derived from this wallet's HD seed, keyed by
+     *  the serialized (basic scheme) public key, so that the keys of several masternodes can
+     *  coexist in one wallet. The secret is never written: the seed and this index reproduce it,
+     *  and a wallet backup already covers the seed. */
     bool WriteMasternodeOperatorIndex(const std::vector<unsigned char>& pubkey, uint32_t index);
 
     /** Write a CGovernanceObject to the database */

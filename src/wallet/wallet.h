@@ -427,24 +427,12 @@ private:
     //! Whether the CoinJoin client is mixing with this wallet
     std::atomic<bool> m_mixing{false};
 
-    /** Masternode operator BLS secret keys stored in this wallet, keyed by the serialized
-     *  (basic scheme) public key. Plaintext secrets are only held for a wallet without
-     *  encryption keys, an encrypted wallet holds the ciphertext and decrypts on use.
-     */
-    std::map<std::vector<unsigned char>, CKeyingMaterial> m_mn_operator_keys GUARDED_BY(cs_wallet);
-    std::map<std::vector<unsigned char>, std::vector<unsigned char>> m_mn_operator_crypted_keys GUARDED_BY(cs_wallet);
-
-    /** Masternode operator BLS keys derived from this wallet's HD seed, mapping the same
-     *  serialized public key to the derivation index it came from. No secret is kept: the
+    /** Masternode operator BLS keys derived from this wallet's HD seed, mapping the serialized
+     *  (basic scheme) public key to the derivation index it came from. No secret is kept: the
      *  seed plus the index reproduce it, which is also what makes these keys survive a
      *  recovery from the mnemonic alone.
      */
     std::map<std::vector<unsigned char>, uint32_t> m_mn_operator_indexes GUARDED_BY(cs_wallet);
-
-    /** Re-encrypt the operator keys stored while this wallet was still unencrypted. Only used
-     *  by EncryptWallet(), which supplies the freshly created master key.
-     */
-    bool EncryptMasternodeOperatorKeys(const CKeyingMaterial& master_key, WalletBatch& batch) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
     /** Height of last block processed is used by wallet to know depth of transactions
      * without relying on Chain interface beyond asynchronous updates. For safety, we
@@ -1018,33 +1006,22 @@ public:
     /** Returns a vector containing pointers to the governance objects in m_gobjects */
     std::vector<const Governance::Object*> GetGovernanceObjects() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
-    /** Load a plaintext masternode operator secret key from the wallet database. Returns false
-     *  if the record does not describe a usable key, in which case it is dropped. */
-    bool LoadMasternodeOperatorKey(const std::vector<unsigned char>& pubkey, const CKeyingMaterial& secret) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
-    /** Load an encrypted masternode operator secret key from the wallet database. The ciphertext
-     *  can only be checked once the wallet is unlocked, so this only validates the public key. */
-    bool LoadCryptedMasternodeOperatorKey(const std::vector<unsigned char>& pubkey, const std::vector<unsigned char>& crypted_secret) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     /** Load the derivation index of a masternode operator key derived from this wallet's HD
      *  seed. The recorded key itself can only be checked once the wallet is unlocked, so this
      *  only validates the public key. */
     bool LoadMasternodeOperatorIndex(const std::vector<unsigned char>& pubkey, uint32_t index) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
-    /** Store a masternode operator secret key, keyed by its public key, so that it is covered by
-     *  wallet backups. An encrypted wallet stores the secret encrypted and must be unlocked. */
-    bool AddMasternodeOperatorKey(const CBLSSecretKey& secret);
-    /** Retrieve a masternode operator secret key this wallet holds, whether it was derived from
-     *  the HD seed or stored outright. Derives or decrypts on demand, so an encrypted wallet
-     *  must be unlocked. */
-    //! Fetch an operator secret this wallet holds. When `path` is given it is filled with the
-    //! derivation path for a key derived from the HD seed, and left empty for a stored one.
+    /** Fetch the operator secret behind the given public key, either from the recorded derivation
+     *  index or, when no record points at it, by walking a bounded range of indexes so that a
+     *  wallet restored from its recovery phrase alone still finds the keys of the masternodes it
+     *  registered. A key found by walking is recorded, so the next lookup is immediate. When
+     *  `path` is given it comes back holding the derivation path. Requires an unlocked wallet. */
     bool GetMasternodeOperatorKey(const CBLSPublicKey& pubkey, CBLSSecretKey& secret,
-                                  std::string* path = nullptr) const;
-    /** Whether an operator secret key for the given public key is held by this wallet. */
+                                  std::string* path = nullptr);
+    /** Whether this wallet can produce the operator secret behind the given public key. Cheap and
+     *  unlock-free, so it answers optimistically for a wallet that can derive but holds no record
+     *  of this key: only GetMasternodeOperatorKey() can tell for sure. */
     bool HaveMasternodeOperatorKey(const CBLSPublicKey& pubkey) const;
-    /** Public keys of every operator key this wallet holds, derived and stored alike. */
-    std::vector<std::vector<unsigned char>> ListMasternodeOperatorKeys() const;
-    /** Whether this wallet can store operator secret keys at all. */
-    bool CanStoreMasternodeOperatorKey() const;
 
     /** The BIP39 seed shared by this wallet's ScriptPubKeyMans. Fails for a locked wallet, one
      *  without private keys, and one built from more than one mnemonic, which has no single
@@ -1052,15 +1029,20 @@ public:
     bool GetHDSeed(SecureVector& seed) const;
     /** Whether GetHDSeed() can succeed once this wallet is unlocked. */
     bool HasHDSeed() const;
-    /** Whether operator keys can be derived from this wallet's HD seed, as opposed to being
-     *  generated at random and stored. Does not require an unlocked wallet. */
+    /** Whether operator keys can be derived from this wallet's HD seed. Does not require an
+     *  unlocked wallet. */
     bool CanDeriveMasternodeOperatorKey() const;
     /** Derive the operator key at the given index off this wallet's HD seed. Requires an
      *  unlocked wallet. */
     bool DeriveMasternodeOperatorKey(uint32_t index, CBLSSecretKey& secret) const;
-    /** Derive the lowest operator key index this wallet has not handed out yet, record the
-     *  index so the key can be found again, and return both. Requires an unlocked wallet. */
-    bool DeriveNextMasternodeOperatorKey(CBLSSecretKey& secret, uint32_t& index_out);
+    /** Derive the lowest operator key index that neither this wallet has handed out nor any
+     *  masternode in `in_use` occupies, record the index so the key can be found again, and
+     *  return both. `in_use` holds the serialized (basic scheme) operator public keys registered
+     *  on chain, which is what keeps a wallet restored from its recovery phrase, and therefore
+     *  holding no records, from handing out a key one of its masternodes already uses. Requires
+     *  an unlocked wallet. */
+    bool DeriveNextMasternodeOperatorKey(const std::vector<std::vector<unsigned char>>& in_use,
+                                         CBLSSecretKey& secret, uint32_t& index_out);
     /** Human readable derivation path of the operator key at the given index. */
     std::string GetMasternodeOperatorKeyPath(uint32_t index) const;
 

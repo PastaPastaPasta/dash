@@ -130,27 +130,28 @@ public:
     //! Sign special transaction payload
     virtual bool signSpecialTxPayload(const uint256& hash, const CKeyID& keyid, std::vector<unsigned char>& vchSig) = 0;
 
-    //! Store a masternode operator BLS secret key (32 raw bytes) in this wallet, keyed by
-    //! its public key. Returns false and fills error when it cannot be stored.
-    virtual bool addMasternodeOperatorKey(const std::vector<unsigned char>& secret, std::string& error) = 0;
-    //! Whether this wallet can store masternode operator keys (false for watch-only wallets)
-    virtual bool canStoreMasternodeOperatorKey() = 0;
-    //! Whether this wallet can derive operator keys from its HD seed
+    //! Whether this wallet can derive masternode operator keys from its HD seed
     virtual bool canDeriveMasternodeOperatorKey() = 0;
-    //! Derive the next unused masternode operator key from this wallet's HD seed,
-    //! persist the index it used and return the 32-byte secret plus the human
-    //! readable derivation path. Requires an unlocked wallet.
-    virtual bool deriveMasternodeOperatorKey(std::vector<unsigned char>& secret, std::string& path,
+    //! Derive this wallet's next unused masternode operator key, record the index it
+    //! used and return the 32-byte secret plus its derivation path. `in_use` holds
+    //! 48-byte operator public keys that are already taken (every operator key
+    //! registered on-chain), so a wallet restored from its recovery phrase cannot hand
+    //! out a key another masternode already uses. Requires an unlocked wallet.
+    virtual bool deriveMasternodeOperatorKey(const std::vector<std::vector<unsigned char>>& in_use,
+                                             std::vector<unsigned char>& secret, std::string& path,
                                              std::string& error) = 0;
-    //! Fetch an operator secret this wallet holds, by its 48-byte public key.
-    //! Works for both derived and stored keys. Requires an unlocked wallet.
-    //! `path` comes back holding the derivation path of a key derived from the HD
-    //! seed, and empty for a key stored in the wallet.
+    //! Whether this wallet can produce the operator secret for this 48-byte public key.
+    //! Cheap and unlock-free: true when an index record matches it, or optimistically
+    //! when the wallet can derive at all (the real work happens in
+    //! getMasternodeOperatorKey, which reports failure precisely).
+    virtual bool haveMasternodeOperatorKey(const std::vector<unsigned char>& pubkey) = 0;
+    //! Fetch the operator secret for a 48-byte public key, from the recorded index or by
+    //! scanning a bounded range of indexes so a wallet restored from its recovery phrase
+    //! still finds the keys of masternodes it registered. Fills `path` with the
+    //! derivation path. Requires an unlocked wallet.
     virtual bool getMasternodeOperatorKey(const std::vector<unsigned char>& pubkey,
                                           std::vector<unsigned char>& secret, std::string& path,
                                           std::string& error) = 0;
-    //! Public keys (48 bytes each) of every operator key this wallet holds
-    virtual std::vector<std::vector<unsigned char>> listMasternodeOperatorKeys() = 0;
 
     //! Return whether wallet has private key.
     virtual bool isSpendable(const CScript& script) = 0;

@@ -38,7 +38,6 @@ const std::string BESTBLOCK_NOMERKLE{"bestblock_nomerkle"};
 const std::string BESTBLOCK{"bestblock"};
 const std::string CRYPTED_KEY{"ckey"};
 const std::string CRYPTED_HDCHAIN{"chdchain"};
-const std::string CRYPTED_MASTERNODE_OPERATOR_KEY{"mnopckey"};
 const std::string COINJOIN_PENDING_OBS{"cj_pending_obs"};
 const std::string COINJOIN_SALT{"cj_salt"};
 const std::string CSCRIPT{"cscript"};
@@ -53,7 +52,6 @@ const std::string KEY{"key"};
 const std::string LOCKED_UTXO{"lockedutxo"};
 const std::string MASTER_KEY{"mkey"};
 const std::string MASTERNODE_OPERATOR_INDEX{"mnopidx"};
-const std::string MASTERNODE_OPERATOR_KEY{"mnopkey"};
 const std::string MINVERSION{"minversion"};
 const std::string NAME{"name"};
 const std::string OLD_KEY{"wkey"};
@@ -245,20 +243,6 @@ bool WalletBatch::WriteCoinJoinPendingObs(const std::map<COutPoint, int64_t>& pe
     return WriteIC(DBKeys::COINJOIN_PENDING_OBS, pending_obs);
 }
 
-bool WalletBatch::WriteMasternodeOperatorKey(const std::vector<unsigned char>& pubkey, const CKeyingMaterial& secret)
-{
-    return WriteIC(std::make_pair(DBKeys::MASTERNODE_OPERATOR_KEY, pubkey), secret);
-}
-
-bool WalletBatch::WriteCryptedMasternodeOperatorKey(const std::vector<unsigned char>& pubkey, const std::vector<unsigned char>& crypted_secret)
-{
-    if (!WriteIC(std::make_pair(DBKeys::CRYPTED_MASTERNODE_OPERATOR_KEY, pubkey), crypted_secret)) {
-        return false;
-    }
-    EraseIC(std::make_pair(DBKeys::MASTERNODE_OPERATOR_KEY, pubkey));
-    return true;
-}
-
 bool WalletBatch::WriteMasternodeOperatorIndex(const std::vector<unsigned char>& pubkey, uint32_t index)
 {
     return WriteIC(std::make_pair(DBKeys::MASTERNODE_OPERATOR_INDEX, pubkey), index);
@@ -377,8 +361,6 @@ public:
     std::map<std::pair<uint256, CKeyID>, std::pair<CPubKey, std::vector<unsigned char>>> m_descriptor_crypt_keys;
     std::map<std::pair<uint256, CKeyID>, std::pair<SecureString, SecureString>> mnemonics;
     std::map<std::pair<uint256, CKeyID>, std::pair<std::vector<unsigned char>, std::vector<unsigned char>>> crypted_mnemonics;
-    std::map<std::vector<unsigned char>, CKeyingMaterial> m_mn_operator_keys;
-    std::map<std::vector<unsigned char>, std::vector<unsigned char>> m_mn_operator_crypted_keys;
     std::map<std::vector<unsigned char>, uint32_t> m_mn_operator_indexes;
     bool tx_corrupt{false};
 
@@ -812,18 +794,6 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
                 wss.crypted_mnemonics.insert(std::make_pair(std::make_pair(desc_id, pubkey.GetID()), std::make_pair(mnemonic, mnemonic_passphrase)));
             }
 
-        } else if (strType == DBKeys::MASTERNODE_OPERATOR_KEY) {
-            std::vector<unsigned char> pubkey;
-            ssKey >> pubkey;
-            CKeyingMaterial secret;
-            ssValue >> secret;
-            wss.m_mn_operator_keys[pubkey] = secret;
-        } else if (strType == DBKeys::CRYPTED_MASTERNODE_OPERATOR_KEY) {
-            std::vector<unsigned char> pubkey;
-            ssKey >> pubkey;
-            std::vector<unsigned char> crypted_secret;
-            ssValue >> crypted_secret;
-            wss.m_mn_operator_crypted_keys[pubkey] = crypted_secret;
         } else if (strType == DBKeys::MASTERNODE_OPERATOR_INDEX) {
             std::vector<unsigned char> pubkey;
             ssKey >> pubkey;
@@ -1015,18 +985,6 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
 
     // Set the masternode operator keys. Losing one of these costs a masternode re-registration
     // and no funds, so a record that cannot be loaded is skipped instead of failing the load.
-    for (const auto& [pubkey, crypted_secret] : wss.m_mn_operator_crypted_keys) {
-        if (!pwallet->LoadCryptedMasternodeOperatorKey(pubkey, crypted_secret)) {
-            pwallet->WalletLogPrintf("Ignoring unusable encrypted masternode operator key record\n");
-        }
-    }
-    for (const auto& [pubkey, secret] : wss.m_mn_operator_keys) {
-        // The encrypted record supersedes a plaintext one left behind by an interrupted encryption
-        if (wss.m_mn_operator_crypted_keys.count(pubkey) > 0) continue;
-        if (!pwallet->LoadMasternodeOperatorKey(pubkey, secret)) {
-            pwallet->WalletLogPrintf("Ignoring unusable masternode operator key record\n");
-        }
-    }
     for (const auto& [pubkey, index] : wss.m_mn_operator_indexes) {
         if (!pwallet->LoadMasternodeOperatorIndex(pubkey, index)) {
             pwallet->WalletLogPrintf("Ignoring unusable derived masternode operator key record\n");
