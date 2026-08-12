@@ -6,6 +6,7 @@
 
 #include <qt/mnsharesession.h>
 
+#include <bls/bls.h>
 #include <chainparams.h>
 #include <consensus/amount.h>
 #include <core_io.h>
@@ -182,6 +183,11 @@ void MnShareSessionTests::signatureVerification()
     BasicTestingSetup setup{CBaseChainParams::REGTEST};
     std::vector<CKey> owner_keys;
     MnShareSession session{ValidSession(owner_keys)};
+    // The operator key is a first-class term; register_shared_prepare would put
+    // it in the payload, so the session must carry the matching pubkey
+    CBLSSecretKey operator_secret;
+    operator_secret.MakeNewKey();
+    session.terms().operatorPubKey = QString::fromStdString(operator_secret.GetPublicKey().ToString(/*specificLegacyScheme=*/false));
 
     // Build the shared registration the way register_shared_prepare would:
     // the transaction spends the funding inputs directly and carries the
@@ -198,6 +204,9 @@ void MnShareSessionTests::signatureVerification()
                                     ToKeyID(std::get<PKHash>(owner_dest)));
     }
     payload.vchJoinSigs.assign(payload.shares.size(), std::vector<unsigned char>(CPubKey::COMPACT_SIGNATURE_SIZE));
+    payload.keyIDVoting = ToKeyID(std::get<PKHash>(DecodeDestination(session.terms().votingAddress.toStdString())));
+    payload.pubKeyOperator.Set(operator_secret.GetPublicKey(), /*bls_legacy_scheme=*/false);
+    payload.nOperatorReward = session.terms().operatorReward;
     payload.nEarlyPeriodBlocks = session.terms().earlyPeriodBlocks;
     payload.nEarlyPenalty = session.terms().earlyPenalty;
 
@@ -247,4 +256,30 @@ void MnShareSessionTests::signatureVerification()
     QCOMPARE(int(session.stage()), int(MnShareSession::Stage::Draft));
     QCOMPARE(session.signedCount(), 0);
     QVERIFY(session.revision() > revision);
+
+    // A payload that disagrees with the displayed share table must never freeze
+    // or verify: the participant reviews m_shares but the wallet signs the
+    // payload digest, so a mismatch is a money-loss trap
+    MnShareSession tampered{ValidSession(owner_keys)};
+    // The displayed table shows share 0 refunding to its own fresh address,
+    // but the payload refunds share 0 to an attacker address
+    CProRegTx evil{payload};
+    CKey attacker;
+    attacker.MakeNewKey(true);
+    evil.shares[0].scriptRefund = GetScriptForDestination(PKHash(attacker.GetPubKey()));
+    CMutableTransaction evil_tx{tx};
+    SetTxPayload(evil_tx, evil);
+    const uint256 evil_hash{evil.MakeSharedRegConsentHash(CTransaction(evil_tx))};
+    const QString evil_hex{QString::fromStdString(EncodeHexTx(CTransaction(evil_tx)))};
+    QVERIFY(!tampered.freeze(evil_hex, QString::fromStdString(evil_hash.ToString()), 0, error));
+
+    // The same tampered payload delivered through a frozen envelope is rejected
+    // on import. Re-freeze the matching session to get a well-formed envelope,
+    // then swap in the attacker's payload.
+    QVERIFY2(session.freeze(tx_hex, QString::fromStdString(consent_hash.ToString()), 0, error), qPrintable(error));
+    UniValue envelope{session.toJson()};
+    envelope.pushKV("protx", evil_hex.toStdString());
+    envelope.pushKV("consentHash", evil_hash.ToString());
+    MnShareSession imported;
+    QVERIFY(!imported.fromJson(envelope, error));
 }
