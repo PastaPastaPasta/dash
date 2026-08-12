@@ -13,6 +13,7 @@
 #include <qt/guiutil.h>
 #include <qt/masternodedialogs.h>
 #include <qt/masternodewizard.h>
+#include <qt/sharedmncreatedialog.h>
 #include <qt/walletmodel.h>
 
 #include <QApplication>
@@ -142,6 +143,8 @@ MasternodeList::MasternodeList(QWidget* parent) :
     ui->btnRegisterMasternode->setEnabled(false);
     ui->btnRegisterMasternode->setToolTip(tr("Registering a masternode requires a wallet."));
     connect(ui->btnRegisterMasternode, &QPushButton::clicked, this, &MasternodeList::showRegisterWizard);
+    ui->btnSharedMasternode->setEnabled(false);
+    connect(ui->btnSharedMasternode, &QPushButton::clicked, this, &MasternodeList::showSharedMnCreateDialog);
 
     connect(ui->tableViewMasternodes, &QTableView::customContextMenuRequested, this, &MasternodeList::showContextMenuDIP3);
     connect(ui->tableViewMasternodes, &QTableView::doubleClicked, this, &MasternodeList::extraInfoDIP3_clicked);
@@ -221,12 +224,36 @@ void MasternodeList::updateRegistrationAvailability()
     } else {
         ui->btnRegisterMasternode->setToolTip(tr("Register a new masternode or EvoNode using this wallet"));
     }
+
+    const bool v24_active{clientModel != nullptr && clientModel->node().isV24Active()};
+    const bool can_shared{can_register && v24_active};
+    ui->btnSharedMasternode->setEnabled(can_shared);
+    if (walletModel == nullptr) {
+        ui->btnSharedMasternode->setToolTip(tr("Managing shared masternodes requires a wallet."));
+    } else if (walletModel->wallet().privateKeysDisabled()) {
+        ui->btnSharedMasternode->setToolTip(tr("Managing shared masternodes requires a wallet with private keys."));
+    } else if (clientModel == nullptr) {
+        ui->btnSharedMasternode->setToolTip(tr("Shared masternode management is unavailable until the node is ready."));
+    } else if (!v24_active) {
+        ui->btnSharedMasternode->setToolTip(tr("Shared masternodes require the v24 hard fork, which is not active on this network yet."));
+    } else {
+        ui->btnSharedMasternode->setToolTip(tr("Create or continue a multi-party shared masternode registration session"));
+    }
 }
 
 void MasternodeList::showRegisterWizard()
 {
     if (!clientModel || !walletModel || walletModel->wallet().privateKeysDisabled()) return;
     RegisterMasternodeWizard dlg(clientModel->node(), walletModel, this);
+    dlg.exec();
+}
+
+void MasternodeList::showSharedMnCreateDialog()
+{
+    if (!clientModel || !walletModel) {
+        return;
+    }
+    SharedMnCreateDialog dlg(clientModel->node(), walletModel, this);
     dlg.exec();
 }
 

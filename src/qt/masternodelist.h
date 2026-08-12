@@ -108,6 +108,7 @@ private Q_SLOTS:
     void copyCollateralOutpoint_clicked();
     void copyProTxHash_clicked();
     void showRegisterWizard();
+    void showSharedMnCreateDialog();
     void extraInfoDIP3_clicked();
     void filterByCollateralAddress();
     void filterByOwnerAddress();
