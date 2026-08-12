@@ -89,6 +89,7 @@ QT_MOC_CPP = \
   qt/moc_proposallist.cpp \
   qt/moc_proposalmodel.cpp \
   qt/moc_proposalresume.cpp \
+  qt/moc_protxsender.cpp \
   qt/moc_psbtoperationsdialog.cpp \
   qt/moc_qrdialog.cpp \
   qt/moc_qrimagewidget.cpp \
@@ -123,6 +124,7 @@ QT_MOC = \
   qt/bitcoinamountfield.moc \
   qt/intro.moc \
   qt/overviewpage.moc \
+  qt/protxsender.moc \
   qt/rpcconsole.moc
 
 QT_QRC_CPP = qt/qrc_bitcoin.cpp
@@ -177,6 +179,7 @@ BITCOIN_QT_H = \
   qt/proposallist.h \
   qt/proposalmodel.h \
   qt/proposalresume.h \
+  qt/protxsender.h \
   qt/psbtoperationsdialog.h \
   qt/qrdialog.h \
   qt/qrimagewidget.h \
@@ -310,6 +313,7 @@ BITCOIN_QT_WALLET_CPP = \
   qt/proposalcreate.cpp \
   qt/proposallist.cpp \
   qt/proposalresume.cpp \
+  qt/protxsender.cpp \
   qt/psbtoperationsdialog.cpp \
   qt/qrdialog.cpp \
   qt/qrimagewidget.cpp \
