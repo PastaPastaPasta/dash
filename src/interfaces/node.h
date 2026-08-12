@@ -10,7 +10,9 @@
 #include <net_types.h>                 // For banmap_t
 #include <netaddress.h>                // For Network
 #include <netbase.h>                   // For ConnectionDirection
+#include <pubkey.h>                    // For CKeyID
 #include <saltedhasher.h>              // For StaticSaltedHasher
+#include <script/script.h>             // For CScript
 #include <support/allocators/secure.h> // For SecureString
 #include <uint256.h>
 #include <util/settings.h>             // For util::SettingsValue
@@ -34,10 +36,8 @@ class CDeterministicMNList;
 class CFeeRate;
 class CGovernanceObject;
 class CGovernanceVote;
-class CKeyID;
 class CNodeStats;
 class Coin;
-class CScript;
 class CService;
 class RPCTimerInterface;
 class UniValue;
@@ -63,6 +63,17 @@ namespace CoinJoin {
 class Loader;
 } // namespace CoinJoin
 struct BlockTip;
+
+//! One collateral share of a shared masternode (mirrors CCollateralShare)
+struct MnShare
+{
+    CAmount amount{0};
+    CScript scriptRefund;
+    CScript scriptReward; //!< empty means rewards pay to scriptRefund
+    CKeyID keyIDOwner;
+
+    const CScript& rewardScript() const { return scriptReward.empty() ? scriptRefund : scriptReward; }
+};
 
 //! Interface for a masternode entry
 class MnEntry
@@ -94,6 +105,12 @@ public:
     virtual const int32_t& getRegisteredHeight() const = 0;
     virtual const uint16_t& getOperatorReward() const = 0;
     virtual const uint256& getProTxHash() const = 0;
+    //! Whether this masternode's collateral is pooled by multiple parties (non-empty share table)
+    virtual bool isShared() const = 0;
+    //! The collateral share table; empty unless isShared()
+    virtual std::vector<MnShare> getShares() const = 0;
+    virtual const uint32_t& getEarlyPeriodBlocks() const = 0;
+    virtual const CAmount& getEarlyPenalty() const = 0;
 };
 
 using MnEntryCPtr = std::shared_ptr<const MnEntry>;
@@ -456,6 +473,9 @@ public:
 
     //! Is loading blocks.
     virtual bool isLoadingBlocks() = 0;
+
+    //! Whether the v24 hard fork (shared masternodes, extended ProTx addresses) is active at the tip.
+    virtual bool isV24Active() = 0;
 
     //! Set network active.
     virtual void setNetworkActive(bool active) = 0;
