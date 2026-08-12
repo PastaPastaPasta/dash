@@ -26,13 +26,10 @@
 #include <QVariant>
 
 #include <algorithm>
+#include <map>
 #include <utility>
 #include <variant>
 #include <vector>
-
-namespace {
-constexpr int BALANCE_ROLE{Qt::UserRole + 1};
-} // anonymous namespace
 
 namespace MasternodeWidgetUtil {
 
@@ -101,14 +98,23 @@ void FeeSourcePicker::refresh()
     clear();
     if (m_wallet_model == nullptr) return;
 
-    std::vector<std::pair<QString, CAmount>> entries;
+    // Group each coin under its own scriptPubKey destination: the RPCs'
+    // FundSpecialTx only selects coins paying exactly the chosen address, while
+    // listCoins() groups change outputs under their parent non-change address,
+    // which would overstate what a protx call can actually spend.
+    std::map<CTxDestination, CAmount> balances;
     for (const auto& [dest, coins] : m_wallet_model->wallet().listCoins()) {
-        CAmount total{0};
         for (const auto& [outpoint, txout] : coins) {
             if (txout.is_spent || txout.depth_in_main_chain < 0) continue;
             if (m_wallet_model->wallet().isLockedCoin(outpoint)) continue;
-            total += txout.txout.nValue;
+            CTxDestination coin_dest;
+            if (!ExtractDestination(txout.txout.scriptPubKey, coin_dest)) continue;
+            balances[coin_dest] += txout.txout.nValue;
         }
+    }
+
+    std::vector<std::pair<QString, CAmount>> entries;
+    for (const auto& [dest, total] : balances) {
         if (total <= 0 || total < m_minimum_balance) continue;
         entries.emplace_back(QString::fromStdString(EncodeDestination(dest)), total);
     }
@@ -120,7 +126,6 @@ void FeeSourcePicker::refresh()
         addItem(QString("%1 (%2)").arg(address, BitcoinUnits::formatWithUnit(unit, balance, /*plussign=*/false,
                                                                              BitcoinUnits::SeparatorStyle::ALWAYS)),
                 address);
-        setItemData(count() - 1, static_cast<qlonglong>(balance), BALANCE_ROLE);
     }
     if (count() > 0) setCurrentIndex(0);
 }
@@ -128,12 +133,6 @@ void FeeSourcePicker::refresh()
 QString FeeSourcePicker::selectedAddress() const
 {
     return currentData().toString();
-}
-
-CAmount FeeSourcePicker::selectedBalance() const
-{
-    if (currentIndex() < 0) return 0;
-    return static_cast<CAmount>(itemData(currentIndex(), BALANCE_ROLE).toLongLong());
 }
 
 OperatorKeyWidget::OperatorKeyWidget(QWidget* parent) :

@@ -24,6 +24,7 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QSpinBox>
 #include <QStringList>
 #include <QVBoxLayout>
 
@@ -104,11 +105,24 @@ void MasternodeActionDialog::setupUi(const QString& title, const QString& intro,
         m_ok_button->setToolTip(tr("This wallet is watch-only and cannot sign transactions."));
     }
     connect(m_button_box, &QDialogButtonBox::accepted, this, &MasternodeActionDialog::submit);
-    connect(m_button_box, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    connect(m_button_box, &QDialogButtonBox::rejected, this, &MasternodeActionDialog::reject);
     layout->addWidget(m_button_box);
 
     GUIUtil::updateFonts();
     validate();
+}
+
+FeeSourcePicker* MasternodeActionDialog::addFeeSourceRow(QFormLayout* form, const QString& note)
+{
+    auto* picker = new FeeSourcePicker(this);
+    picker->setWalletModel(m_wallet_model);
+    auto* fee_note = new QLabel(note, this);
+    fee_note->setWordWrap(true);
+    auto* fee_box = new QVBoxLayout();
+    fee_box->addWidget(picker);
+    fee_box->addWidget(fee_note);
+    form->addRow(tr("Fee source:"), fee_box);
+    return picker;
 }
 
 bool MasternodeActionDialog::canSign() const
@@ -134,6 +148,14 @@ void MasternodeActionDialog::clearError()
 {
     m_status_label->clear();
     m_status_label->setVisible(false);
+}
+
+void MasternodeActionDialog::reject()
+{
+    // runProTx pumps events in a nested loop; dismissing the dialog then would
+    // suggest the in-flight transaction was cancelled when it is still sent
+    if (m_busy) return;
+    QDialog::reject();
 }
 
 void MasternodeActionDialog::setBusy(bool busy)
@@ -194,13 +216,27 @@ UpdateServiceDialog::UpdateServiceDialog(interfaces::Node& node, WalletModel* wa
     auto* form = new QFormLayout();
 
     m_addrs_edit = new QLineEdit(this);
-    m_addrs_edit->setText(entry.service());
     m_addrs_edit->setPlaceholderText(tr("IP:PORT, comma-separated for multiple entries"));
-    if (!m_v24_active) {
-        m_addrs_edit->setToolTip(tr("Multiple addresses require the v24 hard fork to be active."));
-    }
     connect(m_addrs_edit, &QLineEdit::textChanged, this, &UpdateServiceDialog::validate);
-    form->addRow(tr("Service addresses:"), m_addrs_edit);
+    if (m_v24_active) {
+        // Only the primary address is known here; prefilling it could silently
+        // drop registered secondary addresses, since the submitted list replaces
+        // the masternode's entire address set.
+        auto* addrs_note = new QLabel(tr("Enter the full new address list; it replaces every currently registered "
+                                         "address. The current addresses (primary: %1) are not prefilled.")
+                                          .arg(entry.service()),
+                                      this);
+        addrs_note->setWordWrap(true);
+        auto* addrs_box = new QVBoxLayout();
+        addrs_box->addWidget(m_addrs_edit);
+        addrs_box->addWidget(addrs_note);
+        form->addRow(tr("Service addresses:"), addrs_box);
+    } else {
+        // Pre-v24 a masternode has exactly one core address, so prefilling is safe
+        m_addrs_edit->setText(entry.service());
+        m_addrs_edit->setToolTip(tr("Multiple addresses require the v24 hard fork to be active."));
+        form->addRow(tr("Service address:"), m_addrs_edit);
+    }
 
     m_operator_key_edit = new QLineEdit(this);
     m_operator_key_edit->setEchoMode(QLineEdit::Password);
@@ -214,15 +250,29 @@ UpdateServiceDialog::UpdateServiceDialog(interfaces::Node& node, WalletModel* wa
         connect(m_platform_node_id_edit, &QLineEdit::textChanged, this, &UpdateServiceDialog::validate);
         form->addRow(tr("Platform node ID:"), m_platform_node_id_edit);
 
-        m_platform_p2p_edit = new QLineEdit(this);
-        m_platform_p2p_edit->setPlaceholderText(tr("IP:PORT, comma-separated for multiple entries"));
-        connect(m_platform_p2p_edit, &QLineEdit::textChanged, this, &UpdateServiceDialog::validate);
-        form->addRow(tr("Platform P2P addresses:"), m_platform_p2p_edit);
+        if (m_v24_active) {
+            m_platform_p2p_edit = new QLineEdit(this);
+            m_platform_p2p_edit->setPlaceholderText(tr("IP:PORT, comma-separated for multiple entries"));
+            connect(m_platform_p2p_edit, &QLineEdit::textChanged, this, &UpdateServiceDialog::validate);
+            form->addRow(tr("Platform P2P addresses:"), m_platform_p2p_edit);
 
-        m_platform_https_edit = new QLineEdit(this);
-        m_platform_https_edit->setPlaceholderText(tr("IP:PORT, comma-separated for multiple entries"));
-        connect(m_platform_https_edit, &QLineEdit::textChanged, this, &UpdateServiceDialog::validate);
-        form->addRow(tr("Platform HTTPS addresses:"), m_platform_https_edit);
+            m_platform_https_edit = new QLineEdit(this);
+            m_platform_https_edit->setPlaceholderText(tr("IP:PORT, comma-separated for multiple entries"));
+            connect(m_platform_https_edit, &QLineEdit::textChanged, this, &UpdateServiceDialog::validate);
+            form->addRow(tr("Platform HTTPS addresses:"), m_platform_https_edit);
+        } else {
+            // Pre-v24 a ProUpServTx only carries bare Platform port numbers,
+            // applied to the service address
+            m_platform_p2p_port_edit = new QSpinBox(this);
+            m_platform_p2p_port_edit->setRange(1, 65535);
+            m_platform_p2p_port_edit->setValue(26656);
+            form->addRow(tr("Platform P2P port:"), m_platform_p2p_port_edit);
+
+            m_platform_https_port_edit = new QSpinBox(this);
+            m_platform_https_port_edit->setRange(1, 65535);
+            m_platform_https_port_edit->setValue(443);
+            form->addRow(tr("Platform HTTPS port:"), m_platform_https_port_edit);
+        }
     }
 
     if (m_operator_reward_pct > 0) {
@@ -233,18 +283,9 @@ UpdateServiceDialog::UpdateServiceDialog(interfaces::Node& node, WalletModel* wa
         form->addRow(tr("Operator payout address:"), m_operator_payout_edit);
     }
 
-    m_fee_source = new FeeSourcePicker(this);
-    m_fee_source->setWalletModel(wallet_model);
-    m_fee_source->refresh();
-    auto* fee_note = new QLabel(m_is_shared ?
-                                    tr("Required: a shared masternode has no payout address of its own to pay the transaction fee from.") :
-                                    tr("Optional: when no address is selected the fee is paid from the operator payout or masternode payout address."),
-                                this);
-    fee_note->setWordWrap(true);
-    auto* fee_box = new QVBoxLayout();
-    fee_box->addWidget(m_fee_source);
-    fee_box->addWidget(fee_note);
-    form->addRow(tr("Fee source:"), fee_box);
+    m_fee_source = addFeeSourceRow(form, m_is_shared ?
+                                             tr("Required: a shared masternode has no payout address of its own to pay the transaction fee from.") :
+                                             tr("Optional: when no address is selected the fee is paid from the operator payout or masternode payout address."));
 
     setupUi(m_type == MnType::Evo ? tr("Update Evonode Service") : tr("Update Masternode Service"),
             tr("Update the network addresses this masternode is reachable at. Signing requires the operator secret key. A successful update also revives a PoSe-banned masternode."),
@@ -262,8 +303,11 @@ void UpdateServiceDialog::validate()
     }
     if (m_type == MnType::Evo) {
         ok &= IsHexString(m_platform_node_id_edit->text().trimmed(), 40);
-        ok &= !SplitAddressList(m_platform_p2p_edit->text()).isEmpty();
-        ok &= !SplitAddressList(m_platform_https_edit->text()).isEmpty();
+        if (m_v24_active) {
+            ok &= !SplitAddressList(m_platform_p2p_edit->text()).isEmpty();
+            ok &= !SplitAddressList(m_platform_https_edit->text()).isEmpty();
+        }
+        // Pre-v24 the port spinboxes enforce a valid range on their own
     }
     setOkValid(ok);
 }
@@ -282,8 +326,14 @@ void UpdateServiceDialog::submit()
     params.pushKV("operatorKey", m_operator_key_edit->text().trimmed().toStdString());
     if (m_type == MnType::Evo) {
         params.pushKV("platformNodeID", m_platform_node_id_edit->text().trimmed().toStdString());
-        params.pushKV("platformP2PAddrs", AddressArray(SplitAddressList(m_platform_p2p_edit->text())));
-        params.pushKV("platformHTTPSAddrs", AddressArray(SplitAddressList(m_platform_https_edit->text())));
+        if (m_v24_active) {
+            params.pushKV("platformP2PAddrs", AddressArray(SplitAddressList(m_platform_p2p_edit->text())));
+            params.pushKV("platformHTTPSAddrs", AddressArray(SplitAddressList(m_platform_https_edit->text())));
+        } else {
+            // Pre-v24 ProTx versions only accept bare port numbers here
+            params.pushKV("platformP2PAddrs", m_platform_p2p_port_edit->value());
+            params.pushKV("platformHTTPSAddrs", m_platform_https_port_edit->value());
+        }
     }
     if (m_operator_payout_edit && !m_operator_payout_edit->text().isEmpty()) {
         params.pushKV("operatorPayoutAddress", m_operator_payout_edit->text().trimmed().toStdString());
@@ -322,15 +372,7 @@ UpdateRegistrarDialog::UpdateRegistrarDialog(interfaces::Node& node, WalletModel
     connect(m_payout_edit, &QLineEdit::textChanged, this, &UpdateRegistrarDialog::validate);
     form->addRow(tr("Payout address:"), m_payout_edit);
 
-    m_fee_source = new FeeSourcePicker(this);
-    m_fee_source->setWalletModel(wallet_model);
-    m_fee_source->refresh();
-    auto* fee_note = new QLabel(tr("Optional: when no address is selected the fee is paid from the masternode payout address."), this);
-    fee_note->setWordWrap(true);
-    auto* fee_box = new QVBoxLayout();
-    fee_box->addWidget(m_fee_source);
-    fee_box->addWidget(fee_note);
-    form->addRow(tr("Fee source:"), fee_box);
+    m_fee_source = addFeeSourceRow(form, tr("Optional: when no address is selected the fee is paid from the masternode payout address."));
 
     setupUi(tr("Update Masternode Registrar"),
             tr("Update the operator key, voting address or payout address of this masternode. The masternode owner key must be present in this wallet. Fields left blank keep their current value."),
@@ -401,18 +443,9 @@ RevokeDialog::RevokeDialog(interfaces::Node& node, WalletModel* wallet_model, co
     connect(m_operator_key_edit, &QLineEdit::textChanged, this, &RevokeDialog::validate);
     form->addRow(tr("Operator secret key:"), m_operator_key_edit);
 
-    m_fee_source = new FeeSourcePicker(this);
-    m_fee_source->setWalletModel(wallet_model);
-    m_fee_source->refresh();
-    auto* fee_note = new QLabel(m_is_shared ?
-                                    tr("Required: a shared masternode has no payout address of its own to pay the transaction fee from.") :
-                                    tr("Optional: when no address is selected the fee is paid from the operator payout or masternode payout address."),
-                                this);
-    fee_note->setWordWrap(true);
-    auto* fee_box = new QVBoxLayout();
-    fee_box->addWidget(m_fee_source);
-    fee_box->addWidget(fee_note);
-    form->addRow(tr("Fee source:"), fee_box);
+    m_fee_source = addFeeSourceRow(form, m_is_shared ?
+                                             tr("Required: a shared masternode has no payout address of its own to pay the transaction fee from.") :
+                                             tr("Optional: when no address is selected the fee is paid from the operator payout or masternode payout address."));
 
     setupUi(tr("Revoke Masternode Service"),
             tr("Revoking clears the masternode's service address and PoSe-bans it until a new operator key is set with a registrar update. The collateral is not affected. This is mainly needed before re-registering with the same IP address or operator key."),

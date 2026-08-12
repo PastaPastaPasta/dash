@@ -50,7 +50,6 @@ public:
     void refresh();
 
     QString selectedAddress() const;
-    CAmount selectedBalance() const;
 
 private:
     WalletModel* m_wallet_model{nullptr};

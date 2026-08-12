@@ -10,6 +10,7 @@
 #include <interfaces/wallet.h>
 #include <key_io.h>
 #include <primitives/transaction.h>
+#include <script/standard.h>
 #include <util/strencodings.h>
 
 #include <qt/bitcoinunits.h>
@@ -33,6 +34,8 @@
 #include <QVBoxLayout>
 
 #include <univalue.h>
+
+#include <variant>
 
 namespace {
 //! Headroom on top of the collateral the funding address must hold for fees
@@ -199,7 +202,7 @@ QWidget* RegisterMasternodeWizard::createCollateralPage()
     {
         auto* box{new QVBoxLayout(m_col_wallet_box)};
         box->setContentsMargins(24, 0, 0, 0);
-        box->addWidget(MakeHint(tr("Unspent outputs of exactly the collateral amount, with at least one "
+        box->addWidget(MakeHint(tr("Unspent P2PKH outputs of exactly the collateral amount, with at least one "
                                    "confirmation and not used by another masternode."),
                                 m_col_wallet_box));
         m_col_utxo_combo = new QComboBox(m_col_wallet_box);
@@ -567,6 +570,12 @@ CAmount RegisterMasternodeWizard::collateralAmount() const
     return GetMnType(isEvo() ? MnType::Evo : MnType::Regular).collat_amount;
 }
 
+bool RegisterMasternodeWizard::secretConfirmed() const
+{
+    return m_confirm_edit->text().trimmed().compare(m_operator_widget->secretHex().right(4),
+                                                    Qt::CaseInsensitive) == 0;
+}
+
 void RegisterMasternodeWizard::rebuildOrder()
 {
     m_order = {PageType, PageCollateral, PageService, PageKeys, PagePayout};
@@ -714,7 +723,10 @@ bool RegisterMasternodeWizard::validatePage(Page page, QString& err)
             }
             QString service_err;
             const bool has_service{!MasternodeWidgetUtil::parseServiceList(m_service_edit->text(), service_err).isEmpty()};
-            if (has_service && (p2p.isEmpty() || https.isEmpty())) {
+            if (p2p.isEmpty() != https.isEmpty()) {
+                err = tr("Enter both a Platform P2P and a Platform HTTPS address; one cannot be registered "
+                         "without the other.");
+            } else if (has_service && p2p.isEmpty()) {
                 err = tr("Enter at least one Platform P2P and one Platform HTTPS address, or clear the service "
                          "addresses to set everything later with a service update.");
             }
@@ -800,12 +812,9 @@ void RegisterMasternodeWizard::updateButtons()
         enabled = false;
         tooltip = tr("This wallet is watch-only. Masternode registration requires a wallet that can sign "
                      "transactions.");
-    } else if (current == PageResult && m_operator_widget->hasGeneratedSecret()) {
-        const QString expected{m_operator_widget->secretHex().right(4)};
-        if (m_confirm_edit->text().trimmed().compare(expected, Qt::CaseInsensitive) != 0) {
-            enabled = false;
-            tooltip = tr("Confirm you saved the operator secret key by typing its last 4 characters.");
-        }
+    } else if (current == PageResult && m_operator_widget->hasGeneratedSecret() && !secretConfirmed()) {
+        enabled = false;
+        tooltip = tr("Confirm you saved the operator secret key by typing its last 4 characters.");
     }
     m_next_button->setEnabled(enabled);
     m_next_button->setToolTip(tooltip);
@@ -835,10 +844,17 @@ void RegisterMasternodeWizard::refreshCollateralCandidates()
     }
     const CAmount collateral{collateralAmount()};
     for (const auto& [dest, coins] : m_walletModel->wallet().listCoins()) {
-        const QString address{QString::fromStdString(EncodeDestination(dest))};
         for (const auto& [outpoint, txout] : coins) {
             if (txout.txout.nValue != collateral || txout.is_spent || txout.depth_in_main_chain < 1) continue;
             if (m_walletModel->wallet().isLockedCoin(outpoint)) continue;
+            // protx register only accepts P2PKH collaterals; check the coin's own
+            // script, as listCoins() groups change under the parent's address
+            CTxDestination coin_dest;
+            if (!ExtractDestination(txout.txout.scriptPubKey, coin_dest) ||
+                !std::holds_alternative<PKHash>(coin_dest)) {
+                continue;
+            }
+            const QString address{QString::fromStdString(EncodeDestination(coin_dest))};
             const QString txid{QString::fromStdString(outpoint.hash.ToString())};
             m_col_utxo_combo->addItem(QString("%1:%2 (%3)").arg(txid).arg(outpoint.n).arg(address), txid);
             m_col_utxo_combo->setItemData(m_col_utxo_combo->count() - 1, static_cast<int>(outpoint.n), VOUT_ROLE);
@@ -1081,24 +1097,21 @@ void RegisterMasternodeWizard::reject()
 {
     if (m_busy) return;
     if (m_registered) {
-        if (m_operator_widget->hasGeneratedSecret()) {
-            const QString expected{m_operator_widget->secretHex().right(4)};
-            if (m_confirm_edit->text().trimmed().compare(expected, Qt::CaseInsensitive) != 0 &&
-                QMessageBox::warning(this, tr("Operator secret not confirmed"),
-                                     tr("You have not confirmed saving the operator secret key. Without it your "
-                                        "masternode cannot operate. Close anyway?"),
-                                     QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) {
-                return;
-            }
+        if (m_operator_widget->hasGeneratedSecret() && !secretConfirmed() &&
+            QMessageBox::warning(this, tr("Operator secret not confirmed"),
+                                 tr("You have not confirmed saving the operator secret key. Without it your "
+                                    "masternode cannot operate. Close anyway?"),
+                                 QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) {
+            return;
         }
         QDialog::accept();
         return;
     }
     if (!m_prepared_tx.isEmpty()) {
         if (QMessageBox::warning(this, tr("Discard prepared registration?"),
-                                 tr("The prepared registration will be discarded. If the collateral or fee inputs "
-                                    "belong to this wallet they stay locked; unlock them via coin control if you "
-                                    "do not intend to retry."),
+                                 tr("The prepared registration will be discarded. If the collateral belongs to "
+                                    "this wallet it stays locked; unlock it via coin control if you do not intend "
+                                    "to retry."),
                                  QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) {
             return;
         }

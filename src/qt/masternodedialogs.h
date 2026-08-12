@@ -15,10 +15,12 @@ class MasternodeEntry;
 class ProTxSender;
 class QComboBox;
 class QDialogButtonBox;
+class QFormLayout;
 class QLabel;
 class QLayout;
 class QLineEdit;
 class QPushButton;
+class QSpinBox;
 class QValidatedLineEdit;
 class UniValue;
 class WalletModel;
@@ -34,12 +36,21 @@ class MasternodeActionDialog : public QDialog
 {
     Q_OBJECT
 
+public Q_SLOTS:
+    //! Ignore Esc, Cancel and window-close while a protx command is in flight,
+    //! so the dialog cannot disappear mid-transaction
+    void reject() override;
+
 protected:
     MasternodeActionDialog(interfaces::Node& node, WalletModel* wallet_model, const MasternodeEntry& entry, QWidget* parent);
 
     //! Complete construction: place `form` between the intro text and the error
     //! label + button box, then run the first validate() pass
     void setupUi(const QString& title, const QString& intro, QLayout* form, const QString& ok_text);
+
+    //! Append a "Fee source:" row (picker plus explanatory `note`) to `form` and
+    //! return the picker, already wired to the dialog's wallet model
+    FeeSourcePicker* addFeeSourceRow(QFormLayout* form, const QString& note);
 
     //! True when a wallet able to sign transactions is available
     bool canSign() const;
@@ -100,8 +111,12 @@ private:
     QLineEdit* m_addrs_edit{nullptr};
     QLineEdit* m_operator_key_edit{nullptr};
     QLineEdit* m_platform_node_id_edit{nullptr};
+    // v24 active: ADDR:PORT lists. Pre-v24 a ProUpServTx only carries bare
+    // Platform port numbers, so port spinboxes are shown instead.
     QLineEdit* m_platform_p2p_edit{nullptr};
     QLineEdit* m_platform_https_edit{nullptr};
+    QSpinBox* m_platform_p2p_port_edit{nullptr};
+    QSpinBox* m_platform_https_port_edit{nullptr};
     QValidatedLineEdit* m_operator_payout_edit{nullptr};
     FeeSourcePicker* m_fee_source{nullptr};
 };
