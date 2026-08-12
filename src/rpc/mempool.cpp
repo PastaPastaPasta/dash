@@ -245,23 +245,12 @@ static std::vector<RPCResult> MempoolEntryDescription()
 {
     return {
         RPCResult{RPCResult::Type::NUM, "vsize", "Transaction size."},
-        RPCResult{RPCResult::Type::STR_AMOUNT, "fee", /*optional=*/true,
-                  "transaction fee, denominated in " + CURRENCY_UNIT + " (DEPRECATED, returned only if config option -deprecatedrpc=fees is passed)"},
-        RPCResult{RPCResult::Type::STR_AMOUNT, "modifiedfee", /*optional=*/true,
-                  "transaction fee with fee deltas used for mining priority, denominated in " + CURRENCY_UNIT +
-                      " (DEPRECATED, returned only if config option -deprecatedrpc=fees is passed)"},
         RPCResult{RPCResult::Type::NUM_TIME, "time", "local time transaction entered pool in " + UNIX_EPOCH_TIME},
         RPCResult{RPCResult::Type::NUM, "height", "block height when transaction entered pool"},
         RPCResult{RPCResult::Type::NUM, "descendantcount", "number of in-mempool descendant transactions (including this one)"},
         RPCResult{RPCResult::Type::NUM, "descendantsize", "size of in-mempool descendants (including this one)"},
-        RPCResult{RPCResult::Type::STR_AMOUNT, "descendantfees", /*optional=*/true,
-                  "transaction fees of in-mempool descendants (including this one) with fee deltas used for mining priority, denominated in " +
-                      CURRENCY_ATOM + "s (DEPRECATED, returned only if config option -deprecatedrpc=fees is passed)"},
         RPCResult{RPCResult::Type::NUM, "ancestorcount", "number of in-mempool ancestor transactions (including this one)"},
         RPCResult{RPCResult::Type::NUM, "ancestorsize", "size of in-mempool ancestors (including this one)"},
-        RPCResult{RPCResult::Type::STR_AMOUNT, "ancestorfees", /*optional=*/true,
-                  "transaction fees of in-mempool ancestors (including this one) with fee deltas used for mining priority, denominated in " +
-                      CURRENCY_ATOM + "s (DEPRECATED, returned only if config option -deprecatedrpc=fees is passed)"},
         RPCResult{RPCResult::Type::OBJ, "fees", "",
             {
                 RPCResult{RPCResult::Type::STR_AMOUNT, "base", "transaction fee, denominated in " + CURRENCY_UNIT},
@@ -283,24 +272,12 @@ static void entryToJSON(const CTxMemPool& pool, UniValue& info, const CTxMemPool
     AssertLockHeld(pool.cs);
 
     info.pushKV("vsize", (int)e.GetTxSize());
-    // TODO: top-level fee fields are deprecated. deprecated_fee_fields_enabled blocks should be removed in v24
-    const bool deprecated_fee_fields_enabled{IsDeprecatedRPCEnabled("fees")};
-    if (deprecated_fee_fields_enabled) {
-        info.pushKV("fee", ValueFromAmount(e.GetFee()));
-        info.pushKV("modifiedfee", ValueFromAmount(e.GetModifiedFee()));
-    }
     info.pushKV("time", count_seconds(e.GetTime()));
     info.pushKV("height", (int)e.GetHeight());
     info.pushKV("descendantcount", e.GetCountWithDescendants());
     info.pushKV("descendantsize", e.GetSizeWithDescendants());
-    if (deprecated_fee_fields_enabled) {
-        info.pushKV("descendantfees", e.GetModFeesWithDescendants());
-    }
     info.pushKV("ancestorcount", e.GetCountWithAncestors());
     info.pushKV("ancestorsize", e.GetSizeWithAncestors());
-    if (deprecated_fee_fields_enabled) {
-        info.pushKV("ancestorfees", e.GetModFeesWithAncestors());
-    }
 
     UniValue fees(UniValue::VOBJ);
     fees.pushKV("base", ValueFromAmount(e.GetFee()));
@@ -473,9 +450,8 @@ static RPCHelpMan getmempoolancestors()
     }
 
     CTxMemPool::setEntries setAncestors;
-    uint64_t noLimit = std::numeric_limits<uint64_t>::max();
     std::string dummy;
-    mempool.CalculateMemPoolAncestors(*it, setAncestors, noLimit, noLimit, noLimit, noLimit, dummy, false);
+    mempool.CalculateMemPoolAncestors(*it, setAncestors, CTxMemPool::Limits::NoLimits(), dummy, false);
 
     if (!fVerbose) {
         UniValue o(UniValue::VARR);
@@ -697,8 +673,8 @@ UniValue MempoolInfoToJSON(const CTxMemPool& pool, const llmq::CInstantSendManag
     ret.pushKV("usage", (int64_t)pool.DynamicMemoryUsage());
     ret.pushKV("total_fee", ValueFromAmount(pool.GetTotalFee()));
     ret.pushKV("maxmempool", pool.m_max_size_bytes);
-    ret.pushKV("mempoolminfee", ValueFromAmount(std::max(pool.GetMinFee(), ::minRelayTxFee).GetFeePerK()));
-    ret.pushKV("minrelaytxfee", ValueFromAmount(::minRelayTxFee.GetFeePerK()));
+    ret.pushKV("mempoolminfee", ValueFromAmount(std::max(pool.GetMinFee(), pool.m_min_relay_feerate).GetFeePerK()));
+    ret.pushKV("minrelaytxfee", ValueFromAmount(pool.m_min_relay_feerate.GetFeePerK()));
     ret.pushKV("instantsendlocks", isman.GetInstantSendLockCount());
     ret.pushKV("unbroadcastcount", pool.GetUnbroadcastTxs().size());
     return ret;

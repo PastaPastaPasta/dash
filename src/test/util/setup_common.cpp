@@ -20,13 +20,13 @@
 #include <init.h>
 #include <init/common.h>
 #include <interfaces/chain.h>
-#include <mempool_args.h>
 #include <net.h>
 #include <net_processing.h>
 #include <noui.h>
 #include <node/blockstorage.h>
 #include <node/chainstate.h>
 #include <node/context.h>
+#include <node/mempool_args.h>
 #include <node/miner.h>
 #include <node/sync_manager.h>
 #include <policy/fees.h>
@@ -296,10 +296,8 @@ ChainTestingSetup::~ChainTestingSetup()
     m_node.scheduler.reset();
 }
 
-void ChainTestingSetup::LoadVerifyActivateChainstate()
+node::ChainstateLoadOptions ChainTestingSetup::ChainstateLoadOptionsForTest()
 {
-    auto& chainman{*Assert(m_node.chainman)};
-
     node::ChainstateLoadOptions options;
     options.mempool = Assert(m_node.mempool.get());
     options.mn_metaman = Assert(m_node.mn_metaman.get());
@@ -317,6 +315,14 @@ void ChainTestingSetup::LoadVerifyActivateChainstate()
     options.check_level = m_args.GetIntArg("-checklevel", DEFAULT_CHECKLEVEL);
     options.check_interrupt = [] { return false; };
     options.coins_error_cb = [] {};
+    return options;
+}
+
+void ChainTestingSetup::LoadVerifyActivateChainstate()
+{
+    auto& chainman{*Assert(m_node.chainman)};
+
+    const node::ChainstateLoadOptions options{ChainstateLoadOptionsForTest()};
 
     auto [status, error] = LoadChainstate(chainman, m_cache_sizes, options, m_node.evodb, m_node.dmnman, m_node.llmq_ctx,
                                           m_node.chain_helper);
@@ -700,9 +706,9 @@ void TestChainSetup::MockMempoolMinFee(const CFeeRate& target_feerate)
     assert(m_node.mempool->size() == 0);
     // The target feerate cannot be too low...
     // ...otherwise the transaction's feerate will need to be negative.
-    assert(target_feerate > ::incrementalRelayFee);
+    assert(target_feerate > m_node.mempool->m_incremental_relay_feerate);
     // ...otherwise this is not meaningful. The feerate policy uses the maximum of both feerates.
-    assert(target_feerate > ::minRelayTxFee);
+    assert(target_feerate > m_node.mempool->m_min_relay_feerate);
 
     // Manually create an invalid transaction. Manually set the fee in the CTxMemPoolEntry to
     // achieve the exact target feerate.
@@ -713,7 +719,7 @@ void TestChainSetup::MockMempoolMinFee(const CFeeRate& target_feerate)
     LockPoints lp;
     // The new mempool min feerate is equal to the removed package's feerate + incremental feerate.
     const auto tx_fee = target_feerate.GetFee(GetVirtualTransactionSize(*tx)) -
-        ::incrementalRelayFee.GetFee(GetVirtualTransactionSize(*tx));
+        m_node.mempool->m_incremental_relay_feerate.GetFee(GetVirtualTransactionSize(*tx));
     m_node.mempool->addUnchecked(CTxMemPoolEntry(tx, /*fee=*/tx_fee,
                                                  /*time=*/0, /*entry_height=*/1,
                                                  /*spends_coinbase=*/true, /*sigops_count=*/1, lp));
