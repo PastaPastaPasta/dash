@@ -11,6 +11,7 @@
 #include <qt/clientmodel.h>
 #include <qt/descriptiondialog.h>
 #include <qt/guiutil.h>
+#include <qt/masternodedialogs.h>
 #include <qt/masternodewizard.h>
 #include <qt/walletmodel.h>
 
@@ -123,6 +124,10 @@ MasternodeList::MasternodeList(QWidget* parent) :
     contextMenuDIP3 = new QMenu(this);
     contextMenuDIP3->addAction(tr("Copy ProTx Hash"), this, &MasternodeList::copyProTxHash_clicked);
     contextMenuDIP3->addAction(tr("Copy Collateral Outpoint"), this, &MasternodeList::copyCollateralOutpoint_clicked);
+    contextMenuDIP3->addSeparator();
+    m_action_update_service = contextMenuDIP3->addAction(tr("Update Service…"), this, &MasternodeList::onUpdateService);
+    m_action_update_registrar = contextMenuDIP3->addAction(tr("Update Registrar…"), this, &MasternodeList::onUpdateRegistrar);
+    m_action_revoke = contextMenuDIP3->addAction(tr("Revoke…"), this, &MasternodeList::onRevoke);
 
     QMenu* filterMenu = contextMenuDIP3->addMenu(tr("Filter by"));
     filterMenu->addAction(tr("Collateral Address"), this, &MasternodeList::filterByCollateralAddress);
@@ -201,9 +206,55 @@ void MasternodeList::showRegisterWizard()
 void MasternodeList::showContextMenuDIP3(const QPoint& point)
 {
     QModelIndex index = ui->tableViewMasternodes->indexAt(point);
-    if (index.isValid()) {
-        contextMenuDIP3->exec(QCursor::pos());
+    if (!index.isValid()) {
+        return;
     }
+
+    const auto* entry = GetSelectedEntry();
+    const bool have_wallet{walletModel != nullptr && entry != nullptr};
+    m_action_update_service->setEnabled(have_wallet);
+    m_action_revoke->setEnabled(have_wallet);
+    // ProUpRegTx is rejected for shared masternodes (owner keys are per share); it also needs
+    // the owner key in this wallet
+    const bool can_update_registrar{have_wallet && !entry->isShared() &&
+                                    walletModel->wallet().isSpendable(PKHash(entry->keyIdOwnerRaw()))};
+    m_action_update_registrar->setEnabled(can_update_registrar);
+    m_action_update_registrar->setToolTip(
+        !have_wallet || can_update_registrar ? QString{} :
+        entry->isShared() ? tr("Shared masternodes update their keys with a unanimous key rotation instead") :
+                            tr("Requires this masternode's owner key in the wallet"));
+
+    contextMenuDIP3->exec(QCursor::pos());
+}
+
+void MasternodeList::onUpdateService()
+{
+    const auto* entry = GetSelectedEntry();
+    if (!entry || !clientModel || !walletModel) {
+        return;
+    }
+    UpdateServiceDialog dlg(clientModel->node(), walletModel, *entry, this);
+    dlg.exec();
+}
+
+void MasternodeList::onUpdateRegistrar()
+{
+    const auto* entry = GetSelectedEntry();
+    if (!entry || !clientModel || !walletModel || entry->isShared()) {
+        return;
+    }
+    UpdateRegistrarDialog dlg(clientModel->node(), walletModel, *entry, this);
+    dlg.exec();
+}
+
+void MasternodeList::onRevoke()
+{
+    const auto* entry = GetSelectedEntry();
+    if (!entry || !clientModel || !walletModel) {
+        return;
+    }
+    RevokeDialog dlg(clientModel->node(), walletModel, *entry, this);
+    dlg.exec();
 }
 
 void MasternodeList::updateMasternodeList()
