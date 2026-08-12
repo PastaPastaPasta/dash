@@ -23,10 +23,16 @@ wallet without hand-assembling `protx` commands in the debug console.
   held in another wallet or on a hardware device (prepare, sign the message
   out-of-band, then submit).
 - Owner and voting addresses are generated from the wallet, so its backup covers
-  them. The operator BLS key is generated and saved in the wallet (new default),
-  generated without saving (its secret shown once, behind a confirmation), or
-  supplied as a hosting provider's public key. Either way the matching
+  them. The operator BLS key is **derived from the wallet's recovery phrase** at
+  `m/9'/coin'/3'/3'/index` (new default for HD wallets) — the same derivation the
+  Dash mobile wallets use, so the recovery phrase alone restores the key. Wallets
+  with no reachable seed can instead generate and store the key in the wallet
+  file, and generating without saving (secret shown once) remains available, as
+  does supplying a hosting provider's public key. Either way the matching
   `masternodeblsprivkey` line for the masternode server's `dash.conf` is shown.
+- **Show Operator Key** in the masternode list's context menu shows the operator
+  secret again for any masternode whose key this wallet holds, whether derived or
+  stored.
 
 ## Transaction history
 
