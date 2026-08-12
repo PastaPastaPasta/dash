@@ -12,6 +12,8 @@
 #include <QStringList>
 #include <QWidget>
 
+#include <vector>
+
 class QValidatedLineEdit;
 class WalletModel;
 
@@ -47,6 +49,14 @@ QLabel* makeTitle(const QString& text, QWidget* parent, double point_size = -1);
 QLabel* makeHint(const QString& text, QWidget* parent);
 //! Word-wrapped, selectable plain-text value; `monospace` for addresses, hashes and keys
 QLabel* makeValue(const QString& text, QWidget* parent, bool monospace = false);
+//! Group `text` into blocks of `chunk_size` characters separated by spaces. A BLS
+//! key is one 96-character word that a wrapping label refuses to break; grouped,
+//! it wraps between blocks and stays readable.
+QString chunked(const QString& text, int chunk_size = 12);
+//! Monospace value with a Copy button beside it. `display` is shown as given,
+//! `copy_text` is what the button puts on the clipboard, so a key can be shown
+//! in chunks and still be copied unbroken.
+QWidget* makeCopyableValue(const QString& display, const QString& copy_text, QWidget* parent);
 //! Frame grouping one choice or one section, named "mnCard" for theming
 QFrame* makeCard(QWidget* parent);
 
@@ -86,10 +96,11 @@ private:
     CAmount m_minimum_balance{0};
 };
 
-//! Operator key selection: generate a fresh BLS key pair (basic scheme) or
-//! paste an existing operator public key. The generated secret is kept only in
-//! memory; the owning dialog is responsible for storing it in the wallet or
-//! showing it to the user once.
+//! Operator key selection: derive a BLS key pair from the wallet's HD seed,
+//! generate a fresh one (basic scheme), or paste an existing operator public
+//! key. A derived or generated secret is kept only in memory here; the owning
+//! dialog is responsible for deriving it, storing it in the wallet, or showing
+//! it to the user once.
 class OperatorKeyWidget : public QWidget
 {
     Q_OBJECT
@@ -97,12 +108,20 @@ class OperatorKeyWidget : public QWidget
 public:
     //! Where the operator key comes from and what happens to its secret
     enum class Mode {
+        Derive,           //!< derived by the wallet from its HD seed; see setDerivedKey()
         GenerateAndStore, //!< generated here; the caller stores the secret in the wallet
         GenerateOnly,     //!< generated here; the secret exists only in this dialog
         Existing,         //!< an operator public key supplied by the user
     };
 
     explicit OperatorKeyWidget(QWidget* parent = nullptr);
+
+    //! Offer the "derive from this wallet's recovery phrase" choice and select
+    //! it. Deriving needs an unlocked wallet, so the key itself is not produced
+    //! here: the owning dialog derives it when the user is about to register and
+    //! hands it back through setDerivedKey(). Only callers doing that may call
+    //! this. Meant to be called once while setting the widget up.
+    void offerDerived();
 
     //! Offer the "generate and save in this wallet" choice and select it. Only
     //! callers that actually store secretHex() after a successful registration
@@ -111,15 +130,28 @@ public:
     //! `disabled_reason`. Meant to be called once while setting the widget up.
     void offerStoreInWallet(bool enabled, const QString& disabled_reason = QString());
 
+    //! Adopt the key the wallet derived: `secret` is its raw 32-byte BLS secret
+    //! and `path` the derivation path to show beside it. False when `secret` is
+    //! not a usable key, in which case the widget keeps waiting for one.
+    bool setDerivedKey(const std::vector<unsigned char>& secret, const QString& path);
+    //! True while Derive is selected and setDerivedKey() has not succeeded yet
+    bool needsDerivation() const;
+    //! Derivation path passed to setDerivedKey(); empty until then
+    QString derivationPath() const { return m_derived_path; }
+
     //! Currently selected mode
     Mode mode() const;
-    //! Selected operator public key in basic-scheme hex (empty when invalid)
+    //! Selected operator public key in basic-scheme hex (empty when invalid, and
+    //! while a derived key has not been handed back yet)
     QString publicKeyHex() const;
-    //! Generated secret key hex; empty when an existing public key is used
+    //! Derived or generated secret key hex; empty when an existing public key is
+    //! used, and while a derived key has not been handed back yet
     QString secretHex() const;
-    //! True when the user chose to generate a key inside this widget
+    //! True when this widget holds the operator secret (derived or generated),
+    //! rather than only the public key of a secret somebody else keeps
     bool hasGeneratedSecret() const;
-    //! True when publicKeyHex() would return a usable key
+    //! True when publicKeyHex() would return a usable key, or will once the
+    //! caller has derived it
     bool isValid() const;
 
 Q_SIGNALS:
@@ -129,14 +161,24 @@ private Q_SLOTS:
     void updateState();
 
 private:
+    QFrame* m_derive_card;
     QFrame* m_store_card;
+    QRadioButton* m_derive_radio;
     QRadioButton* m_store_radio;
     QRadioButton* m_generate_radio;
     QRadioButton* m_existing_radio;
+    QWidget* m_derive_body;
     QWidget* m_store_body;
     QWidget* m_generate_body;
     QWidget* m_existing_body;
+    QLabel* m_derive_pending;
+    QWidget* m_derive_key_box;
+    QLabel* m_derive_public_label;
+    QLabel* m_derive_path_label;
     QValidatedLineEdit* m_existing_edit;
+    QString m_derived_secret;
+    QString m_derived_public;
+    QString m_derived_path;
     QString m_generated_secret;
     QString m_generated_public;
 };

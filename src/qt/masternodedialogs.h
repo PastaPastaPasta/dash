@@ -10,6 +10,8 @@
 #include <QDialog>
 #include <QString>
 
+#include <vector>
+
 class FeeSourcePicker;
 class MasternodeEntry;
 class ProTxSender;
@@ -162,6 +164,22 @@ private:
     QComboBox* m_reason_combo{nullptr};
     QLineEdit* m_operator_key_edit{nullptr};
     FeeSourcePicker* m_fee_source{nullptr};
+};
+
+//! Show the operator secret key this wallet holds for a masternode, together
+//! with the dash.conf line the masternode server needs. Sends nothing: it only
+//! reads the key back out of the wallet, which is why it is a plain dialog
+//! rather than a MasternodeActionDialog.
+class ShowOperatorKeyDialog : public QDialog
+{
+    Q_OBJECT
+
+public:
+    //! `operator_pubkey` must be one of listMasternodeOperatorKeys(), passed back
+    //! as the wallet's own bytes. The wallet is unlocked while constructing; when
+    //! that is refused the dialog shows the reason instead of the key.
+    ShowOperatorKeyDialog(WalletModel* wallet_model, const QString& protx_hash,
+                          const std::vector<unsigned char>& operator_pubkey, QWidget* parent = nullptr);
 };
 
 #endif // BITCOIN_QT_MASTERNODEDIALOGS_H

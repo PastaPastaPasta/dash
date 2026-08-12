@@ -17,6 +17,7 @@
 #include <atomic>
 #include <memory>
 #include <optional>
+#include <vector>
 
 class ClientModel;
 class MasternodeFeed;
@@ -97,6 +98,7 @@ private:
     QAction* m_action_update_share{nullptr};
     QAction* m_action_dissolve{nullptr};
     QAction* m_action_rotate_keys{nullptr};
+    QAction* m_action_show_operator_key{nullptr};
     QAction* m_action_filter_owner{nullptr};
     WalletModel* walletModel{nullptr};
     bool m_v24_active{false};
@@ -108,6 +110,10 @@ private:
     //! GetSelectedEntry plus the guards every action dialog needs: both models set and,
     //! if given, a matching isShared(). Returns nullptr when any guard fails.
     const MasternodeEntry* selectedEntryForDialog(std::optional<bool> shared = std::nullopt);
+    //! This wallet's own copy of `entry`'s registered operator public key, empty when
+    //! the wallet does not hold that key. Returned as the wallet's own 48 bytes, so
+    //! getMasternodeOperatorKey() gets back exactly what listMasternodeOperatorKeys() gave.
+    std::vector<unsigned char> heldOperatorKey(const MasternodeEntry& entry) const;
 
 Q_SIGNALS:
     void doubleClicked(const QModelIndex&);
@@ -132,6 +138,7 @@ private Q_SLOTS:
     void onUpdateRegistrar();
     void onUpdateService();
     void onUpdateShare();
+    void onShowOperatorKey();
     void showContextMenuDIP3(const QPoint&);
     void updateFilteredCount();
     void updateMasternodeList();

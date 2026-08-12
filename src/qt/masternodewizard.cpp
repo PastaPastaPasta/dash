@@ -40,7 +40,9 @@
 
 #include <univalue.h>
 
+#include <string>
 #include <variant>
+#include <vector>
 
 namespace {
 using MasternodeWidgetUtil::BODY_INDENT;
@@ -373,11 +375,18 @@ QWidget* RegisterMasternodeWizard::createKeysPage()
                                        page));
     m_operator_widget = new OperatorKeyWidget(page);
     if (m_walletModel != nullptr) {
-        const bool can_store{m_walletModel->wallet().canStoreMasternodeOperatorKey()};
-        m_operator_widget->offerStoreInWallet(
-            can_store, can_store ? QString() :
-                                   tr("This wallet cannot store an operator key, so the secret key can only be "
-                                      "shown once."));
+        // Only the best choice this wallet can make is offered; the ones it
+        // cannot make would be dead options. When it can make none, the store
+        // choice stays visible but disabled to explain why.
+        if (m_walletModel->wallet().canDeriveMasternodeOperatorKey()) {
+            m_operator_widget->offerDerived();
+        } else {
+            const bool can_store{m_walletModel->wallet().canStoreMasternodeOperatorKey()};
+            m_operator_widget->offerStoreInWallet(
+                can_store, can_store ? QString() :
+                                       tr("This wallet can neither derive an operator key from its recovery phrase "
+                                          "nor store one, so the secret key can only be shown once."));
+        }
     }
     operator_block->addWidget(m_operator_widget);
     layout->addStretch();
@@ -607,6 +616,12 @@ QWidget* RegisterMasternodeWizard::createResultPage()
         conf_row->addWidget(copy_conf);
         box->addLayout(conf_row);
 
+        // Where to find the key again, for the cases where the wallet keeps it
+        m_secret_recall = MakeHint(tr("You can see it again later from the Masternodes tab: right-click the "
+                                      "masternode and choose Show Operator Key."),
+                                   m_secret_box);
+        box->addWidget(m_secret_recall);
+
         // Only worth asking for when the key exists nowhere else
         m_confirm_box = new QWidget(m_secret_box);
         auto* confirm_layout{new QVBoxLayout(m_confirm_box)};
@@ -692,10 +707,15 @@ CAmount RegisterMasternodeWizard::collateralAmount() const
     return GetMnType(isEvo() ? MnType::Evo : MnType::Regular).collat_amount;
 }
 
+bool RegisterMasternodeWizard::secretGateRequired() const
+{
+    // A key the wallet derives or stores can be looked up again, so only a secret
+    // that exists nowhere but on the result page is worth gating on
+    return m_operator_widget->hasGeneratedSecret() && !m_operator_key_derived && !m_operator_key_saved;
+}
+
 bool RegisterMasternodeWizard::secretConfirmed() const
 {
-    // A key the wallet stored needs no hand-copy confirmation
-    if (m_operator_key_saved) return true;
     return m_confirm_edit->text().trimmed().compare(m_operator_widget->secretHex().right(4),
                                                     Qt::CaseInsensitive) == 0;
 }
@@ -722,6 +742,9 @@ void RegisterMasternodeWizard::enterPage(Page page)
 {
     m_pages->setCurrentIndex(page);
     showError(QString());
+    // Only the review holds an unlock of its own, to derive the operator key and
+    // hand it straight to the registration; leaving the page gives it up again
+    if (page != PageReview) m_unlock.reset();
     switch (page) {
     case PageCollateral:
         if (m_col_address->text().isEmpty() && m_walletModel != nullptr) {
@@ -766,6 +789,9 @@ void RegisterMasternodeWizard::enterPage(Page page)
         break;
     }
     case PageReview:
+        // Derive before the summary is built, so the review shows the key that
+        // will actually be registered
+        ensureOperatorKey();
         populateReview();
         break;
     default:
@@ -887,6 +913,17 @@ void RegisterMasternodeWizard::onNext()
     }
     showError(QString());
     if (current == PageReview) {
+        // Retry a derivation that failed on entering the page: the user may have
+        // unlocked the wallet since, and registering without the key must not
+        // happen at all
+        const bool was_pending{m_operator_widget->needsDerivation()};
+        if (!ensureOperatorKey()) return;
+        if (was_pending) {
+            // The summary was built without the key; nothing gets registered
+            // before it has been shown here
+            populateReview();
+            return;
+        }
         startRegistration();
     } else if (current == PageSign) {
         startSubmit();
@@ -936,7 +973,7 @@ void RegisterMasternodeWizard::updateButtons()
         enabled = false;
         tooltip = tr("This wallet is watch-only. Masternode registration requires a wallet that can sign "
                      "transactions.");
-    } else if (current == PageResult && m_operator_widget->hasGeneratedSecret() && !secretConfirmed()) {
+    } else if (current == PageResult && secretGateRequired() && !secretConfirmed()) {
         enabled = false;
         tooltip = tr("Confirm you saved the operator secret key by typing its last 4 characters.");
     }
@@ -1042,22 +1079,14 @@ void RegisterMasternodeWizard::populateReview()
         section->addWidget(makeValue(value, section_card, monospace), r, 1);
     };
     // A BLS key is one 96-character word, which a wrapping label refuses to break.
-    // A read-only plain text view wraps anywhere and still copies the exact key.
-    const auto long_row = [&section, &section_card](const QString& key, const QString& value) {
+    // Shown in chunks it wraps like the other values, and the Copy button hands
+    // out the unbroken key.
+    const auto key_row = [&section, &section_card](const QString& key, const QString& value) {
         const int r{section->rowCount()};
         section->addWidget(MakeHint(key, section_card), r, 0, Qt::AlignLeft | Qt::AlignTop);
-        auto* field{new QPlainTextEdit(value, section_card)};
-        field->setReadOnly(true);
-        field->setFrameShape(QFrame::NoFrame);
-        field->setFont(GUIUtil::fixedPitchFont());
-        // It is a value, not an input: the theme's field border would say otherwise
-        field->setStyleSheet("QPlainTextEdit { background: transparent; border: none; }");
-        field->setFocusPolicy(Qt::ClickFocus);
-        field->setWordWrapMode(QTextOption::WrapAnywhere);
-        field->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-        field->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-        field->setFixedHeight(2 * QFontMetrics(field->font()).lineSpacing() + ROW_SPACING);
-        section->addWidget(field, r, 1);
+        section->addWidget(MasternodeWidgetUtil::makeCopyableValue(MasternodeWidgetUtil::chunked(value), value,
+                                                                   section_card),
+                           r, 1);
     };
 
     // Rebuilt on every entry to the page: the user may have gone back and edited.
@@ -1110,7 +1139,12 @@ void RegisterMasternodeWizard::populateReview()
     row(tr("Owner"), ownerAddress(), /*monospace=*/true);
     row(tr("Voting"), votingAddress().isEmpty() ? tr("Same as owner") : votingAddress(),
         !votingAddress().isEmpty());
-    long_row(tr("Operator"), m_operator_widget->publicKeyHex());
+    const QString operator_key{m_operator_widget->publicKeyHex()};
+    if (operator_key.isEmpty()) {
+        row(tr("Operator"), tr("Not derived yet — see the message below"));
+    } else {
+        key_row(tr("Operator"), operator_key);
+    }
     row(QString(), operatorKeyProvenance());
 
     begin_section(tr("Payout"));
@@ -1133,6 +1167,11 @@ void RegisterMasternodeWizard::populateReview()
 QString RegisterMasternodeWizard::operatorKeyProvenance() const
 {
     switch (m_operator_widget->mode()) {
+    case OperatorKeyWidget::Mode::Derive:
+        return m_operator_widget->derivationPath().isEmpty() ?
+                   tr("Derived from this wallet's recovery phrase") :
+                   tr("Derived from this wallet's recovery phrase (path %1)")
+                       .arg(m_operator_widget->derivationPath());
     case OperatorKeyWidget::Mode::GenerateAndStore:
         return tr("Newly generated, saved in this wallet");
     case OperatorKeyWidget::Mode::GenerateOnly:
@@ -1198,10 +1237,42 @@ UniValue RegisterMasternodeWizard::buildRegisterParams() const
     return params;
 }
 
+bool RegisterMasternodeWizard::ensureOperatorKey()
+{
+    if (m_walletModel == nullptr || !m_operator_widget->needsDerivation()) return true;
+
+    // Held on until the registration reuses it or the user leaves the review, so
+    // one derivation plus one registration ask for the passphrase once
+    if (!m_unlock) m_unlock = std::make_unique<UnlockHolder>(*m_walletModel);
+    if (!m_unlock->ctx.isValid()) {
+        m_unlock.reset();
+        showError(tr("Deriving the operator key needs this wallet unlocked. Unlock it and continue, or go back and "
+                     "choose another way to get an operator key."));
+        return false;
+    }
+
+    std::vector<unsigned char> secret;
+    std::string path;
+    std::string error;
+    if (!m_walletModel->wallet().deriveMasternodeOperatorKey(secret, path, error)) {
+        showError(tr("This wallet could not derive an operator key: %1. Go back and choose another way to get "
+                     "one.")
+                      .arg(QString::fromStdString(error)));
+        return false;
+    }
+    if (!m_operator_widget->setDerivedKey(secret, QString::fromStdString(path))) {
+        showError(tr("This wallet derived an unusable operator key. Go back and choose another way to get one."));
+        return false;
+    }
+    m_operator_key_derived = true;
+    return true;
+}
+
 void RegisterMasternodeWizard::startRegistration()
 {
     if (m_walletModel == nullptr) return;
-    m_unlock = std::make_unique<UnlockHolder>(*m_walletModel);
+    // ensureOperatorKey() may already hold the unlock this call needs
+    if (!m_unlock) m_unlock = std::make_unique<UnlockHolder>(*m_walletModel);
     if (!m_unlock->ctx.isValid()) {
         m_unlock.reset();
         return;
@@ -1321,7 +1392,19 @@ void RegisterMasternodeWizard::populateResult(const QString& pro_tx_hash)
     if (generated) {
         m_secret_edit->setText(m_operator_widget->secretHex());
         m_conf_line_edit->setText(QString("masternodeblsprivkey=%1").arg(m_operator_widget->secretHex()));
-        if (m_operator_key_saved) {
+        // Both fields are longer than they are wide: show their start, not their tail
+        m_secret_edit->setCursorPosition(0);
+        m_conf_line_edit->setCursorPosition(0);
+        if (m_operator_key_derived) {
+            const QString path{m_operator_widget->derivationPath()};
+            m_secret_note->setText(path.isEmpty() ?
+                                       tr("Derived from this wallet's recovery phrase. Restoring that phrase "
+                                          "restores this key.") :
+                                       tr("Derived from this wallet's recovery phrase (path %1). Restoring that "
+                                          "phrase restores this key.")
+                                           .arg(path));
+            m_secret_note->setStyleSheet(QString());
+        } else if (m_operator_key_saved) {
             m_secret_note->setText(tr("Saved in this wallet — include it in your wallet backup. Your masternode "
                                       "server still needs the line below."));
             m_secret_note->setStyleSheet(QString());
@@ -1334,13 +1417,15 @@ void RegisterMasternodeWizard::populateResult(const QString& pro_tx_hash)
             m_secret_note->setText(tr("Save it now — it is not kept anywhere and will never be shown again."));
             m_secret_note->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
         }
-        // The confirmation gate only earns its friction when the key exists
-        // nowhere but on this screen
-        m_confirm_box->setVisible(!m_operator_key_saved);
+        // Both only apply while the wallet actually keeps the key: the show-once
+        // case cannot promise a later look, and it is the only one whose friction
+        // buys anything
+        m_secret_recall->setVisible(!secretGateRequired());
+        m_confirm_box->setVisible(secretGateRequired());
     }
 
+    // The card already carries the "Next steps" heading
     QStringList steps;
-    steps << tr("Next steps:");
     if (generated) {
         steps << tr("1. Add the line above to dash.conf on your masternode server and restart dashd there.");
     } else {
@@ -1363,7 +1448,7 @@ void RegisterMasternodeWizard::reject()
 {
     if (m_busy) return;
     if (m_registered) {
-        if (m_operator_widget->hasGeneratedSecret() && !secretConfirmed() &&
+        if (secretGateRequired() && !secretConfirmed() &&
             QMessageBox::warning(this, tr("Operator secret not confirmed"),
                                  tr("You have not confirmed saving the operator secret key. Without it your "
                                     "masternode cannot operate. Close anyway?"),

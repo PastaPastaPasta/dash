@@ -5,7 +5,9 @@
 #include <qt/masternodelist.h>
 #include <qt/forms/ui_masternodelist.h>
 
+#include <bls/bls.h>
 #include <script/standard.h>
+#include <univalue.h>
 
 #include <qt/clientfeeds.h>
 #include <qt/clientmodel.h>
@@ -26,6 +28,7 @@
 #include <QThread>
 
 #include <set>
+#include <vector>
 
 bool MasternodeListSortFilterProxyModel::filterAcceptsRow(int source_row, const QModelIndex& source_parent) const
 {
@@ -126,6 +129,7 @@ MasternodeList::MasternodeList(QWidget* parent) :
     contextMenuDIP3 = new QMenu(this);
     contextMenuDIP3->addAction(tr("Copy ProTx Hash"), this, &MasternodeList::copyProTxHash_clicked);
     contextMenuDIP3->addAction(tr("Copy Collateral Outpoint"), this, &MasternodeList::copyCollateralOutpoint_clicked);
+    m_action_show_operator_key = contextMenuDIP3->addAction(tr("Show Operator Key…"), this, &MasternodeList::onShowOperatorKey);
     contextMenuDIP3->addSeparator();
     m_action_update_service = contextMenuDIP3->addAction(tr("Update Service…"), this, &MasternodeList::onUpdateService);
     m_action_update_registrar = contextMenuDIP3->addAction(tr("Update Registrar…"), this, &MasternodeList::onUpdateRegistrar);
@@ -267,6 +271,13 @@ void MasternodeList::showContextMenuDIP3(const QPoint& point)
     }
     m_action_update_registrar->setToolTip(registrar_tooltip);
 
+    // Only offered when this wallet can actually produce the secret behind the
+    // registered operator public key
+    const bool have_operator_key{have_wallet && !heldOperatorKey(*entry).empty()};
+    m_action_show_operator_key->setEnabled(have_operator_key);
+    m_action_show_operator_key->setToolTip(
+        have_operator_key ? QString() : tr("This wallet does not hold this masternode's operator secret key"));
+
     // Every shared masternode renders the null owner key as the same placeholder
     // address, so filtering by it would match all shared entries
     m_action_filter_owner->setEnabled(entry != nullptr && !entry->isShared());
@@ -349,6 +360,56 @@ void MasternodeList::onDissolve()
         DissolveDialog dlg(clientModel->node(), walletModel, *entry, m_model->currentHeight(), this);
         dlg.exec();
     }
+}
+
+std::vector<unsigned char> MasternodeList::heldOperatorKey(const MasternodeEntry& entry) const
+{
+    if (!walletModel) {
+        return {};
+    }
+    // TODO: read the operator key off the entry once MasternodeEntry exposes it
+    // instead of only its JSON rendering
+    UniValue json;
+    if (!json.read(entry.toJson().toStdString())) {
+        return {};
+    }
+    const UniValue& state{json.find_value("state")};
+    if (!state.isObject()) {
+        return {};
+    }
+    const UniValue& registered{state.find_value("pubKeyOperator")};
+    if (!registered.isStr()) {
+        return {};
+    }
+    const QString registered_hex{QString::fromStdString(registered.get_str())};
+    for (const auto& raw : walletModel->wallet().listMasternodeOperatorKeys()) {
+        CBLSPublicKey key;
+        key.SetBytes(raw, /*specificLegacyScheme=*/false);
+        if (!key.IsValid()) {
+            continue;
+        }
+        // A masternode registered before the basic scheme renders its key the
+        // legacy way, so compare against both renderings of the wallet's own key
+        if (registered_hex == QString::fromStdString(key.ToString(/*specificLegacyScheme=*/false)) ||
+            registered_hex == QString::fromStdString(key.ToString(/*specificLegacyScheme=*/true))) {
+            return raw;
+        }
+    }
+    return {};
+}
+
+void MasternodeList::onShowOperatorKey()
+{
+    const auto* entry = selectedEntryForDialog();
+    if (!entry) {
+        return;
+    }
+    const std::vector<unsigned char> pubkey{heldOperatorKey(*entry)};
+    if (pubkey.empty()) {
+        return;
+    }
+    ShowOperatorKeyDialog dlg(walletModel, entry->proTxHash(), pubkey, this);
+    dlg.exec();
 }
 
 void MasternodeList::onRotateSharedKeys()

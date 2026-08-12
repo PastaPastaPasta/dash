@@ -22,6 +22,7 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPushButton>
 #include <QRadioButton>
 #include <QRegularExpression>
 #include <QSet>
@@ -98,6 +99,34 @@ QLabel* makeValue(const QString& text, QWidget* parent, bool monospace)
     label->setTextInteractionFlags(Qt::TextSelectableByMouse);
     if (monospace) label->setFont(GUIUtil::fixedPitchFont());
     return label;
+}
+
+QString chunked(const QString& text, int chunk_size)
+{
+    if (chunk_size <= 0) return text;
+    QString ret;
+    ret.reserve(text.size() + text.size() / chunk_size);
+    for (int pos = 0; pos < text.size(); pos += chunk_size) {
+        if (pos > 0) ret += QLatin1Char(' ');
+        ret += text.mid(pos, chunk_size);
+    }
+    return ret;
+}
+
+QWidget* makeCopyableValue(const QString& display, const QString& copy_text, QWidget* parent)
+{
+    auto* row_widget{new QWidget(parent)};
+    auto* row{new QHBoxLayout(row_widget)};
+    row->setContentsMargins(0, 0, 0, 0);
+    row->setSpacing(TITLE_SPACING);
+    auto* value{makeValue(display, row_widget, /*monospace=*/true)};
+    value->setToolTip(copy_text);
+    row->addWidget(value, /*stretch=*/1);
+    auto* copy{new QPushButton(QObject::tr("Copy"), row_widget)};
+    copy->setToolTip(QObject::tr("Copy to clipboard"));
+    QObject::connect(copy, &QPushButton::clicked, copy, [copy_text] { GUIUtil::setClipboard(copy_text); });
+    row->addWidget(copy, /*stretch=*/0, Qt::AlignTop);
+    return row_widget;
 }
 
 QFrame* makeCard(QWidget* parent)
@@ -217,9 +246,35 @@ OperatorKeyWidget::OperatorKeyWidget(QWidget* parent) :
         column->setContentsMargins(0, 0, 0, 0);
         column->setSpacing(TITLE_SPACING);
         column->addWidget(makeHint(tr("Public key"), body));
-        column->addWidget(makeValue(m_generated_public, body, /*monospace=*/true));
+        column->addWidget(makeValue(chunked(m_generated_public), body, /*monospace=*/true));
         return column;
     };
+
+    m_derive_radio = new QRadioButton(tr("Derive from this wallet's recovery phrase"), this);
+    auto derive_card{makeOptionCard(this, m_derive_radio,
+                                    tr("The secret key comes from this wallet's recovery phrase, so restoring that "
+                                       "phrase restores this key."))};
+    m_derive_card = derive_card.card;
+    m_derive_body = derive_card.body;
+    // Deriving needs an unlocked wallet, so the key only appears once the owning
+    // dialog has asked for it
+    m_derive_pending = makeHint(tr("The key is derived when you reach the review; this wallet may ask you to "
+                                   "unlock first."),
+                                m_derive_body);
+    derive_card.body_layout->addWidget(m_derive_pending);
+    m_derive_key_box = new QWidget(m_derive_body);
+    {
+        auto* column{new QVBoxLayout(m_derive_key_box)};
+        column->setContentsMargins(0, 0, 0, 0);
+        column->setSpacing(TITLE_SPACING);
+        column->addWidget(makeHint(tr("Public key"), m_derive_key_box));
+        m_derive_public_label = makeValue(QString(), m_derive_key_box, /*monospace=*/true);
+        column->addWidget(m_derive_public_label);
+        m_derive_path_label = makeHint(QString(), m_derive_key_box);
+        column->addWidget(m_derive_path_label);
+    }
+    m_derive_key_box->setVisible(false);
+    derive_card.body_layout->addWidget(m_derive_key_box);
 
     m_store_radio = new QRadioButton(tr("Generate and save in this wallet"), this);
     auto store_card{makeOptionCard(this, m_store_radio,
@@ -248,6 +303,7 @@ OperatorKeyWidget::OperatorKeyWidget(QWidget* parent) :
     // The radios live in separate cards, so auto-exclusivity by parent no
     // longer applies and a button group has to keep them exclusive.
     auto* group{new QButtonGroup(this)};
+    group->addButton(m_derive_radio);
     group->addButton(m_store_radio);
     group->addButton(m_generate_radio);
     group->addButton(m_existing_radio);
@@ -255,19 +311,48 @@ OperatorKeyWidget::OperatorKeyWidget(QWidget* parent) :
     auto* layout{new QVBoxLayout(this)};
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(TITLE_SPACING);
+    layout->addWidget(m_derive_card);
     layout->addWidget(m_store_card);
     layout->addWidget(generate_card.card);
     layout->addWidget(existing_card.card);
 
-    // Hidden until a caller commits to storing the secret; dialogs that cannot
-    // do that keep the generate/paste pair they always had.
+    // Both stay hidden until a caller commits to deriving or storing the secret;
+    // dialogs that can do neither keep the generate/paste pair they always had.
+    m_derive_card->setVisible(false);
     m_store_card->setVisible(false);
 
+    connect(m_derive_radio, &QRadioButton::toggled, this, &OperatorKeyWidget::updateState);
     connect(m_store_radio, &QRadioButton::toggled, this, &OperatorKeyWidget::updateState);
     connect(m_generate_radio, &QRadioButton::toggled, this, &OperatorKeyWidget::updateState);
     connect(m_existing_radio, &QRadioButton::toggled, this, &OperatorKeyWidget::updateState);
     connect(m_existing_edit, &QLineEdit::textChanged, this, &OperatorKeyWidget::updateState);
     updateState();
+}
+
+void OperatorKeyWidget::offerDerived()
+{
+    m_derive_card->setVisible(true);
+    m_derive_radio->setChecked(true);
+    updateState();
+}
+
+bool OperatorKeyWidget::setDerivedKey(const std::vector<unsigned char>& secret, const QString& path)
+{
+    const CBLSSecretKey key{secret};
+    if (!key.IsValid()) return false;
+    m_derived_secret = QString::fromStdString(key.ToString(/*specificLegacyScheme=*/false));
+    m_derived_public = QString::fromStdString(key.GetPublicKey().ToString(/*specificLegacyScheme=*/false));
+    m_derived_path = path;
+    m_derive_public_label->setText(MasternodeWidgetUtil::chunked(m_derived_public));
+    m_derive_path_label->setText(path.isEmpty() ? QString() : tr("Derivation path %1").arg(path));
+    m_derive_path_label->setVisible(!path.isEmpty());
+    updateState();
+    return true;
+}
+
+bool OperatorKeyWidget::needsDerivation() const
+{
+    return mode() == Mode::Derive && m_derived_public.isEmpty();
 }
 
 void OperatorKeyWidget::offerStoreInWallet(bool enabled, const QString& disabled_reason)
@@ -288,6 +373,9 @@ void OperatorKeyWidget::offerStoreInWallet(bool enabled, const QString& disabled
 void OperatorKeyWidget::updateState()
 {
     const Mode current{mode()};
+    m_derive_body->setVisible(current == Mode::Derive);
+    m_derive_pending->setVisible(m_derived_public.isEmpty());
+    m_derive_key_box->setVisible(!m_derived_public.isEmpty());
     m_store_body->setVisible(current == Mode::GenerateAndStore);
     m_generate_body->setVisible(current == Mode::GenerateOnly);
     m_existing_body->setVisible(current == Mode::Existing);
@@ -303,19 +391,37 @@ void OperatorKeyWidget::updateState()
 OperatorKeyWidget::Mode OperatorKeyWidget::mode() const
 {
     if (m_existing_radio->isChecked()) return Mode::Existing;
+    if (m_derive_radio->isChecked()) return Mode::Derive;
     if (m_store_radio->isChecked()) return Mode::GenerateAndStore;
     return Mode::GenerateOnly;
 }
 
 QString OperatorKeyWidget::publicKeyHex() const
 {
-    if (hasGeneratedSecret()) return m_generated_public;
-    return isValid() ? m_existing_edit->text().trimmed() : QString();
+    switch (mode()) {
+    case Mode::Derive:
+        return m_derived_public;
+    case Mode::GenerateAndStore:
+    case Mode::GenerateOnly:
+        return m_generated_public;
+    case Mode::Existing:
+        return isValid() ? m_existing_edit->text().trimmed() : QString();
+    }
+    return {};
 }
 
 QString OperatorKeyWidget::secretHex() const
 {
-    return hasGeneratedSecret() ? m_generated_secret : QString();
+    switch (mode()) {
+    case Mode::Derive:
+        return m_derived_secret;
+    case Mode::GenerateAndStore:
+    case Mode::GenerateOnly:
+        return m_generated_secret;
+    case Mode::Existing:
+        return {};
+    }
+    return {};
 }
 
 bool OperatorKeyWidget::hasGeneratedSecret() const
@@ -325,6 +431,8 @@ bool OperatorKeyWidget::hasGeneratedSecret() const
 
 bool OperatorKeyWidget::isValid() const
 {
+    // A derived key is only produced once the caller has an unlocked wallet, so
+    // the choice counts as valid before the key itself exists
     if (hasGeneratedSecret()) return true;
     CBLSPublicKey pubkey;
     return pubkey.SetHexStr(m_existing_edit->text().trimmed().toStdString(), /*specificLegacyScheme=*/false);

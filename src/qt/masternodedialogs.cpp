@@ -7,6 +7,7 @@
 #include <interfaces/node.h>
 #include <interfaces/wallet.h>
 #include <univalue.h>
+#include <util/strencodings.h>
 
 #include <qt/guiutil.h>
 #include <qt/masternodemodel.h>
@@ -27,6 +28,8 @@
 #include <QSpinBox>
 #include <QStringList>
 #include <QVBoxLayout>
+
+#include <string>
 
 namespace {
 //! Split a comma-separated ADDR:PORT list into trimmed, non-empty entries
@@ -474,4 +477,74 @@ void RevokeDialog::submit()
     }
 
     runProTx("protx revoke", params);
+}
+
+ShowOperatorKeyDialog::ShowOperatorKeyDialog(WalletModel* wallet_model, const QString& protx_hash,
+                                             const std::vector<unsigned char>& operator_pubkey, QWidget* parent) :
+    QDialog(parent)
+{
+    using namespace MasternodeWidgetUtil;
+
+    setWindowTitle(tr("Operator Key"));
+    setMinimumWidth(650);
+
+    // Read the key back out of the wallet first: without it this dialog has
+    // nothing to show but the reason why
+    std::vector<unsigned char> secret;
+    std::string derivation_path;
+    QString failure;
+    if (wallet_model == nullptr) {
+        failure = tr("No wallet is available.");
+    } else {
+        WalletModel::UnlockContext ctx(wallet_model->requestUnlock());
+        std::string error;
+        if (!ctx.isValid()) {
+            failure = tr("The wallet stayed locked, so the operator secret key cannot be shown.");
+        } else if (!wallet_model->wallet().getMasternodeOperatorKey(operator_pubkey, secret, derivation_path,
+                                                                    error)) {
+            failure = tr("This wallet could not produce the operator secret key: %1")
+                          .arg(QString::fromStdString(error));
+        }
+    }
+
+    auto* layout = new QVBoxLayout(this);
+    layout->setSpacing(TITLE_SPACING);
+
+    auto* protx_label = new QLabel(tr("Masternode: %1").arg(protx_hash), this);
+    protx_label->setWordWrap(true);
+    protx_label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    layout->addWidget(protx_label);
+
+    if (failure.isEmpty()) {
+        const QString public_hex{QString::fromStdString(HexStr(operator_pubkey))};
+        const QString secret_hex{QString::fromStdString(HexStr(secret))};
+        layout->addWidget(makeHint(tr("Operator public key"), this));
+        layout->addWidget(makeCopyableValue(chunked(public_hex), public_hex, this));
+        layout->addSpacing(GROUP_SPACING);
+        layout->addWidget(makeHint(tr("Operator secret key"), this));
+        layout->addWidget(makeCopyableValue(chunked(secret_hex), secret_hex, this));
+        layout->addSpacing(GROUP_SPACING);
+        layout->addWidget(makeHint(tr("Add this line to dash.conf on your masternode server:"), this));
+        const QString conf_line{QString("masternodeblsprivkey=%1").arg(secret_hex)};
+        layout->addWidget(makeCopyableValue(QString("masternodeblsprivkey=%1").arg(chunked(secret_hex)), conf_line,
+                                            this));
+        layout->addSpacing(GROUP_SPACING);
+        layout->addWidget(makeHint(derivation_path.empty() ?
+                                       tr("This key is stored in this wallet — include it in your wallet backup.") :
+                                       tr("This key is derived from this wallet's recovery phrase (path %1), so "
+                                          "restoring that phrase brings it back.")
+                                           .arg(QString::fromStdString(derivation_path)),
+                                   this));
+    } else {
+        auto* failure_label = new QLabel(failure, this);
+        failure_label->setWordWrap(true);
+        failure_label->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
+        layout->addWidget(failure_label);
+    }
+
+    auto* button_box = new QDialogButtonBox(QDialogButtonBox::Close, this);
+    connect(button_box, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    layout->addWidget(button_box);
+
+    GUIUtil::updateFonts();
 }
