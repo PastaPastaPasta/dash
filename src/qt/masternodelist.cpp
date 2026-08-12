@@ -14,6 +14,7 @@
 #include <qt/masternodedialogs.h>
 #include <qt/masternodewizard.h>
 #include <qt/sharedmncreatedialog.h>
+#include <qt/sharedmndialogs.h>
 #include <qt/walletmodel.h>
 
 #include <QApplication>
@@ -132,6 +133,9 @@ MasternodeList::MasternodeList(QWidget* parent) :
     m_action_update_registrar = contextMenuDIP3->addAction(tr("Update Registrar…"), this,
                                                            &MasternodeList::onUpdateRegistrar);
     m_action_revoke = contextMenuDIP3->addAction(tr("Revoke…"), this, &MasternodeList::onRevoke);
+    m_action_update_share = contextMenuDIP3->addAction(tr("Change My Reward Address…"), this, &MasternodeList::onUpdateShare);
+    m_action_dissolve = contextMenuDIP3->addAction(tr("Dissolve…"), this, &MasternodeList::onDissolve);
+    m_action_rotate_keys = contextMenuDIP3->addAction(tr("Rotate Operator/Voting Keys…"), this, &MasternodeList::onRotateSharedKeys);
     contextMenuDIP3->addSeparator();
 
     QMenu* filterMenu = contextMenuDIP3->addMenu(tr("Filter by"));
@@ -273,11 +277,37 @@ void MasternodeList::showContextMenuDIP3(const QPoint& point)
     m_action_update_service->setEnabled(availability.update_service);
     m_action_update_service->setToolTip(
         availability.update_service ? QString{} : tr("Requires a wallet capable of signing transactions"));
-    m_action_update_registrar->setEnabled(availability.update_registrar);
+    const bool can_update_registrar{availability.update_registrar && (entry == nullptr || !entry->isShared())};
+    m_action_update_registrar->setEnabled(can_update_registrar);
     m_action_update_registrar->setToolTip(
-        availability.update_registrar ? QString{} : tr("Requires this masternode's owner key in the wallet"));
+        can_update_registrar ? QString{} :
+        (entry != nullptr && entry->isShared()) ? tr("Shared masternodes update their keys with a unanimous key rotation instead") :
+        tr("Requires this masternode's owner key in the wallet"));
     m_action_revoke->setEnabled(availability.revoke);
     m_action_revoke->setToolTip(availability.revoke ? QString{} : tr("Requires a wallet capable of signing transactions"));
+
+    // Shared-only actions need one of this masternode's share owner keys in the wallet
+    bool owns_share{false};
+    if (can_sign && entry != nullptr && entry->isShared()) {
+        const auto& shares{entry->shares()};
+        owns_share = std::any_of(shares.begin(), shares.end(), [&](const auto& share) {
+            return walletModel->wallet().isSpendable(PKHash(share.keyIDOwner));
+        });
+    }
+    const QString shared_tooltip{!can_sign ? QString{} :
+                                 (entry == nullptr || !entry->isShared()) ? tr("Only available for shared masternodes") :
+                                 !owns_share       ? tr("Requires one of this masternode's share owner keys in the wallet") :
+                                                     QString{}};
+    for (auto* action : {m_action_update_share, m_action_dissolve, m_action_rotate_keys}) {
+        action->setEnabled(owns_share);
+        action->setToolTip(shared_tooltip);
+        action->setVisible(entry == nullptr || entry->isShared());
+    }
+    if (owns_share && entry != nullptr && !DissolveDialog::StandbyStored(entry->proTxHash())) {
+        m_action_dissolve->setText(tr("Dissolve…") + " ⚠ " + tr("(no standby dissolution stored)"));
+    } else {
+        m_action_dissolve->setText(tr("Dissolve…"));
+    }
     contextMenuDIP3->exec(QCursor::pos());
 }
 
@@ -310,6 +340,36 @@ void MasternodeList::onRevoke()
         RevokeDialog dialog(clientModel->node(), walletModel, *entry, this);
         dialog.exec();
     }
+}
+
+void MasternodeList::onUpdateShare()
+{
+    const auto* entry = GetSelectedEntry();
+    if (!entry || !clientModel || !walletModel || !entry->isShared()) {
+        return;
+    }
+    UpdateShareDialog dlg(clientModel->node(), walletModel, *entry, this);
+    dlg.exec();
+}
+
+void MasternodeList::onDissolve()
+{
+    const auto* entry = GetSelectedEntry();
+    if (!entry || !clientModel || !walletModel || !entry->isShared()) {
+        return;
+    }
+    DissolveDialog dlg(clientModel->node(), walletModel, *entry, m_model->currentHeight(), this);
+    dlg.exec();
+}
+
+void MasternodeList::onRotateSharedKeys()
+{
+    const auto* entry = GetSelectedEntry();
+    if (!entry || !clientModel || !walletModel || !entry->isShared()) {
+        return;
+    }
+    RotateSharedKeysDialog dlg(clientModel->node(), walletModel, *entry, this);
+    dlg.exec();
 }
 
 void MasternodeList::updateMasternodeList()
