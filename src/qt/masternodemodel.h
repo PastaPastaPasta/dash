@@ -11,6 +11,7 @@
 #include <QAbstractTableModel>
 #include <QByteArray>
 #include <QIcon>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 
@@ -23,6 +24,12 @@ class MasternodeEntry
 {
 private:
     bool m_banned{false};
+    bool m_shared{false};
+    CAmount m_early_penalty{0};
+    uint32_t m_early_period_blocks{0};
+    std::vector<interfaces::MnShare> m_shares;
+    QString m_shares_fingerprint{};
+    QString m_share_addresses{};
     int32_t m_last_paid_height{0};
     int32_t m_next_payment_height{0};
     int32_t m_pose_penalty{0};
@@ -61,6 +68,11 @@ public:
     ~MasternodeEntry();
 
     bool isBanned() const { return m_banned; }
+    bool isShared() const { return m_shared; }
+    CAmount earlyPenalty() const { return m_early_penalty; }
+    uint32_t earlyPeriodBlocks() const { return m_early_period_blocks; }
+    const std::vector<interfaces::MnShare>& shares() const { return m_shares; }
+    const QString& shareAddresses() const { return m_share_addresses; }
     int lastPaidHeight() const { return m_last_paid_height; }
     int nextPaymentHeight() const { return m_next_payment_height; }
     int posePenalty() const { return m_pose_penalty; }
@@ -108,9 +120,10 @@ public:
                         m_pose_ban_height, m_pose_revived_height, m_service_key, m_service, m_operator_reward_pct,
                         m_operator_reward, m_operator_payout_address, m_payout_address, m_payout_addresses,
                         m_voting_address, m_pub_key_operator, m_operator_legacy_scheme, m_network_addresses,
-                        m_platform_node_id, m_platform_p2p_addresses, m_platform_https_addresses);
+                        m_platform_node_id, m_platform_p2p_addresses, m_platform_https_addresses,
+                        m_shares_fingerprint);
     }
-    QString toHtml() const;
+    QString toHtml(int current_height = 0, const QSet<int>& my_share_indexes = {}) const;
 };
 
 using MasternodeEntryList = std::vector<std::shared_ptr<MasternodeEntry>>;
@@ -141,6 +154,10 @@ public:
         COUNT
     };
 
+    //! TYPE-column sort/filter value for shared masternodes; distinct from every MnType value
+    //! (shared masternodes are MnType::Regular with a pooled collateral)
+    static constexpr int TYPE_SHARED{-1};
+
     explicit MasternodeModel(QObject* parent = nullptr);
     ~MasternodeModel();
 
@@ -154,6 +171,7 @@ public:
     void append(std::shared_ptr<MasternodeEntry>&& entry);
     void remove(int row);
     void reconcile(MasternodeEntryList&& entries);
+    int currentHeight() const { return m_current_height; }
     void setCurrentHeight(int height) { m_current_height = height; }
     const MasternodeEntry* getEntryAt(const QModelIndex& index) const;
 };

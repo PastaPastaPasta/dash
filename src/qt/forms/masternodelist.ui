@@ -58,6 +58,11 @@
              <string>Evo</string>
             </property>
            </item>
+           <item>
+            <property name="text">
+             <string>Shared</string>
+            </property>
+           </item>
           </widget>
          </item>
          <item>

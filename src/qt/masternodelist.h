@@ -43,6 +43,7 @@ public:
         All,
         Regular,
         Evo,
+        Shared,
         COUNT
     };
 
