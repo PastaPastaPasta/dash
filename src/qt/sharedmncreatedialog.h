@@ -158,6 +158,13 @@ private:
     //! Lock or unlock a contribution's inputs in this wallet
     void setContributionLocked(const MnShareSession::Contribution& contribution, bool lock);
     void unlockAllContributedCoins();
+    //! Lock every contribution input this wallet knows (after adopting an
+    //! imported session, so its funding coins cannot be spent by accident)
+    void lockKnownContributedCoins();
+    //! Value of a recorded funding input: from the confirmed UTXO set, or
+    //! from this wallet for its own (possibly unconfirmed) outputs; nullopt
+    //! for other participants' unconfirmed inputs
+    std::optional<CAmount> resolveInputValue(const MnShareSession::Input& input) const;
 
     interfaces::Node& m_node;
     WalletModel* const m_wallet_model;
@@ -170,6 +177,9 @@ private:
     bool m_dead{false};
     QString m_dead_reason;
     bool m_updating{false}; //!< guards table/widget refresh against change signals
+    //! The session was imported with an agreed operator key: display it
+    //! read-only and never overwrite it from this dialog's key widget
+    bool m_operator_key_from_import{false};
 
     // Header
     QLabel* m_breadcrumb{nullptr};
@@ -190,6 +200,7 @@ private:
     QLineEdit* m_service_edit{nullptr};
     OperatorKeyWidget* m_operator_widget{nullptr};
     QLabel* m_operator_secret_label{nullptr};
+    QLabel* m_operator_session_key_label{nullptr};
     QLineEdit* m_secret_holder_edit{nullptr};
     QLineEdit* m_voting_edit{nullptr};
     QDoubleSpinBox* m_operator_reward_spin{nullptr};

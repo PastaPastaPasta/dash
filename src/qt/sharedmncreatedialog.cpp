@@ -66,11 +66,32 @@ constexpr int FEE_UTXO_TXID_ROLE{Qt::UserRole};
 constexpr int FEE_UTXO_VOUT_ROLE{Qt::UserRole + 1};
 constexpr int FEE_UTXO_VALUE_ROLE{Qt::UserRole + 2};
 
+//! Largest funding-input excess over collateral plus change accepted at
+//! freeze time without a strong warning (the excess is paid to miners as fee)
+constexpr CAmount MAX_EXPECTED_FUNDING_FEE{COIN / 100};
+
 QLabel* MakeHint(const QString& text, QWidget* parent)
 {
     auto* label{new QLabel(text, parent)};
     label->setWordWrap(true);
     return label;
+}
+
+//! Message box for text carrying untrusted content (participant labels from
+//! an imported session file): rendered as plain text so a crafted label
+//! cannot inject rich-text markup into the warning that talks about it
+int ShowPlainMessage(QWidget* parent, QMessageBox::Icon icon, const QString& title, const QString& text,
+                     QMessageBox::StandardButtons buttons = QMessageBox::Ok,
+                     QMessageBox::StandardButton default_button = QMessageBox::NoButton)
+{
+    QMessageBox box(parent);
+    box.setIcon(icon);
+    box.setWindowTitle(title);
+    box.setTextFormat(Qt::PlainText);
+    box.setText(text);
+    box.setStandardButtons(buttons);
+    if (default_button != QMessageBox::NoButton) box.setDefaultButton(default_button);
+    return box.exec();
 }
 
 QString FormatAmount(const WalletModel* wallet_model, CAmount amount)
@@ -243,6 +264,13 @@ QWidget* SharedMnCreateDialog::buildDraftPage()
     m_operator_widget = new OperatorKeyWidget(terms_box);
     connect(m_operator_widget, &OperatorKeyWidget::changed, this, &SharedMnCreateDialog::onTermsChanged);
     terms_form->addRow(tr("Operator key:"), m_operator_widget);
+
+    m_operator_session_key_label = new QLabel(terms_box);
+    m_operator_session_key_label->setTextFormat(Qt::PlainText);
+    m_operator_session_key_label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_operator_session_key_label->setWordWrap(true);
+    m_operator_session_key_label->setVisible(false);
+    terms_form->addRow(QString(), m_operator_session_key_label);
 
     m_operator_secret_label = new QLabel(terms_box);
     m_operator_secret_label->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -486,6 +514,7 @@ QWidget* SharedMnCreateDialog::buildDeadPage()
     layout->addWidget(title);
 
     m_dead_label = new QLabel(page);
+    m_dead_label->setTextFormat(Qt::PlainText); // shows imported participant labels
     m_dead_label->setWordWrap(true);
     m_dead_label->setAlignment(Qt::AlignCenter);
     layout->addWidget(m_dead_label);
@@ -700,9 +729,8 @@ void SharedMnCreateDialog::refreshContributions()
         CAmount resolved{0};
         int unknown{0};
         for (const auto& input : contribution.inputs) {
-            Coin coin;
-            if (m_node.getUnspentOutput(COutPoint(uint256S(input.txid.toStdString()), input.vout), coin)) {
-                resolved += coin.out.nValue;
+            if (const auto value{resolveInputValue(input)}) {
+                resolved += *value;
             } else {
                 ++unknown;
             }
@@ -911,9 +939,10 @@ void SharedMnCreateDialog::syncTermsToSession()
 {
     auto& terms{m_session.terms()};
     terms.coreP2PAddrs = m_service_edit->text().trimmed();
-    // Keep an imported operator key unless this dialog's widget holds a valid
-    // replacement (the widget cannot be pre-filled from a session file)
-    if (m_operator_widget->isValid()) {
+    // An imported session's operator key is the group's agreed key: never
+    // replace it with this dialog's widget (the widget cannot be pre-filled
+    // from a session file, so its "generated" key is always a local one)
+    if (!m_operator_key_from_import && m_operator_widget->isValid()) {
         terms.operatorPubKey = m_operator_widget->publicKeyHex();
     }
     terms.votingAddress = m_voting_edit->text().trimmed();
@@ -922,7 +951,9 @@ void SharedMnCreateDialog::syncTermsToSession()
     terms.earlyPenalty = m_early_penalty_field->value();
     m_session.setOperatorSecretHolder(m_secret_holder_edit->text().trimmed());
 
-    if (m_operator_widget->hasGeneratedSecret()) {
+    const bool widget_key_in_use{!m_operator_key_from_import ||
+                                 m_operator_widget->publicKeyHex() == terms.operatorPubKey};
+    if (widget_key_in_use && m_operator_widget->hasGeneratedSecret()) {
         m_operator_secret_label->setVisible(true);
         m_operator_secret_label->setText(
             tr("Operator secret key (write it down now, it is not stored anywhere): %1")
@@ -942,6 +973,21 @@ void SharedMnCreateDialog::pushTermsToWidgets()
     m_early_period_spin->setValue(static_cast<int>(terms.earlyPeriodBlocks));
     m_early_penalty_field->setValue(terms.earlyPenalty);
     m_secret_holder_edit->setText(m_session.operatorSecretHolder());
+
+    const bool imported_key{m_operator_key_from_import && !terms.operatorPubKey.isEmpty()};
+    m_operator_widget->setEnabled(!imported_key);
+    m_operator_session_key_label->setVisible(imported_key);
+    if (imported_key) {
+        m_operator_widget->setToolTip(tr("The imported session already carries the group's agreed operator key; "
+                                         "it is kept as-is."));
+        m_operator_session_key_label->setText(tr("Operator key from the imported session (used as-is): %1")
+                                                  .arg(terms.operatorPubKey));
+        if (m_operator_widget->publicKeyHex() != terms.operatorPubKey) {
+            m_operator_secret_label->setVisible(false); // the widget's local secret is not the session key
+        }
+    } else {
+        m_operator_widget->setToolTip(QString());
+    }
     m_updating = false;
 }
 
@@ -1004,7 +1050,7 @@ void SharedMnCreateDialog::adoptImportedText(const QString& text, const QString&
     MnShareSession imported;
     QString error;
     if (!imported.fromJson(text.toStdString(), error)) {
-        QMessageBox::critical(this, windowTitle(), error);
+        ShowPlainMessage(this, QMessageBox::Critical, windowTitle(), error);
         return;
     }
 
@@ -1021,20 +1067,21 @@ void SharedMnCreateDialog::adoptImportedText(const QString& text, const QString&
     switch (m_session.mergeEnvelope(imported, merge_error)) {
     case MnShareSession::MergeResult::Merged:
         if (!merge_error.isEmpty()) {
-            QMessageBox::warning(this, tr("Merged with warnings"), merge_error);
+            ShowPlainMessage(this, QMessageBox::Warning, tr("Merged with warnings"), merge_error);
         }
         markDirty();
         afterImport();
         break;
     case MnShareSession::MergeResult::OtherOlder:
-        QMessageBox::information(this, tr("Imported copy is older"), merge_error);
+        ShowPlainMessage(this, QMessageBox::Information, tr("Imported copy is older"), merge_error);
         break;
     case MnShareSession::MergeResult::OtherNewer: {
-        const auto choice{QMessageBox::question(
-            this, tr("Imported copy is newer"),
+        const int choice{ShowPlainMessage(
+            this, QMessageBox::Question, tr("Imported copy is newer"),
             merge_error + QStringLiteral("\n\n") + tr("Adopt the newer copy? Your local copy is discarded."),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes)};
         if (choice == QMessageBox::Yes) {
+            unlockAllContributedCoins(); // the replaced session's coin locks would otherwise leak
             m_session = imported;
             markDirty();
             afterImport();
@@ -1045,12 +1092,14 @@ void SharedMnCreateDialog::adoptImportedText(const QString& text, const QString&
         QMessageBox box(this);
         box.setIcon(QMessageBox::Warning);
         box.setWindowTitle(tr("Session conflict"));
+        box.setTextFormat(Qt::PlainText);
         box.setText(merge_error);
         box.setInformativeText(tr("Replace this session with the imported copy, or keep working on this one?"));
         auto* replace{box.addButton(tr("Replace With Imported"), QMessageBox::DestructiveRole)};
         box.addButton(tr("Keep Mine"), QMessageBox::RejectRole);
         box.exec();
         if (box.clickedButton() == replace) {
+            unlockAllContributedCoins(); // the replaced session's coin locks would otherwise leak
             m_session = imported;
             markDirty();
             afterImport();
@@ -1084,13 +1133,20 @@ void SharedMnCreateDialog::afterImport()
         json.pushKV("sigs", sigs);
         QString error;
         m_session.fromJson(json, error); // leaves the session untouched on failure
-        QMessageBox::warning(this, tr("Signatures not counted"), bad.join(QLatin1Char('\n')));
+        ShowPlainMessage(this, QMessageBox::Warning, tr("Signatures not counted"), bad.join(QLatin1Char('\n')));
     }
+
+    // An imported envelope's operator key is the group's agreed key; from now
+    // on this dialog displays it read-only instead of the generate widget
+    m_operator_key_from_import = !m_session.terms().operatorPubKey.isEmpty();
 
     // A replacement session gets a fresh liveness verdict
     m_dead = false;
     m_dead_reason.clear();
     checkSessionLiveness();
+    // Keep the A8 invariant on this machine too: any of this wallet's coins
+    // the adopted session uses as funding inputs must be locked
+    if (!m_dead) lockKnownContributedCoins();
     refreshAll();
 }
 
@@ -1102,17 +1158,20 @@ void SharedMnCreateDialog::checkSessionLiveness()
             const COutPoint outpoint{uint256S(input.txid.toStdString()), input.vout};
             Coin coin;
             if (m_node.getUnspentOutput(outpoint, coin)) continue;
-            // Not in the confirmed UTXO set. A wallet-known unconfirmed output
-            // is merely pending; anything else is spent (or never existed)
-            if (m_wallet_model != nullptr) {
-                const auto known{m_wallet_model->wallet().getCoins({outpoint})};
-                if (!known.empty() && known.front().depth_in_main_chain >= 0 && !known.front().is_spent) continue;
-            }
+            // Not in the confirmed UTXO set — which alone proves nothing:
+            // getUnspentOutput consults neither the mempool nor other wallets,
+            // so another participant's unconfirmed chip looks exactly the
+            // same. Only an input this wallet tracks and reports spent is
+            // proof the funding transaction can never confirm.
+            if (m_wallet_model == nullptr) continue;
+            const auto known{m_wallet_model->wallet().getCoins({outpoint})};
+            if (known.empty() || known.front().depth_in_main_chain < 0) continue; // unknown here: pending
+            if (!known.front().is_spent) continue; // own unconfirmed output: pending
             spent << tr("%1:%2 (contributed by %3)").arg(input.txid).arg(input.vout).arg(contribution.label);
         }
     }
     if (!spent.isEmpty()) {
-        markDead(tr("A funding input of this session was spent (or does not exist), so the recorded funding "
+        markDead(tr("A funding input contributed from this wallet was spent, so the recorded funding "
                     "transaction can never confirm. The session cannot be continued — restart from a new draft.") +
                  QStringLiteral("\n\n") + spent.join(QLatin1Char('\n')));
     }
@@ -1454,6 +1513,34 @@ void SharedMnCreateDialog::unlockAllContributedCoins()
     }
 }
 
+std::optional<CAmount> SharedMnCreateDialog::resolveInputValue(const MnShareSession::Input& input) const
+{
+    const COutPoint outpoint{uint256S(input.txid.toStdString()), input.vout};
+    Coin coin;
+    if (m_node.getUnspentOutput(outpoint, coin)) return coin.out.nValue;
+    // Not confirmed: this wallet can still value its own pending outputs
+    if (m_wallet_model != nullptr) {
+        const auto known{m_wallet_model->wallet().getCoins({outpoint})};
+        if (!known.empty() && known.front().depth_in_main_chain >= 0 && !known.front().is_spent) {
+            return known.front().txout.nValue;
+        }
+    }
+    return std::nullopt;
+}
+
+void SharedMnCreateDialog::lockKnownContributedCoins()
+{
+    if (m_wallet_model == nullptr) return;
+    for (const auto& contribution : m_session.contributions()) {
+        for (const auto& input : contribution.inputs) {
+            const COutPoint outpoint{uint256S(input.txid.toStdString()), input.vout};
+            const auto known{m_wallet_model->wallet().getCoins({outpoint})};
+            if (known.empty() || known.front().depth_in_main_chain < 0 || known.front().is_spent) continue;
+            m_wallet_model->wallet().lockCoin(outpoint, /*write_to_db=*/true);
+        }
+    }
+}
+
 void SharedMnCreateDialog::freezeSession()
 {
     if (m_session.stage() != MnShareSession::Stage::Draft || m_busy) return;
@@ -1471,12 +1558,61 @@ void SharedMnCreateDialog::freezeSession()
         return;
     }
 
+    // Funding sufficiency gate. register_shared_prepare cannot value-check the
+    // inputs (they may be unconfirmed), so a mismatch would otherwise surface
+    // only at the final broadcast — or silently overpay the excess to miners.
+    // Inputs this node cannot resolve (other participants' unconfirmed chips)
+    // are surfaced honestly instead of blocking the flow.
+    const CAmount collateral{GetMnType(MnType::Regular).collat_amount};
+    CAmount change_total{0};
+    CAmount resolved_total{0};
+    int unresolved{0};
+    for (const auto& contribution : m_session.contributions()) {
+        if (contribution.hasChange) change_total += contribution.changeAmount;
+        for (const auto& input : contribution.inputs) {
+            if (const auto value{resolveInputValue(input)}) {
+                resolved_total += *value;
+            } else {
+                ++unresolved;
+            }
+        }
+    }
+    QString funding_note;
+    if (unresolved == 0) {
+        const CAmount implied_fee{resolved_total - collateral - change_total};
+        if (implied_fee <= 0) {
+            QMessageBox::critical(
+                this, tr("Funding is insufficient"),
+                tr("The recorded funding inputs total %1, but the collateral (%2) plus change (%3) plus a positive "
+                   "transaction fee requires more. The funding transaction could never be broadcast — adjust the "
+                   "contributions before freezing.")
+                    .arg(FormatAmount(m_wallet_model, resolved_total), FormatAmount(m_wallet_model, collateral),
+                         FormatAmount(m_wallet_model, change_total)));
+            return;
+        }
+        if (implied_fee > MAX_EXPECTED_FUNDING_FEE) {
+            funding_note = tr("WARNING: the funding inputs exceed the collateral plus change by %1 — that entire "
+                              "excess would be paid to miners as the transaction fee. Continue only if this is "
+                              "intended.")
+                               .arg(FormatAmount(m_wallet_model, implied_fee));
+        } else {
+            funding_note = tr("The funding inputs cover the collateral; %1 pays the transaction fee.")
+                               .arg(FormatAmount(m_wallet_model, implied_fee));
+        }
+    } else {
+        funding_note = tr("%n funding input(s) cannot be value-checked on this node yet (other participants' "
+                          "unconfirmed contributions). Resolved inputs total %1 of the %2 collateral — make sure "
+                          "every contribution is exactly its share total before freezing.",
+                          nullptr, unresolved)
+                           .arg(FormatAmount(m_wallet_model, resolved_total), FormatAmount(m_wallet_model, collateral));
+    }
+
     const auto choice{QMessageBox::question(
         this, tr("Freeze the session terms?"),
         tr("Freezing prepares the registration transaction and fixes the share table, the terms and every funding "
            "input. Afterwards every share owner must sign the consent check phrase; any further change discards all "
            "collected signatures.") +
-            QStringLiteral("\n\n") +
+            QStringLiteral("\n\n") + funding_note + QStringLiteral("\n\n") +
             tr("Make sure every participant has contributed funding — the funding inputs cannot be changed without "
                "unfreezing."),
         QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Yes)};
@@ -1572,7 +1708,7 @@ void SharedMnCreateDialog::signConsent()
         }
     }
     if (!errors.isEmpty()) {
-        QMessageBox::warning(this, tr("Signing finished with warnings"), errors.join(QLatin1Char('\n')));
+        ShowPlainMessage(this, QMessageBox::Warning, tr("Signing finished with warnings"), errors.join(QLatin1Char('\n')));
     }
     markDirty();
     refreshAll();
@@ -1735,6 +1871,7 @@ void SharedMnCreateDialog::restartFromDraft()
     m_dead = false;
     m_dead_reason.clear();
     m_dirty = false;
+    m_operator_key_from_import = false;
     refreshFundingCandidates();
     refreshAll();
 }
@@ -1742,19 +1879,31 @@ void SharedMnCreateDialog::restartFromDraft()
 void SharedMnCreateDialog::reject()
 {
     if (m_busy) return;
-    if (m_dirty && !m_dead) {
+    if (m_dead) {
+        // A dead session can never continue; closing must not strand the
+        // funding coin locks (the restart button unlocks them the same way)
+        unlockAllContributedCoins();
+        QDialog::reject();
+        return;
+    }
+    if (m_dirty) {
         QMessageBox box(this);
         box.setIcon(QMessageBox::Question);
         box.setWindowTitle(windowTitle());
         box.setText(tr("The session has unsaved changes. A participant without the latest copy cannot continue the "
                        "session."));
+        if (!m_session.contributions().empty() && m_session.stage() != MnShareSession::Stage::Broadcast) {
+            box.setInformativeText(tr("Discarding also unlocks the coins this session reserved for funding; save "
+                                      "instead to keep them reserved and continue later."));
+        }
         box.setStandardButtons(QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
         box.setDefaultButton(QMessageBox::Save);
         switch (box.exec()) {
         case QMessageBox::Save:
             if (!writeSessionToFile()) return;
-            break;
+            break; // saved to continue later: the funding coins stay locked
         case QMessageBox::Discard:
+            if (m_session.stage() != MnShareSession::Stage::Broadcast) unlockAllContributedCoins();
             break;
         default:
             return;
