@@ -11,6 +11,7 @@
 #include <qt/clientmodel.h>
 #include <qt/descriptiondialog.h>
 #include <qt/guiutil.h>
+#include <qt/masternodewizard.h>
 #include <qt/walletmodel.h>
 
 #include <QApplication>
@@ -129,6 +130,9 @@ MasternodeList::MasternodeList(QWidget* parent) :
     filterMenu->addAction(tr("Owner Address"), this, &MasternodeList::filterByOwnerAddress);
     filterMenu->addAction(tr("Voting Address"), this, &MasternodeList::filterByVotingAddress);
 
+    ui->btnRegisterMasternode->setEnabled(false);
+    connect(ui->btnRegisterMasternode, &QPushButton::clicked, this, &MasternodeList::showRegisterWizard);
+
     connect(ui->tableViewMasternodes, &QTableView::customContextMenuRequested, this, &MasternodeList::showContextMenuDIP3);
     connect(ui->tableViewMasternodes, &QTableView::doubleClicked, this, &MasternodeList::extraInfoDIP3_clicked);
     connect(m_proxy_model, &QSortFilterProxyModel::rowsInserted, this, &MasternodeList::updateFilteredCount);
@@ -175,10 +179,23 @@ void MasternodeList::setWalletModel(WalletModel* model)
 {
     this->walletModel = model;
     ui->checkBoxOwned->setEnabled(walletModel != nullptr);
+    ui->btnRegisterMasternode->setEnabled(walletModel != nullptr);
+    if (!walletModel) {
+        ui->btnRegisterMasternode->setToolTip(tr("Registering a masternode requires a wallet"));
+    }
     if (walletModel) {
         QSettings settings;
         ui->checkBoxOwned->setChecked(settings.value("mnListOwnedOnly", false).toBool());
     }
+}
+
+void MasternodeList::showRegisterWizard()
+{
+    if (!clientModel || !walletModel) {
+        return;
+    }
+    RegisterMasternodeWizard dlg(clientModel->node(), walletModel, this);
+    dlg.exec();
 }
 
 void MasternodeList::showContextMenuDIP3(const QPoint& point)

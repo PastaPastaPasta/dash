@@ -102,6 +102,7 @@ Q_SIGNALS:
 private Q_SLOTS:
     void copyCollateralOutpoint_clicked();
     void copyProTxHash_clicked();
+    void showRegisterWizard();
     void extraInfoDIP3_clicked();
     void filterByCollateralAddress();
     void filterByOwnerAddress();
