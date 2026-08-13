@@ -15,6 +15,7 @@
 #include <qt/clientmodel.h>
 #include <qt/platform/contactflow.h>
 #include <qt/platform/identityflow.h>
+#include <qt/platform/platformrecovery.h>
 #include <qt/walletmodel.h>
 #include <util/strencodings.h>
 
@@ -64,6 +65,11 @@ PlatformService::PlatformService(WalletModel& wallet_model, ClientModel& client_
     });
     connect(m_contact_flow.get(), &ContactFlow::requestFailed, this,
             [this](const QString& id, const QString& error) { finishContactRequest(id, false, error); });
+
+    m_recovery = std::make_unique<PlatformRecovery>(*this, this);
+    connect(m_recovery.get(), &PlatformRecovery::finished, this, [this](bool recovered) {
+        if (recovered) refreshContacts();
+    });
 
     m_tick_timer = new QTimer(this);
     m_tick_timer->setInterval(TICK_INTERVAL_MS);
@@ -669,6 +675,7 @@ void PlatformService::updateNodeContext()
         });
     }
     LogPrint(BCLog::QT, "Platform GUI: loaded %d evonode HTTPS endpoints\n", endpoints.size());
+    const bool have_endpoints{!endpoints.empty()};
     m_client->updateEndpoints(std::move(endpoints));
 
     // Best local ChainLock height: a coarse freshness floor letting the
@@ -685,4 +692,9 @@ void PlatformService::updateNodeContext()
         keys.push_back(platform::QuorumKey{q.m_quorum_hash, std::move(q.m_pubkey), q.m_height});
     }
     m_client->updateQuorumKeys(llmq_type, std::move(keys));
+
+    // Seed-only recovery needs endpoints (and their quorum keys) to issue
+    // proof-backed queries, so it is armed from here rather than the
+    // constructor. maybeStart() is a cheap no-op once it has run.
+    if (have_endpoints) m_recovery->maybeStart();
 }

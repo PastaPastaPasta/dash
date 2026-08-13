@@ -25,6 +25,7 @@
 class ClientModel;
 class ContactFlow;
 class IdentityFlow;
+class PlatformRecovery;
 /**
  * Per-wallet orchestrator for all Dash Platform interactions. This is the
  * only object GUI pages talk to. It owns the flows (identity/username
@@ -151,6 +152,7 @@ private:
 
     std::unique_ptr<IdentityFlow> m_identity_flow;
     std::unique_ptr<ContactFlow> m_contact_flow;
+    std::unique_ptr<PlatformRecovery> m_recovery;
     std::vector<platform::ContactRequest> m_incoming_contacts;
     std::vector<platform::ContactRequest> m_outgoing_contacts;
     QSet<QString> m_contact_metadata_pending;

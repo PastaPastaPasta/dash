@@ -123,6 +123,7 @@ QT_MOC_CPP += \
   qt/platform/moc_createusernamewizard.cpp \
   qt/platform/moc_identityflow.cpp \
   qt/platform/moc_platformpage.cpp \
+  qt/platform/moc_platformrecovery.cpp \
   qt/platform/moc_platformservice.cpp \
   qt/platform/moc_profiledialog.cpp \
   qt/platform/moc_usernamesearchdialog.cpp
@@ -230,6 +231,7 @@ BITCOIN_QT_H += \
   qt/platform/createusernamewizard.h \
   qt/platform/identityflow.h \
   qt/platform/platformpage.h \
+  qt/platform/platformrecovery.h \
   qt/platform/platformservice.h \
   qt/platform/profiledialog.h \
   qt/platform/usernamesearchdialog.h
@@ -367,6 +369,7 @@ BITCOIN_QT_PLATFORM_CPP = \
   qt/platform/createusernamewizard.cpp \
   qt/platform/identityflow.cpp \
   qt/platform/platformpage.cpp \
+  qt/platform/platformrecovery.cpp \
   qt/platform/platformservice.cpp \
   qt/platform/profiledialog.cpp \
   qt/platform/usernamesearchdialog.cpp
