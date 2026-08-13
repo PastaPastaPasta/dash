@@ -9,7 +9,7 @@ edition = "2021"
 # Core through the umbrella crate `dashrust` (feature "platform").
 #
 # All platform crates are pinned to one revision of dashpay/platform
-# (branch feat/transport-free-embedder-core); grovedb resolves through
+# (branch refactor/document-query-decode-builders); grovedb resolves through
 # drive's own pin.
 
 [lib]
@@ -18,15 +18,15 @@ crate-type = ["rlib"]
 
 [dependencies]
 cxx = "1.0.198"
-dapi-grpc = { git = "https://github.com/dashpay/platform", rev = "e8e1961fe54fcdcb8eae55b7c2d84bcdf44004a8", default-features = false, features = [
+dapi-grpc = { git = "https://github.com/dashpay/platform", rev = "2a6dbe39065104981b7f9bb4fbee598aab869fe4", default-features = false, features = [
     "platform",
     "client",
 ] }
-dash-context-provider = { git = "https://github.com/dashpay/platform", rev = "e8e1961fe54fcdcb8eae55b7c2d84bcdf44004a8", default-features = false }
-dash-platform-queries = { git = "https://github.com/dashpay/platform", rev = "e8e1961fe54fcdcb8eae55b7c2d84bcdf44004a8", default-features = false }
-drive-proof-verifier = { git = "https://github.com/dashpay/platform", rev = "e8e1961fe54fcdcb8eae55b7c2d84bcdf44004a8", default-features = false }
-drive = { git = "https://github.com/dashpay/platform", rev = "e8e1961fe54fcdcb8eae55b7c2d84bcdf44004a8", default-features = false, features = ["verify"] }
-dpp = { git = "https://github.com/dashpay/platform", rev = "e8e1961fe54fcdcb8eae55b7c2d84bcdf44004a8", default-features = false, features = [
+dash-context-provider = { git = "https://github.com/dashpay/platform", rev = "2a6dbe39065104981b7f9bb4fbee598aab869fe4", default-features = false }
+dash-platform-queries = { git = "https://github.com/dashpay/platform", rev = "2a6dbe39065104981b7f9bb4fbee598aab869fe4", default-features = false }
+drive-proof-verifier = { git = "https://github.com/dashpay/platform", rev = "2a6dbe39065104981b7f9bb4fbee598aab869fe4", default-features = false }
+drive = { git = "https://github.com/dashpay/platform", rev = "2a6dbe39065104981b7f9bb4fbee598aab869fe4", default-features = false, features = ["verify"] }
+dpp = { git = "https://github.com/dashpay/platform", rev = "2a6dbe39065104981b7f9bb4fbee598aab869fe4", default-features = false, features = [
     "state-transitions",
     "state-transition-signing",
     "identity-serialization",
@@ -35,7 +35,7 @@ dpp = { git = "https://github.com/dashpay/platform", rev = "e8e1961fe54fcdcb8eae
     "dpns-contract",
     "dashpay-contract",
 ] }
-platform-version = { git = "https://github.com/dashpay/platform", rev = "e8e1961fe54fcdcb8eae55b7c2d84bcdf44004a8" }
+platform-version = { git = "https://github.com/dashpay/platform", rev = "2a6dbe39065104981b7f9bb4fbee598aab869fe4" }
 prost = "0.14"
 hex = "0.4"
 futures = "0.3"
