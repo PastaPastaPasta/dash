@@ -63,8 +63,10 @@ Q_SIGNALS:
     void contactAdded(const QString& identity_hex);
 
 private:
+    //! creation_time (unix seconds, 0 = unknown) bounds later rescans of the
+    //! imported friendship descriptor.
     bool prepareReceivingKeychain(const platform::Identifier& their_identity, CPubKey& pubkey, uint256& chaincode,
-                                  QString& error);
+                                  int64_t creation_time, QString& error);
     void confirmRequest(const platform::Identifier& to_identity, int attempts_left);
     //! ECDH+AES helpers (encrypt our xpub for them / decrypt theirs for us).
     bool encryptXpub(const platform::IdentityPublicKey& their_key, const std::vector<uint8_t>& our_xpub,

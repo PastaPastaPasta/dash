@@ -102,7 +102,11 @@ void ContactFlow::sendRequest(const platform::Identifier& to_identity, uint32_t 
     CPubKey xpubkey;
     uint256 chaincode;
     QString keychain_error;
-    if (!prepareReceivingKeychain(to_identity, xpubkey, chaincode, keychain_error)) {
+    // A brand-new outgoing friendship cannot have received funds yet, but the
+    // wallet may re-run this path for a friendship first established earlier
+    // (e.g. re-deriving after a restore), so do not bound rescans with the
+    // current time; 0 (genesis/unknown) is the safe lower bound here.
+    if (!prepareReceivingKeychain(to_identity, xpubkey, chaincode, /*creation_time=*/0, keychain_error)) {
         Q_EMIT requestFailed(QString::fromStdString(HexStr(to_identity)), keychain_error);
         return;
     }
@@ -237,11 +241,11 @@ bool ContactFlow::importKeychains(const platform::Identifier& their_identity,
     }
     CPubKey our_pubkey;
     uint256 our_chaincode;
-    return prepareReceivingKeychain(their_identity, our_pubkey, our_chaincode, error);
+    return prepareReceivingKeychain(their_identity, our_pubkey, our_chaincode, creation_time, error);
 }
 
 bool ContactFlow::prepareReceivingKeychain(const platform::Identifier& their_identity, CPubKey& pubkey,
-                                           uint256& chaincode, QString& error)
+                                           uint256& chaincode, int64_t creation_time, QString& error)
 {
     const auto my_id{m_service.myIdentityId()};
     if (!my_id) {
