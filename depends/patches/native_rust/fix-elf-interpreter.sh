@@ -9,6 +9,14 @@ LIBDIR="$1"
 shift
 
 if ! command -v patchelf >/dev/null 2>&1; then
+    # Inside a Guix environment the prebuilt binaries cannot run without
+    # having their interpreter patched, so a missing patchelf is fatal there.
+    case "$(command -v ls)" in
+        /gnu/store/*)
+            echo "ERROR: patchelf is required inside the Guix environment but was not found" >&2
+            exit 1
+            ;;
+    esac
     echo "patchelf not found, skipping ELF fix"
     exit 0
 fi
