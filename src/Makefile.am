@@ -135,7 +135,16 @@ $(LIBSECP256K1): $(wildcard secp256k1/src/*.h) $(wildcard secp256k1/src/*.c) $(w
 
 if ENABLE_RUST
 LIBCXXBRIDGE=libcxxbridge.la
-RUST_COMPONENT_LIBS=$(LIBCXXBRIDGE) $(LIBRUSTDEPS)
+# libcxxbridge (C++ side of the cxx bridges) and libdashrust (Rust side)
+# reference each other: C++ wrapper functions call Rust-implemented
+# $cxxbridge1$ externs, while Rust code calls C++ shims such as the
+# WalletSigner one. Single-pass linkers (GNU bfd ld) only extract archive
+# members needed at the point each archive is scanned, so a binary that
+# never calls a bridge's C++ wrappers directly (e.g. dashd with the
+# platform bridge) leaves its shim object unextracted and then fails to
+# resolve references introduced by libdashrust. Repeat both archives so a
+# second scan resolves the cross-references in either direction.
+RUST_COMPONENT_LIBS=$(LIBCXXBRIDGE) $(LIBRUSTDEPS) $(LIBCXXBRIDGE) $(LIBRUSTDEPS)
 RUST_SYSTEM_LIBS=$(RUST_LIBS)
 endif
 
