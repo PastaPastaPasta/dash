@@ -253,11 +253,17 @@ void UsernameCostPage::initializePage()
     m_funding_amount = m_entry.contested()
         ? m_service.params().contested_identity_funding_amount
         : m_service.params().default_identity_funding_amount;
-    const auto unit{m_wallet_model.getOptionsModel()->getDisplayUnit()};
-    m_summary->setText(tr("Registering your username funds a Dash Platform identity with %1. "
-                          "This creates an on-chain asset lock transaction and several Platform "
-                          "state transitions.")
-                           .arg(BitcoinUnits::formatWithUnit(unit, m_funding_amount)));
+    if (m_service.identityFlow().record().AwaitsUsername()) {
+        m_summary->setText(tr("Your recovered identity already exists on Dash Platform. Registering "
+                              "this username spends its existing credits; no new funding transaction "
+                              "is created."));
+    } else {
+        const auto unit{m_wallet_model.getOptionsModel()->getDisplayUnit()};
+        m_summary->setText(tr("Registering your username funds a Dash Platform identity with %1. "
+                              "This creates an on-chain asset lock transaction and several Platform "
+                              "state transitions.")
+                               .arg(BitcoinUnits::formatWithUnit(unit, m_funding_amount)));
+    }
 
     m_warning->setVisible(m_entry.contested());
     if (m_entry.contested()) {

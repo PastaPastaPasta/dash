@@ -364,8 +364,10 @@ void PlatformPage::openWizard()
         m_service->identityFlow().reset();
     }
     CreateUsernameWizard wizard(*m_service, *walletModel, this);
-    const auto state{m_service->identityFlow().record().state};
-    if (state != State::NONE && state != State::REGISTERED) {
+    const auto& rec{m_service->identityFlow().record()};
+    // A recovered identity without a username starts at name entry like a
+    // fresh registration.
+    if (rec.state != State::NONE && rec.state != State::REGISTERED && !rec.AwaitsUsername()) {
         // A registration is already underway: jump straight to the progress
         // view instead of asking for a name again.
         wizard.startAtProgress();
@@ -440,9 +442,18 @@ void PlatformPage::refresh()
         m_dashboard_status->show();
         m_send_button->setEnabled(false);
         m_progress_button->setVisible(rec.state != State::CONTESTED_PENDING);
-        m_progress_button->setText(rec.state == State::FAILED ? tr("Try again")
-                                                              : tr("View progress…"));
-        if (rec.state == State::CONTESTED_PENDING) {
+        if (rec.state == State::FAILED) {
+            m_progress_button->setText(tr("Try again"));
+        } else if (rec.AwaitsUsername()) {
+            m_progress_button->setText(tr("Choose a username…"));
+        } else {
+            m_progress_button->setText(tr("View progress…"));
+        }
+        if (rec.AwaitsUsername()) {
+            m_dashboard_username->setText(tr("Recovered identity"));
+            m_dashboard_profile->setText(tr("Your Platform identity was restored from your recovery phrase."));
+            m_dashboard_status->setText(tr("Choose a username to finish setting up DashPay."));
+        } else if (rec.state == State::CONTESTED_PENDING) {
             m_dashboard_profile->setText(tr("Premium name — masternodes are voting on your request."));
             m_dashboard_status->setText(tr("The vote can take a while and the name may be awarded to "
                                            "someone else. You will see the result here."));
