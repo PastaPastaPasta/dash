@@ -355,6 +355,14 @@ AC_ARG_ENABLE([platform-gui],
     [enable_platform_gui=no])
 AC_ARG_VAR([MBEDTLS_CFLAGS], [C compiler flags for mbedtls, bypasses autodetection])
 AC_ARG_VAR([MBEDTLS_LIBS], [Linker flags for mbedtls, bypasses autodetection])
+dnl The Platform client is backed by the Rust bridge: enabling it turns on the
+dnl shared Rust build machinery (--enable-rust) and requests the 'platform'
+dnl cargo feature of the umbrella crate. All Rust toolchain validation lives
+dnl in the --enable-rust block; it sees the implied value.
+if test "$enable_platform_gui" = "yes"; then
+  enable_rust=yes
+  RUST_CRATE_FEATURES="${RUST_CRATE_FEATURES:+$RUST_CRATE_FEATURES }platform"
+fi
 
 dnl Enable different -fsanitize options
 AC_ARG_WITH([sanitizers],
@@ -2190,7 +2198,8 @@ fi
 
 dnl Dash Platform GUI support needs the GUI and the wallet, and mbedtls for the
 dnl DAPI TLS client. The platform client library is linked into dash-qt (and
-dnl test binaries) only.
+dnl test binaries) only; the Rust staticlib backing it follows the shared
+dnl --enable-rust machinery (implied by --enable-platform-gui above).
 if test "$enable_platform_gui" = "yes"; then
   if test "$bitcoin_enable_qt" != "yes"; then
     AC_MSG_ERROR([--enable-platform-gui requires the GUI (--with-gui)])

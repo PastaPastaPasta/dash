@@ -46,6 +46,10 @@ NO_NATPMP ?=
 MULTIPROCESS ?=
 RUST ?=
 PLATFORM_GUI ?=
+# The Platform GUI is backed by the Rust bridge crates.
+ifneq ($(PLATFORM_GUI),)
+RUST = 1
+endif
 LTO ?=
 NO_HARDEN ?=
 FALLBACK_DOWNLOAD_PATH ?= http://dash-depends-sources.s3-website-us-west-2.amazonaws.com
