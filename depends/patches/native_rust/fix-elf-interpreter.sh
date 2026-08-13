@@ -32,42 +32,45 @@ fi
 
 echo "Detected interpreter: $GUIX_INTERP"
 
-# Find and copy libgcc_s.so.1 into our lib directory
-LIBGCC_SRC=""
+# Find and copy runtime libraries the prebuilt binaries need into our lib
+# directory so the $ORIGIN-based RPATH can resolve them.
+for libname in libgcc_s.so.1 libz.so.1; do
+    LIB_SRC=""
 
-# Method 1: Use gcc to find it
-if command -v gcc >/dev/null 2>&1; then
-    GCC_LIBDIR=$(dirname "$(gcc -print-libgcc-file-name)" 2>/dev/null)
-    if [ -f "$GCC_LIBDIR/libgcc_s.so.1" ]; then
-        LIBGCC_SRC="$GCC_LIBDIR/libgcc_s.so.1"
-    else
-        GCC_PATH=$(command -v gcc)
-        GCC_PREFIX=$(dirname "$(dirname "$GCC_PATH")")
-        if [ -f "$GCC_PREFIX/lib/libgcc_s.so.1" ]; then
-            LIBGCC_SRC="$GCC_PREFIX/lib/libgcc_s.so.1"
+    # Method 1: Use gcc to find it
+    if command -v gcc >/dev/null 2>&1; then
+        CANDIDATE=$(gcc -print-file-name="$libname" 2>/dev/null)
+        if [ -f "$CANDIDATE" ]; then
+            LIB_SRC="$CANDIDATE"
+        else
+            GCC_PATH=$(command -v gcc)
+            GCC_PREFIX=$(dirname "$(dirname "$GCC_PATH")")
+            if [ -f "$GCC_PREFIX/lib/$libname" ]; then
+                LIB_SRC="$GCC_PREFIX/lib/$libname"
+            fi
         fi
     fi
-fi
 
-# Method 2: Search LIBRARY_PATH
-if [ -z "$LIBGCC_SRC" ] && [ -n "$LIBRARY_PATH" ]; then
-    IFS=':' read -ra LIB_PATHS <<< "$LIBRARY_PATH"
-    for libpath in "${LIB_PATHS[@]}"; do
-        if [ -f "$libpath/libgcc_s.so.1" ]; then
-            LIBGCC_SRC="$libpath/libgcc_s.so.1"
-            break
-        fi
-    done
-fi
+    # Method 2: Search LIBRARY_PATH
+    if [ -z "$LIB_SRC" ] && [ -n "$LIBRARY_PATH" ]; then
+        IFS=':' read -ra LIB_PATHS <<< "$LIBRARY_PATH"
+        for libpath in "${LIB_PATHS[@]}"; do
+            if [ -f "$libpath/$libname" ]; then
+                LIB_SRC="$libpath/$libname"
+                break
+            fi
+        done
+    fi
 
-if [ -n "$LIBGCC_SRC" ]; then
-    # Resolve symlinks and copy the actual file
-    LIBGCC_REAL=$(readlink -f "$LIBGCC_SRC")
-    echo "Copying libgcc_s.so.1 from: $LIBGCC_REAL"
-    cp "$LIBGCC_REAL" "$LIBDIR/libgcc_s.so.1"
-else
-    echo "WARNING: Could not find libgcc_s.so.1 to copy"
-fi
+    if [ -n "$LIB_SRC" ]; then
+        # Resolve symlinks and copy the actual file
+        LIB_REAL=$(readlink -f "$LIB_SRC")
+        echo "Copying $libname from: $LIB_REAL"
+        cp "$LIB_REAL" "$LIBDIR/$libname"
+    else
+        echo "WARNING: Could not find $libname to copy"
+    fi
+done
 
 # RPATH just needs $ORIGIN/../lib - everything is self-contained
 GUIX_RPATH="\$ORIGIN/../lib"

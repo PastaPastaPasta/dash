@@ -536,6 +536,7 @@ inspecting signatures in Mach-O binaries.")
         automake
         pkg-config
         patchelf
+        zlib
         ;; Scripting
         python-minimal ;; (3.10)
         ;; Git
