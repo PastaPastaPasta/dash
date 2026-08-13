@@ -18,15 +18,15 @@ crate-type = ["rlib"]
 
 [dependencies]
 cxx = "1.0.198"
-dapi-grpc = { git = "https://github.com/dashpay/platform", rev = "4f1c1bdd840da532e02c34fe505f758329b9b1d3", default-features = false, features = [
+dapi-grpc = { git = "https://github.com/dashpay/platform", rev = "be3375f44f8a9a4501f4ca6b5b4b208fa46e0fe4", default-features = false, features = [
     "platform",
     "client",
 ] }
-dash-context-provider = { git = "https://github.com/dashpay/platform", rev = "4f1c1bdd840da532e02c34fe505f758329b9b1d3", default-features = false }
-dash-platform-queries = { git = "https://github.com/dashpay/platform", rev = "4f1c1bdd840da532e02c34fe505f758329b9b1d3", default-features = false }
-drive-proof-verifier = { git = "https://github.com/dashpay/platform", rev = "4f1c1bdd840da532e02c34fe505f758329b9b1d3", default-features = false }
-drive = { git = "https://github.com/dashpay/platform", rev = "4f1c1bdd840da532e02c34fe505f758329b9b1d3", default-features = false, features = ["verify"] }
-dpp = { git = "https://github.com/dashpay/platform", rev = "4f1c1bdd840da532e02c34fe505f758329b9b1d3", default-features = false, features = [
+dash-context-provider = { git = "https://github.com/dashpay/platform", rev = "be3375f44f8a9a4501f4ca6b5b4b208fa46e0fe4", default-features = false }
+dash-platform-queries = { git = "https://github.com/dashpay/platform", rev = "be3375f44f8a9a4501f4ca6b5b4b208fa46e0fe4", default-features = false }
+drive-proof-verifier = { git = "https://github.com/dashpay/platform", rev = "be3375f44f8a9a4501f4ca6b5b4b208fa46e0fe4", default-features = false }
+drive = { git = "https://github.com/dashpay/platform", rev = "be3375f44f8a9a4501f4ca6b5b4b208fa46e0fe4", default-features = false, features = ["verify"] }
+dpp = { git = "https://github.com/dashpay/platform", rev = "be3375f44f8a9a4501f4ca6b5b4b208fa46e0fe4", default-features = false, features = [
     "state-transitions",
     "state-transition-signing",
     "identity-serialization",
@@ -35,7 +35,7 @@ dpp = { git = "https://github.com/dashpay/platform", rev = "4f1c1bdd840da532e02c
     "dpns-contract",
     "dashpay-contract",
 ] }
-platform-version = { git = "https://github.com/dashpay/platform", rev = "4f1c1bdd840da532e02c34fe505f758329b9b1d3" }
+platform-version = { git = "https://github.com/dashpay/platform", rev = "be3375f44f8a9a4501f4ca6b5b4b208fa46e0fe4" }
 prost = "0.14"
 hex = "0.4"
 futures = "0.3"
