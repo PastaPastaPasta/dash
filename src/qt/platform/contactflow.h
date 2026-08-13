@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+class PlatformRecovery;
 class PlatformService;
 class CPubKey;
 
@@ -63,6 +64,10 @@ Q_SIGNALS:
     void contactAdded(const QString& identity_hex);
 
 private:
+    //! Seed-only recovery replays the crypto of accept() (decryptXpub +
+    //! importKeychains) against on-chain contact requests.
+    friend class PlatformRecovery;
+
     //! creation_time (unix seconds, 0 = unknown) bounds later rescans of the
     //! imported friendship descriptor.
     bool prepareReceivingKeychain(const platform::Identifier& their_identity, CPubKey& pubkey, uint256& chaincode,

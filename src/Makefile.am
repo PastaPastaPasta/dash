@@ -746,7 +746,9 @@ libdash_platform_a_SOURCES = \
   platform/transport/protobuf.h \
   platform/transport/tls.cpp \
   platform/transport/tls.h \
-  platform/types.h
+  platform/types.h \
+  platform/walletrecords.cpp \
+  platform/walletrecords.h
 
 # The platform sources include the cxxbridge-generated header
 # <rust/platform/lib.h>; make sure codegen runs first.

@@ -11,6 +11,7 @@
 #include <interfaces/node.h>
 #include <interfaces/wallet.h>
 #include <platform/statetransitions.h>
+#include <platform/walletrecords.h>
 #include <qt/clientmodel.h>
 #include <qt/platform/contactflow.h>
 #include <qt/platform/identityflow.h>
@@ -459,20 +460,13 @@ void PlatformService::resolvePaymentAddress(const QString& username)
             CPubKey pubkey{serialized.begin(), serialized.begin() + 33};
             uint256 chaincode{std::vector<uint8_t>(serialized.begin() + 33, serialized.end())};
             const std::string cursor_key{"contact/pay-index/" + id_hex};
-            const auto cursor_bytes{self->readRecord(cursor_key)};
-            uint32_t index{0};
-            if (cursor_bytes.size() == 4) {
-                index = uint32_t{cursor_bytes[0]} | (uint32_t{cursor_bytes[1]} << 8) |
-                        (uint32_t{cursor_bytes[2]} << 16) | (uint32_t{cursor_bytes[3]} << 24);
-            }
+            const uint32_t index{platform::DecodePaymentCursor(self->readRecord(cursor_key))};
             CTxDestination destination;
             if (!self->m_wallet_model.wallet().getFriendshipPaymentDestination(pubkey, chaincode, index, destination)) {
                 Q_EMIT self->paymentAddressResolved(username, {}, tr("could not derive contact payment address"));
                 return;
             }
-            const uint32_t next{index + 1};
-            self->writeRecord(cursor_key, {static_cast<unsigned char>(next), static_cast<unsigned char>(next >> 8),
-                                           static_cast<unsigned char>(next >> 16), static_cast<unsigned char>(next >> 24)});
+            self->writeRecord(cursor_key, platform::EncodePaymentCursor(index + 1));
             // Label the derived destination so transaction history shows the
             // contact's username instead of a bare address.
             self->m_wallet_model.wallet().setAddressBook(

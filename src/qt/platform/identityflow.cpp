@@ -4,12 +4,12 @@
 
 #include <qt/platform/identityflow.h>
 
-#include <clientversion.h>
 #include <interfaces/node.h>
 #include <interfaces/wallet.h>
 #include <logging.h>
 #include <platform/client.h>
 #include <platform/statetransitions.h>
+#include <platform/walletrecords.h>
 #include <primitives/transaction.h>
 #include <qt/clientmodel.h>
 #include <qt/platform/platformservice.h>
@@ -36,40 +36,6 @@ constexpr int MAX_CONFIRM_POLLS{6};
 //! this is 0 — matching js-dash-sdk ASSET_LOCK_OUTPUT_INDEX. Note this is
 //! NOT the OP_RETURN vout in the transaction's output list.
 constexpr uint32_t ASSET_LOCK_OUTPUT_INDEX{0};
-
-std::vector<unsigned char> SerializeRecord(const IdentityFlow::Record& r)
-{
-    CDataStream s(SER_DISK, CLIENT_VERSION);
-    s << r.version << static_cast<uint8_t>(r.state) << r.funding_txid << r.funding_vout
-      << r.funding_key_index << r.funding_amount
-      << std::vector<uint8_t>(r.identity_id.begin(), r.identity_id.end())
-      << r.label << r.normalized_label
-      << std::vector<uint8_t>(r.preorder_salt.begin(), r.preorder_salt.end())
-      << r.contested << r.last_error << r.started_at;
-    const auto span = MakeUCharSpan(s);
-    return {span.begin(), span.end()};
-}
-
-bool DeserializeRecord(const std::vector<unsigned char>& data, IdentityFlow::Record& r)
-{
-    try {
-        CDataStream s(data, SER_DISK, CLIENT_VERSION);
-        uint8_t state{0};
-        std::vector<uint8_t> identity_id, salt;
-        s >> r.version;
-        if (r.version == 0 || r.version > IdentityFlow::Record::CURRENT_VERSION) return false;
-        s >> state >> r.funding_txid >> r.funding_vout >> r.funding_key_index >> r.funding_amount >>
-            identity_id >> r.label >> r.normalized_label >> salt >> r.contested >> r.last_error >>
-            r.started_at;
-        if (identity_id.size() != r.identity_id.size() || salt.size() != r.preorder_salt.size()) return false;
-        std::copy(identity_id.begin(), identity_id.end(), r.identity_id.begin());
-        std::copy(salt.begin(), salt.end(), r.preorder_salt.begin());
-        r.state = static_cast<IdentityFlow::State>(state);
-        return true;
-    } catch (const std::exception&) {
-        return false;
-    }
-}
 
 //! 36-byte outpoint (txid || LE index) referencing the asset lock burn
 //! output, the preimage of the identity id.
@@ -98,14 +64,20 @@ bool IdentityFlow::load()
     const auto data{m_service.readRecord(RECORD_KEY)};
     if (data.empty()) return false;
     Record record;
-    if (!DeserializeRecord(data, record)) return false;
+    if (!platform::DeserializeIdentityRecord(data, record)) return false;
     m_record = std::move(record);
     return true;
 }
 
 bool IdentityFlow::save()
 {
-    return m_service.writeRecord(RECORD_KEY, SerializeRecord(m_record));
+    return m_service.writeRecord(RECORD_KEY, platform::SerializeIdentityRecord(m_record));
+}
+
+void IdentityFlow::reload()
+{
+    if (!load()) return;
+    Q_EMIT stateChanged();
 }
 
 void IdentityFlow::setState(State state)
@@ -142,7 +114,8 @@ void IdentityFlow::reset()
 
 bool IdentityFlow::start(const QString& label, CAmount funding_amount, QString& error)
 {
-    if (active()) {
+    const bool name_only{m_record.AwaitsUsername()};
+    if (active() && !name_only) {
         error = tr("a username registration is already in progress");
         return false;
     }
@@ -152,6 +125,22 @@ bool IdentityFlow::start(const QString& label, CAmount funding_amount, QString& 
     if (normalized.empty()) {
         error = tr("invalid username");
         return false;
+    }
+
+    if (name_only) {
+        m_record.label = label_str;
+        m_record.normalized_label = normalized;
+        m_record.contested = platform::st::IsContestedLabel(normalized);
+        GetStrongRandBytes(m_record.preorder_salt);
+        if (!save()) {
+            m_record.label.clear();
+            m_record.normalized_label.clear();
+            m_record.preorder_salt.fill(0);
+            error = tr("could not save the registration state to the wallet");
+            return false;
+        }
+        Q_EMIT stateChanged();
+        return true;
     }
 
     Wallet& wallet{m_service.walletModel().wallet()};
@@ -239,6 +228,7 @@ void IdentityFlow::advance()
         confirmIdentity();
         return;
     case State::IDENTITY_CONFIRMED:
+        if (m_record.AwaitsUsername()) return;
         broadcastPreorder();
         return;
     case State::PREORDER_BROADCAST:

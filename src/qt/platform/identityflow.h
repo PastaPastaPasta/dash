@@ -7,6 +7,7 @@
 
 #include <consensus/amount.h>
 #include <platform/types.h>
+#include <platform/walletrecords.h>
 #include <uint256.h>
 
 #include <QObject>
@@ -40,42 +41,11 @@ class IdentityFlow : public QObject
     Q_OBJECT
 
 public:
-    enum class State : uint8_t {
-        NONE = 0,
-        FUNDING_SENT = 1,
-        FUNDING_LOCKED = 2,
-        IDENTITY_BROADCAST = 3,
-        IDENTITY_CONFIRMED = 4,
-        PREORDER_BROADCAST = 5,
-        PREORDER_WAIT = 6,
-        DOMAIN_BROADCAST = 7,
-        REGISTERED = 8,
-        CONTESTED_PENDING = 9,
-        FAILED = 255,
-    };
-    Q_ENUM(State)
-
-    //! Persisted snapshot (serialized with CDataStream into the wallet DB).
-    struct Record {
-        static constexpr uint8_t CURRENT_VERSION{1};
-        uint8_t version{CURRENT_VERSION};
-        State state{State::NONE};
-        //! L1 funding
-        uint256 funding_txid;
-        uint32_t funding_vout{0};      //!< index of the OP_RETURN burn output
-        uint32_t funding_key_index{0}; //!< registration funding derivation index
-        CAmount funding_amount{0};
-        //! Identity
-        platform::Identifier identity_id{};
-        //! Username
-        std::string label;             //!< as typed, e.g. "Alice"
-        std::string normalized_label;  //!< homograph-safe
-        std::array<uint8_t, 32> preorder_salt{};
-        bool contested{false};
-        //! Diagnostics
-        std::string last_error;
-        int64_t started_at{0};
-    };
+    //! Persisted snapshot (platform::IdentityRecord, serialized into the
+    //! wallet DB). The type lives outside Qt so seed-only recovery and unit
+    //! tests share the exact serialization.
+    using Record = platform::IdentityRecord;
+    using State = Record::State;
 
     explicit IdentityFlow(PlatformService& service, QObject* parent = nullptr);
 
@@ -88,8 +58,15 @@ public:
 
     //! Begin a new registration. Creates+commits the asset lock transaction
     //! and persists the initial record. Returns false with error set when the
-    //! flow is already active or the wallet refuses.
+    //! flow is already active or the wallet refuses. For an identity restored
+    //! without a name (seed-only recovery leaves it in IDENTITY_CONFIRMED
+    //! with an empty label), no asset lock is created: the name registration
+    //! is funded by the identity's existing credits.
     bool start(const QString& label, CAmount funding_amount, QString& error);
+
+    //! Re-read the persisted record after an external writer (seed-only
+    //! recovery) replaced it, and notify the GUI.
+    void reload();
 
     //! Drive the state machine one step if possible. Safe to call at any
     //! time (timer ticks, islock signals, client callbacks).
