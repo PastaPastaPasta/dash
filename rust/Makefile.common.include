@@ -5,7 +5,17 @@
 
 CARGO_BUILD_OPTS = --locked --target $(RUST_TARGET)
 CARGO_BUILD_CONFIG = $(abs_top_builddir)/.cargo/dash-build.toml
+
+# Host-side helper binaries that cargo compiles and runs (build scripts) link
+# against libgcc_s without an RPATH. In hermetic environments such as Guix
+# (which sets GUIX_LD_WRAPPER_DISABLE_RPATH and whose loader has no default
+# search path providing libgcc_s), they can only resolve it via
+# LD_LIBRARY_PATH, so point that at the rustc sysroot lib directory where the
+# depends-provided toolchain stages libgcc_s.so.1 and libz.so.1.
+RUST_NATIVE_SYSROOT = $(shell "$(RUSTC)" --print sysroot 2>/dev/null)
+
 CARGO_ENV = \
+  $(if $(RUST_NATIVE_SYSROOT),LD_LIBRARY_PATH="$(RUST_NATIVE_SYSROOT)/lib$${LD_LIBRARY_PATH:+:$${LD_LIBRARY_PATH}}") \
   MACOSX_DEPLOYMENT_TARGET="$(RUST_MACOS_DEPLOYMENT_TARGET)" \
   CARGO_INCREMENTAL="$(CARGO_INCREMENTAL)" \
   PROTOC="$(PROTOC)" \
