@@ -207,7 +207,12 @@ void ContactFlow::accept(const platform::ContactRequest& incoming)
                 return;
             }
             QString import_error;
-            if (!self->importKeychains(incoming.owner_id, their_xpub, import_error)) {
+            // The friendship chain cannot have received funds before the
+            // contact request document existed, so its created_at timestamp
+            // (ms since epoch; 0 when the document carries none) safely
+            // bounds later rescans of the imported descriptor.
+            const int64_t creation_time{static_cast<int64_t>(incoming.created_at / 1000)};
+            if (!self->importKeychains(incoming.owner_id, their_xpub, creation_time, import_error)) {
                 Q_EMIT self->requestFailed(id_hex, import_error);
                 return;
             }
@@ -220,7 +225,8 @@ void ContactFlow::accept(const platform::ContactRequest& incoming)
 }
 
 bool ContactFlow::importKeychains(const platform::Identifier& their_identity,
-                                  const std::vector<uint8_t>& their_xpub_serialized, QString& error)
+                                  const std::vector<uint8_t>& their_xpub_serialized,
+                                  int64_t creation_time, QString& error)
 {
     if (their_xpub_serialized.size() != 65) {
         error = tr("invalid friendship public key in contact request");
@@ -241,7 +247,7 @@ bool ContactFlow::importKeychains(const platform::Identifier& their_identity,
         m_service.contactAddressLabel(QString::fromStdString(HexStr(their_identity))).toStdString()};
     Wallet& wallet{m_service.walletModel().wallet()};
     std::string wallet_error;
-    if (!wallet.importFriendshipKeychains(/*account=*/0, my_hash, their_hash, label, wallet_error)) {
+    if (!wallet.importFriendshipKeychains(/*account=*/0, my_hash, their_hash, creation_time, label, wallet_error)) {
         error = QString::fromStdString(wallet_error);
         return false;
     }

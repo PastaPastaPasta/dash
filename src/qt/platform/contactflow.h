@@ -48,9 +48,11 @@ public:
     void accept(const platform::ContactRequest& incoming);
 
     //! Import our receiving keychain and (for accept) their sending keychain
-    //! into the wallet so addresses are watched.
+    //! into the wallet so addresses are watched. creation_time (unix seconds,
+    //! 0 = unknown) bounds later rescans of the imported descriptor.
     bool importKeychains(const platform::Identifier& their_identity,
-                         const std::vector<uint8_t>& their_xpub_serialized, QString& error);
+                         const std::vector<uint8_t>& their_xpub_serialized,
+                         int64_t creation_time, QString& error);
 
 Q_SIGNALS:
     void requestSent(const QString& to_identity_hex);
