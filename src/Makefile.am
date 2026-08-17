@@ -502,6 +502,8 @@ BITCOIN_CORE_H = \
   wallet/hdchain.h \
   wallet/ismine.h \
   wallet/load.h \
+  wallet/platformkeys.h \
+  wallet/platformseed.h \
   wallet/receive.h \
   wallet/rpc/util.h \
   wallet/rpc/wallet.h \
@@ -733,6 +735,8 @@ libbitcoin_wallet_a_SOURCES = \
   wallet/hdchain.cpp \
   wallet/interfaces.cpp \
   wallet/load.cpp \
+  wallet/platformkeys.cpp \
+  wallet/platformseed.cpp \
   wallet/receive.cpp \
   wallet/rpc/addresses.cpp \
   wallet/rpc/backup.cpp \
