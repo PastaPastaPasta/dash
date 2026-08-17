@@ -1,11 +1,15 @@
 # Copyright (c) 2013-2016 The Bitcoin Core developers
-# Copyright (c) 2014-2018 The Dash Core developers
+# Copyright (c) 2016-2025 The Zcash developers
+# Copyright (c) 2014-2026 The Dash Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 # Pattern rule to print variables, e.g. make print-top_srcdir
 print-%: FORCE
 	@echo '$*'='$($*)'
+
+include $(top_srcdir)/rust/Makefile.common.include
+include $(top_srcdir)/rust/Makefile.libs.include
 
 DIST_SUBDIRS = secp256k1
 
@@ -21,6 +25,13 @@ AM_CPPFLAGS = $(DEBUG_CPPFLAGS) $(HARDENED_CPPFLAGS) $(CORE_CPPFLAGS)
 AM_LIBTOOLFLAGS = --preserve-dup-deps
 PTHREAD_FLAGS = $(PTHREAD_CFLAGS) $(PTHREAD_LIBS)
 EXTRA_LIBRARIES =
+BUILT_SOURCES =
+if ENABLE_RUST
+BUILT_SOURCES += $(LIBRUSTDEPS_H)
+
+libbitcoin_node_a-init.$(OBJEXT) \
+test/test_dash-system_tests.$(OBJEXT): $(LIBRUSTDEPS_H)
+endif
 
 lib_LTLIBRARIES =
 noinst_LTLIBRARIES =
@@ -48,6 +59,9 @@ endif # ENABLE_STACKTRACES
 BITCOIN_INCLUDES=-I$(builddir) -I$(srcdir)/$(MINISKETCH_INCLUDE_DIR_INT) -I$(srcdir)/secp256k1/include -I$(srcdir)/$(UNIVALUE_INCLUDE_DIR_INT) $(LEVELDB_CPPFLAGS)
 BITCOIN_INCLUDES+=-isystem$(srcdir)/dashbls/include -isystem$(srcdir)/dashbls/depends/relic/include -isystem$(srcdir)/dashbls/depends/minialloc/include
 BITCOIN_INCLUDES+=-isystem$(srcdir)/immer
+if ENABLE_RUST
+BITCOIN_INCLUDES+=$(LIBRUSTDEPS_INCLUDES)
+endif
 
 LIBBITCOIN_NODE=libbitcoin_node.a
 LIBBITCOIN_COMMON=libbitcoin_common.a
@@ -116,6 +130,12 @@ $(LIBDASHBLS):
 $(LIBSECP256K1): $(wildcard secp256k1/src/*.h) $(wildcard secp256k1/src/*.c) $(wildcard secp256k1/include/*)
 	$(AM_V_at)$(MAKE) $(AM_MAKEFLAGS) -C $(@D) $(@F)
 
+if ENABLE_RUST
+LIBCXXBRIDGE=libcxxbridge.la
+RUST_COMPONENT_LIBS=$(LIBCXXBRIDGE) $(LIBRUSTDEPS)
+RUST_SYSTEM_LIBS=$(RUST_LIBS)
+endif
+
 # Make is not made aware of per-object dependencies to avoid limiting building parallelization
 # But to build the less dependent modules first, we manually select their order here:
 EXTRA_LIBRARIES += \
@@ -128,6 +148,10 @@ EXTRA_LIBRARIES += \
   $(LIBBITCOIN_WALLET) \
   $(LIBBITCOIN_WALLET_TOOL) \
   $(LIBBITCOIN_ZMQ)
+
+if ENABLE_RUST
+noinst_LTLIBRARIES += $(LIBCXXBRIDGE)
+endif
 
 if BUILD_BITCOIND
   bin_PROGRAMS += dashd
@@ -1094,9 +1118,10 @@ bitcoin_bin_ldadd = \
   $(LIBDASHBLS) \
   $(LIBLEVELDB) \
   $(LIBMEMENV) \
-  $(LIBSECP256K1)
+  $(LIBSECP256K1) \
+  $(RUST_COMPONENT_LIBS)
 
-bitcoin_bin_ldadd += $(BACKTRACE_LIBS) $(BDB_LIBS) $(MINIUPNPC_LIBS) $(NATPMP_LIBS) $(SQLITE_LIBS) $(EVENT_PTHREADS_LIBS) $(EVENT_LIBS) $(ZMQ_LIBS) $(GMP_LIBS)
+bitcoin_bin_ldadd += $(BACKTRACE_LIBS) $(BDB_LIBS) $(MINIUPNPC_LIBS) $(NATPMP_LIBS) $(SQLITE_LIBS) $(EVENT_PTHREADS_LIBS) $(EVENT_LIBS) $(ZMQ_LIBS) $(GMP_LIBS) $(RUST_SYSTEM_LIBS)
 
 dashd_SOURCES = $(bitcoin_daemon_sources) init/bitcoind.cpp
 dashd_CPPFLAGS = $(bitcoin_bin_cppflags)
@@ -1407,6 +1432,17 @@ libdashconsensus_la_CPPFLAGS += -isystem$(srcdir)/dashbls/include -isystem$(srcd
 libdashconsensus_la_CPPFLAGS += -isystem$(srcdir)/immer
 libdashconsensus_la_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 
+endif
+#
+
+# CXX bridge library #
+if ENABLE_RUST
+libcxxbridge_la_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(PIC_FLAGS)
+libcxxbridge_la_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS) $(PIC_FLAGS) -static
+libcxxbridge_la_LDFLAGS = $(AM_LDFLAGS) -static
+nodist_libcxxbridge_la_SOURCES = $(LIBRUSTDEPS_CPP)
+
+$(libcxxbridge_la_OBJECTS): $(LIBRUSTDEPS_H)
 endif
 #
 

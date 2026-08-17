@@ -44,6 +44,7 @@ NO_UPNP ?=
 NO_USDT ?=
 NO_NATPMP ?=
 MULTIPROCESS ?=
+RUST ?=
 LTO ?=
 NO_HARDEN ?=
 FALLBACK_DOWNLOAD_PATH ?= http://dash-depends-sources.s3-website-us-west-2.amazonaws.com
@@ -59,6 +60,12 @@ DOWNLOAD_CONNECT_TIMEOUT:=30
 DOWNLOAD_RETRIES:=3
 HOST_ID_SALT ?= salt
 BUILD_ID_SALT ?= salt
+
+CRATE_REGISTRY := vendored-sources
+CRATE_LOCK = $(BASEDIR)/../Cargo.lock
+CRATE_LOCK_HASH = $(shell $(build_SHA256SUM) $(CRATE_LOCK) | cut -c-$(HASH_LENGTH))
+CRATE_ARCHIVE = $(SOURCES_PATH)/vendored-crates-$(CRATE_LOCK_HASH).tar.gz
+CRATE_REGISTRY_STAMP = $(host_prefix)/.$(CRATE_REGISTRY).stamp
 
 ifneq ($(DEBUG),)
 release_type=debug
@@ -179,6 +186,13 @@ usdt_packages_$(NO_USDT) = $(usdt_$(host_os)_packages)
 
 packages += $($(host_arch)_$(host_os)_packages) $($(host_os)_packages) $(boost_packages_) $(libevent_packages_) $(qt_packages_) $(wallet_packages_) $(upnp_packages_) $(natpmp_packages_) $(usdt_packages_)
 native_packages += $($(host_arch)_$(host_os)_native_packages) $($(host_os)_native_packages)
+ifeq ($(RUST),1)
+packages += $(rust_packages)
+native_packages += $(rust_native_packages)
+rust_download_targets = download-rust-std vendor-crates
+endif
+
+native_cargo_packages = $(filter native_cxxbridge,$(native_packages))
 
 ifneq ($(zmq_packages_),)
 packages += $(zmq_packages)
@@ -202,8 +216,38 @@ $(host_prefix)/.stamp_$(final_build_id): $(native_packages) $(packages)
 	mkdir -p $(@D)
 	echo copying packages: $^
 	echo to: $(@D)
-	cd $(@D); $(foreach package,$^, $(build_TAR) xf $($(package)_cached); )
+	cd $(@D); $(foreach package,$^, $(build_TAR) --no-same-owner -xf $($(package)_cached); )
 	touch $@
+
+# Vendors Rust crate dependencies for offline builds
+# Uses pre-built archive if available, otherwise runs 'cargo vendor'
+$(CRATE_REGISTRY_STAMP): $(host_prefix)/.stamp_$(final_build_id) $(CRATE_LOCK)
+	@rm -rf $(host_prefix)/$(CRATE_REGISTRY)
+	@if test -f $(CRATE_ARCHIVE); \
+	then echo Extracting pre-vendored crates from $(CRATE_ARCHIVE)...; \
+		$(build_TAR) --no-same-owner -xf $(CRATE_ARCHIVE) -C $(host_prefix); \
+	else echo Vendoring crates...; \
+		$(host_prefix)/native/bin/cargo vendor --locked --manifest-path $(BASEDIR)/../Cargo.toml $(host_prefix)/$(CRATE_REGISTRY); \
+	fi
+	@test -d $(host_prefix)/$(CRATE_REGISTRY)
+	@touch $@
+
+# Vendors crates for cargo packages
+vendor-dep-crates: $(foreach package,$(native_cargo_packages),vendor-$(package)-crates)
+
+# Vendors project-wide cargo packages
+vendor-all-crates: $(native_rust_cached) $(CRATE_LOCK)
+	@rm -rf $(WORK_PATH)/vendor-main
+	@mkdir -p $(WORK_PATH)/vendor-main
+	@$(build_TAR) --no-same-owner -xf $(native_rust_cached) -C $(WORK_PATH)/vendor-main
+	@echo "Vendoring main project crates..."
+	@$(WORK_PATH)/vendor-main/native/bin/cargo vendor --locked --manifest-path $(BASEDIR)/../Cargo.toml $(WORK_PATH)/vendor-main/$(CRATE_REGISTRY)
+	@cd $(WORK_PATH)/vendor-main; find $(CRATE_REGISTRY) | sort | $(build_TAR) --no-recursion -czf $(CRATE_ARCHIVE) -T -
+	@rm -rf $(WORK_PATH)/vendor-main
+	@echo "Created $(CRATE_ARCHIVE)"
+
+# Vendors everything
+vendor-crates: vendor-dep-crates vendor-all-crates
 
 # $PATH is not preserved between ./configure and make by convention. Its
 # modification and overriding at ./configure time is (as I understand it)
@@ -232,13 +276,18 @@ $(host_prefix)/share/config.site : config.site.in $(host_prefix)/.stamp_$(final_
 	@mkdir -p $(@D)
 	sed -e 's|@HOST@|$(host)|' \
             -e 's|@CC@|$(host_CC)|' \
+            -e 's|@NATIVE_CC@|$(build_CC)|' \
             -e 's|@CXX@|$(host_CXX)|' \
+            -e 's|@NATIVE_CXX@|$(build_CXX)|' \
             -e 's|@AR@|$(host_AR)|' \
+            -e 's|@NATIVE_AR@|$(build_AR)|' \
             -e 's|@RANLIB@|$(host_RANLIB)|' \
             -e 's|@NM@|$(host_NM)|' \
             -e 's|@STRIP@|$(host_STRIP)|' \
             -e 's|@OBJDUMP@|$(host_OBJDUMP)|' \
             -e 's|@DSYMUTIL@|$(host_DSYMUTIL)|' \
+            -e 's|@OSX_MIN_VERSION@|$(OSX_MIN_VERSION)|' \
+            -e 's|@OSX_SDK@|$(OSX_SDK)|' \
             -e 's|@WINDRES@|$(host_WINDRES)|' \
             -e 's|@build_os@|$(build_os)|' \
             -e 's|@host_os@|$(host_os)|' \
@@ -257,6 +306,7 @@ $(host_prefix)/share/config.site : config.site.in $(host_prefix)/.stamp_$(final_
             -e 's|@no_usdt@|$(NO_USDT)|' \
             -e 's|@no_natpmp@|$(NO_NATPMP)|' \
             -e 's|@multiprocess@|$(MULTIPROCESS)|' \
+            -e 's|@rust@|$(RUST)|' \
             -e 's|@lto@|$(LTO)|' \
             -e 's|@no_harden@|$(NO_HARDEN)|' \
             -e 's|@debug@|$(DEBUG)|' \
@@ -293,21 +343,29 @@ clean-all: clean
 clean:
 	@rm -rf $(WORK_PATH) $(BASE_CACHE) $(BUILD) *.log
 
+ifeq ($(RUST),1)
+install: check-packages $(host_prefix)/share/config.site $(CRATE_REGISTRY_STAMP)
+else
 install: check-packages $(host_prefix)/share/config.site
+endif
 
 
 download-one: check-sources $(all_sources)
 
 download-osx:
-	@$(MAKE) -s HOST=x86_64-apple-darwin download-one
+	@$(MAKE) -s RUST=$(RUST) HOST=x86_64-apple-darwin download-one
 download-linux:
-	@$(MAKE) -s HOST=x86_64-unknown-linux-gnu download-one
+	@$(MAKE) -s RUST=$(RUST) HOST=x86_64-unknown-linux-gnu download-one
 download-win:
-	@$(MAKE) -s HOST=x86_64-w64-mingw32 download-one
-download: download-osx download-linux download-win
+	@$(MAKE) -s RUST=$(RUST) HOST=x86_64-w64-mingw32 download-one
+download-rust-std:
+	@mkdir -p $(SOURCES_PATH)
+	@mkdir -p $(SOURCES_PATH)/download-stamps
+	@$(foreach target,$(rust_stdlib_targets),$(call download_rust_std_target,$(target)) && ) true
+download: download-osx download-linux download-win $(rust_download_targets)
 
 $(foreach package,$(all_packages),$(eval $(call ext_add_stages,$(package))))
 
-.PHONY: install cached clean clean-all download-one download-osx download-linux download-win download check-packages check-sources
+.PHONY: install cached clean clean-all download-one download-osx download-linux download-win download download-rust-std check-packages check-sources vendor-crates vendor-dep-crates vendor-all-crates
 .PHONY: FORCE
 $(V).SILENT:

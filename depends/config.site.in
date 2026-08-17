@@ -50,6 +50,10 @@ if test -z "$enable_multiprocess" && test -n "@multiprocess@"; then
   enable_multiprocess=yes
 fi
 
+if test -z "$enable_rust" && test -n "@rust@"; then
+  enable_rust=yes
+fi
+
 if test -z "$with_miniupnpc" && test -n "@no_upnp@"; then
   with_miniupnpc=no
 fi
@@ -95,13 +99,24 @@ LDFLAGS="-L${depends_prefix}/lib ${LDFLAGS}"
 if test -n "@CC@" -a -z "${CC}"; then
   CC="@CC@"
 fi
+if test -n "@NATIVE_CC@" -a -z "${NATIVE_CC}"; then
+  NATIVE_CC="@NATIVE_CC@"
+fi
+
 if test -n "@CXX@" -a -z "${CXX}"; then
   CXX="@CXX@"
+fi
+if test -n "@NATIVE_CXX@" -a -z "${NATIVE_CXX}"; then
+  NATIVE_CXX="@NATIVE_CXX@"
 fi
 
 if test -n "@AR@"; then
   AR="@AR@"
   ac_cv_path_AR="${AR}"
+fi
+if test -n "@NATIVE_AR@"; then
+  NATIVE_AR="@NATIVE_AR@"
+  ac_cv_path_NATIVE_AR="${NATIVE_AR}"
 fi
 
 if test -n "@RANLIB@"; then
@@ -129,6 +144,14 @@ if test "@host_os@" = darwin; then
     DSYMUTIL="@DSYMUTIL@"
     ac_cv_path_DSYMUTIL="${DSYMUTIL}"
   fi
+
+  if test -n "@OSX_MIN_VERSION@"; then
+    OSX_MIN_VERSION="@OSX_MIN_VERSION@"
+  fi
+
+  if test -n "@OSX_SDK@"; then
+    OSX_SDK="@OSX_SDK@"
+  fi
 fi
 
 if test "@host_os@" = mingw32; then
@@ -153,4 +176,17 @@ if test -n "@CPPFLAGS@"; then
 fi
 if test -n "@LDFLAGS@"; then
   LDFLAGS="@LDFLAGS@ ${LDFLAGS}"
+fi
+
+if test -x "${depends_prefix}/native/bin/cargo"; then
+  CARGO="${depends_prefix}/native/bin/cargo"
+fi
+if test -x "${depends_prefix}/native/bin/rustc"; then
+  RUSTC="${depends_prefix}/native/bin/rustc"
+fi
+if test -x "${depends_prefix}/native/bin/cxxbridge"; then
+  CXXBRIDGE="${depends_prefix}/native/bin/cxxbridge"
+fi
+if test -z "$RUST_VENDORED_SOURCES"; then
+  RUST_VENDORED_SOURCES="${depends_prefix}/vendored-sources"
 fi

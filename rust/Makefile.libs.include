@@ -1,0 +1,70 @@
+# Copyright (c) 2016-2025 The Zcash developers
+# Copyright (c) 2026 The Dash Core developers
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+if ENABLE_DEBUG
+CARGO_PROFILE=debug
+else
+CARGO_PROFILE=release
+endif
+
+# Per-crate includes contribute cxxbridge codegen artifacts (generated C++
+# sources/headers and dist file lists). Compilation is NOT per-crate: all
+# component crates are rlib dependencies of the umbrella crate `dashrust`,
+# which cargo builds in one invocation into a single deduplicated staticlib.
+# This avoids merging per-crate archives with `ar -x`, which silently drops
+# object files with colliding member names once two crates share dependencies.
+include $(top_srcdir)/rust/Makefile.chirp.include
+
+LIBRUSTDEPS_INCLUDES = \
+	$(LIBRUST_CHIRP_INCLUDES)
+
+LIBRUSTDEPS_CPP = \
+	$(LIBRUST_CHIRP_CPP)
+
+LIBRUSTDEPS_H = \
+	$(LIBCXXBRIDGE_H) \
+	$(LIBRUST_CHIRP_H)
+
+# Umbrella staticlib #
+LIBRUSTDEPS_TARGET_DIR = $(abs_top_builddir)/rust/target
+LIBRUSTDEPS_CRATE_DIR = $(top_srcdir)/rust/dashrust
+LIBRUSTDEPS_MANIFEST = $(LIBRUSTDEPS_CRATE_DIR)/Cargo.toml
+LIBRUSTDEPS = $(LIBRUSTDEPS_TARGET_DIR)/$(RUST_TARGET)/$(CARGO_PROFILE)/libdashrust.a
+
+LIBRUSTDEPS_CARGO_ENV = $(CARGO_ENV) CARGO_TARGET_DIR="$(LIBRUSTDEPS_TARGET_DIR)"
+LIBRUSTDEPS_CARGO_BUILD_OPTS = $(CARGO_BUILD_OPTS) --manifest-path $(LIBRUSTDEPS_MANIFEST)
+
+# Cargo features enabling optional components, provided by configure.
+if ENABLE_RUST_FEATURES
+LIBRUSTDEPS_CARGO_BUILD_OPTS += --features "$(RUST_CRATE_FEATURES)"
+endif
+
+LIBRUSTDEPS_SRCS = \
+	$(LIBRUSTDEPS_CRATE_DIR)/src/lib.rs
+
+$(LIBRUSTDEPS_SRCS): ;
+
+LIBRUSTDEPS_FILES = \
+	$(LIBRUSTDEPS_MANIFEST) \
+	$(LIBRUSTDEPS_SRCS)
+
+LIBRUSTDEPS_COMPONENT_SRCS = \
+	$(LIBRUST_CHIRP_FILES)
+
+$(LIBRUSTDEPS): $(CARGO_CONFIGURED) \
+	$(top_srcdir)/Cargo.toml \
+	$(top_srcdir)/Cargo.lock \
+	$(LIBRUSTDEPS_SRCS) \
+	$(LIBRUSTDEPS_MANIFEST) \
+	$(LIBRUSTDEPS_COMPONENT_SRCS)
+	$(AM_V_GEN)$(LIBRUSTDEPS_CARGO_ENV) $(CARGO) build $(LIBRUSTDEPS_CARGO_BUILD_OPTS)
+
+cargo-build-dashrust: $(LIBRUSTDEPS)
+
+cargo-clean-dashrust:
+	$(AM_V_at)rm -rf $(LIBRUSTDEPS_TARGET_DIR)
+
+.PHONY: cargo-build-dashrust cargo-clean-dashrust
+#

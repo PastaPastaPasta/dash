@@ -2,6 +2,9 @@ packages:=gmp backtrace
 
 boost_packages = boost
 
+rust_packages = rustcxx rust_stdlib
+rust_native_packages = native_rust native_cxxbridge
+
 libevent_packages = libevent
 
 qrencode_linux_packages = qrencode
