@@ -26,8 +26,8 @@ bool GetPlatformSeed(const CWallet& wallet, SecureVector& seed_out)
     if (wallet.IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) {
         std::optional<std::array<uint8_t, 8>> preferred_id;
         {
-            const auto records{wallet.GetPlatformData("platform/seed-id")};
-            const auto it{records.find("platform/seed-id")};
+            const auto records{wallet.GetPlatformData(SEED_ID_RECORD)};
+            const auto it{records.find(SEED_ID_RECORD)};
             if (it != records.end()) {
                 // A malformed pin fails closed like an unmatched one:
                 // treating it as "no pin" could resume signing, ECDH and
