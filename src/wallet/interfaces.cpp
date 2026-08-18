@@ -643,7 +643,11 @@ public:
         CMutableTransaction mtx;
         mtx.nVersion = 3;
         mtx.nType = TRANSACTION_ASSET_LOCK;
-        const CAssetLockPayload payload{{CTxOut{credit_amount, GetScriptForDestination(PKHash{credit_pubkey})}}};
+        // Version 2 payloads are consensus-invalid until the v24 hard fork
+        // applies to the next block. The credit output is P2PKH, which every
+        // version accepts.
+        const CAssetLockPayload payload{{CTxOut{credit_amount, GetScriptForDestination(PKHash{credit_pubkey})}},
+                                        CAssetLockPayload::GetMaxVersion(m_wallet->chain().isV24Active())};
         SetTxPayload(mtx, payload);
 
         // The single OP_RETURN "burn" output must carry the total credit
