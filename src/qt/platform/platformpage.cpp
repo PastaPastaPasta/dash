@@ -265,6 +265,19 @@ void PlatformPage::maybeCreateService()
     const auto params{platform::GetParams(Params().NetworkIDString())};
     if (!params) return;
 
+    // DashPay is descriptor-wallet-only. Without a service the wizard, the
+    // recovery probe and the contact flows are all unreachable, so a legacy
+    // wallet cannot fund an asset lock or register an identity only to hit
+    // the descriptor requirement later at the first contact accept.
+    if (walletModel->wallet().isLegacy()) {
+        m_welcome->setText(tr("DashPay needs a wallet in the descriptor format, and this wallet uses "
+                              "the older legacy format. To use DashPay, migrate this wallet with the "
+                              "migratewallet RPC command, or create a new wallet."));
+        m_welcome_steps->hide();
+        m_create_button->hide();
+        return;
+    }
+
     auto client{platform::MakeGrpcWebPlatformClient(*params)};
     if (!client) return;
     m_service = std::make_unique<PlatformService>(*walletModel, *clientModel, std::move(client), this);
