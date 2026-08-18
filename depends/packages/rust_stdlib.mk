@@ -9,12 +9,6 @@ package:=rust_stdlib
 $(package)_version:=1.92.0
 $(package)_download_path:=https://static.rust-lang.org/dist
 $(package)_dependencies:=native_rust
-$(package)_target=$(or \
-  $($(package)_target_$(canonical_host)),\
-  $($(package)_target_$(subst -pc-,-unknown-,$(canonical_host))),\
-  $($(package)_target_$(subst -unknown-,-pc-,$(canonical_host))),\
-  $($(package)_target_$(subst -linux-,-unknown-linux-,$(canonical_host))),\
-  $(if $(findstring -apple-darwin,$(canonical_host)),$(host_arch)-apple-darwin))
 
 # Rust support is deliberately confined to the hosts we actually validate
 # (the Guix release set plus native development hosts). RUST=1 on any other
@@ -51,6 +45,13 @@ $(package)_sha256_hash_x86_64-apple-darwin:=1e5a8fee4e038ea2d35d82a680e2b9bf44ff
 $(package)_targets += x86_64-pc-windows-gnu
 $(package)_target_x86_64-w64-mingw32:=x86_64-pc-windows-gnu
 $(package)_sha256_hash_x86_64-pc-windows-gnu:=6256f3497e3b14b6650511e84fdfb51fc632db1908ae5a173dffcdc96c80b7ce
+
+$(package)_target:=$(or \
+  $($(package)_target_$(canonical_host)),\
+  $($(package)_target_$(subst -pc-,-unknown-,$(canonical_host))),\
+  $($(package)_target_$(subst -unknown-,-pc-,$(canonical_host))),\
+  $($(package)_target_$(subst -linux-,-unknown-linux-,$(canonical_host))),\
+  $(if $(findstring -apple-darwin,$(canonical_host)),$(host_arch)-apple-darwin))
 
 ifeq ($($(package)_target),)
 $(error Unsupported Rust standard library target: $(canonical_host))
