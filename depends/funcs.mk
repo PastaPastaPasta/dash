@@ -200,13 +200,17 @@ endif
 
 $(1)_cargo=env CC="$$($(1)_cc)" \
                CXX="$$($(1)_cxx)" \
+               AR="$$($(1)_ar)" \
                CFLAGS="$$($(1)_cppflags) $$($(1)_cflags)" \
                CXXFLAGS="$$($(1)_cppflags) $$($(1)_cxxflags)" \
                LDFLAGS="$$($(1)_ldflags)" \
                RUSTFLAGS="-C linker=$$(firstword $($(1)_cc))" \
                LD_LIBRARY_PATH="$$($($(1)_type)_prefix)/lib"
 ifeq ($(host_os),darwin)
+$(1)_cargo += MACOSX_DEPLOYMENT_TARGET="$(OSX_MIN_VERSION)"
+ifneq ($(host),$(build))
 $(1)_cargo += SDKROOT="$(OSX_SDK)"
+endif
 endif
 $(1)_cargo += cargo
 endef
@@ -281,7 +285,7 @@ $(foreach stage,$(stages),
           .PHONY: $(1)_$(stage))
 endef
 
-# Template for vendoring a native package's Rust crate dependencies
+# Template for vendoring a package's Rust crate dependencies
 # Packages opt-in by defining $(package)_vendored_file_name and $(package)_cargo_manifest
 define int_vendor_crates
 ifneq ($($(1)_vendored_file_name),)
@@ -294,7 +298,9 @@ vendor-$(1)-crates: $(native_rust_cached) $($(1)_fetched)
 	@echo "Vendoring $(1) crates..."
 	@mkdir -p $(WORK_PATH)/vendor-$(1)/src
 	@cd $(WORK_PATH)/vendor-$(1)/src && $(build_TAR) --no-same-owner --strip-components=1 -xf $(SOURCES_PATH)/$($(1)_file_name)
-	@cp $(PATCHES_PATH)/$(1)/Cargo.lock $(WORK_PATH)/vendor-$(1)/src/
+	@if test -f $(PATCHES_PATH)/$(1)/Cargo.lock; then \
+          cp $(PATCHES_PATH)/$(1)/Cargo.lock $(WORK_PATH)/vendor-$(1)/src/$($(1)_cargo_lock_path); \
+        fi
 	@$(WORK_PATH)/vendor-$(1)/native/bin/cargo vendor --locked --manifest-path $(WORK_PATH)/vendor-$(1)/src/$($(1)_cargo_manifest) $(WORK_PATH)/vendor-$(1)/src/vendored
 	@cd $(WORK_PATH)/vendor-$(1)/src; find vendored | sort | $(build_TAR) --no-recursion -czf $$($(1)_vendored_archive) -T -
 	@rm -rf $(WORK_PATH)/vendor-$(1)
@@ -339,7 +345,7 @@ $(1)_preprocess_cmds += && \
     cp $(PATCHES_PATH)/$(1)/cargo-config.toml .cargo/config.toml; \
   fi
 endef
-$(foreach cargo_package,$(native_cargo_packages),$(eval $(call int_cargo_preprocess_ext,$(cargo_package))))
+$(foreach cargo_package,$(cargo_packages),$(eval $(call int_cargo_preprocess_ext,$(cargo_package))))
 
 #compute a hash of all files that comprise this package's build recipe
 $(foreach package,$(all_packages),$(eval $(call int_get_build_recipe_hash,$(package))))
@@ -354,4 +360,4 @@ $(foreach package,$(all_packages),$(eval $(call int_config_attach_build_config,$
 $(foreach package,$(all_packages),$(eval $(call int_add_cmds,$(package))))
 
 #create vendor targets for cargo packages
-$(foreach cargo_package,$(native_cargo_packages),$(eval $(call int_vendor_crates,$(cargo_package))))
+$(foreach cargo_package,$(cargo_packages),$(eval $(call int_vendor_crates,$(cargo_package))))

@@ -16,6 +16,7 @@ $(package)_dependencies:=native_rust
 $(package)_patches:=Cargo.lock cargo-config.toml ../native_rust/fix-elf-interpreter.sh
 $(package)_vendored_file_name:=native_cxxbridge-$($(package)_version)-vendored.tar.gz
 $(package)_cargo_manifest:=bridge/cmd/Cargo.toml
+$(package)_cargo_lock_path:=Cargo.lock
 
 define $(package)_preprocess_cmds
   cp $($(package)_patch_dir)/Cargo.lock .

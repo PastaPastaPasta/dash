@@ -2,9 +2,10 @@
 
 Decision document for the `platform-gui-rust` track: re-implement the
 internals of PR PastaPastaPasta/dash#49's `--enable-platform-gui` feature on
-top of the real Dash Platform Rust crates, built through the Rust build
-infrastructure of dashpay/dash#7109, built and linked only when the flag is
-enabled.
+top of the real Dash Platform Rust crates, built and linked only when the flag
+is enabled. The investigation below predates the final ownership decision:
+the Rust implementation and CXX schema now live in dashpay/platform, while
+Dash Core consumes the installed headers and static archive through depends.
 
 Three candidate scopes were spiked and measured. Spike workspaces (with
 committed lockfiles, test harnesses, and raw logs) live outside the tree in
@@ -186,18 +187,24 @@ GUI process, moves BLS verification off dashbls, and maximizes the
 Guix/symbol-check/system-library surface — all for functionality PR 49
 already has in C++.
 
-## Consequences for the implementation plan
+## Consequences for the implementation
 
-- The FFI crate (`rust/platform/`) exposes: per-query verify functions
+- The Platform-owned `dash-platform-cxx` package exposes per-query verify functions
   (proof bytes + params in → root hash + typed results out), state-transition
   build/sign via a cxx-bridged wallet signer (async trait driven by a local
   executor; one-time asset-lock key passed as bytes), and identity/document
   decoders. Quorum-sig verification, transport, retry/freshness, GUI, and
   wallet seams are untouched PR 49 C++.
-- 7109 infra work confirmed as prerequisites: toolchain → 1.92+, umbrella-crate
-  aggregation, git-source vendoring stanzas, the `versioned-feature-core`
-  patch, conditional linking so dashd/dash-cli/dash-tx stay Rust-free and a
-  no-flag build invokes cargo not at all.
+- Dash Core's depends system pins the Platform source revision and its
+  standalone lockfile, vendors that dependency closure independently, and
+  installs `dash/platform/ffi.h`, `dash/platform/signer.h`, generated CXX
+  headers, and `libdash_platform_cxx.a` into the depends prefix.
+- Core owns no Platform Rust crate or generated Platform bridge sources.
+  Conditional linking keeps the Platform archive out of dashd, dash-cli,
+  dash-tx, and wallet libraries.
+- Core's independent Rust smoke component remains available through
+  `--enable-rust`, but cannot be linked into the same binaries as the Platform
+  static archive because both archives contain a Rust and CXX runtime.
 - dpp features to pin: `state-transitions`, `state-transition-signing`,
   `identity-serialization`, `identity-hashing`, `bls-signatures`,
   `dpns-contract`, `dashpay-contract` (the last two also replace PR 49's

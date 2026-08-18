@@ -3,23 +3,23 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 # Source-only package: the tenderdash source archive that tenderdash-proto's
-# build.rs (rs-tenderdash-abci, a dependency of dapi-grpc/drive-proof-verifier
-# when --enable-platform-gui is set) compiles its protobuf definitions from.
+# build.rs (rs-tenderdash-abci, a dependency of the Platform CXX package)
+# compiles its protobuf definitions from.
 # Online builds download this zip themselves at cargo build time; depends
 # builds must not touch the network, so the sha256-pinned archive is staged
-# verbatim into the prefix and rust/Makefile.am copies it into the cargo
-# target directory, where build.rs treats it as a pre-populated download
+# verbatim into the prefix and platform_cxx copies it into the Cargo target
+# directory, where build.rs treats it as a pre-populated download
 # cache (cache file name: tenderdash-$(TENDERDASH_COMMITISH).zip).
 #
 # The version must match TENDERDASH_COMMITISH default of the pinned
 # tenderdash-proto crate (rs-tenderdash-abci proto/build.rs).
 
 package=tenderdash_sources
-$(package)_version=1.5.3
+$(package)_version=1.5.1
 $(package)_download_path=https://github.com/dashpay/tenderdash/archive
 $(package)_download_file=v$($(package)_version).zip
 $(package)_file_name=tenderdash-v$($(package)_version).zip
-$(package)_sha256_hash=1ac4f43c2c84c6cff471fd542def4563d67d2d67e34a9ccbdbc0279af1777d1a
+$(package)_sha256_hash=7a8844899a4635a6c2f55057e0c0f7cec357907d0cfeb2900e035760cf187f9a
 
 # Keep the archive as-is: the consumer (tenderdash-proto build.rs) unzips it
 # from its own cache directory, so extraction here would only be discarded.

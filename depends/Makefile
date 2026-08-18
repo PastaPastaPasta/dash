@@ -46,10 +46,6 @@ NO_NATPMP ?=
 MULTIPROCESS ?=
 RUST ?=
 PLATFORM_GUI ?=
-# The Platform GUI is backed by the Rust bridge crates.
-ifneq ($(PLATFORM_GUI),)
-RUST = 1
-endif
 LTO ?=
 NO_HARDEN ?=
 FALLBACK_DOWNLOAD_PATH ?= http://dash-depends-sources.s3-website-us-west-2.amazonaws.com
@@ -198,7 +194,7 @@ native_packages += $(rust_native_packages)
 rust_download_targets = download-rust-std vendor-crates
 endif
 
-native_cargo_packages = $(filter native_cxxbridge,$(native_packages))
+cargo_packages = $(filter native_cxxbridge,$(native_packages)) $(filter platform_cxx,$(packages))
 
 ifneq ($(zmq_packages_),)
 packages += $(zmq_packages)
@@ -244,7 +240,7 @@ $(CRATE_REGISTRY_STAMP): $(host_prefix)/.stamp_$(final_build_id) $(CRATE_LOCK)
 	@touch $@
 
 # Vendors crates for cargo packages
-vendor-dep-crates: $(foreach package,$(native_cargo_packages),vendor-$(package)-crates)
+vendor-dep-crates: $(foreach package,$(cargo_packages),vendor-$(package)-crates)
 
 # Vendors project-wide cargo packages
 vendor-all-crates: $(native_rust_cached) $(CRATE_LOCK)

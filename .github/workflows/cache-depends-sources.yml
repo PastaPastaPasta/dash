@@ -47,8 +47,9 @@ jobs:
         with:
           path: |
             depends/sources/native_cxxbridge-*-vendored.tar.gz
+            depends/sources/platform-cxx-*-vendored.tar.gz
             depends/sources/vendored-crates-*.tar.gz
-          key: depends-rust-vendor-sources-${{ hashFiles('depends/Makefile', 'depends/funcs.mk', 'depends/packages/native_cxxbridge.mk', 'depends/packages/native_rust.mk', 'depends/patches/native_cxxbridge/Cargo.lock', 'Cargo.lock') }}
+          key: depends-rust-vendor-sources-${{ hashFiles('depends/Makefile', 'depends/funcs.mk', 'depends/packages/native_cxxbridge.mk', 'depends/packages/native_rust.mk', 'depends/packages/platform_cxx.mk', 'depends/patches/native_cxxbridge/Cargo.lock', 'depends/patches/platform_cxx/cargo-config.toml', 'Cargo.lock') }}
 
       - name: Download sources
         if: |
@@ -56,6 +57,7 @@ jobs:
           steps.rust-vendor-cache.outputs.cache-hit != 'true'
         run: |
           make -C depends RUST=1 download
+          make -C depends PLATFORM_GUI=1 vendor-platform_cxx-crates
           # The cache producer normally runs on ARM, while the Rust consumer
           # runs on x86_64. Native Rust is selected from the build architecture,
           # so fetch the x86_64 compiler archive explicitly as well.
@@ -73,6 +75,7 @@ jobs:
           name: ${{ steps.vendor-artifact.outputs.name }}
           path: |
             depends/sources/native_cxxbridge-*-vendored.tar.gz
+            depends/sources/platform-cxx-*-vendored.tar.gz
             depends/sources/vendored-crates-*.tar.gz
           compression-level: 0
           retention-days: 1

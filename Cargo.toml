@@ -2,23 +2,12 @@
 members = [
   "rust/chirp",
   "rust/dashrust",
-  "rust/platform",
 ]
 resolver = "2"
-
-# platform-version (git) pulls versioned-feature-core from its own git
-# mirror while grovedb pulls it from crates.io; cargo vendor refuses one
-# package coming from two sources. Unify onto crates.io.
-[patch."https://github.com/dashpay/versioned-feature-core"]
-versioned-feature-core = "1.0.0"
 
 [profile.release]
 codegen-units = 1
 lto = true
-# panic=unwind (not abort): verify_*/decode_* parse attacker-controlled bytes from
-# remote DAPI nodes deep inside grovedb/drive; with unwind, cxx converts any
-# residual panic into a catchable C++ exception at the bridge instead of
-# aborting dash-qt. dashd links no Rust either way.
 panic = "unwind"
 
 [profile.dev]

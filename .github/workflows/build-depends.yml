@@ -151,23 +151,24 @@ jobs:
 
       - name: Restore Rust vendor sources
         id: rust-vendor-cache
-        if: inputs.build-target == 'linux64_rust'
+        if: inputs.build-target == 'linux64_rust' || inputs.build-target == 'linux64_platform_gui'
         uses: actions/cache/restore@v5
         with:
           path: |
             depends/sources/native_cxxbridge-*-vendored.tar.gz
+            depends/sources/platform-cxx-*-vendored.tar.gz
             depends/sources/vendored-crates-*.tar.gz
-          key: depends-rust-vendor-sources-${{ hashFiles('depends/Makefile', 'depends/funcs.mk', 'depends/packages/native_cxxbridge.mk', 'depends/packages/native_rust.mk', 'depends/patches/native_cxxbridge/Cargo.lock', 'Cargo.lock') }}
+          key: depends-rust-vendor-sources-${{ hashFiles('depends/Makefile', 'depends/funcs.mk', 'depends/packages/native_cxxbridge.mk', 'depends/packages/native_rust.mk', 'depends/packages/platform_cxx.mk', 'depends/patches/native_cxxbridge/Cargo.lock', 'depends/patches/platform_cxx/cargo-config.toml', 'Cargo.lock') }}
 
       - name: Download Rust vendor sources
-        if: inputs.build-target == 'linux64_rust' && steps.rust-vendor-cache.outputs.cache-hit != 'true' && inputs.rust-vendor-artifact != ''
+        if: (inputs.build-target == 'linux64_rust' || inputs.build-target == 'linux64_platform_gui') && steps.rust-vendor-cache.outputs.cache-hit != 'true' && inputs.rust-vendor-artifact != ''
         uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.rust-vendor-artifact }}
           path: depends/sources
 
       - name: Check Rust vendor sources are present
-        if: inputs.build-target == 'linux64_rust' && steps.rust-vendor-cache.outputs.cache-hit != 'true' && inputs.rust-vendor-artifact == ''
+        if: (inputs.build-target == 'linux64_rust' || inputs.build-target == 'linux64_platform_gui') && steps.rust-vendor-cache.outputs.cache-hit != 'true' && inputs.rust-vendor-artifact == ''
         run: |
           echo "::error::Rust vendor source cache missed and no same-run artifact was provided"
           exit 1

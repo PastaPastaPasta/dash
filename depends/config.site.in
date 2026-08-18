@@ -58,6 +58,13 @@ if test -z "$enable_platform_gui" && test -n "@platform_gui@"; then
   enable_platform_gui=yes
 fi
 
+if test -z "$PLATFORM_CXX_CFLAGS" && test -f "${depends_prefix}/include/dash/platform/ffi.h"; then
+  PLATFORM_CXX_CFLAGS="-I${depends_prefix}/include"
+fi
+if test -z "$PLATFORM_CXX_LIBS" && test -f "${depends_prefix}/lib/libdash_platform_cxx.a"; then
+  PLATFORM_CXX_LIBS="${depends_prefix}/lib/libdash_platform_cxx.a"
+fi
+
 if test -z "$with_miniupnpc" && test -n "@no_upnp@"; then
   with_miniupnpc=no
 fi
@@ -191,13 +198,6 @@ fi
 if test -x "${depends_prefix}/native/bin/cxxbridge"; then
   CXXBRIDGE="${depends_prefix}/native/bin/cxxbridge"
 fi
-if test -x "${depends_prefix}/native/bin/protoc"; then
-  PROTOC="${depends_prefix}/native/bin/protoc"
-  PROTOC_INCLUDE="${depends_prefix}/native/include"
-fi
 if test -z "$RUST_VENDORED_SOURCES"; then
   RUST_VENDORED_SOURCES="${depends_prefix}/vendored-sources"
-fi
-if test -d "${depends_prefix}/tenderdash-sources"; then
-  TENDERDASH_SOURCES="${depends_prefix}/tenderdash-sources"
 fi

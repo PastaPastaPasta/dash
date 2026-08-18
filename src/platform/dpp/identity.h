@@ -14,8 +14,8 @@
 /**
  * Decoding of platform-serialized Identity / IdentityPublicKey objects into
  * the platform::Identity / platform::IdentityPublicKey GUI types. Thin
- * adapters over the Rust bridge (rust/platform, cxx namespace platform_ffi),
- * which deserializes with the real rs-dpp.
+ * adapters over the Platform-owned CXX bindings, which deserialize with the
+ * real rs-dpp.
  */
 namespace platform::dpp {
 

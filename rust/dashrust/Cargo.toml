@@ -14,8 +14,3 @@ crate-type = ["staticlib"]
 
 [dependencies]
 chirp = { path = "../chirp" }
-dash-platform-ffi = { path = "../platform", optional = true }
-
-[features]
-# Dash Platform client components, enabled by --enable-platform-gui.
-platform = ["dep:dash-platform-ffi"]

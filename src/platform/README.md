@@ -7,8 +7,8 @@ used exclusively by the dash-qt GUI when configured with
 - per-network parameters and the well-known system data contract IDs
   (`params.*`);
 - a protobuf wire-format subset for the DAPI gRPC messages;
-- thin adapters (`dpp/`, `drive/queries.*`) over the Rust bridge
-  (`rust/platform`, cxx namespace `platform_ffi`) for proved-response
+- thin adapters (`dpp/`, `drive/queries.*`) over the Platform-owned CXX
+  bindings (namespace `platform_ffi`) for proved-response
   verification, DPP object decoding and state-transition construction —
   backed by the real dashpay/platform crates. Verification hands the exact
   protobuf (request, response) pair to drive-proof-verifier's `FromProof`,

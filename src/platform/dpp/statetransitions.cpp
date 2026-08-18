@@ -4,11 +4,11 @@
 
 #include <platform/statetransitions.h>
 
-#include <platform/ffi/signer.h>
+#include <dash/platform/ffi.h>
+#include <dash/platform/signer.h>
 
 #include <crypto/common.h>
 #include <hash.h>
-#include <rust/platform/lib.h>
 #include <tinyformat.h>
 #include <uint256.h>
 
@@ -16,9 +16,9 @@
 #include <utility>
 
 /**
- * DPP state transition construction and signing, delegated to the Rust
- * bridge (rust/platform, cxx namespace platform_ffi), which builds and
- * serializes with the real rs-dpp. Signing crosses the FFI as a digest
+ * DPP state transition construction and signing, delegated to the
+ * Platform-owned CXX bindings, which build and serialize with the real
+ * rs-dpp. Signing crosses the FFI as a digest
  * callback (platform_ffi::WalletSigner) so private keys never leave the
  * wallet: Rust hands back the key id being signed plus the double-SHA256
  * digest of the transition's signable bytes and expects a 65-byte compact

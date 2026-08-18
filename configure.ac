@@ -132,14 +132,11 @@ dnl Rust toolchain detection. These programs are required only when a
 dnl Rust-dependent component is explicitly enabled.
 AC_PATH_PROG([CARGO], [cargo])
 AC_PATH_PROG([CXXBRIDGE], [cxxbridge])
-AC_PATH_PROG([PROTOC], [protoc])
 AC_PATH_PROG([RUSTC], [rustc])
 CXXBRIDGE_REQUIRED_VERSION="1.0.198"
 RUSTC_REQUIRED_VERSION="1.92.0"
 CARGO_REQUIRED_VERSION="$RUSTC_REQUIRED_VERSION"
 AC_SUBST([CXXBRIDGE_REQUIRED_VERSION])
-
-AC_ARG_VAR([PROTOC_INCLUDE], [Directory containing the protobuf well-known type definitions])
 
 AC_ARG_VAR([CARGO_INCREMENTAL], [Enable incremental compilation for Rust])
 if test "${CARGO_INCREMENTAL+set}" != "set"; then
@@ -148,13 +145,6 @@ fi
 
 AC_ARG_VAR([RUSTFLAGS], [Flags for Rust compiler])
 
-dnl Directory holding the sha256-pinned tenderdash source archive
-dnl (tenderdash-vX.Y.Z.zip, depends package tenderdash_sources). When set,
-dnl the archive is copied into the cargo target directory before building so
-dnl tenderdash-proto's build.rs finds it in its download cache instead of
-dnl fetching it from GitHub (required for offline/depends builds with
-dnl --enable-platform-gui). Unset for --enable-online-rust dev builds.
-AC_ARG_VAR([TENDERDASH_SOURCES], [Directory with the pinned tenderdash source archive for offline builds])
 if test "${RUSTFLAGS+set}" != "set"; then
   RUSTFLAGS="-C embed-bitcode=yes -C relocation-model=pic"
 fi
@@ -173,12 +163,6 @@ AC_ARG_ENABLE([online-rust],
   [enable_online_rust=$enableval],
   [enable_online_rust=no])
 AM_CONDITIONAL([ENABLE_ONLINE_RUST], [test "$enable_online_rust" != "no"])
-
-dnl Cargo features enabling optional components of the umbrella crate
-dnl (rust/dashrust). Populated by feature-specific configure flags below;
-dnl empty means only the always-on components are built.
-RUST_CRATE_FEATURES=""
-AC_SUBST(RUST_CRATE_FEATURES)
 
 AC_ARG_ENABLE([wallet],
   [AS_HELP_STRING([--disable-wallet],
@@ -366,13 +350,13 @@ AC_ARG_ENABLE([platform-gui],
     [enable_platform_gui=no])
 AC_ARG_VAR([MBEDTLS_CFLAGS], [C compiler flags for mbedtls, bypasses autodetection])
 AC_ARG_VAR([MBEDTLS_LIBS], [Linker flags for mbedtls, bypasses autodetection])
-dnl The Platform client is backed by the Rust bridge: enabling it turns on the
-dnl shared Rust build machinery (--enable-rust) and requests the 'platform'
-dnl cargo feature of the umbrella crate. All Rust toolchain validation lives
-dnl in the --enable-rust block; it sees the implied value.
-if test "$enable_platform_gui" = "yes"; then
-  enable_rust=yes
-  RUST_CRATE_FEATURES="${RUST_CRATE_FEATURES:+$RUST_CRATE_FEATURES }platform"
+AC_ARG_VAR([PLATFORM_CXX_CFLAGS], [C++ compiler flags for the Dash Platform CXX bindings])
+AC_ARG_VAR([PLATFORM_CXX_LIBS], [Linker flags for the Dash Platform CXX bindings])
+dnl Rust static libraries each contain their language runtime. Linking Core's
+dnl smoke archive and Platform's independently built archive into one binary
+dnl would duplicate Rust and CXX runtime symbols.
+if test "$enable_platform_gui" = "yes" && test "$enable_rust" = "yes"; then
+  AC_MSG_ERROR([--enable-platform-gui cannot be combined with --enable-rust])
 fi
 
 dnl Enable different -fsanitize options
@@ -2208,9 +2192,8 @@ if test "$build_bitcoin_wallet$build_bitcoin_cli$build_bitcoin_tx$build_bitcoin_
 fi
 
 dnl Dash Platform GUI support needs the GUI and the wallet, and mbedtls for the
-dnl DAPI TLS client. The platform client library is linked into dash-qt (and
-dnl test binaries) only; the Rust staticlib backing it follows the shared
-dnl --enable-rust machinery (implied by --enable-platform-gui above).
+dnl DAPI TLS client. The platform client library and the Platform-owned CXX
+dnl archive are linked into dash-qt (and test binaries) only.
 if test "$enable_platform_gui" = "yes"; then
   if test "$bitcoin_enable_qt" != "yes"; then
     AC_MSG_ERROR([--enable-platform-gui requires the GUI (--with-gui)])
@@ -2224,27 +2207,40 @@ if test "$enable_platform_gui" = "yes"; then
     AC_CHECK_LIB([mbedx509], [main], [MBEDTLS_LIBS="-lmbedx509 $MBEDTLS_LIBS"], [AC_MSG_ERROR([libmbedx509 not found (required by --enable-platform-gui)])], [$MBEDTLS_LIBS])
     AC_CHECK_LIB([mbedtls], [mbedtls_ssl_init], [MBEDTLS_LIBS="-lmbedtls $MBEDTLS_LIBS"], [AC_MSG_ERROR([libmbedtls not found (required by --enable-platform-gui)])], [$MBEDTLS_LIBS])
   fi
-  dnl cargo/rustc/cxxbridge are validated by the --enable-rust block above
-  dnl (implied by --enable-platform-gui); protoc is a platform-only need
-  dnl (tenderdash-proto codegen inside the FFI crate build).
-  if test -z "$PROTOC"; then
-    AC_MSG_ERROR([protoc is required by --enable-platform-gui])
+  if test -z "$PLATFORM_CXX_LIBS"; then
+    PLATFORM_CXX_LIBS="-ldash_platform_cxx"
   fi
-  if test -z "$PROTOC_INCLUDE"; then
-    protoc_include_candidate="${PROTOC%/*}/../include"
-    if test -f "$protoc_include_candidate/google/protobuf/descriptor.proto"; then
-      PROTOC_INCLUDE="$protoc_include_candidate"
-    else
-      AC_MSG_ERROR([protobuf includes not found; set PROTOC_INCLUDE to the directory containing google/protobuf/descriptor.proto])
-    fi
-  elif test ! -f "$PROTOC_INCLUDE/google/protobuf/descriptor.proto"; then
-    AC_MSG_ERROR([PROTOC_INCLUDE does not contain google/protobuf/descriptor.proto])
-  fi
+  PLATFORM_CXX_LIBS="$PLATFORM_CXX_LIBS -lpthread -lm"
+  case $host in
+    *darwin*) PLATFORM_CXX_LIBS="$PLATFORM_CXX_LIBS -framework CoreFoundation" ;;
+    *linux*) PLATFORM_CXX_LIBS="$PLATFORM_CXX_LIBS -ldl" ;;
+    *mingw*) PLATFORM_CXX_LIBS="$PLATFORM_CXX_LIBS -luserenv -lntdll" ;;
+  esac
+  TEMP_CPPFLAGS="$CPPFLAGS"
+  TEMP_LIBS="$LIBS"
+  CPPFLAGS="$CPPFLAGS $PLATFORM_CXX_CFLAGS"
+  LIBS="$PLATFORM_CXX_LIBS $LIBS"
+  AC_LANG_PUSH([C++])
+  AC_MSG_CHECKING([for Dash Platform CXX bindings])
+  AC_LINK_IFELSE([AC_LANG_PROGRAM([[
+    #include <cstdint>
+    #include <dash/platform/ffi.h>
+  ]], [[
+    platform_ffi::set_context("test", std::uint32_t{0});
+  ]])], [AC_MSG_RESULT([yes])], [
+    AC_MSG_RESULT([no])
+    AC_MSG_ERROR([Dash Platform CXX bindings not found (required by --enable-platform-gui)])
+  ])
+  AC_LANG_POP
+  CPPFLAGS="$TEMP_CPPFLAGS"
+  LIBS="$TEMP_LIBS"
   AC_DEFINE([ENABLE_PLATFORM_GUI], [1], [Define this symbol to enable Dash Platform support in the GUI])
 fi
 AM_CONDITIONAL([ENABLE_PLATFORM_GUI], [test "$enable_platform_gui" = "yes"])
 AC_SUBST(MBEDTLS_CFLAGS)
 AC_SUBST(MBEDTLS_LIBS)
+AC_SUBST(PLATFORM_CXX_CFLAGS)
+AC_SUBST(PLATFORM_CXX_LIBS)
 
 AM_CONDITIONAL([TARGET_DARWIN], [test "$TARGET_OS" = "darwin"])
 AM_CONDITIONAL([BUILD_DARWIN], [test "$BUILD_OS" = "darwin"])
@@ -2264,7 +2260,6 @@ AM_CONDITIONAL([USE_LCOV], [test "$use_lcov" = "yes"])
 AM_CONDITIONAL([USE_LIBEVENT], [test "$use_libevent" = "yes"])
 AM_CONDITIONAL([HARDEN], [test "$use_hardening" = "yes"])
 AM_CONDITIONAL([ENABLE_RUST], [test "$enable_rust" = "yes"])
-AM_CONDITIONAL([ENABLE_RUST_FEATURES], [test -n "$RUST_CRATE_FEATURES"])
 AM_CONDITIONAL([ENABLE_SSSE3], [test "$enable_ssse3" = "yes"])
 AM_CONDITIONAL([ENABLE_SSE42], [test "$enable_sse42" = "yes"])
 AM_CONDITIONAL([ENABLE_SSE41], [test "$enable_sse41" = "yes"])
@@ -2477,8 +2472,8 @@ echo "  CXXBRIDGE                    = $CXXBRIDGE"
 echo "  NATIVE_AR                    = $NATIVE_AR"
 echo "  NATIVE_CC                    = $NATIVE_CC"
 echo "  NATIVE_CXX                   = $NATIVE_CXX"
-echo "  PROTOC                       = $PROTOC"
-echo "  PROTOC_INCLUDE               = $PROTOC_INCLUDE"
+echo "  PLATFORM_CXX_CFLAGS          = $PLATFORM_CXX_CFLAGS"
+echo "  PLATFORM_CXX_LIBS            = $PLATFORM_CXX_LIBS"
 echo "  RUSTC                        = $RUSTC"
 echo "  RUSTFLAGS                    = $RUSTFLAGS"
 echo "  RUST_MACOS_DEPLOYMENT_TARGET = $RUST_MACOS_DEPLOYMENT_TARGET"
@@ -2486,5 +2481,4 @@ echo "  RUST_NATIVE                  = $RUST_NATIVE"
 echo "  RUST_OSX_SDK                 = $RUST_OSX_SDK"
 echo "  RUST_TARGET                  = $RUST_TARGET"
 echo "  RUST_VENDORED_SOURCES        = $RUST_VENDORED_SOURCES"
-echo "  TENDERDASH_SOURCES           = $TENDERDASH_SOURCES"
 echo

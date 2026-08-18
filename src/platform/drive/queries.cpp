@@ -4,7 +4,7 @@
 
 #include <platform/drive/queries.h>
 
-#include <rust/platform/lib.h>
+#include <dash/platform/ffi.h>
 
 #include <algorithm>
 

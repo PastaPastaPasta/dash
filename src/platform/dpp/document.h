@@ -12,9 +12,8 @@
 
 /**
  * Decoding of stored (platform-serialized) DPNS and DashPay documents into
- * the GUI types. Thin adapters over the Rust bridge (rust/platform, cxx
- * namespace platform_ffi), which deserializes with the real rs-dpp against
- * the pinned system data contracts.
+ * the GUI types. Thin adapters over the Platform-owned CXX bindings, which
+ * deserialize with the real rs-dpp against the pinned system data contracts.
  */
 namespace platform::dpp {
 

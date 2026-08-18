@@ -8,9 +8,9 @@ export LC_ALL=C.UTF-8
 
 # Builds dash-qt with the optional Dash Platform GUI (--enable-platform-gui)
 # turned on and runs the platform_* unit-test suites. PLATFORM_GUI=1 makes
-# depends build the extra client dependency (mbedtls); proof verification,
-# DPP decoding and state-transition construction come from the Rust bridge
-# (rust/platform). Functional tests are skipped: the feature is exercised by
+# depends build mbedtls and the Platform-owned CXX binding archive; proof
+# verification, DPP decoding and state-transition construction come from that
+# archive. Functional tests are skipped: the feature is exercised by
 # the gated C++ unit tests (platform_drive_tests, platform_dpp_tests,
 # platformkeys_tests) and there is no dashd-only surface to drive.
 export CONTAINER_NAME=ci_native_platform_gui

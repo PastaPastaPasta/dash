@@ -4,7 +4,7 @@
 
 #include <platform/dpp/document.h>
 
-#include <rust/platform/lib.h>
+#include <dash/platform/ffi.h>
 
 #include <algorithm>
 

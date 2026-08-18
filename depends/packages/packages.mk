@@ -29,7 +29,7 @@ natpmp_packages=libnatpmp
 multiprocess_packages = libmultiprocess capnp
 multiprocess_native_packages = native_libmultiprocess native_capnp
 
-platform_packages = mbedtls tenderdash_sources
-platform_native_packages = native_protobuf
+platform_packages = mbedtls rust_stdlib tenderdash_sources platform_cxx
+platform_native_packages = native_protobuf native_rust
 
 usdt_linux_packages=systemtap

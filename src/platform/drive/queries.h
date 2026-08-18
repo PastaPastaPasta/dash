@@ -16,8 +16,8 @@
 
 //! Proved-response verification for the DAPI queries the dash-qt Platform
 //! GUI makes. Each adapter hands the exact protobuf request the transport
-//! sent plus the full protobuf response it received to the Rust bridge
-//! (rust/platform, cxx namespace platform_ffi), where drive-proof-verifier's
+//! sent plus the full protobuf response it received to the Platform-owned CXX
+//! bindings, where drive-proof-verifier's
 //! FromProof reconstructs the query from the request, replays the GroveDB
 //! proof, and verifies the Tenderdash BLS quorum threshold signature against
 //! the quorum keys previously pushed via UpdateQuorumKeys. On success,
