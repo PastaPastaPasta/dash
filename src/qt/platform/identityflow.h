@@ -103,6 +103,9 @@ private:
     Record m_record;
     bool m_step_in_flight{false};
     int m_retries{0};
+    //! Consecutive checkFundingLock() polls that found the funding tx
+    //! unconfirmed, outside the mempool and refusing rebroadcast.
+    int m_funding_dead_polls{0};
 };
 
 #endif // BITCOIN_QT_PLATFORM_IDENTITYFLOW_H

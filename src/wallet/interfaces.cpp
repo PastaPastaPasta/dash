@@ -669,12 +669,15 @@ public:
         return util::Error{Untranslated("platform support is not compiled in")};
 #endif // ENABLE_PLATFORM_GUI
     }
-    void commitTransaction(CTransactionRef tx,
+    std::optional<bilingual_str> commitTransaction(CTransactionRef tx,
         WalletValueMap value_map,
         WalletOrderForm order_form) override
     {
         LOCK(m_wallet->cs_wallet);
-        m_wallet->CommitTransaction(std::move(tx), std::move(value_map), std::move(order_form));
+        bilingual_str broadcast_error;
+        m_wallet->CommitTransaction(std::move(tx), std::move(value_map), std::move(order_form), &broadcast_error);
+        if (broadcast_error.empty()) return std::nullopt;
+        return broadcast_error;
     }
     bool transactionCanBeAbandoned(const uint256& txid) override { return m_wallet->TransactionCanBeAbandoned(txid); }
     bool transactionCanBeResent(const uint256& txid) override { return m_wallet->TransactionCanBeResent(txid); }

@@ -14,6 +14,7 @@
 #include <util/fs.h>
 #include <util/message.h>
 #include <util/result.h>
+#include <util/translation.h> // For bilingual_str (complete type needed by std::optional)
 #include <util/ui_change_type.h>
 
 #include <array>
@@ -36,7 +37,6 @@ class CKey;
 class CRPCCommand;
 enum class FeeReason;
 enum class TransactionError;
-struct bilingual_str;
 struct PartiallySignedTransaction;
 namespace node {
 struct NodeContext;
@@ -293,8 +293,11 @@ public:
         const CPubKey& credit_pubkey,
         const wallet::CCoinControl& coin_control) = 0;
 
-    //! Commit transaction.
-    virtual void commitTransaction(CTransactionRef tx,
+    //! Commit transaction. Returns the mempool rejection reason when the
+    //! transaction was committed to the wallet but could not be accepted to
+    //! the mempool for broadcast; the caller may abandon it to release its
+    //! inputs.
+    virtual std::optional<bilingual_str> commitTransaction(CTransactionRef tx,
         WalletValueMap value_map,
         WalletOrderForm order_form) = 0;
 

@@ -174,6 +174,7 @@ bool IdentityFlow::start(const QString& label, CAmount funding_amount, QString& 
 
     // Persist the full flow state — including the preorder salt — before the
     // irreversible broadcast.
+    m_funding_dead_polls = 0;
     m_record = Record{};
     m_record.state = State::FUNDING_SENT;
     m_record.funding_txid = tx->GetHash();
@@ -195,7 +196,18 @@ bool IdentityFlow::start(const QString& label, CAmount funding_amount, QString& 
         return false;
     }
 
-    wallet.commitTransaction(tx, {}, {});
+    if (const auto broadcast_error{wallet.commitTransaction(tx, {}, {})}) {
+        // The mempool rejected the transaction: it can never confirm, but it
+        // was committed to the wallet and would linger as a phantom pending
+        // debit. Abandon it to release the inputs and roll the flow back so
+        // the user can retry once the cause is addressed.
+        wallet.abandonTransaction(tx->GetHash());
+        m_record = Record{};
+        m_service.writeRecord(RECORD_KEY, {});
+        error = tr("the funding transaction was rejected: %1")
+                    .arg(QString::fromStdString(broadcast_error->translated));
+        return false;
+    }
 
     Q_EMIT stateChanged();
     return true;
@@ -248,17 +260,45 @@ void IdentityFlow::checkFundingLock()
 {
     Wallet& wallet{m_service.walletModel().wallet()};
     interfaces::WalletTxStatus status;
+    interfaces::WalletOrderForm order_form;
+    bool in_mempool{false};
     int num_blocks{0};
-    int64_t block_time{0};
-    if (!wallet.tryGetTxStatus(m_record.funding_txid, status, num_blocks, block_time)) return;
+    const auto wtx{wallet.getWalletTxDetails(m_record.funding_txid, status, order_form, in_mempool, num_blocks)};
+    if (!wtx.tx) {
+        // The record was persisted but the transaction never made it into
+        // the wallet (crash between save() and commitTransaction()): nothing
+        // was spent or broadcast, so fail out and let the user start over.
+        fail(tr("funding"), tr("the funding transaction is missing from the wallet"), /*retryable=*/false);
+        return;
+    }
 
     if (status.is_abandoned || (status.depth_in_main_chain < 0)) {
         fail(tr("funding"), tr("the funding transaction was abandoned or conflicted"), /*retryable=*/false);
         return;
     }
     if (status.is_islocked || status.is_chainlocked || status.depth_in_main_chain >= 8) {
+        m_funding_dead_polls = 0;
         setState(State::FUNDING_LOCKED);
+        return;
     }
+
+    if (status.depth_in_main_chain == 0 && !in_mempool) {
+        // Unconfirmed and not in the local mempool: the broadcast was lost
+        // (restart) or the mempool rejected the transaction, which no
+        // islock/chainlock/confirmation poll would ever notice. Rebroadcast
+        // to recover the transient case; a transaction the node keeps
+        // refusing is dead, so abandon it (releasing the inputs) and fail.
+        if (wallet.resendTransaction(m_record.funding_txid)) {
+            m_funding_dead_polls = 0;
+            return;
+        }
+        if (++m_funding_dead_polls >= MAX_CONFIRM_POLLS) {
+            wallet.abandonTransaction(m_record.funding_txid);
+            fail(tr("funding"), tr("the funding transaction was rejected from the mempool"), /*retryable=*/false);
+        }
+        return;
+    }
+    m_funding_dead_polls = 0;
 }
 
 void IdentityFlow::broadcastIdentityCreate()
