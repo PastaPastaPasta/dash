@@ -334,6 +334,15 @@ private:
      *  @param[in] ret_dups   Allow UTXOs already in set to be included in return value
      *  @returns              Set of all new UTXOs (eligible to be) added to set */
     std::set<COutPoint> AddWalletUTXOs(CTransactionRef tx, bool ret_dups) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    /** Return to the wallet UTXO set the outpoints `tx` consumed and no longer spends
+     *
+     *  AddToSpends() removes an outpoint from the set as soon as some wallet transaction
+     *  spends it. When that transaction stops spending it — it was abandoned, or a
+     *  conflicting transaction confirmed — the outpoint is spendable again and belongs
+     *  back in the set.
+     *
+     *  @param[in] tx         Transaction whose inputs to reconsider */
+    void RestoreWalletUTXOs(const CTransactionRef& tx) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     mutable std::map<COutPoint, int> mapOutpointRoundsCache GUARDED_BY(cs_wallet);
 
     /**

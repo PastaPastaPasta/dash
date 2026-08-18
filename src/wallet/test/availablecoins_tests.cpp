@@ -89,5 +89,30 @@ BOOST_FIXTURE_TEST_CASE(BasicOutputTypesTest, AvailableCoinsTestingSetup)
     BOOST_CHECK_EQUAL(available_coins.legacy.size(), 2U);
 }
 
+BOOST_FIXTURE_TEST_CASE(AbandonedSpendReleasesItsInputs, AvailableCoinsTestingSetup)
+{
+    LOCK(wallet->cs_wallet);
+
+    const CoinsResult before{AvailableCoins(*wallet)};
+    BOOST_CHECK(before.size() > 0);
+
+    CCoinControl coin_control;
+    auto created{CreateTransaction(*wallet, {CRecipient{{GetScriptForRawPubKey(coinbaseKey.GetPubKey())}, 1 * COIN,
+                                                        /*fSubtractFeeFromAmount=*/false}},
+                                   RANDOM_CHANGE_POSITION, coin_control)};
+    BOOST_CHECK(created);
+    const CTransactionRef tx{created->tx};
+
+    // The transaction is only in the wallet: never broadcast, never mined.
+    BOOST_CHECK(wallet->AddToWallet(tx, TxStateInactive{}));
+    BOOST_CHECK(AvailableCoins(*wallet).size() < before.size());
+
+    // Abandoning it makes the coins it spent available again, without a reload.
+    BOOST_CHECK(wallet->AbandonTransaction(tx->GetHash()));
+    const CoinsResult after{AvailableCoins(*wallet)};
+    BOOST_CHECK_EQUAL(after.size(), before.size());
+    BOOST_CHECK_EQUAL(after.total_amount, before.total_amount);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 } // namespace wallet

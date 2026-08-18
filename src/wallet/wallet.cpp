@@ -1193,6 +1193,18 @@ std::set<COutPoint> CWallet::AddWalletUTXOs(CTransactionRef tx, bool ret_dups)
     return ret;
 }
 
+void CWallet::RestoreWalletUTXOs(const CTransactionRef& tx)
+{
+    AssertLockHeld(cs_wallet);
+    for (const CTxIn& txin : tx->vin) {
+        const auto it{mapWallet.find(txin.prevout.hash)};
+        if (it == mapWallet.end() || txin.prevout.n >= it->second.tx->vout.size()) continue;
+        if (IsMine(it->second.tx->vout[txin.prevout.n]) && !IsSpent(txin.prevout)) {
+            setWalletUTXO.insert(txin.prevout);
+        }
+    }
+}
+
 bool CWallet::AddToWalletIfInvolvingMe(const CTransactionRef& ptx, const SyncTxState& state, WalletBatch& batch, bool fUpdate, bool rescanning_old_block)
 {
     const CTransaction& tx = *ptx;
@@ -1401,6 +1413,7 @@ void CWallet::RecursiveUpdateTxState(const uint256& tx_hash, const TryUpdatingSt
             // If a transaction changes its tx state, that usually changes the balance
             // available of the outputs it spends. So force those to be recomputed
             MarkInputsDirty(wtx.tx);
+            RestoreWalletUTXOs(wtx.tx);
         }
     }
 
