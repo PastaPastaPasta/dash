@@ -263,7 +263,7 @@ bool ContactFlow::prepareReceivingKeychain(const platform::Identifier& their_ide
     const std::string label{
         m_service.contactAddressLabel(QString::fromStdString(HexStr(their_identity))).toStdString()};
     std::string wallet_error;
-    if (!wallet.importFriendshipKeychains(/*account=*/0, my_hash, their_hash, creation_time, label, wallet_error)) {
+    if (!wallet.importFriendshipKeychains(/*account=*/0, my_hash, their_hash, creation_time, wallet_error)) {
         error = QString::fromStdString(wallet_error);
         return false;
     }
