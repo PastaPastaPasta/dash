@@ -38,10 +38,6 @@ EXPECTED_DASH_CIRCULAR_DEPENDENCIES = (
     "qt/platform/contactflow -> qt/platform/platformservice -> qt/platform/contactflow",
     "qt/platform/identityflow -> qt/platform/platformservice -> qt/platform/identityflow",
     "qt/platform/platformrecovery -> qt/platform/platformservice -> qt/platform/platformrecovery",
-    # dash#7581: walletdb reads platformkeys::SEED_ID_RECORD to classify a
-    # damaged PLATFORM_DATA record; to be broken on the foundation PR by
-    # moving the record-key constant out of wallet/platformseed.
-    "wallet/platformseed -> wallet/scriptpubkeyman -> wallet/walletdb -> wallet/platformseed",
     "banman -> common/bloom -> evo/assetlocktx -> llmq/quorumsman -> llmq/blockprocessor -> net -> banman",
     "coinjoin/client -> coinjoin/util -> wallet/wallet -> psbt -> node/transaction -> net_processing -> coinjoin/walletman -> coinjoin/client",
     "common/bloom -> evo/assetlocktx -> llmq/commitment -> evo/deterministicmns -> evo/simplifiedmns -> merkleblock -> common/bloom",

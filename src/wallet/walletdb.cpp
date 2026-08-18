@@ -22,7 +22,6 @@
 #include <wallet/sqlite.h>
 #endif
 #include <wallet/hdchain.h>
-#include <wallet/platformseed.h>
 #include <wallet/wallet.h>
 #include <validation.h>
 
@@ -668,7 +667,7 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
             // seed pin: an unreadable key could belong to the pin record itself.
             wss.platform_seed_pin_corrupt = true;
             ssKey >> strKey;
-            wss.platform_seed_pin_corrupt = (strKey == platformkeys::SEED_ID_RECORD);
+            wss.platform_seed_pin_corrupt = (strKey == PLATFORM_SEED_ID_RECORD);
             ssValue >> vchValue;
             wss.platform_seed_pin_corrupt = false;
             pwallet->LoadPlatformData(strKey, vchValue);

@@ -12,12 +12,6 @@ class CWallet;
 
 namespace platformkeys {
 
-//! Platform data record key pinning the SeedFingerprint of the seed the
-//! wallet's platform data was created from. Losing or damaging this record
-//! must be treated as wallet corruption: silently dropping it could unpin
-//! the Platform seed and let a multi-seed wallet sign under another identity.
-inline constexpr char SEED_ID_RECORD[]{"platform/seed-id"};
-
 //! Fetch the BIP39 seed the platform key provider derives from (requires the
 //! wallet to be unlocked; fails for watch-only wallets and wallets without a
 //! recoverable mnemonic).
