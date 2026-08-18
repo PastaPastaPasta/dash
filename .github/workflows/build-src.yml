@@ -109,8 +109,9 @@ jobs:
         with:
           path: |
             depends/sources/native_cxxbridge-*-vendored.tar.gz
+            depends/sources/platform-cxx-*-vendored.tar.gz
             depends/sources/vendored-crates-*.tar.gz
-          key: depends-rust-vendor-sources-${{ hashFiles('depends/Makefile', 'depends/funcs.mk', 'depends/packages/native_cxxbridge.mk', 'depends/packages/native_rust.mk', 'depends/patches/native_cxxbridge/Cargo.lock', 'Cargo.lock') }}
+          key: depends-rust-vendor-sources-${{ hashFiles('depends/Makefile', 'depends/funcs.mk', 'depends/packages/native_cxxbridge.mk', 'depends/packages/native_rust.mk', 'depends/packages/platform_cxx.mk', 'depends/patches/native_cxxbridge/Cargo.lock', 'depends/patches/platform_cxx/cargo-config.toml', 'Cargo.lock') }}
 
       - name: Download Rust vendor sources
         if: inputs.build-target == 'linux64_rust' && steps.rust-vendor-cache.outputs.cache-hit != 'true' && inputs.rust-vendor-artifact != ''
