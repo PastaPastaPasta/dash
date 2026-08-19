@@ -12,7 +12,7 @@ source ./ci/test/00_setup_env.sh
 
 # Configure sanitizers options
 export ASAN_OPTIONS="detect_leaks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1"
-export LSAN_OPTIONS="suppressions=${BASE_ROOT_DIR}/test/sanitizer_suppressions/lsan"
+export LSAN_OPTIONS="suppressions=${BASE_ROOT_DIR}/test/sanitizer_suppressions/lsan:print_suppressions=0"
 export TSAN_OPTIONS="suppressions=${BASE_ROOT_DIR}/test/sanitizer_suppressions/tsan:halt_on_error=1:second_deadlock_stack=1"
 export UBSAN_OPTIONS="suppressions=${BASE_ROOT_DIR}/test/sanitizer_suppressions/ubsan:print_stacktrace=1:halt_on_error=1:report_error_type=1"
 
@@ -20,6 +20,8 @@ if [ "$BUILD_TARGET" = "aarch64-linux" ]; then
   source ./ci/test/00_setup_env_aarch64.sh
 elif [ "$BUILD_TARGET" = "linux64" ]; then
   source ./ci/test/00_setup_env_native_qt5.sh
+elif [ "$BUILD_TARGET" = "linux64_rust" ]; then
+  source ./ci/test/00_setup_env_native_rust.sh
 elif [ "$BUILD_TARGET" = "linux64_asan" ]; then
   source ./ci/test/00_setup_env_native_asan.sh
 elif [ "$BUILD_TARGET" = "linux64_fuzz" ]; then
@@ -28,6 +30,8 @@ elif [ "$BUILD_TARGET" = "linux64_multiprocess" ]; then
   source ./ci/test/00_setup_env_native_multiprocess.sh
 elif [ "$BUILD_TARGET" = "linux64_nowallet" ]; then
   source ./ci/test/00_setup_env_native_nowallet_libbitcoinkernel.sh
+elif [ "$BUILD_TARGET" = "linux64_platform_gui" ]; then
+  source ./ci/test/00_setup_env_native_platform_gui.sh
 elif [ "$BUILD_TARGET" = "linux64_sqlite" ]; then
   source ./ci/test/00_setup_env_native_sqlite.sh
 elif [ "$BUILD_TARGET" = "linux64_tsan" ]; then

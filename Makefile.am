@@ -8,10 +8,15 @@ print-%: FORCE
 	@echo '$*'='$($*)'
 
 ACLOCAL_AMFLAGS = -I build-aux/m4
-SUBDIRS = src
+SUBDIRS =
+if ENABLE_RUST
+SUBDIRS += rust
+endif
+SUBDIRS += src
 if ENABLE_MAN
 SUBDIRS += doc/man
 endif
+DIST_SUBDIRS = rust src doc/man
 .PHONY: deploy FORCE
 .INTERMEDIATE: $(COVERAGE_INFO)
 
@@ -64,6 +69,13 @@ WINDOWS_PACKAGING = $(top_srcdir)/share/pixmaps/dash.ico \
 
 OSX_PACKAGING = $(OSX_DEPLOY_SCRIPT) $(OSX_INSTALLER_ICONS) \
   $(top_srcdir)/contrib/macdeploy/detached-sig-create.sh
+
+CARGO_FILES = \
+  $(top_srcdir)/.cargo/config.toml.offline \
+  $(top_srcdir)/Cargo.lock \
+  $(top_srcdir)/Cargo.toml \
+  $(top_srcdir)/rust-toolchain.toml \
+  $(top_srcdir)/contrib/devtools/cargo-vendor-git-sources.sh
 
 COVERAGE_INFO = $(COV_TOOL_WRAPPER) baseline.info \
   test_dash_filtered.info total_coverage.info \
@@ -249,7 +261,7 @@ endif
 
 dist_noinst_SCRIPTS = autogen.sh
 
-EXTRA_DIST = $(DIST_SHARE) $(DIST_CONTRIB) $(WINDOWS_PACKAGING) $(OSX_PACKAGING) $(BIN_CHECKS)
+EXTRA_DIST = $(DIST_SHARE) $(DIST_CONTRIB) $(WINDOWS_PACKAGING) $(OSX_PACKAGING) $(BIN_CHECKS) $(CARGO_FILES)
 
 EXTRA_DIST += \
     test/functional \

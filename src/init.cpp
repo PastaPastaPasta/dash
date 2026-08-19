@@ -126,6 +126,10 @@
 #include <coinjoin/options.h>
 #endif // ENABLE_WALLET
 
+#ifdef ENABLE_RUST
+#include <rust/chirp/lib.h>
+#endif
+
 #include <algorithm>
 #include <condition_variable>
 #include <cstdint>
@@ -1476,6 +1480,10 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         return false;
     }
 
+#ifdef ENABLE_RUST
+    LogPrintf("Rust bridge: %s\n", std::string(chirp::chirp()));
+#endif
+
     LogPrintf("Using at most %i automatic connections (%i file descriptors available)\n", nMaxConnections, nFD);
 
     // Warn about relative -datadir path.
@@ -2024,7 +2032,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
             }
         }
 
-        if (status == node::ChainstateLoadStatus::FAILURE_INCOMPATIBLE_DB) {
+        if (status == node::ChainstateLoadStatus::FAILURE_FATAL || status == node::ChainstateLoadStatus::FAILURE_INCOMPATIBLE_DB) {
             return InitError(error);
         }
 

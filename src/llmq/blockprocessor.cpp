@@ -153,7 +153,7 @@ MessageProcessingResult CQuorumBlockProcessor::ProcessMessage(const CNode& peer,
             // same, can't punish
             return ret;
         }
-        if (int quorumHeight = pQuorumBaseBlockIndex->nHeight - (pQuorumBaseBlockIndex->nHeight % llmq_params_opt->dkgInterval) + int(qc.quorumIndex);
+        if (int quorumHeight = pQuorumBaseBlockIndex->nHeight - (pQuorumBaseBlockIndex->nHeight % llmq_params_opt->dkgInterval) + int{qc.quorumIndex};
                 quorumHeight != pQuorumBaseBlockIndex->nHeight) {
             LogPrint(BCLog::LLMQ, "CQuorumBlockProcessor::%s -- block %s is not the first block in the DKG interval, peer=%d\n", __func__,
                      qc.quorumHash.ToString(), peer.GetId());
@@ -369,6 +369,12 @@ bool CQuorumBlockProcessor::ProcessCommitment(Chainstate& chainstate, int nHeigh
         !SerializedEqual(stored_commitment, std::make_pair(qc, blockHash))) {
         // Preserve the existing duplicate-commitment result while allowing an
         // exact block re-derivation to proceed through all validation below.
+        // Note: a commitment retained by UndoBlock for another chainstate's
+        // benefit would hit this path if this chain later re-mined the same
+        // qc in a different block. That needs a disconnect of a block shared
+        // with the other chainstate, which background validation (advancing
+        // only toward the snapshot base along the snapshot chain) never does;
+        // revisit if background reorgs ever become possible.
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-qc-dup");
     }
 
@@ -415,7 +421,7 @@ bool CQuorumBlockProcessor::ProcessCommitment(Chainstate& chainstate, int nHeigh
     }
 
     if (rotation_enabled) {
-        m_evoDb.Write(BuildInversedHeightKeyIndexed(llmq_params.type, nHeight, int(qc.quorumIndex)), pQuorumBaseBlockIndex->nHeight);
+        m_evoDb.Write(BuildInversedHeightKeyIndexed(llmq_params.type, nHeight, int{qc.quorumIndex}), pQuorumBaseBlockIndex->nHeight);
     } else {
         m_evoDb.Write(BuildInversedHeightKey(llmq_params.type, nHeight), pQuorumBaseBlockIndex->nHeight);
     }
@@ -525,7 +531,7 @@ bool CQuorumBlockProcessor::UndoBlock(const Chainstate& chainstate, const CBlock
             assert(llmq_params_opt.has_value());
 
             if (IsQuorumRotationEnabled(llmq_params_opt.value(), pindex)) {
-                m_evoDb.Erase(BuildInversedHeightKeyIndexed(qc.llmqType, pindex->nHeight, int(qc.quorumIndex)));
+                m_evoDb.Erase(BuildInversedHeightKeyIndexed(qc.llmqType, pindex->nHeight, int{qc.quorumIndex}));
             } else {
                 m_evoDb.Erase(BuildInversedHeightKey(qc.llmqType, pindex->nHeight));
             }

@@ -1,11 +1,15 @@
 # Copyright (c) 2013-2016 The Bitcoin Core developers
-# Copyright (c) 2014-2018 The Dash Core developers
+# Copyright (c) 2016-2025 The Zcash developers
+# Copyright (c) 2014-2026 The Dash Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 # Pattern rule to print variables, e.g. make print-top_srcdir
 print-%: FORCE
 	@echo '$*'='$($*)'
+
+include $(top_srcdir)/rust/Makefile.common.include
+include $(top_srcdir)/rust/Makefile.libs.include
 
 DIST_SUBDIRS = secp256k1
 
@@ -21,6 +25,13 @@ AM_CPPFLAGS = $(DEBUG_CPPFLAGS) $(HARDENED_CPPFLAGS) $(CORE_CPPFLAGS)
 AM_LIBTOOLFLAGS = --preserve-dup-deps
 PTHREAD_FLAGS = $(PTHREAD_CFLAGS) $(PTHREAD_LIBS)
 EXTRA_LIBRARIES =
+BUILT_SOURCES =
+if ENABLE_RUST
+BUILT_SOURCES += $(LIBRUSTDEPS_H)
+
+libbitcoin_node_a-init.$(OBJEXT) \
+test/test_dash-system_tests.$(OBJEXT): $(LIBRUSTDEPS_H)
+endif
 
 lib_LTLIBRARIES =
 noinst_LTLIBRARIES =
@@ -48,6 +59,9 @@ endif # ENABLE_STACKTRACES
 BITCOIN_INCLUDES=-I$(builddir) -I$(srcdir)/$(MINISKETCH_INCLUDE_DIR_INT) -I$(srcdir)/secp256k1/include -I$(srcdir)/$(UNIVALUE_INCLUDE_DIR_INT) $(LEVELDB_CPPFLAGS)
 BITCOIN_INCLUDES+=-isystem$(srcdir)/dashbls/include -isystem$(srcdir)/dashbls/depends/relic/include -isystem$(srcdir)/dashbls/depends/minialloc/include
 BITCOIN_INCLUDES+=-isystem$(srcdir)/immer
+if ENABLE_RUST
+BITCOIN_INCLUDES+=$(LIBRUSTDEPS_INCLUDES)
+endif
 
 LIBBITCOIN_NODE=libbitcoin_node.a
 LIBBITCOIN_COMMON=libbitcoin_common.a
@@ -61,6 +75,9 @@ LIBSECP256K1=secp256k1/libsecp256k1.la
 
 if ENABLE_ZMQ
 LIBBITCOIN_ZMQ=libbitcoin_zmq.a
+endif
+if ENABLE_PLATFORM_GUI
+LIBDASH_PLATFORM=libdash_platform.a
 endif
 if BUILD_BITCOIN_LIBS
 LIBBITCOINCONSENSUS=libdashconsensus.la
@@ -116,6 +133,14 @@ $(LIBDASHBLS):
 $(LIBSECP256K1): $(wildcard secp256k1/src/*.h) $(wildcard secp256k1/src/*.c) $(wildcard secp256k1/include/*)
 	$(AM_V_at)$(MAKE) $(AM_MAKEFLAGS) -C $(@D) $(@F)
 
+if ENABLE_RUST
+LIBCXXBRIDGE=libcxxbridge.la
+# libcxxbridge is the generated C++ side of the in-tree chirp bridge, and
+# libdashrust is its Rust implementation.
+RUST_COMPONENT_LIBS=$(LIBCXXBRIDGE) $(LIBRUSTDEPS) $(LIBCXXBRIDGE) $(LIBRUSTDEPS)
+RUST_SYSTEM_LIBS=$(RUST_LIBS)
+endif
+
 # Make is not made aware of per-object dependencies to avoid limiting building parallelization
 # But to build the less dependent modules first, we manually select their order here:
 EXTRA_LIBRARIES += \
@@ -127,7 +152,12 @@ EXTRA_LIBRARIES += \
   $(LIBBITCOIN_IPC) \
   $(LIBBITCOIN_WALLET) \
   $(LIBBITCOIN_WALLET_TOOL) \
-  $(LIBBITCOIN_ZMQ)
+  $(LIBBITCOIN_ZMQ) \
+  $(LIBDASH_PLATFORM)
+
+if ENABLE_RUST
+noinst_LTLIBRARIES += $(LIBCXXBRIDGE)
+endif
 
 if BUILD_BITCOIND
   bin_PROGRAMS += dashd
@@ -232,6 +262,7 @@ BITCOIN_CORE_H = \
   evo/mnhftx.h \
   evo/netinfo.h \
   evo/providertx.h \
+  evo/providertx_service.h \
   evo/simplifiedmns.h \
   evo/smldiff.h \
   evo/specialtx.h \
@@ -281,6 +312,7 @@ BITCOIN_CORE_H = \
   interfaces/init.h \
   interfaces/ipc.h \
   interfaces/node.h \
+  interfaces/providertx.h \
   interfaces/wallet.h \
   kernel/blockmanager_opts.h \
   kernel/chain.h \
@@ -370,7 +402,7 @@ BITCOIN_CORE_H = \
   rest.h \
   rpc/blockchain.h \
   rpc/client.h \
-  rpc/evo_util.h \
+  rpc/json_help.h \
   rpc/mempool.h \
   rpc/mining.h \
   rpc/protocol.h \
@@ -476,6 +508,8 @@ BITCOIN_CORE_H = \
   wallet/hdchain.h \
   wallet/ismine.h \
   wallet/load.h \
+  wallet/platformkeys.h \
+  wallet/platformtypes.h \
   wallet/receive.h \
   wallet/rpc/util.h \
   wallet/rpc/wallet.h \
@@ -539,6 +573,7 @@ libbitcoin_node_a_SOURCES = \
   evo/mnauth.cpp \
   evo/mnhftx.cpp \
   evo/providertx.cpp \
+  evo/providertx_service.cpp \
   evo/simplifiedmns.cpp \
   evo/smldiff.cpp \
   evo/specialtx.cpp \
@@ -635,6 +670,7 @@ libbitcoin_node_a_SOURCES = \
   rpc/evo.cpp \
   rpc/fees.cpp \
   rpc/governance.cpp \
+  rpc/json_help.cpp \
   rpc/masternode.cpp \
   rpc/mempool.cpp \
   rpc/mining.cpp \
@@ -685,6 +721,40 @@ libbitcoin_zmq_a_SOURCES = \
 endif
 #
 
+# platform (Dash Platform client, linked into dash-qt and test_dash only) #
+if ENABLE_PLATFORM_GUI
+libdash_platform_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(BOOST_CPPFLAGS) $(MBEDTLS_CFLAGS) $(PLATFORM_CXX_CFLAGS)
+libdash_platform_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+libdash_platform_a_CFLAGS = $(AM_CFLAGS) $(PIE_FLAGS)
+libdash_platform_a_SOURCES = \
+  platform/client.h \
+  platform/dpp/document.cpp \
+  platform/dpp/document.h \
+  platform/dpp/identity.cpp \
+  platform/dpp/identity.h \
+  platform/dpp/statetransitions.cpp \
+  platform/drive/queries.cpp \
+  platform/drive/queries.h \
+  platform/params.cpp \
+  platform/params.h \
+  platform/statetransitions.h \
+  platform/transport/cbor.h \
+  platform/transport/client.cpp \
+  platform/transport/endpoint_retry.h \
+  platform/transport/freshness.h \
+  platform/transport/grpcweb.cpp \
+  platform/transport/grpcweb.h \
+  platform/transport/protobuf.cpp \
+  platform/transport/protobuf.h \
+  platform/transport/tls.cpp \
+  platform/transport/tls.h \
+  platform/types.h \
+  platform/walletrecords.cpp \
+  platform/walletrecords.h
+
+endif
+#
+
 # wallet #
 libbitcoin_wallet_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(BOOST_CPPFLAGS) $(BDB_CPPFLAGS) $(SQLITE_CFLAGS)
 libbitcoin_wallet_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
@@ -706,6 +776,7 @@ libbitcoin_wallet_a_SOURCES = \
   wallet/hdchain.cpp \
   wallet/interfaces.cpp \
   wallet/load.cpp \
+  wallet/platformkeys.cpp \
   wallet/receive.cpp \
   wallet/rpc/addresses.cpp \
   wallet/rpc/backup.cpp \
@@ -966,7 +1037,6 @@ libbitcoin_common_a_SOURCES = \
   evo/providertx_util.cpp \
   external_signer.cpp \
   governance/common.cpp \
-  governance/core_write.cpp \
   init/common.cpp \
   key.cpp \
   key_io.cpp \
@@ -981,7 +1051,6 @@ libbitcoin_common_a_SOURCES = \
   policy/policy.cpp \
   protocol.cpp \
   psbt.cpp \
-  rpc/evo_util.cpp \
   rpc/external_signer.cpp \
   rpc/rawtransaction_util.cpp \
   rpc/request.cpp \
@@ -1091,9 +1160,10 @@ bitcoin_bin_ldadd = \
   $(LIBDASHBLS) \
   $(LIBLEVELDB) \
   $(LIBMEMENV) \
-  $(LIBSECP256K1)
+  $(LIBSECP256K1) \
+  $(RUST_COMPONENT_LIBS)
 
-bitcoin_bin_ldadd += $(BACKTRACE_LIBS) $(BDB_LIBS) $(MINIUPNPC_LIBS) $(NATPMP_LIBS) $(SQLITE_LIBS) $(EVENT_PTHREADS_LIBS) $(EVENT_LIBS) $(ZMQ_LIBS) $(GMP_LIBS)
+bitcoin_bin_ldadd += $(BACKTRACE_LIBS) $(BDB_LIBS) $(MINIUPNPC_LIBS) $(NATPMP_LIBS) $(SQLITE_LIBS) $(EVENT_PTHREADS_LIBS) $(EVENT_LIBS) $(ZMQ_LIBS) $(GMP_LIBS) $(RUST_SYSTEM_LIBS)
 
 dashd_SOURCES = $(bitcoin_daemon_sources) init/bitcoind.cpp
 dashd_CPPFLAGS = $(bitcoin_bin_cppflags)
@@ -1404,6 +1474,17 @@ libdashconsensus_la_CPPFLAGS += -isystem$(srcdir)/dashbls/include -isystem$(srcd
 libdashconsensus_la_CPPFLAGS += -isystem$(srcdir)/immer
 libdashconsensus_la_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 
+endif
+#
+
+# CXX bridge library #
+if ENABLE_RUST
+libcxxbridge_la_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(PIC_FLAGS)
+libcxxbridge_la_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS) $(PIC_FLAGS) -static
+libcxxbridge_la_LDFLAGS = $(AM_LDFLAGS) -static
+nodist_libcxxbridge_la_SOURCES = $(LIBRUSTDEPS_CPP)
+
+$(libcxxbridge_la_OBJECTS): $(LIBRUSTDEPS_H)
 endif
 #
 

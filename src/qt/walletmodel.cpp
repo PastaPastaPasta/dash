@@ -262,6 +262,10 @@ WalletModel::SendCoinsReturn WalletModel::prepareTransaction(WalletModelTransact
 
     if(total > nBalance)
     {
+        const auto balances{m_wallet->getBalances()};
+        if (total <= nBalance + balances.unconfirmed_balance) {
+            return AmountTemporarilyUnavailable;
+        }
         return AmountExceedsBalance;
     }
 
@@ -586,6 +590,13 @@ WalletModel::UnlockContext::UnlockContext(WalletModel *_wallet, bool _valid, boo
         was_locked(_was_locked),
         was_mixing(_was_mixing)
 {
+}
+
+WalletModel::UnlockContext::UnlockContext(UnlockContext&& other) noexcept :
+    wallet(other.wallet), valid(other.valid), was_locked(other.was_locked), was_mixing(other.was_mixing)
+{
+    // The moved-to context exclusively owns the relock responsibility.
+    other.valid = false;
 }
 
 WalletModel::UnlockContext::~UnlockContext()

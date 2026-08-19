@@ -2,6 +2,9 @@ packages:=gmp backtrace
 
 boost_packages = boost
 
+rust_packages = rustcxx rust_stdlib
+rust_native_packages = native_rust native_cxxbridge
+
 libevent_packages = libevent
 
 qrencode_linux_packages = qrencode
@@ -25,5 +28,8 @@ natpmp_packages=libnatpmp
 
 multiprocess_packages = libmultiprocess capnp
 multiprocess_native_packages = native_libmultiprocess native_capnp
+
+platform_packages = mbedtls rust_stdlib tenderdash_sources platform_cxx
+platform_native_packages = native_protobuf native_rust
 
 usdt_linux_packages=systemtap

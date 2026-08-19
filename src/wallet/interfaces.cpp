@@ -5,6 +5,7 @@
 #include <interfaces/wallet.h>
 
 #include <chain.h>
+#include <chainparams.h>
 #include <coinjoin/client.h>
 #include <consensus/amount.h>
 #include <interfaces/chain.h>
@@ -33,7 +34,10 @@
 #include <wallet/wallet.h>
 #include <wallet/hdchain.h>
 #include <wallet/scriptpubkeyman.h>
+#include <wallet/walletutil.h>
+#include <evo/assetlocktx.h>
 #include <evo/deterministicmns.h>
+#include <evo/specialtx.h>
 #include <masternode/sync.h>
 #include <txdb.h>
 #include <node/context.h>
@@ -45,6 +49,7 @@
 #include <vector>
 
 using interfaces::Chain;
+using interfaces::CoinLockResult;
 using interfaces::FoundBlock;
 using interfaces::Handler;
 using interfaces::MakeHandler;
@@ -55,6 +60,7 @@ using interfaces::WalletLoader;
 using interfaces::WalletOrderForm;
 using interfaces::WalletTx;
 using interfaces::WalletTxOut;
+using interfaces::WalletTxSignResult;
 using interfaces::WalletTxStatus;
 using interfaces::WalletValueMap;
 using node::NodeContext;
@@ -99,7 +105,13 @@ WalletTx MakeWalletTx(CWallet& wallet, const CWalletTx& wtx)
     result.is_platform_transfer = wtx.IsPlatformTransfer();
     // The determination of is_denominate is based on simplified checks here because in this part of the code
     // we only want to know about mixing transactions belonging to this specific wallet.
-    result.is_denominate = wtx.tx->vin.size() == wtx.tx->vout.size() && // Number of inputs is same as number of outputs
+    // Post-V24 a session may contain promotion (10 inputs to 1 output) and demotion (1 to 10)
+    // entries, so the input and output counts of a mixing transaction no longer have to match.
+    // Every output being a denominated amount is what still sets one apart from an ordinary
+    // payment, which would have a non-denominated payment or change output.
+    const bool fAllOutputsDenominated = std::ranges::all_of(
+        wtx.tx->vout, [](const CTxOut& txout) { return CoinJoin::IsDenominatedAmount(txout.nValue); });
+    result.is_denominate = fAllOutputsDenominated &&
                            (result.credit - result.debit) == 0 && // Transaction pays no tx fee
                            fInputDenomFound && fOutputDenomFound; // At least 1 input and 1 output are denominated belonging to the provided wallet
     return result;
@@ -237,6 +249,25 @@ public:
     {
         return m_wallet->SignSpecialTxPayload(hash, keyid, vchSig);
     }
+    wallet::PlatformKeyResult<CPubKey> getPlatformPubKey(const wallet::PlatformKeyRequest& request) override
+    {
+        return m_wallet->GetPlatformPubKey(request);
+    }
+    wallet::PlatformKeyResult<std::vector<unsigned char>> signPlatformDigest(const wallet::PlatformKeyRequest& request,
+                                                                             const uint256& digest) override
+    {
+        return m_wallet->SignPlatformDigest(request, digest);
+    }
+    wallet::PlatformKeyResult<SecureVector> platformECDHSecret(const wallet::IdentityAuthKey& key,
+                                                               const CPubKey& counterparty) override
+    {
+        return m_wallet->PlatformECDHSecret(key, counterparty);
+    }
+    wallet::PlatformKeyResult<wallet::FriendshipXpub> ensureFriendshipReceivingKeychain(
+        const wallet::FriendshipKeychainRequest& request) override
+    {
+        return m_wallet->EnsureFriendshipReceivingKeychain(request);
+    }
     bool isSpendable(const CScript& script) override
     {
         LOCK(m_wallet->cs_wallet);
@@ -314,6 +345,16 @@ public:
         return value.empty() ? m_wallet->EraseAddressReceiveRequest(batch, dest, id)
                              : m_wallet->SetAddressReceiveRequest(batch, dest, id, value);
     }
+    bool writePlatformData(const std::string& key, const std::vector<unsigned char>& value) override
+    {
+        LOCK(m_wallet->cs_wallet);
+        return m_wallet->WritePlatformData(key, value);
+    }
+    std::map<std::string, std::vector<unsigned char>> getPlatformData(const std::string& prefix) override
+    {
+        LOCK(m_wallet->cs_wallet);
+        return m_wallet->GetPlatformData(prefix);
+    }
     bool displayAddress(const CTxDestination& dest) override
     {
         LOCK(m_wallet->cs_wallet);
@@ -324,6 +365,20 @@ public:
         LOCK(m_wallet->cs_wallet);
         std::unique_ptr<WalletBatch> batch = write_to_db ? std::make_unique<WalletBatch>(m_wallet->GetDatabase()) : nullptr;
         return m_wallet->LockCoin(output, batch.get());
+    }
+    CoinLockResult acquireCoinLock(const COutPoint& output, bool write_to_db) override
+    {
+        LOCK(m_wallet->cs_wallet);
+        if (m_wallet->IsLockedCoin(output)) return CoinLockResult::ALREADY_LOCKED;
+        std::unique_ptr<WalletBatch> batch = write_to_db ? std::make_unique<WalletBatch>(m_wallet->GetDatabase()) : nullptr;
+        if (!m_wallet->LockCoin(output, batch.get())) {
+            // LockCoin inserts into memory before persisting; the coin was not
+            // locked on entry, so undo the insertion (and erase any partially
+            // persisted record) to keep FAILED meaning "no lock acquired".
+            m_wallet->UnlockCoin(output, batch.get());
+            return CoinLockResult::FAILED;
+        }
+        return CoinLockResult::ACQUIRED;
     }
     bool unlockCoin(const COutPoint& output) override
     {
@@ -389,12 +444,127 @@ public:
 
         return txr.tx;
     }
-    void commitTransaction(CTransactionRef tx,
+    util::Result<CTransactionRef> fundTransaction(const CMutableTransaction& tx_template,
+                                                  const CTxDestination& fund_destination) override
+    {
+        // Callers must not hold cs_main: the wallet library cannot reference
+        // node locks, and syncing below would deadlock if it were held.
+        m_wallet->BlockUntilSyncedToCurrentChain();
+
+        LOCK(m_wallet->cs_wallet);
+        if (std::holds_alternative<CNoDestination>(fund_destination)) {
+            return util::Error{Untranslated("No source of funds specified")};
+        }
+
+        CMutableTransaction tx{tx_template};
+        static const CTxOut dummy_output{0, CScript() << OP_RETURN};
+        const bool add_dummy_output{tx.vout.empty()};
+        if (add_dummy_output) tx.vout.emplace_back(dummy_output);
+
+        std::vector<CRecipient> recipients;
+        recipients.reserve(tx.vout.size());
+        for (const auto& output : tx.vout) {
+            recipients.push_back({output.scriptPubKey, output.nValue, /*fSubtractFeeFromAmount=*/false});
+        }
+
+        CCoinControl coin_control;
+        coin_control.destChange = fund_destination;
+        coin_control.fRequireAllInputs = false;
+        for (const auto& output : AvailableCoinsListUnspent(*m_wallet).all()) {
+            CTxDestination destination;
+            if (ExtractDestination(output.txout.scriptPubKey, destination) && destination == fund_destination) {
+                coin_control.Select(output.outpoint);
+            }
+        }
+        if (!coin_control.HasSelected()) {
+            return util::Error{
+                strprintf(Untranslated("No funds at specified address %s"), EncodeDestination(fund_destination))};
+        }
+
+        auto result{CreateTransaction(*m_wallet, recipients, RANDOM_CHANGE_POSITION, coin_control,
+                                      /*sign=*/true, tx.vExtraPayload.size())};
+        if (!result) return util::Error{util::ErrorString(result)};
+
+        tx.vin = result->tx->vin;
+        tx.vout = result->tx->vout;
+        if (add_dummy_output && tx.vout.size() > 1) {
+            const auto it{std::find(tx.vout.begin(), tx.vout.end(), dummy_output)};
+            CHECK_NONFATAL(it != tx.vout.end());
+            tx.vout.erase(it);
+        }
+        return MakeTransactionRef(std::move(tx));
+    }
+    util::Result<WalletTxSignResult> signTransaction(const CMutableTransaction& tx) override
+    {
+        // Callers must not hold cs_main (see fundTransaction above).
+        std::map<COutPoint, Coin> coins;
+        for (const auto& input : tx.vin)
+            coins.try_emplace(input.prevout);
+        m_wallet->chain().findCoins(coins);
+
+        LOCK(m_wallet->cs_wallet);
+        if (m_wallet->IsLocked()) {
+            return util::Error{_("Please enter the wallet passphrase with walletpassphrase first.")};
+        }
+
+        CMutableTransaction signed_tx{tx};
+        std::map<int, bilingual_str> input_errors;
+        const bool complete{m_wallet->SignTransaction(signed_tx, coins, SIGHASH_ALL, input_errors)};
+        std::vector<bilingual_str> errors;
+        errors.reserve(input_errors.size());
+        for (auto& [index, error] : input_errors)
+            errors.push_back(std::move(error));
+        return WalletTxSignResult{MakeTransactionRef(std::move(signed_tx)), complete, std::move(errors)};
+    }
+    util::Result<CTransactionRef> createAssetLockTransaction(CAmount credit_amount,
+        const CPubKey& credit_pubkey,
+        const CCoinControl& coin_control) override
+    {
+#ifdef ENABLE_PLATFORM_GUI
+        if (credit_amount <= 0 || !credit_pubkey.IsValid()) {
+            return util::Error{Untranslated("invalid asset lock parameters")};
+        }
+
+        LOCK(m_wallet->cs_wallet);
+
+        CMutableTransaction mtx;
+        mtx.nVersion = 3;
+        mtx.nType = TRANSACTION_ASSET_LOCK;
+        // Version 2 payloads are consensus-invalid until the v24 hard fork
+        // applies to the next block. The credit output is P2PKH, which every
+        // version accepts.
+        const CAssetLockPayload payload{{CTxOut{credit_amount, GetScriptForDestination(PKHash{credit_pubkey})}},
+                                        CAssetLockPayload::GetMaxVersion(m_wallet->chain().isV24Active())};
+        SetTxPayload(mtx, payload);
+
+        // The single OP_RETURN "burn" output must carry the total credit
+        // amount (see CheckAssetLockTx).
+        const std::vector<CRecipient> recipients{{CScript() << OP_RETURN << OP_0, credit_amount, /*fSubtractFeeFromAmount=*/false}};
+        auto res = CreateTransaction(*m_wallet, recipients, RANDOM_CHANGE_POSITION, coin_control,
+                                     /*sign=*/false, static_cast<int>(mtx.vExtraPayload.size()));
+        if (!res) return util::Error{util::ErrorString(res)};
+
+        // Graft funded inputs/outputs onto the special tx and sign it as a
+        // whole (input signatures commit to nType and vExtraPayload).
+        mtx.vin = res->tx->vin;
+        mtx.vout = res->tx->vout;
+        if (!m_wallet->SignTransaction(mtx)) {
+            return util::Error{Untranslated("failed to sign asset lock transaction")};
+        }
+        return MakeTransactionRef(std::move(mtx));
+#else
+        return util::Error{Untranslated("platform support is not compiled in")};
+#endif // ENABLE_PLATFORM_GUI
+    }
+    std::optional<bilingual_str> commitTransaction(CTransactionRef tx,
         WalletValueMap value_map,
         WalletOrderForm order_form) override
     {
         LOCK(m_wallet->cs_wallet);
-        m_wallet->CommitTransaction(std::move(tx), std::move(value_map), std::move(order_form));
+        bilingual_str broadcast_error;
+        m_wallet->CommitTransaction(std::move(tx), std::move(value_map), std::move(order_form), &broadcast_error);
+        if (broadcast_error.empty()) return std::nullopt;
+        return broadcast_error;
     }
     bool transactionCanBeAbandoned(const uint256& txid) override { return m_wallet->TransactionCanBeAbandoned(txid); }
     bool transactionCanBeResent(const uint256& txid) override { return m_wallet->TransactionCanBeResent(txid); }
