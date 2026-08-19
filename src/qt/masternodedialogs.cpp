@@ -313,7 +313,7 @@ void MasternodeActionDialog::finishSubmission(MasternodeOperationRunner::Submiss
 {
     m_unlock.reset();
     if (m_destroying) {
-        m_busy = false;
+        setBusy(false);
         return;
     }
     setBusy(false);

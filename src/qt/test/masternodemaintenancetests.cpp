@@ -452,4 +452,5 @@ void MasternodeMaintenanceTests::dialogLifecycleAndSubmissionStates()
     QVERIFY(!message_box_seen);
     QCOMPARE(accepted_spy.count(), 0);
     QVERIFY(!dialog.m_busy);
+    QVERIFY(QApplication::overrideCursor() == nullptr);
 }
