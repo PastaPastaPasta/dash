@@ -141,7 +141,7 @@ MasternodeList::MasternodeList(QWidget* parent) :
     QMenu* filterMenu = contextMenuDIP3->addMenu(tr("Filter by"));
     filterMenu->addAction(tr("Collateral Address"), this, &MasternodeList::filterByCollateralAddress);
     filterMenu->addAction(tr("Payout Address"), this, &MasternodeList::filterByPayoutAddress);
-    filterMenu->addAction(tr("Owner Address"), this, &MasternodeList::filterByOwnerAddress);
+    m_action_filter_owner = filterMenu->addAction(tr("Owner Address"), this, &MasternodeList::filterByOwnerAddress);
     filterMenu->addAction(tr("Voting Address"), this, &MasternodeList::filterByVotingAddress);
 
     ui->btnRegisterMasternode->setEnabled(false);
@@ -307,6 +307,12 @@ void MasternodeList::showContextMenuDIP3(const QPoint& point)
         m_action_dissolve->setText(tr("Dissolve…") + " ⚠ " + tr("(no standby dissolution stored)"));
     } else {
         m_action_dissolve->setText(tr("Dissolve…"));
+    }
+
+    if (m_action_filter_owner) {
+        const bool is_shared{entry != nullptr && entry->isShared()};
+        m_action_filter_owner->setEnabled(!is_shared);
+        m_action_filter_owner->setToolTip(is_shared ? tr("Shared masternodes have no single owner address") : QString{});
     }
     contextMenuDIP3->exec(QCursor::pos());
 }
@@ -576,7 +582,7 @@ void MasternodeList::filterByPayoutAddress()
 void MasternodeList::filterByOwnerAddress()
 {
     const auto* entry = GetSelectedEntry();
-    if (entry) {
+    if (entry && !entry->isShared()) {
         ui->filterText->setText(entry->ownerAddress());
     }
 }

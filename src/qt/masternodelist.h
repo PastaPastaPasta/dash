@@ -96,6 +96,7 @@ private:
     QAction* m_action_update_share{nullptr};
     QAction* m_action_dissolve{nullptr};
     QAction* m_action_rotate_keys{nullptr};
+    QAction* m_action_filter_owner{nullptr};
     WalletModel* walletModel{nullptr};
 
     void setMasternodeList(MasternodeData&& data, QSet<QString>&& owned_mns);

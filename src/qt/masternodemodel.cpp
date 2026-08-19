@@ -375,7 +375,7 @@ QVariant MasternodeModel::data(const QModelIndex& index, int role) const
             entry->payoutAddress() + " " +
             entry->operatorReward() + " " +
             entry->collateralAddress() + " " +
-            entry->ownerAddress() + " " +
+            (entry->isShared() ? QString{} : entry->ownerAddress() + " ") +
             entry->votingAddress() + " " +
             entry->proTxHash() +
             (entry->isShared() ? " " + entry->shareAddresses() : QString{})
