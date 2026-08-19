@@ -13,6 +13,7 @@
 #include <random.h>
 #include <uint256.h>
 #include <util/strencodings.h>
+#include <wallet/platformtypes.h>
 
 #include <QPointer>
 #include <QTimer>
@@ -20,7 +21,6 @@
 #include <algorithm>
 
 using interfaces::Wallet;
-using PlatformKeyType = interfaces::Wallet::PlatformKeyType;
 
 namespace {
 //! DashPay contactRequest encryptedPublicKey is exactly IV(16) || AES-256-CBC
@@ -42,10 +42,10 @@ bool ContactFlow::encryptXpub(const platform::IdentityPublicKey& their_key,
     CPubKey counterparty{their_key.data.begin(), their_key.data.end()};
     if (!counterparty.IsValid()) return false;
 
-    SecureVector secret;
     // Our identity authentication key 0 (sender_key_index) performs the ECDH.
-    if (!wallet.platformECDHSecret(/*identity_index=*/0, /*key_index=*/0, counterparty, secret) ||
-        secret.size() != AES256_KEYSIZE) {
+    const auto secret{wallet.platformECDHSecret(wallet::IdentityAuthKey{/*identity_index=*/0, /*key_index=*/0},
+                                                counterparty)};
+    if (!secret || secret.value.size() != AES256_KEYSIZE) {
         return false;
     }
 
@@ -53,7 +53,7 @@ bool ContactFlow::encryptXpub(const platform::IdentityPublicKey& their_key,
     GetStrongRandBytes(Span{iv});
 
     // AES-256-CBC with PKCS7 padding over the serialized xpub.
-    AES256CBCEncrypt enc(secret.data(), iv, /*padIn=*/true);
+    AES256CBCEncrypt enc(secret.value.data(), iv, /*padIn=*/true);
     std::vector<uint8_t> cipher(our_xpub.size() + AES_BLOCKSIZE);
     const int written = enc.Encrypt(our_xpub.data(), our_xpub.size(), cipher.data());
     if (written <= 0) return false;
@@ -73,15 +73,15 @@ bool ContactFlow::decryptXpub(uint32_t our_key_id, const std::vector<uint8_t>& t
     CPubKey counterparty{their_pubkey.begin(), their_pubkey.end()};
     if (!counterparty.IsValid()) return false;
 
-    SecureVector secret;
-    if (!wallet.platformECDHSecret(/*identity_index=*/0, our_key_id, counterparty, secret) ||
-        secret.size() != AES256_KEYSIZE) {
+    const auto secret{wallet.platformECDHSecret(wallet::IdentityAuthKey{/*identity_index=*/0, our_key_id},
+                                                counterparty)};
+    if (!secret || secret.value.size() != AES256_KEYSIZE) {
         return false;
     }
 
     unsigned char iv[AES_BLOCKSIZE];
     std::copy(encrypted.begin(), encrypted.begin() + AES_BLOCKSIZE, iv);
-    AES256CBCDecrypt dec(secret.data(), iv, /*padIn=*/true);
+    AES256CBCDecrypt dec(secret.value.data(), iv, /*padIn=*/true);
     std::vector<uint8_t> plain(encrypted.size());
     const int written = dec.Decrypt(encrypted.data() + AES_BLOCKSIZE, encrypted.size() - AES_BLOCKSIZE, plain.data());
     if (written <= 0) return false;
@@ -144,7 +144,10 @@ void ContactFlow::sendRequest(const platform::Identifier& to_identity, uint32_t 
             }
             Wallet& w{self->m_service.walletModel().wallet()};
             const auto signer = [&w](const uint256& digest, std::vector<uint8_t>& sig) {
-                return w.signPlatformDigest(PlatformKeyType::IdentityAuth, 0, 1, digest, sig);
+                auto res{w.signPlatformDigest(wallet::IdentityAuthKey{0, 1}, digest)};
+                if (!res) return false;
+                sig = std::move(res.value);
+                return true;
             };
             auto built{platform::st::BuildContactRequest(doc.owner_id, *nonce_res.value + 1, doc,
                                                          /*signature_public_key_id=*/1, signer)};
@@ -233,7 +236,7 @@ bool ContactFlow::importKeychains(const platform::Identifier& their_identity,
         return false;
     }
     // Validate the decrypted material before it is persisted; the contact's
-    // chain itself never enters the wallet (see importFriendshipKeychains).
+    // chain itself never enters the wallet (see ensureFriendshipReceivingKeychain).
     const CPubKey pubkey{their_xpub_serialized.begin(), their_xpub_serialized.begin() + 33};
     if (!pubkey.IsFullyValid()) {
         error = tr("invalid friendship public key in contact request");
@@ -255,24 +258,25 @@ bool ContactFlow::prepareReceivingKeychain(const platform::Identifier& their_ide
     const uint256 my_hash{std::vector<uint8_t>(my_id->begin(), my_id->end())};
     const uint256 their_hash{std::vector<uint8_t>(their_identity.begin(), their_identity.end())};
     Wallet& wallet{m_service.walletModel().wallet()};
-    if (!wallet.getFriendshipXpub(/*account=*/0, my_hash, their_hash, pubkey, chaincode)) {
-        error = tr("unable to derive friendship key (unlock the wallet)");
+    const auto keychain{wallet.ensureFriendshipReceivingKeychain(
+        wallet::FriendshipKeychainRequest{/*account=*/0, my_hash, their_hash, creation_time})};
+    if (!keychain) {
+        error = keychain.status == wallet::PlatformKeyStatus::WALLET_LOCKED
+                    ? tr("unable to derive friendship key (unlock the wallet)")
+                    : tr("unable to import the friendship keychain into the wallet");
         return false;
     }
+    pubkey = keychain.value.pubkey;
+    chaincode = keychain.value.chaincode;
 
     const std::string label{
         m_service.contactAddressLabel(QString::fromStdString(HexStr(their_identity))).toStdString()};
-    std::string wallet_error;
-    if (!wallet.importFriendshipKeychains(/*account=*/0, my_hash, their_hash, creation_time, wallet_error)) {
-        error = QString::fromStdString(wallet_error);
-        return false;
-    }
 
     // Ranged descriptors cannot carry an address-book label, so label the
     // receiving chain explicitly for transaction history.
     for (uint32_t i = 0; i < 20; ++i) {
         CTxDestination destination;
-        if (!wallet.getFriendshipPaymentDestination(pubkey, chaincode, i, destination)) break;
+        if (!wallet::DeriveFriendshipPaymentDestination(keychain.value, i, destination)) break;
         wallet.setAddressBook(destination, label, "receive");
     }
     return true;

@@ -61,8 +61,8 @@ src/qt/proposalmodel.*
 src/qt/proposalresume.*
 src/rpc/coinjoin.cpp
 src/rpc/evo.cpp
-src/rpc/evo_util.*
 src/rpc/governance.cpp
+src/rpc/json_help.*
 src/rpc/masternode.cpp
 src/rpc/quorums.cpp
 src/saltedhasher.*
@@ -96,6 +96,6 @@ src/wallet/bip39*
 src/wallet/coinjoin.*
 src/wallet/hdchain.*
 src/wallet/platformkeys.*
-src/wallet/platformseed.*
+src/wallet/platformtypes.h
 src/wallet/test/platformkeys_tests.cpp
 src/hash_x11.h

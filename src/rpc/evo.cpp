@@ -6,14 +6,12 @@
 #include <chainparams.h>
 #include <consensus/validation.h>
 #include <core_io.h>
-#include <deploymentstatus.h>
 #include <evo/chainhelper.h>
 #include <evo/deterministicmns.h>
 #include <evo/dmn_types.h>
 #include <evo/providertx.h>
 #include <evo/providertx_service.h>
 #include <evo/smldiff.h>
-#include <evo/specialtx.h>
 #include <evo/specialtxman.h>
 #include <index/txindex.h>
 #include <interfaces/wallet.h>
@@ -25,12 +23,14 @@
 #include <rpc/server_util.h>
 #include <rpc/util.h>
 #include <util/check.h>
+#include <util/strencodings.h>
 #include <util/translation.h>
 #include <validation.h>
 #include <wallet/rpc/util.h>
 #include <walletinitinterface.h>
 
 #include <limits>
+#include <string_view>
 
 #ifdef ENABLE_WALLET
 #include <wallet/wallet.h>
@@ -51,6 +51,34 @@ using wallet::GetWalletForJSONRPCRequest;
 using wallet::HELP_REQUIRING_PASSPHRASE;
 using wallet::isminetype;
 #endif // ENABLE_WALLET
+
+// Defined here rather than with the other ToJson() in evo/core_write.cpp: dash-tx never prints
+// a masternode entry, and the g_txindex lookup below needs libbitcoin_node anyway. Hosting it
+// in evo/deterministicmns.cpp instead would create four new circular dependencies.
+UniValue CDeterministicMN::ToJson() const
+{
+    UniValue obj(UniValue::VOBJ);
+    obj.pushKV("type", std::string(GetMnType(nType).description));
+    obj.pushKV("proTxHash", proTxHash.ToString());
+    obj.pushKV("collateralHash", collateralOutpoint.hash.ToString());
+    obj.pushKV("collateralIndex", collateralOutpoint.n);
+
+    if (g_txindex) {
+        CTransactionRef collateralTx;
+        uint256 nBlockHash;
+        g_txindex->FindTx(collateralOutpoint.hash, nBlockHash, collateralTx);
+        if (collateralTx) {
+            CTxDestination dest;
+            if (ExtractDestination(collateralTx->vout[collateralOutpoint.n].scriptPubKey, dest)) {
+                obj.pushKV("collateralAddress", EncodeDestination(dest));
+            }
+        }
+    }
+
+    obj.pushKV("operatorReward", static_cast<double>(nOperatorReward) / 100);
+    obj.pushKV("state", pdmnState->ToJson(nType));
+    return obj;
+}
 
 static RPCArg GetRpcArg(const std::string& strParamName)
 {

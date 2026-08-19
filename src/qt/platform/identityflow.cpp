@@ -19,11 +19,11 @@
 #include <streams.h>
 #include <util/time.h>
 #include <wallet/coincontrol.h>
+#include <wallet/platformtypes.h>
 
 #include <QPointer>
 
 using interfaces::Wallet;
-using PlatformKeyType = interfaces::Wallet::PlatformKeyType;
 
 namespace {
 
@@ -145,13 +145,13 @@ bool IdentityFlow::start(const QString& label, CAmount funding_amount, QString& 
 
     Wallet& wallet{m_service.walletModel().wallet()};
 
-    CPubKey funding_pubkey;
-    if (!wallet.getPlatformPubKey(PlatformKeyType::RegistrationFunding, 0, 0, funding_pubkey)) {
+    const auto funding_pubkey{wallet.getPlatformPubKey(wallet::RegistrationFundingKey{0})};
+    if (!funding_pubkey) {
         error = tr("unable to derive the funding key (is the wallet unlocked?)");
         return false;
     }
 
-    auto res{wallet.createAssetLockTransaction(funding_amount, funding_pubkey, wallet::CCoinControl{})};
+    auto res{wallet.createAssetLockTransaction(funding_amount, funding_pubkey.value, wallet::CCoinControl{})};
     if (!res) {
         error = QString::fromStdString(util::ErrorString(res).translated);
         return false;
@@ -343,8 +343,8 @@ void IdentityFlow::broadcastIdentityCreate()
     // Identity keys 0 (MASTER) and 1 (HIGH), DIP-13 authentication keys.
     std::vector<platform::st::NewIdentityKey> keys;
     for (uint32_t key_index : {0u, 1u}) {
-        CPubKey pubkey;
-        if (!wallet.getPlatformPubKey(PlatformKeyType::IdentityAuth, 0, key_index, pubkey)) {
+        const auto pubkey{wallet.getPlatformPubKey(wallet::IdentityAuthKey{0, key_index})};
+        if (!pubkey) {
             fail(tr("identity"), tr("unable to derive identity keys (is the wallet unlocked?)"), /*retryable=*/true);
             return;
         }
@@ -353,15 +353,21 @@ void IdentityFlow::broadcastIdentityCreate()
         key.purpose = platform::IdentityPublicKey::Purpose::AUTHENTICATION;
         key.security_level = key_index == 0 ? platform::IdentityPublicKey::SecurityLevel::MASTER
                                             : platform::IdentityPublicKey::SecurityLevel::HIGH;
-        key.pubkey.assign(pubkey.begin(), pubkey.end());
+        key.pubkey.assign(pubkey.value.begin(), pubkey.value.end());
         key.signer = [&wallet, key_index](const uint256& digest, std::vector<uint8_t>& sig) {
-            return wallet.signPlatformDigest(PlatformKeyType::IdentityAuth, 0, key_index, digest, sig);
+            auto res{wallet.signPlatformDigest(wallet::IdentityAuthKey{0, key_index}, digest)};
+            if (!res) return false;
+            sig = std::move(res.value);
+            return true;
         };
         keys.push_back(std::move(key));
     }
 
     const auto asset_lock_signer = [&wallet, index = m_record.funding_key_index](const uint256& digest, std::vector<uint8_t>& sig) {
-        return wallet.signPlatformDigest(PlatformKeyType::RegistrationFunding, 0, index, digest, sig);
+        auto res{wallet.signPlatformDigest(wallet::RegistrationFundingKey{index}, digest)};
+        if (!res) return false;
+        sig = std::move(res.value);
+        return true;
     };
 
     auto built{platform::st::BuildIdentityCreate(proof, keys, asset_lock_signer)};
@@ -437,7 +443,10 @@ void IdentityFlow::broadcastPreorder()
 
             Wallet& wallet{self->m_service.walletModel().wallet()};
             const auto signer = [&wallet](const uint256& digest, std::vector<uint8_t>& sig) {
-                return wallet.signPlatformDigest(PlatformKeyType::IdentityAuth, 0, 1, digest, sig);
+                auto res{wallet.signPlatformDigest(wallet::IdentityAuthKey{0, 1}, digest)};
+                if (!res) return false;
+                sig = std::move(res.value);
+                return true;
             };
             auto built{platform::st::BuildDpnsPreorder(self->m_record.identity_id, *nonce_res.value + 1,
                                                        self->m_record.label, self->m_record.preorder_salt,
@@ -480,7 +489,10 @@ void IdentityFlow::broadcastDomain()
 
             Wallet& wallet{self->m_service.walletModel().wallet()};
             const auto signer = [&wallet](const uint256& digest, std::vector<uint8_t>& sig) {
-                return wallet.signPlatformDigest(PlatformKeyType::IdentityAuth, 0, 1, digest, sig);
+                auto res{wallet.signPlatformDigest(wallet::IdentityAuthKey{0, 1}, digest)};
+                if (!res) return false;
+                sig = std::move(res.value);
+                return true;
             };
             const auto& rec{self->m_record};
             auto built{platform::st::BuildDpnsDomain(rec.identity_id, *nonce_res.value + 1, rec.label,

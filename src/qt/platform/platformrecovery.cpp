@@ -19,6 +19,7 @@
 #include <tinyformat.h>
 #include <util/strencodings.h>
 #include <util/time.h>
+#include <wallet/platformtypes.h>
 
 #include <QPointer>
 #include <QThread>
@@ -28,7 +29,6 @@
 #include <set>
 
 using interfaces::Wallet;
-using PlatformKeyType = interfaces::Wallet::PlatformKeyType;
 
 namespace {
 //! Consecutive proven-absent identity indexes that end the scan (the mobile
@@ -71,8 +71,7 @@ void PlatformRecovery::maybeStart()
         m_attempted = true; // local state exists; nothing to recover
         return;
     }
-    CPubKey pubkey;
-    if (!m_service.walletModel().wallet().getPlatformPubKey(PlatformKeyType::IdentityAuth, 0, 0, pubkey)) {
+    if (!m_service.walletModel().wallet().getPlatformPubKey(wallet::IdentityAuthKey{0, 0})) {
         // Locked or seedless wallet: not marked attempted, so the next
         // context refresh retries (the wallet may be unlocked by then).
         LogPrint(BCLog::QT, "platform-recovery: cannot derive platform keys yet (wallet locked or no seed)\n");
@@ -85,14 +84,14 @@ void PlatformRecovery::maybeStart()
 
 void PlatformRecovery::probeIndex(uint32_t index, uint32_t consecutive_absent)
 {
-    CPubKey pubkey;
-    // Existing key API shape: account is the identity index, 0 the MASTER key.
-    if (!m_service.walletModel().wallet().getPlatformPubKey(PlatformKeyType::IdentityAuth, index, 0, pubkey)) {
+    // MASTER key (key 0) of identity `index`, whose hash Platform indexes.
+    const auto pubkey{m_service.walletModel().wallet().getPlatformPubKey(wallet::IdentityAuthKey{index, 0})};
+    if (!pubkey) {
         finish(false, "identity scan aborted: key derivation failed (wallet re-locked?)");
         return;
     }
     QPointer<PlatformRecovery> self{this};
-    m_service.client().getIdentityByPublicKeyHash(PubKeyHash160(pubkey),
+    m_service.client().getIdentityByPublicKeyHash(PubKeyHash160(pubkey.value),
         [self, index, consecutive_absent](platform::Result<std::optional<platform::Identity>> res) {
         if (!self) return;
         self->m_service.post([self, index, consecutive_absent, res = std::move(res)] {
@@ -309,11 +308,12 @@ void PlatformRecovery::rebuildPayCursors()
         }
     }
     for (const auto& contact : m_restored) {
-        const CPubKey pubkey{contact.xpub.begin(), contact.xpub.begin() + 33};
-        const uint256 chaincode{std::vector<uint8_t>(contact.xpub.begin() + 33, contact.xpub.end())};
-        const auto derive = [&wallet, &pubkey, &chaincode](uint32_t index) -> std::optional<CScript> {
+        const wallet::FriendshipXpub contact_xpub{
+            CPubKey{contact.xpub.begin(), contact.xpub.begin() + 33},
+            uint256{std::vector<uint8_t>(contact.xpub.begin() + 33, contact.xpub.end())}};
+        const auto derive = [&contact_xpub](uint32_t index) -> std::optional<CScript> {
             CTxDestination destination;
-            if (!wallet.getFriendshipPaymentDestination(pubkey, chaincode, index, destination)) {
+            if (!wallet::DeriveFriendshipPaymentDestination(contact_xpub, index, destination)) {
                 return std::nullopt;
             }
             return GetScriptForDestination(destination);

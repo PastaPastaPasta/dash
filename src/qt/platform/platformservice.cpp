@@ -18,6 +18,7 @@
 #include <qt/platform/platformrecovery.h>
 #include <qt/walletmodel.h>
 #include <util/strencodings.h>
+#include <wallet/platformtypes.h>
 
 #include <univalue.h>
 
@@ -463,12 +464,13 @@ void PlatformService::resolvePaymentAddress(const QString& username)
                        "contact request, and wait for them to accept it.").arg(username));
                 return;
             }
-            CPubKey pubkey{serialized.begin(), serialized.begin() + 33};
-            uint256 chaincode{std::vector<uint8_t>(serialized.begin() + 33, serialized.end())};
+            const wallet::FriendshipXpub contact_xpub{
+                CPubKey{serialized.begin(), serialized.begin() + 33},
+                uint256{std::vector<uint8_t>(serialized.begin() + 33, serialized.end())}};
             const std::string cursor_key{"contact/pay-index/" + id_hex};
             const uint32_t index{platform::DecodePaymentCursor(self->readRecord(cursor_key))};
             CTxDestination destination;
-            if (!self->m_wallet_model.wallet().getFriendshipPaymentDestination(pubkey, chaincode, index, destination)) {
+            if (!wallet::DeriveFriendshipPaymentDestination(contact_xpub, index, destination)) {
                 Q_EMIT self->paymentAddressResolved(username, {}, tr("could not derive contact payment address"));
                 return;
             }
@@ -589,7 +591,10 @@ void PlatformService::publishProfile(platform::Profile profile)
                     }
                     interfaces::Wallet& wallet{self->m_wallet_model.wallet()};
                     const auto signer = [&wallet](const uint256& digest, std::vector<uint8_t>& sig) {
-                        return wallet.signPlatformDigest(interfaces::Wallet::PlatformKeyType::IdentityAuth, 0, 1, digest, sig);
+                        auto res{wallet.signPlatformDigest(wallet::IdentityAuthKey{0, 1}, digest)};
+                        if (!res) return false;
+                        sig = std::move(res.value);
+                        return true;
                     };
                     auto built{platform::st::BuildProfile(profile.owner_id, *nonce_res.value + 1, profile,
                                                           revision, existing_id, /*signature_public_key_id=*/1, signer)};
