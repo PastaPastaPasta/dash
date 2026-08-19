@@ -30,6 +30,7 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QSizePolicy>
 #include <QSpinBox>
 #include <QStringList>
 #include <QVBoxLayout>
@@ -209,6 +210,7 @@ void MasternodeActionDialog::setupUi(const QString& title, const QString& intro,
 FeeSourcePicker* MasternodeActionDialog::addFeeSourceRow(QFormLayout* form, const QString& automatic_note)
 {
     auto* picker{new FeeSourcePicker(this)};
+    picker->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     picker->setAutomaticOption(tr("Automatic (recommended)"));
     picker->setWalletModel(m_wallet_model);
     auto* note{new QLabel(automatic_note, this)};
@@ -350,6 +352,7 @@ UpdateServiceDialog::UpdateServiceDialog(interfaces::Node& node, WalletModel* wa
     m_capabilities{capabilities}
 {
     auto* form{new QFormLayout()};
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
     m_addrs_edit = new QLineEdit(this);
     m_addrs_edit->setText(entry.coreP2PAddresses());
@@ -361,6 +364,7 @@ UpdateServiceDialog::UpdateServiceDialog(interfaces::Node& node, WalletModel* wa
     form->addRow(m_capabilities.extended_addresses ? tr("Service addresses:") : tr("Service address:"), m_addrs_edit);
 
     m_operator_key = new OperatorSecretWidget(this);
+    m_operator_key->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     connect(m_operator_key, &OperatorSecretWidget::changed, this, &UpdateServiceDialog::validate);
     form->addRow(tr("Operator key:"), m_operator_key);
 
@@ -410,7 +414,7 @@ UpdateServiceDialog::UpdateServiceDialog(interfaces::Node& node, WalletModel* wa
                                             "Select an address only "
                                             "to override that choice."));
 
-    setupUi(m_type == MnType::Evo ? tr("Update Evonode Service") : tr("Update Masternode Service"),
+    setupUi(m_type == MnType::Evo ? tr("Update EvoNode Service") : tr("Update Masternode Service"),
             tr("Update the registered service endpoints. A successful update also revives a PoSe-banned "
                "masternode. Every current value is prefilled so unchanged fields are preserved."),
             form, tr("Send Update"));
@@ -515,6 +519,7 @@ UpdateRegistrarDialog::UpdateRegistrarDialog(interfaces::Node& node, WalletModel
     m_initial_payout{entry.payoutAddresses().size() == 1 ? entry.payoutAddresses().front() : QString{}}
 {
     auto* form{new QFormLayout()};
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
     m_operator_pubkey_edit = new QLineEdit(this);
     m_operator_pubkey_edit->setText(m_initial_operator_pubkey);
@@ -638,8 +643,10 @@ RevokeDialog::RevokeDialog(interfaces::Node& node, WalletModel* wallet_model, co
     MasternodeActionDialog(node, wallet_model, entry, parent)
 {
     auto* form{new QFormLayout()};
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
     m_reason_combo = new QComboBox(this);
+    m_reason_combo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_reason_combo->addItem(tr("Not specified"), CProUpRevTx::REASON_NOT_SPECIFIED);
     m_reason_combo->addItem(tr("Termination of service"), CProUpRevTx::REASON_TERMINATION_OF_SERVICE);
     m_reason_combo->addItem(tr("Compromised keys"), CProUpRevTx::REASON_COMPROMISED_KEYS);
@@ -647,6 +654,7 @@ RevokeDialog::RevokeDialog(interfaces::Node& node, WalletModel* wallet_model, co
     form->addRow(tr("Reason:"), m_reason_combo);
 
     m_operator_key = new OperatorSecretWidget(this);
+    m_operator_key->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     connect(m_operator_key, &OperatorSecretWidget::changed, this, &RevokeDialog::validate);
     form->addRow(tr("Operator key:"), m_operator_key);
 

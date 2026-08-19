@@ -215,7 +215,7 @@ void MasternodeList::updateRegistrationAvailability()
     } else if (clientModel == nullptr) {
         ui->btnRegisterMasternode->setToolTip(tr("Masternode registration is unavailable until the node is ready."));
     } else {
-        ui->btnRegisterMasternode->setToolTip(tr("Register a new masternode or evonode using this wallet"));
+        ui->btnRegisterMasternode->setToolTip(tr("Register a new masternode or EvoNode using this wallet"));
     }
 }
 

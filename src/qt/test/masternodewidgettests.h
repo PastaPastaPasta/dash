@@ -32,6 +32,7 @@ private Q_SLOTS:
     void registeredCollateralExclusion();
     void wizardMinimumGeometry();
     void wizardPageValidation();
+    void broadcastConfirmation();
     void masternodeListRegistrationAvailability();
     void wizardInteractionLifecycle();
     void registrationResultStates();

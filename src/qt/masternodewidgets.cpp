@@ -112,11 +112,6 @@ QFrame* makeCard(QWidget* parent)
 {
     auto* card{new QFrame(parent)};
     card->setObjectName("mnCard");
-    // The id selector keeps the border off the card's children. general.css
-    // clears borders for plain frames, so the color comes from the theme's own
-    // widget border color instead of a new one.
-    card->setStyleSheet(QString("QFrame#mnCard { border: 1px solid %1; border-radius: 3px; }")
-                            .arg(GUIUtil::getThemedQColor(GUIUtil::ThemedColor::BORDER_WIDGET).name()));
     return card;
 }
 

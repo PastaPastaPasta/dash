@@ -19,11 +19,13 @@
 #include <qt/masternodewidgets.h>
 #include <qt/optionsmodel.h>
 #include <qt/qvalidatedlineedit.h>
+#include <qt/sendcoinsdialog.h>
 #include <qt/walletmodel.h>
 
 #include <QButtonGroup>
 #include <QComboBox>
 #include <QDoubleSpinBox>
+#include <QFormLayout>
 #include <QFrame>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -32,13 +34,14 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPlainTextEdit>
+#include <QProgressBar>
 #include <QPushButton>
-#include <QScrollArea>
 #include <QRadioButton>
+#include <QScrollArea>
 #include <QSpinBox>
 #include <QStackedWidget>
-#include <QtMath>
 #include <QVBoxLayout>
+#include <QtMath>
 
 #include <limits>
 #include <set>
@@ -141,10 +144,17 @@ RegisterMasternodeWizard::RegisterMasternodeWizard(interfaces::Node& node, Walle
     m_pages->insertWidget(PageSign, createSignPage());
     m_pages->insertWidget(PageResult, createResultPage());
 
+    m_progress_label = MakeHint(QString(), this);
     m_error_label = new QLabel(this);
     m_error_label->setWordWrap(true);
     m_error_label->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
-    m_error_label->setVisible(false);
+    m_error_label->setMinimumHeight(m_error_label->fontMetrics().lineSpacing() * 2);
+
+    m_busy_bar = new QProgressBar(this);
+    m_busy_bar->setRange(0, 0);
+    m_busy_bar->setTextVisible(false);
+    m_busy_bar->setMaximumHeight(4);
+    m_busy_bar->setVisible(false);
 
     m_back_button = new QPushButton(tr("Back"), this);
     m_next_button = new QPushButton(tr("Next"), this);
@@ -162,13 +172,33 @@ RegisterMasternodeWizard::RegisterMasternodeWizard(interfaces::Node& node, Walle
     auto* layout{new QVBoxLayout(this)};
     layout->setContentsMargins(24, 12, 24, 12);
     layout->setSpacing(GROUP_SPACING);
+    layout->addWidget(m_progress_label);
     layout->addWidget(m_pages, /*stretch=*/1);
+    layout->addWidget(m_busy_bar);
     layout->addWidget(m_error_label);
     layout->addLayout(buttons);
 
     connect(m_back_button, &QPushButton::clicked, this, &RegisterMasternodeWizard::onBack);
     connect(m_next_button, &QPushButton::clicked, this, &RegisterMasternodeWizard::onNext);
     connect(m_cancel_button, &QPushButton::clicked, this, &RegisterMasternodeWizard::reject);
+
+    const auto edited = [this] { onPageEdited(); };
+    for (QLineEdit* const edit :
+         {static_cast<QLineEdit*>(m_col_address), m_col_txid, m_service_edit, static_cast<QLineEdit*>(m_owner_edit),
+          static_cast<QLineEdit*>(m_voting_edit), static_cast<QLineEdit*>(m_payout_edit), m_platform_nodeid,
+          m_platform_p2p, m_platform_https, m_confirm_edit}) {
+        connect(edit, &QLineEdit::textChanged, this, edited);
+    }
+    connect(m_sig_edit, &QPlainTextEdit::textChanged, this, edited);
+    connect(m_col_utxo_combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, edited);
+    connect(m_col_vout, QOverload<int>::of(&QSpinBox::valueChanged), this, edited);
+    connect(m_platform_p2p_port, QOverload<int>::of(&QSpinBox::valueChanged), this, edited);
+    connect(m_platform_https_port, QOverload<int>::of(&QSpinBox::valueChanged), this, edited);
+    connect(m_fee_picker, QOverload<int>::of(&QComboBox::currentIndexChanged), this, edited);
+    connect(m_operator_widget, &OperatorKeyWidget::changed, this, [this] {
+        rebuildOrder();
+        onPageEdited();
+    });
     if (m_walletModel != nullptr) {
         m_runner = std::make_unique<MasternodeOperationRunner>(m_node.evo(), m_walletModel->wallet(), this);
     }
@@ -179,6 +209,7 @@ RegisterMasternodeWizard::RegisterMasternodeWizard(interfaces::Node& node, Walle
     GUIUtil::disableMacFocusRect(this);
     GUIUtil::updateFonts();
     setMinimumSize(700, 560);
+    resize(760, 680);
 }
 
 RegisterMasternodeWizard::~RegisterMasternodeWizard()
@@ -213,7 +244,7 @@ QWidget* RegisterMasternodeWizard::createTypePage()
     layout->addWidget(regular_card.card);
 
     m_type_evo = new QRadioButton(
-        tr("Evonode — %1 collateral").arg(FormatAmount(m_walletModel, GetMnType(MnType::Evo).collat_amount)), page);
+        tr("EvoNode — %1 collateral").arg(FormatAmount(m_walletModel, GetMnType(MnType::Evo).collat_amount)), page);
     auto evo_card{makeOptionCard(page, m_type_evo,
                                  tr("Additionally hosts Dash Platform, has four times the voting weight and earns a "
                                     "larger share of rewards. Requires a Platform node ID and extra services."))};
@@ -226,8 +257,10 @@ QWidget* RegisterMasternodeWizard::createTypePage()
     group->addButton(m_type_evo);
 
     connect(m_type_regular, &QRadioButton::toggled, this, [this] {
+        setWindowTitle(isEvo() ? tr("Register EvoNode") : tr("Register Masternode"));
         rebuildOrder();
         refreshCollateralCandidates();
+        updateProgress();
     });
     return page;
 }
@@ -291,16 +324,18 @@ QWidget* RegisterMasternodeWizard::createCollateralPage()
             MakeHint(tr("After review you will be asked to sign a message with the collateral key outside this "
                         "wallet."),
                      m_col_external_box));
-        auto* row{new QHBoxLayout()};
+        auto* outpoint_form{new QFormLayout()};
+        outpoint_form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
         m_col_txid = new QLineEdit(m_col_external_box);
         m_col_txid->setPlaceholderText(tr("Collateral transaction id (64 hexadecimal characters)"));
         m_col_txid->setMaxLength(64);
-        row->addWidget(m_col_txid, /*stretch=*/1);
+        outpoint_form->addRow(tr("Transaction ID:"), m_col_txid);
         m_col_vout = new QSpinBox(m_col_external_box);
         m_col_vout->setRange(0, 99999);
         m_col_vout->setToolTip(tr("Output index"));
-        row->addWidget(m_col_vout);
-        external_card.body_layout->addLayout(row);
+        m_col_vout->setMaximumWidth(140);
+        outpoint_form->addRow(tr("Output index:"), m_col_vout);
+        external_card.body_layout->addLayout(outpoint_form);
     }
     layout->addWidget(external_card.card);
     layout->addStretch();
@@ -355,6 +390,7 @@ QWidget* RegisterMasternodeWizard::createKeysPage()
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     auto* key_container{new QWidget(scroll)};
     auto* key_layout{MakePageLayout(key_container)};
+    key_layout->setContentsMargins(0, 0, ROW_SPACING, 0);
 
     // Owner and voting address rows share the "fill in a fresh wallet address"
     // button, differing only in the field they write to.
@@ -443,6 +479,8 @@ QWidget* RegisterMasternodeWizard::createPayoutPage()
     m_operator_reward->setRange(0.0, 100.0);
     m_operator_reward->setDecimals(2);
     m_operator_reward->setSuffix(QString::fromUtf8(" %"));
+    m_operator_reward->setMinimumWidth(120);
+    m_operator_reward->setMaximumWidth(160);
     auto* reward_row{new QHBoxLayout()};
     reward_row->addWidget(m_operator_reward);
     reward_row->addStretch();
@@ -450,7 +488,7 @@ QWidget* RegisterMasternodeWizard::createPayoutPage()
     m_reward_warning = MakeHint(tr("The operator will permanently receive this share of all rewards of this "
                                    "masternode. Leave it at 0 unless you have an agreement with your operator."),
                                 page);
-    m_reward_warning->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
+    m_reward_warning->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_WARNING));
     m_reward_warning->setVisible(false);
     reward_block->addWidget(m_reward_warning);
     connect(m_operator_reward, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
@@ -480,11 +518,11 @@ QWidget* RegisterMasternodeWizard::createPlatformPage()
         auto card{makeOptionCard(page, MakeLabel(tr("Platform addresses"), page),
                                  tr("ADDR:PORT entries, separated by commas or spaces."))};
         m_platform_addr_box = card.card;
-        card.body_layout->addWidget(MakeHint(tr("Platform P2P:"), m_platform_addr_box));
+        card.body_layout->addWidget(MakeHint(tr("Platform P2P"), m_platform_addr_box));
         m_platform_p2p = new QLineEdit(card.body);
         m_platform_p2p->setPlaceholderText(QString("1.2.3.4:26656"));
         card.body_layout->addWidget(m_platform_p2p);
-        card.body_layout->addWidget(MakeHint(tr("Platform HTTPS API:"), m_platform_addr_box));
+        card.body_layout->addWidget(MakeHint(tr("Platform HTTPS API"), m_platform_addr_box));
         m_platform_https = new QLineEdit(card.body);
         m_platform_https->setPlaceholderText(QString("platform.example.org:443"));
         card.body_layout->addWidget(m_platform_https);
@@ -536,7 +574,7 @@ QWidget* RegisterMasternodeWizard::createReviewPage()
     auto* page{new QWidget(this)};
     auto* layout{MakePageLayout(page)};
     layout->addWidget(MakeTitle(tr("Review"), page));
-    // An evonode summary is a third longer than a masternode one, so the review
+    // An EvoNode summary is a third longer than a masternode one, so the review
     // scrolls instead of squeezing its cards
     auto* scroll{new QScrollArea(page)};
     scroll->setWidgetResizable(true);
@@ -544,7 +582,7 @@ QWidget* RegisterMasternodeWizard::createReviewPage()
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_review_container = new QWidget(scroll);
     m_review_layout = new QVBoxLayout(m_review_container);
-    m_review_layout->setContentsMargins(0, 0, 0, 0);
+    m_review_layout->setContentsMargins(0, 0, ROW_SPACING, 0);
     m_review_layout->setSpacing(GROUP_SPACING);
     m_review_layout->addStretch();
     scroll->setWidget(m_review_container);
@@ -601,7 +639,7 @@ QWidget* RegisterMasternodeWizard::createSecretPage()
     box->setSpacing(TITLE_SPACING);
     box->addWidget(MakeLabel(tr("Operator secret key"), secret_box));
     m_secret_note = MakeHint(tr("Save it now — registration cannot start until you confirm it."), secret_box);
-    m_secret_note->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR));
+    m_secret_note->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_WARNING));
     box->addWidget(m_secret_note);
     m_secret_edit = new QLineEdit(secret_box);
     m_secret_edit->setReadOnly(true);
@@ -628,7 +666,6 @@ QWidget* RegisterMasternodeWizard::createSecretPage()
     m_confirm_edit = new QLineEdit(confirm_box);
     m_confirm_edit->setMaxLength(4);
     m_confirm_edit->setMaximumWidth(120);
-    connect(m_confirm_edit, &QLineEdit::textChanged, this, &RegisterMasternodeWizard::updateButtons);
     confirm_layout->addWidget(m_confirm_edit);
     box->addWidget(confirm_box);
     layout->addWidget(secret_box);
@@ -648,7 +685,7 @@ QWidget* RegisterMasternodeWizard::createResultPage()
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     auto* result_container{new QWidget(scroll)};
     auto* result_layout{new QVBoxLayout(result_container)};
-    result_layout->setContentsMargins(0, 0, 0, 0);
+    result_layout->setContentsMargins(0, 0, ROW_SPACING, 0);
     result_layout->setSpacing(GROUP_SPACING);
 
     // What happened
@@ -770,12 +807,64 @@ bool RegisterMasternodeWizard::secretConfirmed() const
 
 void RegisterMasternodeWizard::rebuildOrder()
 {
+    const std::optional<Page> current{m_order.isEmpty() ? std::nullopt : std::optional<Page>{currentPage()}};
     m_order = {PageType, PageCollateral, PageService, PageKeys, PagePayout};
     if (isEvo()) m_order << PagePlatform;
-    m_order << PageFee << PageReview << PageSecret;
+    m_order << PageFee << PageReview;
+    if (m_operator_widget != nullptr && secretGateRequired()) m_order << PageSecret;
     if (isExternalCollateral()) m_order << PageSign;
     m_order << PageResult;
-    if (m_pos >= m_order.size()) m_pos = m_order.size() - 1;
+    if (current && m_order.contains(*current)) {
+        m_pos = m_order.indexOf(*current);
+    } else if (m_pos >= m_order.size()) {
+        m_pos = m_order.size() - 1;
+    }
+    updateProgress();
+}
+
+RegisterMasternodeWizard::Page RegisterMasternodeWizard::currentPage() const
+{
+    return m_order.isEmpty() ? PageType : m_order.at(m_pos);
+}
+
+QString RegisterMasternodeWizard::pageTitle(Page page) const
+{
+    switch (page) {
+    case PageType:
+        return tr("Masternode type");
+    case PageCollateral:
+        return tr("Collateral");
+    case PageService:
+        return tr("Service addresses");
+    case PageKeys:
+        return tr("Keys");
+    case PagePayout:
+        return tr("Payout");
+    case PagePlatform:
+        return tr("Platform services");
+    case PageFee:
+        return tr("Fee source");
+    case PageReview:
+        return tr("Review");
+    case PageSecret:
+        return tr("Save operator key");
+    case PageSign:
+        return tr("Prove collateral ownership");
+    case PageResult:
+        return tr("Complete");
+    }
+    return {};
+}
+
+void RegisterMasternodeWizard::updateProgress()
+{
+    if (m_progress_label == nullptr || m_order.isEmpty()) return;
+    if (currentPage() == PageResult) {
+        m_progress_label->setText(tr("Complete"));
+        return;
+    }
+    const int total{m_order.size() - 1};
+    m_progress_label->setText(tr("Step %1 of %2 · %3").arg(m_pos + 1).arg(total).arg(pageTitle(currentPage())));
 }
 
 void RegisterMasternodeWizard::goToPage(Page page)
@@ -789,6 +878,7 @@ void RegisterMasternodeWizard::goToPage(Page page)
 void RegisterMasternodeWizard::enterPage(Page page)
 {
     m_pages->setCurrentIndex(page);
+    m_validation_page.reset();
     showError(QString());
     if (page != PageReview) m_unlock.reset();
     switch (page) {
@@ -858,6 +948,7 @@ void RegisterMasternodeWizard::enterPage(Page page)
     default:
         break;
     }
+    updateProgress();
     updateButtons();
 }
 
@@ -888,7 +979,7 @@ bool RegisterMasternodeWizard::validatePage(Page page, QString& err)
     case PageService: {
         const QStringList list{MasternodeWidgetUtil::tokenizeEndpointList(m_service_edit->text())};
         if (list.isEmpty() && isEvo() && !usesExtendedAddresses()) {
-            err = tr("Evonodes need at least one service address to carry the Platform ports before v24 "
+            err = tr("EvoNodes need at least one service address to carry the Platform ports before v24 "
                      "activation.");
         } else if (!isEvo()) {
             validateProviderNetInfo(/*optional=*/true, err);
@@ -1030,12 +1121,15 @@ bool RegisterMasternodeWizard::validateProviderNetInfo(bool optional, QString& e
 void RegisterMasternodeWizard::onNext()
 {
     if (m_busy) return;
-    const Page current{m_order[m_pos]};
+    const Page current{currentPage()};
     QString err;
     if (!validatePage(current, err)) {
+        m_validation_page = current;
         showError(err);
+        updateButtons();
         return;
     }
+    m_validation_page.reset();
     showError(QString());
     if (current == PageReview) {
         if (secretGateRequired()) {
@@ -1064,19 +1158,21 @@ void RegisterMasternodeWizard::onBack()
 
 void RegisterMasternodeWizard::updateButtons()
 {
-    const Page current{m_order[m_pos]};
+    const Page current{currentPage()};
     m_back_button->setVisible(current != PageType && current != PageResult);
     // After register_prepare the transaction is fixed; going back would
     // silently invalidate the message being signed.
     m_back_button->setEnabled(!m_busy && current != PageSign);
+    m_back_button->setToolTip(current == PageSign ? tr("Back is unavailable after preparation because changing the "
+                                                       "registration would invalidate the message being signed.")
+                                                  : QString{});
     m_cancel_button->setVisible(current != PageResult);
     m_cancel_button->setEnabled(!m_busy);
 
     if (!m_busy) {
         QString next_text{tr("Next")};
         if (current == PageReview) {
-            next_text = secretGateRequired() ? tr("Save operator key")
-                                             : (isExternalCollateral() ? tr("Prepare") : tr("Register"));
+            next_text = secretGateRequired() ? tr("Continue") : (isExternalCollateral() ? tr("Prepare") : tr("Register"));
         } else if (current == PageSecret) {
             next_text = isExternalCollateral() ? tr("Prepare") : tr("Register");
         } else if (current == PageSign) {
@@ -1099,16 +1195,36 @@ void RegisterMasternodeWizard::updateButtons()
     } else if (current == PageSecret && !secretConfirmed()) {
         enabled = false;
         tooltip = tr("Confirm you saved the operator secret key by typing its last 4 characters.");
+    } else if (m_validation_page && *m_validation_page == current) {
+        QString error;
+        if (!validatePage(current, error)) {
+            enabled = false;
+            tooltip = error;
+        }
     }
     m_next_button->setEnabled(enabled);
     m_next_button->setToolTip(tooltip);
 }
 
+void RegisterMasternodeWizard::onPageEdited()
+{
+    if (m_validation_page && *m_validation_page == currentPage()) {
+        QString error;
+        validatePage(currentPage(), error);
+        showError(error);
+        if (error.isEmpty()) m_validation_page.reset();
+    } else if (!m_error_label->text().isEmpty()) {
+        showError(QString());
+    }
+    updateButtons();
+}
+
 void RegisterMasternodeWizard::setBusy(bool busy, const QString& busy_text)
 {
     m_busy = busy;
+    m_busy_bar->setVisible(busy);
     if (busy) {
-        m_next_button->setText(busy_text.isEmpty() ? tr("Working…") : busy_text);
+        m_next_button->setText(busy_text);
     }
     updateButtons();
 }
@@ -1116,7 +1232,6 @@ void RegisterMasternodeWizard::setBusy(bool busy, const QString& busy_text)
 void RegisterMasternodeWizard::showError(const QString& message)
 {
     m_error_label->setText(message);
-    m_error_label->setVisible(!message.isEmpty());
 }
 
 void RegisterMasternodeWizard::refreshCollateralCandidates()
@@ -1166,12 +1281,12 @@ void RegisterMasternodeWizard::refreshCollateralCandidates(const std::set<COutPo
 int RegisterMasternodeWizard::reviewLabelWidth(const QWidget* card) const
 {
     // The widest label decides the column, so every card shares one alignment
-    static const QStringList labels{tr("Type"),        tr("Service"),        tr("Platform node ID"),
+    static const QStringList labels{tr("Type"),         tr("Service"),        tr("Platform node ID"),
                                     tr("Platform P2P"), tr("Platform HTTPS"), tr("Platform ports"),
-                                    tr("Amount"),      tr("Destination"),    tr("Output"),
-                                    tr("Source"),      tr("Owner"),          tr("Voting"),
-                                    tr("Operator"),    tr("Address"),        tr("Operator share"),
-                                    tr("Funding address"), tr("Fee source")};
+                                    tr("Amount"),       tr("Destination"),    tr("Output"),
+                                    tr("Source"),       tr("Owner"),          tr("Voting"),
+                                    tr("Operator"),     tr("Address"),        tr("Operator share"),
+                                    tr("Fee source"),   tr("Network fee")};
     const QFontMetrics metrics{card->font()};
     int width{0};
     for (const QString& label : labels) {
@@ -1231,7 +1346,7 @@ void RegisterMasternodeWizard::populateReview()
     }
 
     begin_section(tr("Node"));
-    row(tr("Type"), isEvo() ? tr("Evonode") : tr("Masternode"));
+    row(tr("Type"), isEvo() ? tr("EvoNode") : tr("Masternode"));
     const QStringList services{MasternodeWidgetUtil::tokenizeEndpointList(m_service_edit->text())};
     row(tr("Service"), services.isEmpty() ? tr("Not set — the node stays inactive until you send a service update") :
                                             services.join(", "),
@@ -1279,8 +1394,8 @@ void RegisterMasternodeWizard::populateReview()
     row(tr("Operator share"), QString("%1%").arg(QString::number(m_operator_reward->value(), 'f', 2)));
 
     begin_section(tr("Funding"));
-    row(isFundCollateral() ? tr("Funding address") : tr("Fee source"), m_fee_picker->selectedAddress(),
-        /*monospace=*/true);
+    row(tr("Fee source"), m_fee_picker->selectedAddress(), /*monospace=*/true);
+    row(tr("Network fee"), tr("Calculated at submission using the wallet's current fee settings"));
 
     m_review_layout->insertWidget(
         m_review_layout->count() - 1,
@@ -1400,7 +1515,37 @@ void RegisterMasternodeWizard::completeRegistration(const CTransactionRef& trans
     goToPage(PageResult);
 }
 
-void RegisterMasternodeWizard::startRegistration()
+bool RegisterMasternodeWizard::confirmBroadcast()
+{
+    const QString node_type{isEvo() ? tr("EvoNode") : tr("masternode")};
+    QString consequence;
+    if (isFundCollateral()) {
+        consequence = tr("This transaction creates %1 of collateral from this wallet and registers the %2.")
+                          .arg(FormatAmount(m_walletModel, collateralAmount()), node_type);
+    } else if (isExternalCollateral()) {
+        consequence = tr("This transaction registers the external %1 collateral and makes it the collateral for this "
+                         "%2.")
+                          .arg(FormatAmount(m_walletModel, collateralAmount()), node_type);
+    } else {
+        consequence = tr("This transaction registers and locks the wallet's %1 collateral output for this %2.")
+                          .arg(FormatAmount(m_walletModel, collateralAmount()), node_type);
+    }
+    consequence += tr(
+        " The network fee is calculated from the selected fee source using the wallet's current fee settings.");
+
+    SendConfirmationDialog confirmation{tr("Confirm %1 registration").arg(node_type),
+                                        tr("Do you want to broadcast this %1 registration?").arg(node_type),
+                                        consequence,
+                                        tr("Fee source: %1").arg(m_fee_picker->selectedAddress()),
+                                        SEND_CONFIRM_DELAY,
+                                        /*enable_send=*/true,
+                                        /*always_show_unsigned=*/false,
+                                        this};
+    confirmation.setWindowModality(Qt::WindowModal);
+    return confirmation.exec() == QMessageBox::Yes;
+}
+
+void RegisterMasternodeWizard::startRegistration(bool skip_confirmation)
 {
     if (m_walletModel == nullptr || !m_runner) return;
     if (secretGateRequired() && !secretConfirmed()) {
@@ -1413,6 +1558,7 @@ void RegisterMasternodeWizard::startRegistration()
                      "Platform services page again before registering."));
         return;
     }
+    if (!isExternalCollateral() && !skip_confirmation && !confirmBroadcast()) return;
     if (!m_unlock) m_unlock = std::make_unique<UnlockHolder>(*m_walletModel);
     if (!m_unlock->ctx.isValid()) {
         m_unlock.reset();
@@ -1446,7 +1592,7 @@ void RegisterMasternodeWizard::startRegistration()
     }
 }
 
-void RegisterMasternodeWizard::startSubmit()
+void RegisterMasternodeWizard::startSubmit(bool skip_confirmation)
 {
     if (m_walletModel == nullptr || !m_runner || !m_prepared_tx) return;
     if (isEvo() && m_node.evo().getProviderTxCapabilities().version != m_platform_provider_version) {
@@ -1454,16 +1600,15 @@ void RegisterMasternodeWizard::startSubmit()
                      "collected. Discard this prepared registration and review the Platform services page again."));
         return;
     }
+    const auto signature{DecodeBase64(m_sig_edit->toPlainText().simplified().remove(' ').toStdString())};
+    if (!signature) {
+        showError(tr("The collateral signature is not valid base64."));
+        return;
+    }
+    if (!skip_confirmation && !confirmBroadcast()) return;
     m_unlock = std::make_unique<UnlockHolder>(*m_walletModel);
     if (!m_unlock->ctx.isValid()) {
         m_unlock.reset();
-        return;
-    }
-
-    const auto signature{DecodeBase64(m_sig_edit->toPlainText().simplified().remove(' ').toStdString())};
-    if (!signature) {
-        m_unlock.reset();
-        showError(tr("The collateral signature is not valid base64."));
         return;
     }
     m_stage = Stage::Submit;
@@ -1566,44 +1711,42 @@ void RegisterMasternodeWizard::populateResult(const QString& pro_tx_hash)
             tr("It is recorded in this wallet and appears under Transactions. The collateral stays in the wallet "
                "but is locked while the masternode is registered."));
 
-    // The card already carries the "Next steps" heading
+    // The card already carries the "Next steps" heading. Keep numbering in
+    // markup so conditional steps never force translators to renumber strings.
     QStringList steps;
     if (m_operator_widget->hasGeneratedSecret()) {
-        steps << tr("1. Configure your masternode server with the operator secret key you saved, then restart "
-                    "dashd there.");
+        steps << tr(
+            "Configure your masternode server with the operator secret key you saved, then restart dashd there.");
     } else {
-        steps << tr("1. Configure your masternode server with the BLS secret key matching the operator public key "
-                    "you provided.");
+        steps << tr(
+            "Configure your masternode server with the BLS secret key matching the operator public key you provided.");
     }
     const bool has_service{!MasternodeWidgetUtil::tokenizeEndpointList(m_service_edit->text()).isEmpty()};
     if (has_service) {
-        steps << tr("2. Make sure every registered service address and port is reachable from the internet.");
+        steps << tr("Make sure every registered service address and port is reachable from the internet.");
     } else {
-        steps << tr("2. Send an Update Service transaction after the node's service endpoints are ready; it stays "
+        steps << tr("Send an Update Service transaction after the node's service endpoints are ready; it stays "
                     "inactive until then.");
     }
     if (isEvo()) {
-        steps << tr("3. Provision the Dash Platform services (Tenderdash and Drive) with the Platform node key "
-                    "matching the node ID you registered.");
-        steps << tr("4. The evonode becomes active once the registration is confirmed and the first update is "
-                    "signed by the operator.");
+        steps << tr("Provision the Dash Platform services (Tenderdash and Drive) with the Platform node key matching "
+                    "the node ID you registered.");
+        steps << tr("The EvoNode becomes active once the registration is confirmed and the first update is signed by "
+                    "the operator.");
     } else {
-        steps << tr("3. The masternode becomes active once the registration is confirmed on the network.");
+        steps << tr("The masternode becomes active once the registration is confirmed on the network.");
     }
-    m_next_steps->setText(steps.join("<br>"));
+    QString html{"<ol>"};
+    for (const QString& step : steps)
+        html += QString("<li>%1</li>").arg(step.toHtmlEscaped());
+    html += "</ol>";
+    m_next_steps->setText(html);
 }
 
 void RegisterMasternodeWizard::reject()
 {
     if (m_busy) return;
     if (m_registered) {
-        if (secretGateRequired() && !secretConfirmed() &&
-            QMessageBox::warning(this, tr("Operator secret not confirmed"),
-                                 tr("You have not confirmed saving the operator secret key. Without it your "
-                                    "masternode cannot operate. Close anyway?"),
-                                 QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) {
-            return;
-        }
         QDialog::accept();
         return;
     }

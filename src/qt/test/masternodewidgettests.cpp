@@ -37,6 +37,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QPlainTextEdit>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QScrollArea>
@@ -544,6 +545,12 @@ void MasternodeWidgetTests::registeredCollateralExclusion()
 
 void MasternodeWidgetTests::wizardMinimumGeometry()
 {
+#if defined(Q_OS_MACOS)
+    if (QApplication::platformName() == "minimal") {
+        QWARN("Skipping wizardMinimumGeometry on macOS with the minimal platform due to QTBUG-49686");
+        return;
+    }
+#endif
     TestChain100Setup test;
     m_node.setContext(&test.m_node);
 
@@ -555,6 +562,21 @@ void MasternodeWidgetTests::wizardMinimumGeometry()
     QApplication::processEvents();
     QCOMPARE(wizard.minimumSize(), QSize(700, 560));
     QCOMPARE(wizard.size(), QSize(700, 560));
+    QVERIFY(wizard.m_progress_label->text().contains("Step 1"));
+    QVERIFY(wizard.m_progress_label->text().contains("of 8"));
+    QVERIFY(wizard.m_order.contains(RegisterMasternodeWizard::PageSecret));
+
+    const auto operator_modes{wizard.m_operator_widget->findChildren<QRadioButton*>()};
+    const auto existing_mode{std::find_if(operator_modes.begin(), operator_modes.end(), [](const QRadioButton* radio) {
+        return radio->text().contains("existing operator", Qt::CaseInsensitive);
+    })};
+    QVERIFY(existing_mode != operator_modes.end());
+    (*existing_mode)->setChecked(true);
+    QVERIFY(!wizard.m_order.contains(RegisterMasternodeWizard::PageSecret));
+    QVERIFY(wizard.m_progress_label->text().contains("of 7"));
+    wizard.m_type_evo->setChecked(true);
+    QCOMPARE(wizard.windowTitle(), QString("Register EvoNode"));
+    QVERIFY(wizard.m_progress_label->text().contains("of 8"));
 
     const auto controls_fit = [&wizard](RegisterMasternodeWizard::Page page_id) {
         wizard.enterPage(page_id);
@@ -587,7 +609,6 @@ void MasternodeWidgetTests::wizardMinimumGeometry()
                             RegisterMasternodeWizard::PageSign}) {
         controls_fit(page);
     }
-    wizard.m_type_evo->setChecked(true);
     controls_fit(RegisterMasternodeWizard::PagePlatform);
 
     for (const auto page_id : {RegisterMasternodeWizard::PageKeys, RegisterMasternodeWizard::PageReview,
@@ -607,10 +628,27 @@ void MasternodeWidgetTests::wizardMinimumGeometry()
     wizard.enterPage(RegisterMasternodeWizard::PageFee);
     QVERIFY(wizard.m_fee_explain->text().contains("exact fee", Qt::CaseInsensitive));
     QVERIFY(!wizard.m_fee_explain->text().contains("0.001"));
+
+    wizard.m_col_external->setChecked(true);
+    wizard.goToPage(RegisterMasternodeWizard::PageSign);
+    QVERIFY(!wizard.m_back_button->isEnabled());
+    QVERIFY(wizard.m_back_button->toolTip().contains("invalidate", Qt::CaseInsensitive));
+
+    wizard.setBusy(true, "Testing…");
+    QVERIFY(wizard.m_busy_bar->isVisible());
+    QCOMPARE(wizard.m_next_button->text(), QString("Testing…"));
+    wizard.setBusy(false);
+    QVERIFY(!wizard.m_busy_bar->isVisible());
 }
 
 void MasternodeWidgetTests::wizardPageValidation()
 {
+#if defined(Q_OS_MACOS)
+    if (QApplication::platformName() == "minimal") {
+        QWARN("Skipping wizardPageValidation on macOS with the minimal platform due to QTBUG-49686");
+        return;
+    }
+#endif
     TestChain100Setup test;
     m_node.setContext(&test.m_node);
 
@@ -699,6 +737,68 @@ void MasternodeWidgetTests::wizardPageValidation()
     error.clear();
     QVERIFY(!wizard.validatePage(RegisterMasternodeWizard::PagePlatform, error));
     QVERIFY(error.contains("node ID", Qt::CaseInsensitive));
+
+    // Once validation has failed, edits revalidate immediately and the
+    // reserved error row keeps the button bar from jumping.
+    wizard.m_type_regular->setChecked(true);
+    wizard.m_col_external->setChecked(true);
+    wizard.goToPage(RegisterMasternodeWizard::PageCollateral);
+    wizard.show();
+    QApplication::processEvents();
+    const int button_y{wizard.m_next_button->y()};
+    wizard.m_col_txid->setText("invalid");
+    wizard.onNext();
+    QVERIFY(wizard.m_validation_page == RegisterMasternodeWizard::PageCollateral);
+    QVERIFY(!wizard.m_error_label->text().isEmpty());
+    QApplication::processEvents();
+    QCOMPARE(wizard.m_next_button->y(), button_y);
+    wizard.m_col_txid->setText(QString(64, QLatin1Char('1')));
+    QVERIFY(!wizard.m_validation_page.has_value());
+    QVERIFY(wizard.m_error_label->text().isEmpty());
+    QApplication::processEvents();
+    QCOMPARE(wizard.m_next_button->y(), button_y);
+}
+
+void MasternodeWidgetTests::broadcastConfirmation()
+{
+#if defined(Q_OS_MACOS)
+    if (QApplication::platformName() == "minimal") {
+        QWARN("Skipping broadcastConfirmation on macOS with the minimal platform due to QTBUG-49686");
+        return;
+    }
+#endif
+    TestChain100Setup test;
+    m_node.setContext(&test.m_node);
+
+    RegisterMasternodeWizard wizard(m_node, /*walletModel=*/nullptr);
+    wizard.m_fee_picker->addItem("fee source", TestP2PKHAddress(1));
+
+    bool found{false};
+    bool send_disabled{false};
+    bool unsigned_hidden{false};
+    QString prompt;
+    QString details;
+    QTimer::singleShot(0, [&] {
+        for (QWidget* const widget : QApplication::topLevelWidgets()) {
+            auto* const confirmation{qobject_cast<QMessageBox*>(widget)};
+            if (confirmation == nullptr || !confirmation->isVisible()) continue;
+            found = true;
+            prompt = confirmation->text();
+            details = confirmation->informativeText() + confirmation->detailedText();
+            send_disabled = !confirmation->button(QMessageBox::Yes)->isEnabled();
+            unsigned_hidden = confirmation->button(QMessageBox::Save) == nullptr;
+            confirmation->reject();
+            break;
+        }
+    });
+
+    QVERIFY(!wizard.confirmBroadcast());
+    QVERIFY(found);
+    QVERIFY(send_disabled);
+    QVERIFY(unsigned_hidden);
+    QVERIFY(prompt.contains("registration", Qt::CaseInsensitive));
+    QVERIFY(details.contains("fee source", Qt::CaseInsensitive));
+    QVERIFY(details.contains("wallet", Qt::CaseInsensitive));
 }
 
 void MasternodeWidgetTests::masternodeListRegistrationAvailability()
@@ -760,6 +860,12 @@ void MasternodeWidgetTests::masternodeListRegistrationAvailability()
 
 void MasternodeWidgetTests::wizardInteractionLifecycle()
 {
+#if defined(Q_OS_MACOS)
+    if (QApplication::platformName() == "minimal") {
+        QWARN("Skipping wizardInteractionLifecycle on macOS with the minimal platform due to QTBUG-49686");
+        return;
+    }
+#endif
     TestChain100Setup test;
     m_node.setContext(&test.m_node);
     WalletContext& context{*m_node.walletLoader().context()};
@@ -815,7 +921,7 @@ void MasternodeWidgetTests::wizardInteractionLifecycle()
                                              : static_cast<uint16_t>(current_version + 1);
     wizard.m_confirm_edit->setText(wizard.m_operator_widget->secretHex().right(4));
     wizard.goToPage(RegisterMasternodeWizard::PageReview);
-    wizard.startRegistration();
+    wizard.startRegistration(/*skip_confirmation=*/true);
     QCOMPARE(wizard.m_pages->currentIndex(), static_cast<int>(RegisterMasternodeWizard::PagePlatform));
     QVERIFY(wizard.m_error_label->isVisible());
     QVERIFY(wizard.m_error_label->text().contains("changed", Qt::CaseInsensitive));
@@ -840,6 +946,12 @@ void MasternodeWidgetTests::wizardInteractionLifecycle()
 
 void MasternodeWidgetTests::registrationResultStates()
 {
+#if defined(Q_OS_MACOS)
+    if (QApplication::platformName() == "minimal") {
+        QWARN("Skipping registrationResultStates on macOS with the minimal platform due to QTBUG-49686");
+        return;
+    }
+#endif
     TestChain100Setup test;
     m_node.setContext(&test.m_node);
     WalletContext& context{*m_node.walletLoader().context()};
@@ -867,7 +979,7 @@ void MasternodeWidgetTests::registrationResultStates()
     QVERIFY(wizard.secretGateRequired());
     QVERIFY(!wizard.m_next_button->isEnabled());
 
-    wizard.startRegistration();
+    wizard.startRegistration(/*skip_confirmation=*/true);
     QVERIFY(wizard.m_stage == RegisterMasternodeWizard::Stage::None);
     QCOMPARE(wizard.m_pages->currentIndex(), static_cast<int>(RegisterMasternodeWizard::PageSecret));
 

@@ -403,8 +403,57 @@ void MasternodeMaintenanceTests::revokeRequestConstruction()
     }
 }
 
+void MasternodeMaintenanceTests::dialogFieldGeometry()
+{
+#if defined(Q_OS_MACOS)
+    if (QApplication::platformName() == "minimal") {
+        QWARN("Skipping dialogFieldGeometry on macOS with the minimal platform due to QTBUG-49686");
+        return;
+    }
+#endif
+    TestChain100Setup test;
+    m_node.setContext(&test.m_node);
+    auto source{std::make_shared<TestMnEntry>(MnType::Regular)};
+    MasternodeEntry entry{source, "collateral", 50};
+
+    RevokeDialog revoke(m_node, /*wallet_model=*/nullptr, entry, /*parent=*/nullptr);
+    revoke.show();
+    QApplication::processEvents();
+    const auto field_rect = [](QWidget* field, QWidget* dialog) {
+        return QRect{field->mapTo(dialog, QPoint{}), field->size()};
+    };
+    const QRect reason_rect{field_rect(revoke.m_reason_combo, &revoke)};
+    const QRect operator_rect{field_rect(revoke.m_operator_key, &revoke)};
+    const QRect fee_rect{field_rect(revoke.m_fee_source, &revoke)};
+    const auto fields_align = [](const QRect& expected, const QRect& actual) {
+        // Native controls can extend a few pixels outside their layout item.
+        return qAbs(expected.left() - actual.left()) <= 12 && qAbs(expected.right() - actual.right()) <= 12;
+    };
+    QVERIFY(reason_rect.width() > 400);
+    QVERIFY(fields_align(reason_rect, operator_rect));
+    QVERIFY(fields_align(reason_rect, fee_rect));
+
+    UpdateRegistrarDialog registrar(m_node, /*wallet_model=*/nullptr, entry,
+                                    interfaces::ProviderTxCapabilities{ProTxVersion::BasicBLS, false},
+                                    /*parent=*/nullptr);
+    registrar.show();
+    QApplication::processEvents();
+    const QRect public_key_rect{field_rect(registrar.m_operator_pubkey_edit, &registrar)};
+    for (QWidget* field : {static_cast<QWidget*>(registrar.m_voting_edit), static_cast<QWidget*>(registrar.m_payout_edit),
+                           static_cast<QWidget*>(registrar.m_fee_source)}) {
+        const QRect rect{field_rect(field, &registrar)};
+        QVERIFY(fields_align(public_key_rect, rect));
+    }
+}
+
 void MasternodeMaintenanceTests::dialogLifecycleAndSubmissionStates()
 {
+#if defined(Q_OS_MACOS)
+    if (QApplication::platformName() == "minimal") {
+        QWARN("Skipping dialogLifecycleAndSubmissionStates on macOS with the minimal platform due to QTBUG-49686");
+        return;
+    }
+#endif
     TestChain100Setup test;
     m_node.setContext(&test.m_node);
     auto source{std::make_shared<TestMnEntry>(MnType::Regular)};

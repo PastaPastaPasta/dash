@@ -33,6 +33,7 @@ class QDoubleSpinBox;
 class QLabel;
 class QLineEdit;
 class QPlainTextEdit;
+class QProgressBar;
 class QPushButton;
 class QRadioButton;
 class QSpinBox;
@@ -40,7 +41,7 @@ class QStackedWidget;
 class QVBoxLayout;
 QT_END_NAMESPACE
 
-//! Multi-page dialog registering a masternode or evonode: collects collateral,
+//! Multi-page dialog registering a masternode or EvoNode: collects collateral,
 //! service, key, payout and fee-source details, then invokes the typed provider
 //! transaction interface on a worker thread. Supports funding the collateral
 //! from the wallet, referencing an exact-denomination UTXO already in the
@@ -115,14 +116,19 @@ private:
     bool secretGateRequired() const;
 
     void rebuildOrder();
+    Page currentPage() const;
+    QString pageTitle(Page page) const;
+    void updateProgress();
     void goToPage(Page page);
     void enterPage(Page page);
     bool validatePage(Page page, QString& err);
     interfaces::ProviderNetInfo providerNetInfo() const;
     bool validateProviderNetInfo(bool optional, QString& err) const;
     void updateButtons();
+    void onPageEdited();
     void setBusy(bool busy, const QString& busy_text = QString());
     void showError(const QString& message);
+    bool confirmBroadcast();
 
     void refreshCollateralCandidates();
     void refreshCollateralCandidates(const std::set<COutPoint>& registered_collaterals);
@@ -136,8 +142,8 @@ private:
     void populateSecret();
     void populateResult(const QString& pro_tx_hash);
     std::optional<interfaces::ProviderRegistrationRequest> buildRegistrationRequest(QString& error) const;
-    void startRegistration();
-    void startSubmit();
+    void startRegistration(bool skip_confirmation = false);
+    void startSubmit(bool skip_confirmation = false);
     void finishSubmission(MasternodeOperationRunner::SubmissionResult result);
     void finishPrepare(interfaces::ProviderTxResult<interfaces::PreparedProviderRegistration> result);
 
@@ -155,9 +161,12 @@ private:
     bool m_registered{false};
     bool m_platform_extended_addresses{false};
     uint16_t m_platform_provider_version{0};
+    std::optional<Page> m_validation_page;
 
     QStackedWidget* m_pages;
+    QLabel* m_progress_label{nullptr};
     QLabel* m_error_label;
+    QProgressBar* m_busy_bar;
     QPushButton* m_back_button;
     QPushButton* m_next_button;
     QPushButton* m_cancel_button;
@@ -182,7 +191,7 @@ private:
     // Keys page
     QValidatedLineEdit* m_owner_edit;
     QValidatedLineEdit* m_voting_edit;
-    OperatorKeyWidget* m_operator_widget;
+    OperatorKeyWidget* m_operator_widget{nullptr};
     // Payout page
     QValidatedLineEdit* m_payout_edit;
     QDoubleSpinBox* m_operator_reward;

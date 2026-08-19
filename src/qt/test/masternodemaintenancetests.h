@@ -30,6 +30,7 @@ private Q_SLOTS:
     void serviceRequestConstruction();
     void registrarRequestConstruction();
     void revokeRequestConstruction();
+    void dialogFieldGeometry();
     void dialogLifecycleAndSubmissionStates();
 
 private:
