@@ -708,7 +708,7 @@ void CTxMemPool::addUncheckedProTx(indexed_transaction_set::iterator& newit, con
         auto proTx = *Assert(GetTxPayload<CProUpSharedRegTx>(tx));
         mapProTxRefs.emplace(proTx.proTxHash, tx_hash);
         mapProTxBlsPubKeyHashes.emplace(proTx.pubKeyOperator.GetHash(), tx_hash);
-        auto dmn = Assert(dmnman.GetListAtChainTip().GetMN(proTx.proTxHash));
+        auto dmn = Assert(m_dmnman.GetListAtChainTip().GetMN(proTx.proTxHash));
         newit->validForProTxKey = ::SerializeHash(dmn->pdmnState->pubKeyOperator);
         if (dmn->pdmnState->pubKeyOperator != proTx.pubKeyOperator) {
             newit->isKeyChangeProTx = true;
@@ -1477,8 +1477,7 @@ bool CTxMemPool::existsProviderTxCrossSchemeConflict(const CTransaction& tx) con
         if (!opt_proTx) return true;
         // Same-key skip as the ordinary registrar path above: a no-op key carry-over cannot
         // create a new cross-scheme claim.
-        auto dmnman = Assert(m_dmnman.load(std::memory_order_acquire));
-        if (auto dmn = dmnman->GetListAtChainTip().GetMN(opt_proTx->proTxHash);
+        if (auto dmn = m_dmnman.GetListAtChainTip().GetMN(opt_proTx->proTxHash);
             dmn && opt_proTx->pubKeyOperator == dmn->pdmnState->pubKeyOperator) {
             return false;
         }
@@ -1614,7 +1613,7 @@ bool CTxMemPool::existsProviderTxConflict(const CTransaction &tx) const {
         auto& proTx = *opt_proTx;
 
         // this method should only be called with validated ProTxs
-        auto dmn = dmnman->GetListAtChainTip().GetMN(proTx.proTxHash);
+        auto dmn = m_dmnman.GetListAtChainTip().GetMN(proTx.proTxHash);
         if (!dmn) {
             LogPrint(BCLog::MEMPOOL, "%s: ERROR: Masternode is not in the list, proTxHash: %s\n", __func__, proTx.proTxHash.ToString());
             return true; // i.e. failed to find validated ProTx == conflict
@@ -1658,7 +1657,7 @@ bool CTxMemPool::existsProviderTxConflict(const CTransaction &tx) const {
         auto& proTx = *opt_proTx;
 
         // this method should only be called with validated ProTxs
-        auto dmn = dmnman->GetListAtChainTip().GetMN(proTx.proTxHash);
+        auto dmn = m_dmnman.GetListAtChainTip().GetMN(proTx.proTxHash);
         if (!dmn) {
             LogPrint(BCLog::MEMPOOL, "%s: ERROR: Masternode is not in the list, proTxHash: %s\n", __func__, proTx.proTxHash.ToString());
             return true; // i.e. failed to find validated ProTx == conflict
