@@ -1138,28 +1138,30 @@ void MasternodeWidgetTests::captureScreenshots()
     std::shared_ptr<const interfaces::MnEntry> mock_entry{std::make_shared<MockScreenshotEntry>(MnType::Regular)};
     MasternodeEntry mn_entry{mock_entry, "yZXS63pBfK4z37aYJp4h6K7X6dYV2V7R41", 100};
 
+    auto save_widget = [](QWidget& w, const QString& path) {
+        w.ensurePolished();
+        QPixmap pixmap(w.size());
+        pixmap.fill(Qt::white);
+        w.render(&pixmap);
+        pixmap.save(path);
+    };
+
     // Maintenance Dialogs
     {
         UpdateServiceDialog service_dlg(m_node, nullptr, mn_entry, interfaces::ProviderTxCapabilities{ProTxVersion::BasicBLS, false}, nullptr);
         service_dlg.setStyleSheet(style);
         service_dlg.resize(600, 360);
-        service_dlg.show();
-        QApplication::processEvents();
-        service_dlg.grab().save(base_dir + "/maintenance/01-update-service-current-values.png");
+        save_widget(service_dlg, base_dir + "/maintenance/01-update-service-current-values.png");
 
         UpdateRegistrarDialog registrar(m_node, nullptr, mn_entry, interfaces::ProviderTxCapabilities{ProTxVersion::BasicBLS, false}, nullptr);
         registrar.setStyleSheet(style);
         registrar.resize(600, 420);
-        registrar.show();
-        QApplication::processEvents();
-        registrar.grab().save(base_dir + "/maintenance/04-update-registrar-current-values.png");
+        save_widget(registrar, base_dir + "/maintenance/04-update-registrar-current-values.png");
 
         RevokeDialog revoke(m_node, nullptr, mn_entry, nullptr);
         revoke.setStyleSheet(style);
         revoke.resize(600, 320);
-        revoke.show();
-        QApplication::processEvents();
-        revoke.grab().save(base_dir + "/maintenance/06-revoke-default.png");
+        save_widget(revoke, base_dir + "/maintenance/06-revoke-default.png");
     }
 
     // Wizard Pages
@@ -1167,21 +1169,17 @@ void MasternodeWidgetTests::captureScreenshots()
         RegisterMasternodeWizard wizard(m_node, nullptr, nullptr);
         wizard.setStyleSheet(style);
         wizard.resize(700, 560);
-        wizard.show();
-        QApplication::processEvents();
 
         // 02 Type Regular
         wizard.m_type_regular->setChecked(true);
-        wizard.enterPage(RegisterMasternodeWizard::PageType);
-        QApplication::processEvents();
-        wizard.grab().save(base_dir + "/registration/02-type-regular.png");
+        wizard.goToPage(RegisterMasternodeWizard::PageType);
+        save_widget(wizard, base_dir + "/registration/02-type-regular.png");
 
         // 06 Keys Generated
         wizard.m_owner_edit->setText(QStringLiteral("yXm7vQp8vKyT5F9gH2j7v1w3X4y5Z6a7b8"));
         wizard.m_voting_edit->setText(QStringLiteral("yVYv4z5w6x7Y8z9A1b2C3d4E5f6G7h8I9j"));
-        wizard.enterPage(RegisterMasternodeWizard::PageKeys);
-        QApplication::processEvents();
-        wizard.grab().save(base_dir + "/registration/06-keys-generated-no-derivation.png");
+        wizard.goToPage(RegisterMasternodeWizard::PageKeys);
+        save_widget(wizard, base_dir + "/registration/06-keys-generated-no-derivation.png");
 
         // 09 Review Regular (fully populated)
         wizard.m_type_regular->setChecked(true);
@@ -1192,45 +1190,39 @@ void MasternodeWidgetTests::captureScreenshots()
         wizard.m_voting_edit->setText(QStringLiteral("yVYv4z5w6x7Y8z9A1b2C3d4E5f6G7h8I9j"));
         wizard.m_payout_edit->setText(QStringLiteral("yP9vW8x7y6Z5a4B3c2D1e0F9g8H7i6J5k4"));
         wizard.m_operator_reward->setValue(0.0);
-        wizard.enterPage(RegisterMasternodeWizard::PageReview);
-        QApplication::processEvents();
-        wizard.grab().save(base_dir + "/registration/09-review-regular.png");
+        wizard.goToPage(RegisterMasternodeWizard::PageReview);
+        save_widget(wizard, base_dir + "/registration/09-review-regular.png");
 
         // 11 Save Operator Key
-        wizard.enterPage(RegisterMasternodeWizard::PageSecret);
-        QApplication::processEvents();
-        wizard.grab().save(base_dir + "/registration/11-save-operator-key-before-registration.png");
+        wizard.goToPage(RegisterMasternodeWizard::PageSecret);
+        save_widget(wizard, base_dir + "/registration/11-save-operator-key-before-registration.png");
 
         // 14 Type Evo
         wizard.m_type_evo->setChecked(true);
-        wizard.enterPage(RegisterMasternodeWizard::PageType);
-        QApplication::processEvents();
-        wizard.grab().save(base_dir + "/registration/14-type-evo.png");
+        wizard.goToPage(RegisterMasternodeWizard::PageType);
+        save_widget(wizard, base_dir + "/registration/14-type-evo.png");
 
         // 18 Evo Platform Complete
         wizard.m_type_evo->setChecked(true);
         wizard.m_platform_nodeid->setText(QStringLiteral("0123456789abcdef0123456789abcdef01234567"));
         wizard.m_platform_p2p->setText(QStringLiteral("192.0.2.1:26656"));
         wizard.m_platform_https->setText(QStringLiteral("192.0.2.1:443"));
-        wizard.enterPage(RegisterMasternodeWizard::PagePlatform);
-        QApplication::processEvents();
-        wizard.grab().save(base_dir + "/registration/18-evo-platform-complete.png");
+        wizard.goToPage(RegisterMasternodeWizard::PagePlatform);
+        save_widget(wizard, base_dir + "/registration/18-evo-platform-complete.png");
 
         // 21 External Collateral
         wizard.m_type_regular->setChecked(true);
         wizard.m_col_external->setChecked(true);
         wizard.m_col_txid->setText(QStringLiteral("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"));
         wizard.m_col_vout->setValue(0);
-        wizard.enterPage(RegisterMasternodeWizard::PageCollateral);
-        QApplication::processEvents();
-        wizard.grab().save(base_dir + "/registration/21-external-collateral.png");
+        wizard.goToPage(RegisterMasternodeWizard::PageCollateral);
+        save_widget(wizard, base_dir + "/registration/21-external-collateral.png");
 
         // 24 External Sign Message
         wizard.m_col_external->setChecked(true);
         wizard.m_sign_message->setPlainText(QStringLiteral("ProRegTx:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:0|yOwnerAddress123456789|96e632616f7ec017a1cf11cb20268a73229b0f4fa6e4df2e9d554a9fc485c269fb9f5c490ff456e30bc5b40c6a51dff6"));
-        wizard.enterPage(RegisterMasternodeWizard::PageSign);
-        QApplication::processEvents();
-        wizard.grab().save(base_dir + "/registration/24-external-sign-message.png");
+        wizard.goToPage(RegisterMasternodeWizard::PageSign);
+        save_widget(wizard, base_dir + "/registration/24-external-sign-message.png");
     }
 
     m_node.setContext(nullptr);
