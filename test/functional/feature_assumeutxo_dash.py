@@ -264,11 +264,12 @@ class AssumeutxoDashTest(DashTestFramework):
 
         # This fixture has no asset-unlock ranges or MNHF signals, so the last
         # 26 bytes are three int64 credit-pool fields followed by two zero
-        # CompactSize counts. Alter currentLimit, which remains structurally
-        # valid and is intentionally not a CbTx root, to reach the evo hash check.
+        # CompactSize counts. Alter latelyUnlocked, which stays within every
+        # context-free invariant and is intentionally not a CbTx root, to
+        # reach the evo hash check.
         tampered = bytearray(snapshot_bytes)
         assert_equal(tampered[-2:], b"\x00\x00")
-        tampered[-18] ^= 1
+        tampered[-10] ^= 1
         tampered_path = snapshot_path.with_suffix(".tampered-evo.dat")
         tampered_path.write_bytes(tampered)
         with negative.assert_debug_log(["bad evo snapshot hash"]):
@@ -277,6 +278,21 @@ class AssumeutxoDashTest(DashTestFramework):
                 "evo snapshot hash mismatch",
                 negative.loadtxoutset,
                 str(tampered_path),
+            )
+
+        # Raising currentLimit above locked violates a context-free credit-pool
+        # invariant, so this corruption is rejected during decoding, before the
+        # evo hash is ever compared.
+        semantic = bytearray(snapshot_bytes)
+        semantic[-18] ^= 1
+        semantic_path = snapshot_path.with_suffix(".semantic-evo.dat")
+        semantic_path.write_bytes(semantic)
+        with negative.assert_debug_log(["truncated or invalid evo section"]):
+            assert_raises_rpc_error(
+                -32603,
+                "truncated or invalid evo section",
+                negative.loadtxoutset,
+                str(semantic_path),
             )
         self.log.info("Load the full snapshot on a fresh non-masternode")
         snapshot_index, snapshot_args = self.add_snapshot_node(assumeutxo_arg)
