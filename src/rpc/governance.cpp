@@ -228,7 +228,7 @@ static RPCHelpMan gobject_prepare()
         if (collateralHash.IsNull() || collateralIndex < 0) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, strprintf("invalid hash or index: %s-%d", collateralHash.ToString(), collateralIndex));
         }
-        outpoint = COutPoint(collateralHash, (uint32_t)collateralIndex);
+        outpoint = COutPoint(collateralHash, static_cast<uint32_t>(collateralIndex));
     }
 
     CTransactionRef tx;
@@ -466,8 +466,7 @@ static UniValue VoteWithMasternodes(const JSONRPCRequest& request, const CWallet
         }
 
         CGovernanceException exception;
-        CConnman& connman = EnsureConnman(node);
-        if (node.govman->ProcessVoteAndRelay(vote, exception, connman)) {
+        if (node.govman->ProcessVoteAndRelay(vote, exception)) {
             nSuccessful++;
             statusObj.pushKV("result", "success");
         } else {
@@ -499,7 +498,7 @@ const RPCResult vote_results{
     RPCResult::Type::OBJ, "", "",
         {
             {RPCResult::Type::STR, "overall", "Total number of successful and failed votes"},
-            {RPCResult::Type::OBJ, "detail", "Detailed information for each vote",
+            {RPCResult::Type::OBJ_DYN, "detail", "Detailed information for each vote, keyed by the ProTx of the voting masternode",
             {
                 {RPCResult::Type::OBJ, "protx", "ProTx of masternode for voting",
                 {
@@ -659,7 +658,8 @@ static RPCResult ListObjectsHelp()
 {
     auto ret = CGovernanceObject::GetStateJsonHelp(/*key=*/"", /*optional=*/false, /*local_valid_key=*/"fBlockchainValidity");
     auto mod_inner = ret.m_inner;
-    for (const auto& result : CGovernanceObject::GetVotesJsonHelp(/*key=*/"", /*optional=*/false).m_inner) {
+    const auto votes_help = CGovernanceObject::GetVotesJsonHelp(/*key=*/"", /*optional=*/false);
+    for (const auto& result : votes_help.m_inner) {
         mod_inner.push_back(result);
     }
     return RPCResult{ret.m_type, ret.m_key_name, ret.m_description, mod_inner};
@@ -679,7 +679,7 @@ static RPCHelpMan gobject_list_helper(const bool make_a_diff)
         },
         {
             RPCResult{"If request is valid",
-                RPCResult::Type::OBJ, "hash", "Object details", {ListObjectsHelp()},
+                RPCResult::Type::OBJ_DYN, "", "json object with governance object hash as keys", {ListObjectsHelp()},
             },
             RPCResult{"If request is invalid",
                 RPCResult::Type::STR, "", "Error string"
@@ -726,10 +726,10 @@ static RPCResult gobject_get_help()
 {
     auto ret = CGovernanceObject::GetStateJsonHelp(/*key=*/"", /*optional=*/false, /*local_valid_key=*/"fLocalValidity");
     auto mod_inner = ret.m_inner;
-    mod_inner.push_back({RPCResult::Type::OBJ, "FundingResult", "Funding vote details", {CGovernanceObject::GetVotesJsonHelp(/*key=*/"", /*optional=*/false)}});
-    mod_inner.push_back({RPCResult::Type::OBJ, "ValidResult", "Object validity vote details", {CGovernanceObject::GetVotesJsonHelp(/*key=*/"", /*optional=*/false)}});
-    mod_inner.push_back({RPCResult::Type::OBJ, "DeleteResult", "Delete vote details", {CGovernanceObject::GetVotesJsonHelp(/*key=*/"", /*optional=*/false)}});
-    mod_inner.push_back({RPCResult::Type::OBJ, "EndorsedResult", "Endorsed vote details", {CGovernanceObject::GetVotesJsonHelp(/*key=*/"", /*optional=*/false)}});
+    mod_inner.push_back(CGovernanceObject::GetVotesJsonHelp(/*key=*/"FundingResult", /*optional=*/false));
+    mod_inner.push_back(CGovernanceObject::GetVotesJsonHelp(/*key=*/"ValidResult", /*optional=*/false));
+    mod_inner.push_back(CGovernanceObject::GetVotesJsonHelp(/*key=*/"DeleteResult", /*optional=*/false));
+    mod_inner.push_back(CGovernanceObject::GetVotesJsonHelp(/*key=*/"EndorsedResult", /*optional=*/false));
     return RPCResult{ret.m_type, ret.m_key_name, ret.m_description, mod_inner};
 }
 
@@ -930,10 +930,8 @@ static RPCHelpMan voteraw()
         throw JSONRPCError(RPC_INTERNAL_ERROR, "Failure to verify vote.");
     }
 
-    CConnman& connman = EnsureConnman(node);
-
     CGovernanceException exception;
-    if (node.govman->ProcessVoteAndRelay(vote, exception, connman)) {
+    if (node.govman->ProcessVoteAndRelay(vote, exception)) {
         return "Voted successfully";
     } else {
         throw JSONRPCError(RPC_INTERNAL_ERROR, "Error voting : " + exception.GetMessage());

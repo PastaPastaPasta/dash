@@ -25,6 +25,7 @@
 #include <util/strencodings.h>
 #include <util/ui_change_type.h>
 #include <validationinterface.h>
+#include <wallet/coincontrol.h>
 #include <wallet/crypter.h>
 #include <wallet/coinselection.h>
 #include <external_signer.h>
@@ -34,6 +35,7 @@
 #include <wallet/walletutil.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <map>
 #include <memory>
@@ -260,6 +262,7 @@ struct CRecipient
     CScript scriptPubKey;
     CAmount nAmount;
     bool fSubtractFeeFromAmount;
+    bool fPlatformTransfer{false};
 };
 
 struct WalletTxHasher
@@ -280,6 +283,14 @@ enum class RescanStatus : uint8_t {
 };
 
 class WalletRescanReserver; //forward declarations for ScanForWalletTransactions/RescanFromTime
+
+//! Per-denomination coin counts (post-V24 promotion/demotion feature), indexed the same way as
+//! CoinJoin::vecStandardDenominations (index 0 = largest denomination).
+struct CoinJoinDenomCounts {
+    std::array<int, 5> total{};
+    std::array<int, 5> fully_mixed{};
+};
+
 /**
  * A CWallet maintains a set of transactions and balances, and provides the ability to create new transactions.
  */
@@ -289,7 +300,7 @@ private:
     CKeyingMaterial vMasterKey GUARDED_BY(cs_wallet);
 
     //! if fOnlyMixingAllowed is true, only mixing should be allowed in unlocked wallet
-    bool fOnlyMixingAllowed{false};
+    bool fOnlyMixingAllowed GUARDED_BY(cs_wallet){false};
 
     bool Unlock(const CKeyingMaterial& vMasterKeyIn, bool fForMixingOnly = false);
 
@@ -304,7 +315,7 @@ private:
     int nWalletVersion GUARDED_BY(cs_wallet){FEATURE_BASE};
 
     /** The next scheduled rebroadcast of wallet transactions. */
-    std::atomic<int64_t> m_next_resend{};
+    int64_t m_next_resend{GetDefaultNextResend()};
     /** Whether this wallet will submit newly created transactions to the node's mempool and
      * prompt rebroadcasts (see ResendWalletTransactions()). */
     bool fBroadcastTransactions = false;
@@ -446,6 +457,14 @@ private:
      */
     static bool AttachChain(const std::shared_ptr<CWallet>& wallet, interfaces::Chain& chain, const bool rescan_required, bilingual_str& error, std::vector<bilingual_str>& warnings);
 
+    static int64_t GetDefaultNextResend();
+
+    PlatformKeyStatus GetPlatformKeySource(const ScriptPubKeyMan*& source) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    PlatformKeyStatus DerivePlatformKey(const PlatformKeyRequest& request, platformkeys::ExtKey256& out) const
+        EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    PlatformKeyStatus DerivePlatformKey(const platformkeys::Path& path, platformkeys::ExtKey256& out) const
+        EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+
 public:
     /**
      * Main wallet lock.
@@ -484,6 +503,10 @@ public:
 
     // Map from governance object hash to governance object, they are added by gobject_prepare.
     std::map<uint256, Governance::Object> m_gobjects;
+
+    // Generic per-wallet key/value records used by Dash Platform integration
+    // (opaque to the wallet; persisted as DBKeys::PLATFORM_DATA).
+    std::map<std::string, std::vector<unsigned char>> m_platform_data GUARDED_BY(cs_wallet);
 
     typedef std::map<unsigned int, CMasterKey> MasterKeyMap;
     MasterKeyMap mapMasterKeys;
@@ -580,6 +603,7 @@ public:
 
     // Coin selection
     bool SelectTxDSInsByDenomination(int nDenom, CAmount nValueMax, std::vector<CTxDSIn>& vecTxDSInRet);
+    bool SelectTxDSInsByDenomination(int nDenom, CAmount nValueMax, std::vector<CTxDSIn>& vecTxDSInRet, CoinType nCoinType);
     bool SelectDenominatedAmounts(CAmount nValueMax, std::set<CAmount>& setAmountsRet) const;
 
     std::vector<CompactTallyItem> SelectCoinsGroupedByAddresses(bool fSkipDenominated = true, bool fAnonymizable = true, bool fSkipUnconfirmed = true, int nMaxOupointsPerAddress = -1) const;
@@ -596,6 +620,22 @@ public:
 
     bool IsDenominated(const COutPoint& outpoint) const;
     bool IsFullyMixed(const COutPoint& outpoint) const;
+
+    /**
+     * Count coins across all standard denominations in a single wallet scan
+     * (post-V24 promotion/demotion feature).
+     */
+    CoinJoinDenomCounts GetDenominationCounts() const;
+
+    /**
+     * Select fully-mixed coins for promotion (post-V24 feature). Selection mirrors
+     * SelectTxDSInsByDenomination: spendable coins only, shuffled, at most one coin
+     * per transaction.
+     * @param nDenom The denomination to select (bitshifted integer)
+     * @param nCount Maximum number of coins to select
+     * @return Vector of outpoints for selected coins
+     */
+    std::vector<COutPoint> SelectFullyMixedForPromotion(int nDenom, int nCount) const;
 
     bool IsSpent(const COutPoint& outpoint) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
@@ -705,8 +745,11 @@ public:
     };
     ScanResult ScanForWalletTransactions(const uint256& start_block, int start_height, std::optional<int> max_height, const WalletRescanReserver& reserver, bool fUpdate, const bool save_progress);
     void transactionRemovedFromMempool(const CTransactionRef& tx, MemPoolRemovalReason reason) override;
-    void ReacceptWalletTransactions() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
-    void ResendWalletTransactions();
+    /** Set the next time this wallet should resend transactions to 1-3hours from now, ~2 hours on average. */
+    void SetNextResend() { m_next_resend = GetDefaultNextResend(); }
+    /** Return true if all conditions for periodically resending transactions are met. */
+    bool ShouldResend() const;
+    void ResubmitWalletTransactions(bool relay, bool force);
 
     CAmount GetAnonymizableBalance(bool fSkipDenominated = false, bool fSkipUnconfirmed = true) const;
     float GetAverageAnonymizedRounds() const;
@@ -997,6 +1040,19 @@ public:
     /** Returns a vector containing pointers to the governance objects in m_gobjects */
     std::vector<const Governance::Object*> GetGovernanceObjects() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
+    /** Load a Platform data record into m_platform_data (wallet load). */
+    void LoadPlatformData(const std::string& key, const std::vector<unsigned char>& value) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    /** Write (or, with an empty value, erase) a Platform data record. */
+    bool WritePlatformData(const std::string& key, const std::vector<unsigned char>& value) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    /** All Platform data records whose key starts with prefix. */
+    std::map<std::string, std::vector<unsigned char>> GetPlatformData(const std::string& prefix) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+
+    PlatformKeyResult<CPubKey> GetPlatformPubKey(const PlatformKeyRequest& request) const;
+    PlatformKeyResult<std::vector<unsigned char>> SignPlatformDigest(const PlatformKeyRequest& request,
+                                                                     const uint256& digest) const;
+    PlatformKeyResult<SecureVector> PlatformECDHSecret(const IdentityAuthKey& key, const CPubKey& counterparty) const;
+    PlatformKeyResult<FriendshipXpub> EnsureFriendshipReceivingKeychain(const FriendshipKeychainRequest& request);
+
     /**
      * Blocks until the wallet state is up-to-date to /at least/ the current
      * chain at the time this function is entered
@@ -1057,6 +1113,9 @@ public:
     //! Get the SigningProvider for a script
     std::unique_ptr<SigningProvider> GetSolvingProvider(const CScript& script) const;
     std::unique_ptr<SigningProvider> GetSolvingProvider(const CScript& script, SignatureData& sigdata) const;
+
+    //! Get the wallet descriptors for a script.
+    std::vector<WalletDescriptor> GetWalletDescriptors(const CScript& script) const;
 
     //! Get the LegacyScriptPubKeyMan which is used for all types, internal, and external.
     LegacyScriptPubKeyMan* GetLegacyScriptPubKeyMan() const;

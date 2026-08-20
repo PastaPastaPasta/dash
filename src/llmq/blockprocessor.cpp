@@ -153,7 +153,7 @@ MessageProcessingResult CQuorumBlockProcessor::ProcessMessage(const CNode& peer,
             // same, can't punish
             return ret;
         }
-        if (int quorumHeight = pQuorumBaseBlockIndex->nHeight - (pQuorumBaseBlockIndex->nHeight % llmq_params_opt->dkgInterval) + int(qc.quorumIndex);
+        if (int quorumHeight = pQuorumBaseBlockIndex->nHeight - (pQuorumBaseBlockIndex->nHeight % llmq_params_opt->dkgInterval) + int{qc.quorumIndex};
                 quorumHeight != pQuorumBaseBlockIndex->nHeight) {
             LogPrint(BCLog::LLMQ, "CQuorumBlockProcessor::%s -- block %s is not the first block in the DKG interval, peer=%d\n", __func__,
                      qc.quorumHash.ToString(), peer.GetId());
@@ -421,7 +421,7 @@ bool CQuorumBlockProcessor::ProcessCommitment(Chainstate& chainstate, int nHeigh
     }
 
     if (rotation_enabled) {
-        m_evoDb.Write(BuildInversedHeightKeyIndexed(llmq_params.type, nHeight, int(qc.quorumIndex)), pQuorumBaseBlockIndex->nHeight);
+        m_evoDb.Write(BuildInversedHeightKeyIndexed(llmq_params.type, nHeight, int{qc.quorumIndex}), pQuorumBaseBlockIndex->nHeight);
     } else {
         m_evoDb.Write(BuildInversedHeightKey(llmq_params.type, nHeight), pQuorumBaseBlockIndex->nHeight);
     }
@@ -506,7 +506,7 @@ std::optional<std::pair<QcHashMap, QcIndexedHashMap>> CQuorumBlockProcessor::Get
     return std::make_pair(m_qc_hashes_cached, m_qc_indexed_hashes_cached);
 }
 
-bool CQuorumBlockProcessor::UndoBlock(Chainstate& chainstate, const CBlock& block, gsl::not_null<const CBlockIndex*> pindex)
+bool CQuorumBlockProcessor::UndoBlock(const Chainstate& chainstate, const CBlock& block, gsl::not_null<const CBlockIndex*> pindex)
 {
     AssertLockHeld(::cs_main);
 
@@ -531,7 +531,7 @@ bool CQuorumBlockProcessor::UndoBlock(Chainstate& chainstate, const CBlock& bloc
             assert(llmq_params_opt.has_value());
 
             if (IsQuorumRotationEnabled(llmq_params_opt.value(), pindex)) {
-                m_evoDb.Erase(BuildInversedHeightKeyIndexed(qc.llmqType, pindex->nHeight, int(qc.quorumIndex)));
+                m_evoDb.Erase(BuildInversedHeightKeyIndexed(qc.llmqType, pindex->nHeight, int{qc.quorumIndex}));
             } else {
                 m_evoDb.Erase(BuildInversedHeightKey(qc.llmqType, pindex->nHeight));
             }
@@ -683,6 +683,33 @@ std::pair<CFinalCommitment, uint256> CQuorumBlockProcessor::GetMinedCommitment(C
         return {CFinalCommitment{}, uint256::ZERO};
     }
     return ret;
+}
+
+bool CQuorumBlockProcessor::SeedMinedCommitment(Consensus::LLMQType llmqType, const uint256& quorum_hash,
+                                                const CFinalCommitment& commitment,
+                                                const uint256& mined_block_hash)
+{
+    AssertLockHeld(::cs_main);
+    const auto llmq_params = Params().GetLLMQ(llmqType);
+    const CBlockIndex* mined_index = m_chainman.m_blockman.LookupBlockIndex(mined_block_hash);
+    const CBlockIndex* quorum_base_index = m_chainman.m_blockman.LookupBlockIndex(quorum_hash);
+    if (!llmq_params || mined_index == nullptr || quorum_base_index == nullptr) return false;
+    if (!m_evoDb.WriteDerived(
+            std::make_pair(DB_MINED_COMMITMENT, std::make_pair(llmqType, quorum_hash)),
+            std::make_pair(commitment, mined_block_hash))) {
+        return false;
+    }
+
+    // Replay ProcessCommitment's iteration index exactly. These entries drive
+    // the first post-snapshot CbTx quorum-merkle-root calculation.
+    if (IsQuorumRotationEnabled(*llmq_params, quorum_base_index)) {
+        m_evoDb.Write(BuildInversedHeightKeyIndexed(llmqType, mined_index->nHeight,
+                                                    int(commitment.quorumIndex)),
+                      quorum_base_index->nHeight);
+    } else {
+        m_evoDb.Write(BuildInversedHeightKey(llmqType, mined_index->nHeight), quorum_base_index->nHeight);
+    }
+    return true;
 }
 
 // The returned quorums are in reversed order, so the most recent one is at index 0

@@ -1,6 +1,7 @@
 src/active/*.cpp
 src/active/*.h
 src/batchedlogger.*
+src/bench/blockfilter_index.cpp
 src/bench/bls*.cpp
 src/bls/*.cpp
 src/bls/*.h
@@ -26,6 +27,7 @@ src/index/timestamp*.cpp
 src/index/timestamp*.h
 src/instantsend/*.cpp
 src/instantsend/*.h
+src/interfaces/providertx.h
 src/llmq/*.cpp
 src/llmq/*.h
 src/masternode/*.cpp
@@ -41,6 +43,8 @@ src/qt/masternodelist.*
 src/qt/masternodemodel.*
 src/qt/mnemonicverificationdialog.*
 src/qt/networkwidget.*
+src/qt/test/providertransactiontests.cpp
+src/qt/test/providertransactiontests.h
 src/qt/proposalcreate.*
 src/qt/proposalinfo.*
 src/qt/proposallist.*
@@ -48,8 +52,8 @@ src/qt/proposalmodel.*
 src/qt/proposalresume.*
 src/rpc/coinjoin.cpp
 src/rpc/evo.cpp
-src/rpc/evo_util.*
 src/rpc/governance.cpp
+src/rpc/json_help.*
 src/rpc/masternode.cpp
 src/rpc/quorums.cpp
 src/saltedhasher.*
@@ -61,8 +65,10 @@ src/test/block_reward_reallocation_tests.cpp
 src/test/bls_tests.cpp
 src/test/coinjoin_*.cpp
 src/test/dip0020opcodes_tests.cpp
+src/test/dip14_tests.cpp
 src/test/dynamic_activation*.cpp
 src/test/evo*.cpp
+src/test/fuzz/dkg_message_framing.cpp
 src/test/llmq*.cpp
 src/test/masternode_payments_tests.cpp
 src/test/spork_tests.cpp
@@ -79,4 +85,7 @@ src/util/wpipe.*
 src/wallet/bip39*
 src/wallet/coinjoin.*
 src/wallet/hdchain.*
+src/wallet/platformkeys.*
+src/wallet/platformtypes.h
+src/wallet/test/platformkeys_tests.cpp
 src/hash_x11.h

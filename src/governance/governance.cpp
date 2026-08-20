@@ -24,6 +24,8 @@
 #include <util/time.h>
 #include <validationinterface.h>
 
+#include <univalue.h>
+
 #include <ranges>
 
 const std::string GovernanceStore::SERIALIZATION_VERSION_STRING = "CGovernanceManager-Version-16";
@@ -63,7 +65,6 @@ GovernanceStore::GovernanceStore() :
     cs_store(),
     mapObjects(),
     mapErasedGovernanceObjects(),
-    cmapInvalidVotes(MAX_CACHE_SIZE),
     cmmapOrphanVotes(MAX_CACHE_SIZE),
     mapLastMasternodeObject(),
     lastMNListForVotingKeys(std::make_shared<CDeterministicMNList>())
@@ -200,7 +201,7 @@ bool CGovernanceManager::HaveVoteForHash(const uint256& nHash) const
 int CGovernanceManager::GetVoteCount() const
 {
     LOCK(cs_store);
-    return (int)cmapVoteToObject.GetSize();
+    return static_cast<int>(cmapVoteToObject.GetSize());
 }
 
 bool CGovernanceManager::SerializeVoteForHash(const uint256& nHash, CDataStream& ss) const
@@ -568,8 +569,7 @@ std::vector<CGovernanceVote> CGovernanceManager::GetCurrentVotes(const uint256& 
         if (!govobj.GetCurrentMNVotes(outpoint, voteRecord)) continue;
 
         for (const auto& [signal, vote_instance] : voteRecord.mapInstances) {
-            CGovernanceVote vote = CGovernanceVote(outpoint, nParentHash, (vote_signal_enum_t)signal,
-                                                   vote_instance.eOutcome);
+            CGovernanceVote vote{outpoint, nParentHash, static_cast<vote_signal_enum_t>(signal), vote_instance.eOutcome};
             vote.SetTime(vote_instance.nCreationTime);
             vecResult.push_back(vote);
         }
@@ -656,17 +656,20 @@ std::vector<CInv> CGovernanceManager::GetSyncableVoteInvs(const uint256& nProp, 
 
     const auto& govobj = *Assert(it->second);
     LOCK(govobj.cs);
-    const auto& fileVotes = govobj.GetVoteFile();
-    for (const auto& vote : fileVotes.GetVotes()) {
+    // Visit the stored votes in place: CheckSignature memoises its verdict on
+    // the vote instance, and a GetVotes() copy would discard that memo, so every
+    // walk would pay a fresh ECDSA recovery or BLS pairing per vote.
+    invs.reserve(govobj.GetVoteFile().GetVoteCount());
+    govobj.GetVoteFile().ForEachVote([&](const CGovernanceVote& vote) {
         uint256 nVoteHash = vote.GetHash();
 
         bool onlyVotingKeyAllowed = govobj.GetObjectType() == GovernanceObject::PROPOSAL && vote.GetSignal() == VOTE_SIGNAL_FUNDING;
 
         if (filter.contains(nVoteHash) || !vote.IsValid(tip_mn_list, onlyVotingKeyAllowed)) {
-            continue;
+            return;
         }
         invs.emplace_back(MSG_GOVERNANCE_OBJECT_VOTE, nVoteHash);
-    }
+    });
 
     return invs;
 }
@@ -783,7 +786,7 @@ bool CGovernanceManager::MasternodeRateCheck(const CGovernanceObject& govobj, bo
     return false;
 }
 
-bool CGovernanceManager::ProcessVoteAndRelay(const CGovernanceVote& vote, CGovernanceException& exception, CConnman& connman)
+bool CGovernanceManager::ProcessVoteAndRelay(const CGovernanceVote& vote, CGovernanceException& exception)
 {
     AssertLockNotHeld(cs_store);
     AssertLockNotHeld(cs_relay);
@@ -801,6 +804,8 @@ bool CGovernanceManager::ProcessVote(const CGovernanceVote& vote, CGovernanceExc
     AssertLockNotHeld(cs_store);
     hashToRequest = uint256{};
 
+    const auto tip_mn_list{m_dmnman.GetListAtChainTip()};
+
     LOCK(cs_store);
     uint256 nHashVote = vote.GetHash();
     uint256 nHashGovobj = vote.GetParentHash();
@@ -811,18 +816,19 @@ bool CGovernanceManager::ProcessVote(const CGovernanceVote& vote, CGovernanceExc
         return false;
     }
 
-    if (cmapInvalidVotes.HasKey(nHashVote)) {
-        std::string msg{strprintf("CGovernanceManager::%s -- Old invalid vote, MN outpoint = %s, governance object hash = %s",
-            __func__, vote.GetMasternodeOutpoint().ToStringShort(), nHashGovobj.ToString())};
-        LogPrint(BCLog::GOBJECT, "%s\n", msg);
-        exception = CGovernanceException(msg, GOVERNANCE_EXCEPTION_PERMANENT_ERROR, 20);
-        return false;
-    }
-
     auto it = mapObjects.find(nHashGovobj);
     if (it == mapObjects.end()) {
+        if (!vote.IsValidForUnknownParent(tip_mn_list)) {
+            std::string msg{strprintf("CGovernanceManager::%s -- Invalid vote for unknown parent object %s, MN outpoint = %s, vote hash = %s",
+                __func__, nHashGovobj.ToString(), vote.GetMasternodeOutpoint().ToStringShort(), nHashVote.ToString())};
+            LogPrint(BCLog::GOBJECT, "%s\n", msg);
+            exception = CGovernanceException(msg, GOVERNANCE_EXCEPTION_PERMANENT_ERROR, 20);
+            return false;
+        }
         std::string msg{strprintf("CGovernanceManager::%s -- Unknown parent object %s, MN outpoint = %s", __func__,
             nHashGovobj.ToString(), vote.GetMasternodeOutpoint().ToStringShort())};
+        // No penalty: the vote is signed by a masternode, it just arrived before its parent object,
+        // which routinely happens during governance sync. Misbehaviour scores never decay.
         exception = CGovernanceException(msg, GOVERNANCE_EXCEPTION_WARNING);
         if (cmmapOrphanVotes.Insert(nHashGovobj, governance::OrphanVote{vote, Now<NodeSeconds>() + GOVERNANCE_ORPHAN_EXPIRATION_TIME})) {
             hashToRequest = nHashGovobj; // Caller should request this object
@@ -839,11 +845,9 @@ bool CGovernanceManager::ProcessVote(const CGovernanceVote& vote, CGovernanceExc
         return false;
     }
 
-    bool fOk = govobj.ProcessVote(m_mn_metaman, fRateChecksEnabled, m_dmnman.GetListAtChainTip(), vote, exception);
+    bool fOk = govobj.ProcessVote(m_mn_metaman, fRateChecksEnabled, tip_mn_list, vote, exception);
     if (fOk) {
         fOk = cmapVoteToObject.Insert(nHashVote, it->second);
-    } else if (exception.GetType() == GOVERNANCE_EXCEPTION_PERMANENT_ERROR && exception.GetNodePenalty() == 20) {
-        cmapInvalidVotes.Insert(nHashVote, vote);
     }
     return fOk;
 }
@@ -1008,7 +1012,6 @@ void GovernanceStore::Clear()
     LOCK(cs_store);
     mapObjects.clear();
     mapErasedGovernanceObjects.clear();
-    cmapInvalidVotes.Clear();
     cmmapOrphanVotes.Clear();
     mapLastMasternodeObject.clear();
     lastMNListForVotingKeys = std::make_shared<CDeterministicMNList>();
@@ -1051,14 +1054,46 @@ std::string GovernanceStore::ToString() const
     }
 
     return strprintf("Governance Objects: %d (Proposals: %d, Triggers: %d, Other: %d; Erased: %d)",
-        (int)mapObjects.size(),
-        nProposalCount, nTriggerCount, nOtherCount, (int)mapErasedGovernanceObjects.size());
+        static_cast<int>(mapObjects.size()),
+        nProposalCount, nTriggerCount, nOtherCount, static_cast<int>(mapErasedGovernanceObjects.size()));
 }
 
 std::string CGovernanceManager::ToString() const
 {
     AssertLockNotHeld(cs_store);
-    return strprintf("%s, Votes: %d", GovernanceStore::ToString(), (int)cmapVoteToObject.GetSize());
+    return strprintf("%s, Votes: %d", GovernanceStore::ToString(), static_cast<int>(cmapVoteToObject.GetSize()));
+}
+
+UniValue CGovernanceManager::ToJson() const
+{
+    LOCK(cs_store);
+
+    int nProposalCount = 0;
+    int nTriggerCount = 0;
+    int nOtherCount = 0;
+
+    for (const auto& [_, govobj] : mapObjects) {
+        switch (Assert(govobj)->GetObjectType()) {
+        case GovernanceObject::PROPOSAL:
+            nProposalCount++;
+            break;
+        case GovernanceObject::TRIGGER:
+            nTriggerCount++;
+            break;
+        default:
+            nOtherCount++;
+            break;
+        }
+    }
+
+    UniValue jsonObj(UniValue::VOBJ);
+    jsonObj.pushKV("objects_total", mapObjects.size());
+    jsonObj.pushKV("proposals", nProposalCount);
+    jsonObj.pushKV("triggers", nTriggerCount);
+    jsonObj.pushKV("other", nOtherCount);
+    jsonObj.pushKV("erased", mapErasedGovernanceObjects.size());
+    jsonObj.pushKV("votes", cmapVoteToObject.GetSize());
+    return jsonObj;
 }
 
 void CGovernanceManager::UpdatedBlockTip(const CBlockIndex* pindex)
@@ -1153,9 +1188,8 @@ void CGovernanceManager::RemoveInvalidVotes()
             if (removed.empty()) {
                 continue;
             }
-            for (auto& voteHash : removed) {
+            for (const auto& voteHash : removed) {
                 cmapVoteToObject.Erase(voteHash);
-                cmapInvalidVotes.Erase(voteHash);
                 cmmapOrphanVotes.Erase(voteHash);
             }
         }

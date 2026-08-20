@@ -77,6 +77,14 @@ void NetQuorum::ProcessMessage(CNode& pfrom, const std::string& msg_type, CDataS
         }
 
         CQuorumDataRequest request;
+        // An honest QGETDATA is exactly the fixed-size request encoding; nError is
+        // response-only (QDATA). A smuggled value used to select the *_MISSING branches
+        // that skip the rate-limit ban, so reject any longer payload by length — this
+        // also catches an explicitly serialized UNDEFINED byte and trailing garbage.
+        if (vRecv.size() > GetSerializeSize(request, vRecv.GetVersion())) {
+            m_peer_manager->PeerMisbehaving(pfrom.GetId(), 100, "oversized qgetdata");
+            return;
+        }
         vRecv >> request;
 
         auto sendQDATA = [&](CQuorumDataRequest::Errors nError,
@@ -263,8 +271,8 @@ bool NetQuorum::ProcessContribQGETDATA(CDataStream& ssResponseData, const CQuoru
     return false;
 }
 
-bool NetQuorum::ProcessContribQDATA(CNode& pfrom, CDataStream& vRecv,
-                                    CQuorum& quorum, CQuorumDataRequest& request)
+bool NetQuorum::ProcessContribQDATA(const CNode& pfrom, CDataStream& vRecv,
+                                    CQuorum& quorum, const CQuorumDataRequest& request)
 {
     if (!(request.GetDataMask() & CQuorumDataRequest::ENCRYPTED_CONTRIBUTIONS)) {
         return true;
@@ -275,7 +283,7 @@ bool NetQuorum::ProcessContribQDATA(CNode& pfrom, CDataStream& vRecv,
     }
 
     auto vvec = quorum.GetVerificationVector();
-    if (!vvec || vvec->size() != size_t(quorum.params.threshold)) {
+    if (!vvec || vvec->size() != static_cast<size_t>(quorum.params.threshold)) {
         LogPrint(BCLog::LLMQ, "NetQuorum::%s -- %s: No valid quorum verification vector available, from peer=%d\n",
                  __func__, NetMsgType::QDATA, pfrom.GetId());
         return false;
@@ -401,7 +409,7 @@ void NetQuorum::CheckQuorumConnections(const Consensus::LLMQParams& llmqParams,
     const bool is_masternode = m_role->IsMasternode();
     const uint256 proTxHash = is_masternode ? m_role->GetProTxHash() : uint256{};
 
-    auto lastQuorums = m_qman.ScanQuorums(llmqParams.type, pindexNew, (size_t)llmqParams.keepOldConnections);
+    auto lastQuorums = m_qman.ScanQuorums(llmqParams.type, pindexNew, static_cast<size_t>(llmqParams.keepOldConnections));
     auto deletableQuorums = GetQuorumsToDelete(llmqParams, pindexNew);
 
     const bool watchOtherISQuorums = is_masternode &&

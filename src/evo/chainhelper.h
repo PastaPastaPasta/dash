@@ -43,6 +43,8 @@ private:
     llmq::CInstantSendManager& isman;
     const CMasternodeSync& mn_sync;
     CDeterministicMNManager& m_dmnman;
+    llmq::CQuorumBlockProcessor& m_qblockman;
+    llmq::CQuorumSnapshotManager& m_qsnapman;
 
 public:
     const std::unique_ptr<CCreditPoolManager> credit_pool_manager;
@@ -72,12 +74,17 @@ public:
 
     /** Return a canonical hash of the deterministic MN list derived at a block. */
     uint256 GetDeterministicMNListHash(const CBlockIndex* pindex) const;
+    CDeterministicMNManager& DeterministicMNManager() { return m_dmnman; }
+    llmq::CQuorumBlockProcessor& QuorumBlockProcessor() { return m_qblockman; }
+    llmq::CQuorumSnapshotManager& QuorumSnapshotManager() { return m_qsnapman; }
 
     /** Passthrough functions to CCreditPoolManager */
     CCreditPool GetCreditPool(const CBlockIndex* const pindex);
 
     /** Passthrough functions to CInstantSendManager */
     std::optional<std::pair</*islock_hash=*/uint256, /*txid=*/uint256>> ConflictingISLockIfAny(const CTransaction& tx) const;
+    bool IsInstantSendEnabled() const;
+    bool IsInstantSendLocked(const uint256& hash) const;
     bool IsInstantSendWaitingForTx(const uint256& hash) const;
     bool RemoveConflictingISLockByTx(const CTransaction& tx);
 

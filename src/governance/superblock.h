@@ -103,11 +103,11 @@ public:
 
     uint256 GetGovernanceObjHash() const { return nGovObjHash; }
 
-    int CountPayments() const { return (int)vecPayments.size(); }
+    int CountPayments() const { return static_cast<int>(vecPayments.size()); }
     bool GetPayment(int nPaymentIndex, CGovernancePayment& paymentRet);
     CAmount GetPaymentsTotalAmount();
 
-    bool IsValid(const CChain& active_chain, const CTransaction& txNew, int nBlockHeight, CAmount blockReward, bool is_v24);
+    bool IsValid(const CChain& active_chain, const CTransaction& txNew, int block_height, CAmount blockReward, bool is_v24);
     bool IsExpired(int heightToTest) const;
 
     std::vector<uint256> GetProposalHashes() const;

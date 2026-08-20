@@ -16,6 +16,9 @@
 #include <scheduler.h>
 #include <txmempool.h>
 #include <validation.h>
+#include <index/addressindex.h>
+#include <index/spentindex.h>
+#include <index/timestampindex.h>
 
 #include <active/context.h>
 #include <chainlock/chainlock.h>
@@ -29,6 +32,7 @@
 #include <evo/evodb.h>
 #include <evo/mnhftx.h>
 #include <governance/governance.h>
+#include <instantsend/instantsend.h>
 #include <interfaces/coinjoin.h>
 #include <llmq/context.h>
 #include <llmq/observer.h>

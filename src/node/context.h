@@ -14,6 +14,7 @@
 #include <memory>
 #include <vector>
 
+class AddressIndex;
 class ArgsManager;
 class BanMan;
 class CActiveMasternodeManager;
@@ -36,6 +37,8 @@ class CSporkManager;
 class CTxMemPool;
 class NetGroupManager;
 class PeerManager;
+class SpentIndex;
+class TimestampIndex;
 struct ActiveContext;
 struct LLMQContext;
 
@@ -55,6 +58,7 @@ class Loader;
 } // namespace interfaces
 
 namespace llmq {
+class CInstantSendManager;
 struct ObserverContext;
 } // namespace llmq
 
@@ -99,6 +103,7 @@ struct NodeContext {
     std::unique_ptr<CEvoDB> evodb;
     std::unique_ptr<CChainstateHelper> chain_helper;
     std::unique_ptr<CDeterministicMNManager> dmnman;
+    std::unique_ptr<llmq::CInstantSendManager> isman;
     std::unique_ptr<CGovernanceManager> govman;
     std::unique_ptr<CMasternodeMetaMan> mn_metaman;
     std::unique_ptr<CMasternodeSync> mn_sync;
@@ -111,6 +116,10 @@ struct NodeContext {
     std::unique_ptr<ActiveContext> active_ctx;
     std::unique_ptr<LLMQContext> llmq_ctx;
     std::unique_ptr<llmq::ObserverContext> observer_ctx;
+    //! Dash indexes
+    std::unique_ptr<AddressIndex> address_index;
+    std::unique_ptr<SpentIndex> spent_index;
+    std::unique_ptr<TimestampIndex> timestamp_index;
 
     //! Declare default constructor and destructor that are not inline, so code
     //! instantiating the NodeContext struct doesn't need to #include class

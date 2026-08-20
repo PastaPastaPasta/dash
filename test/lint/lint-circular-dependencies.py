@@ -29,6 +29,9 @@ EXPECTED_BITCOIN_CIRCULAR_DEPENDENCIES = (
 )
 
 EXPECTED_DASH_CIRCULAR_DEPENDENCIES = (
+    "index/addressindex -> index/base -> node/context -> index/addressindex",
+    "index/base -> node/context -> index/spentindex -> index/base",
+    "index/base -> node/context -> index/timestampindex -> index/base",
     "banman -> common/bloom -> evo/assetlocktx -> llmq/quorumsman -> llmq/blockprocessor -> net -> banman",
     "coinjoin/client -> coinjoin/util -> wallet/wallet -> psbt -> node/transaction -> net_processing -> coinjoin/walletman -> coinjoin/client",
     "common/bloom -> evo/assetlocktx -> llmq/commitment -> evo/deterministicmns -> evo/simplifiedmns -> merkleblock -> common/bloom",
@@ -37,6 +40,9 @@ EXPECTED_DASH_CIRCULAR_DEPENDENCIES = (
     "consensus/tx_verify -> evo/assetlocktx -> llmq/commitment -> validation -> txmempool -> consensus/tx_verify",
     "evo/assetlocktx -> llmq/commitment -> validation -> txmempool -> evo/assetlocktx",
     "evo/chainhelper -> evo/creditpool -> validation -> evo/chainhelper",
+    "evo/creditpool -> validation -> evo/snapshot -> evo/creditpool",
+    "evo/mnhftx -> validation -> evo/snapshot -> evo/mnhftx",
+    "evo/snapshot -> llmq/commitment -> validation -> evo/snapshot",
     "evo/deterministicmns -> node/blockstorage -> validation -> evo/deterministicmns",
     "evo/deterministicmns -> node/blockstorage -> validation -> masternode/payments -> evo/deterministicmns",
     "evo/deterministicmns -> node/blockstorage -> validation -> txmempool -> evo/deterministicmns",

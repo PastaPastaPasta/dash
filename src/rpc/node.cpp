@@ -166,6 +166,7 @@ static RPCHelpMan spork()
                 {
                     {RPCResult::Type::BOOL, "SPORK_NAME", "'true' for time-based sporks if spork is active and 'false' otherwise"},
                 }},
+            RPCResult{"For an unrecognized command", RPCResult::Type::NONE, "", ""},
         },
         RPCExamples {
             HelpExampleCli("spork", "show")
@@ -205,8 +206,9 @@ static RPCHelpMan sporkupdate()
             {"name", RPCArg::Type::STR, RPCArg::Optional::NO, "The name of the spork to update"},
             {"value", RPCArg::Type::NUM, RPCArg::Optional::NO, "The new desired value of the spork"},
         },
-        RPCResult{
-            RPCResult::Type::STR, "result", "\"success\" if spork value was updated or this help otherwise"
+        {
+            RPCResult{"if the spork value was updated", RPCResult::Type::STR, "result", "\"success\""},
+            RPCResult{"if the update was rejected", RPCResult::Type::NONE, "", ""},
         },
         RPCExamples{
             HelpExampleCli("sporkupdate", "SPORK_2_INSTANTSEND_ENABLED 4070908800")
@@ -312,13 +314,7 @@ static RPCHelpMan mnauth()
     }
 
     const NodeContext& node = EnsureAnyNodeContext(request.context);
-    bool fSuccess = node.connman->ForNode(nodeId, CConnman::AllNodes, [&](CNode* pNode){
-        pNode->SetVerifiedProRegTxHash(proTxHash);
-        pNode->SetVerifiedPubKeyHash(publicKey.GetHash());
-        return true;
-    });
-
-    return fSuccess;
+    return node.connman->TryMarkVerified(nodeId, proTxHash, publicKey.GetHash());
 },
     };
 }
@@ -401,8 +397,8 @@ static RPCHelpMan getaddressmempool()
                     {RPCResult::Type::NUM, "index", "The related input or output index"},
                     {RPCResult::Type::NUM, "satoshis", "The difference of duffs"},
                     {RPCResult::Type::NUM_TIME, "timestamp", "The time the transaction entered the mempool (seconds)"},
-                    {RPCResult::Type::STR_HEX, "prevtxid", "The previous txid (if spending)"},
-                    {RPCResult::Type::NUM, "prevout", "The previous transaction output index (if spending)"},
+                    {RPCResult::Type::STR_HEX, "prevtxid", /*optional=*/true, "The previous txid (if spending)"},
+                    {RPCResult::Type::NUM, "prevout", /*optional=*/true, "The previous transaction output index (if spending)"},
                 }},
             }},
         RPCExamples{
@@ -411,7 +407,8 @@ static RPCHelpMan getaddressmempool()
         },
     [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    if (!g_addressindex) {
+    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    if (!node.address_index) {
         throw JSONRPCError(RPC_MISC_ERROR, "Address index is not enabled. Start with -addressindex to enable.");
     }
 
@@ -479,7 +476,7 @@ static RPCHelpMan getaddressutxos()
                 {
                     {RPCResult::Type::STR, "address", "The address base58check encoded"},
                     {RPCResult::Type::STR_HEX, "txid", "The output txid"},
-                    {RPCResult::Type::NUM, "index", "The output index"},
+                    {RPCResult::Type::NUM, "outputIndex", "The output index"},
                     {RPCResult::Type::STR_HEX, "script", "The script hex-encoded"},
                     {RPCResult::Type::NUM, "satoshis", "The number of duffs of the output"},
                     {RPCResult::Type::NUM, "height", "The block height"},
@@ -496,18 +493,19 @@ static RPCHelpMan getaddressutxos()
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
     }
 
-    if (!g_addressindex) {
+    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    if (!node.address_index) {
         throw JSONRPCError(RPC_MISC_ERROR, "Address index is not enabled. Start with -addressindex to enable.");
     }
 
-    if (!g_addressindex->BlockUntilSyncedToCurrentChain()) {
-        throw JSONRPCError(RPC_MISC_ERROR, strprintf("Address index is syncing. Current height: %d", g_addressindex->GetSummary().best_block_height));
+    if (!node.address_index->BlockUntilSyncedToCurrentChain()) {
+        throw JSONRPCError(RPC_MISC_ERROR, strprintf("Address index is syncing. Current height: %d", node.address_index->GetSummary().best_block_height));
     }
 
     std::vector<CAddressUnspentIndexEntry> unspentOutputs;
 
     for (const auto& address : addresses) {
-        if (!g_addressindex->GetAddressUnspentIndex(address.first, address.second, unspentOutputs,
+        if (!node.address_index->GetAddressUnspentIndex(address.first, address.second, unspentOutputs,
                                     /* height_sort = */ true)) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
         }
@@ -588,17 +586,18 @@ static RPCHelpMan getaddressdeltas()
 
     std::vector<CAddressIndexEntry> addressIndex;
 
-    if (!g_addressindex) {
+    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    if (!node.address_index) {
         throw JSONRPCError(RPC_MISC_ERROR, "Address index is not enabled. Start with -addressindex to enable.");
     }
 
-    if (!g_addressindex->BlockUntilSyncedToCurrentChain()) {
-        throw JSONRPCError(RPC_MISC_ERROR, strprintf("Address index is syncing. Current height: %d", g_addressindex->GetSummary().best_block_height));
+    if (!node.address_index->BlockUntilSyncedToCurrentChain()) {
+        throw JSONRPCError(RPC_MISC_ERROR, strprintf("Address index is syncing. Current height: %d", node.address_index->GetSummary().best_block_height));
     }
 
     for (const auto& address : addresses) {
         if (start <= 0 || end <= 0) { start = 0; end = 0; }
-        if (!g_addressindex->GetAddressIndex(address.first, address.second,
+        if (!node.address_index->GetAddressIndex(address.first, address.second,
                                              addressIndex, start, end)) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
         }
@@ -660,24 +659,25 @@ static RPCHelpMan getaddressbalance()
 
     std::vector<CAddressIndexEntry> addressIndex;
 
-    if (!g_addressindex) {
+    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    if (!node.address_index) {
         throw JSONRPCError(RPC_MISC_ERROR, "Address index is not enabled. Start with -addressindex to enable.");
     }
 
-    if (!g_addressindex->BlockUntilSyncedToCurrentChain()) {
-        throw JSONRPCError(RPC_MISC_ERROR, strprintf("Address index is syncing. Current height: %d", g_addressindex->GetSummary().best_block_height));
+    if (!node.address_index->BlockUntilSyncedToCurrentChain()) {
+        throw JSONRPCError(RPC_MISC_ERROR, strprintf("Address index is syncing. Current height: %d", node.address_index->GetSummary().best_block_height));
     }
 
     int nHeight;
     {
         LOCK(::cs_main);
         for (const auto& address : addresses) {
-            if (!g_addressindex->GetAddressIndex(address.first, address.second, addressIndex,
-                                                 /*start=*/0, /*end=*/0)) {
+            if (!node.address_index->GetAddressIndex(address.first, address.second, addressIndex,
+                                                 /*start_height=*/0, /*end_height=*/0)) {
                 throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
             }
         }
-        nHeight = g_addressindex->GetSummary().best_block_height;
+        nHeight = node.address_index->GetSummary().best_block_height;
     }
 
 
@@ -750,17 +750,18 @@ static RPCHelpMan getaddresstxids()
 
     std::vector<CAddressIndexEntry> addressIndex;
 
-    if (!g_addressindex) {
+    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    if (!node.address_index) {
         throw JSONRPCError(RPC_MISC_ERROR, "Address index is not enabled. Start with -addressindex to enable.");
     }
 
-    if (!g_addressindex->BlockUntilSyncedToCurrentChain()) {
-        throw JSONRPCError(RPC_MISC_ERROR, strprintf("Address index is syncing. Current height: %d", g_addressindex->GetSummary().best_block_height));
+    if (!node.address_index->BlockUntilSyncedToCurrentChain()) {
+        throw JSONRPCError(RPC_MISC_ERROR, strprintf("Address index is syncing. Current height: %d", node.address_index->GetSummary().best_block_height));
     }
 
     for (const auto& address : addresses) {
         if (start <= 0 || end <= 0) { start = 0; end = 0; }
-        if (!g_addressindex->GetAddressIndex(address.first, address.second,
+        if (!node.address_index->GetAddressIndex(address.first, address.second,
                                              addressIndex, start, end)) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
         }
@@ -811,6 +812,7 @@ static RPCHelpMan getspentinfo()
             {
                 {RPCResult::Type::STR_HEX, "txid", "The transaction id"},
                 {RPCResult::Type::NUM, "index", "The spending input index"},
+                {RPCResult::Type::NUM, "height", "The block height of the spending transaction"},
             }},
         RPCExamples{
             HelpExampleCli("getspentinfo", "'{\"txid\": \"0437cd7f8525ceed2324359c2d0ba26006d92d856a9c20fa0241106ee5a597c9\", \"index\": 0}'")
@@ -832,7 +834,8 @@ static RPCHelpMan getspentinfo()
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid index (must be non-negative)");
     }
 
-    if (!g_spentindex) {
+    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    if (!node.spent_index) {
         throw JSONRPCError(RPC_MISC_ERROR, "Spent index is not enabled. Start with -spentindex to enable.");
     }
 
@@ -842,9 +845,9 @@ static RPCHelpMan getspentinfo()
 
     // Sync the index to the current chain tip before querying.
     // We don't fail here if not synced — the result may still come from mempool below.
-    g_spentindex->BlockUntilSyncedToCurrentChain();
+    node.spent_index->BlockUntilSyncedToCurrentChain();
 
-    if (g_spentindex->GetSpentInfo(key, value)) {
+    if (node.spent_index->GetSpentInfo(key, value)) {
         found = true;
     }
 
@@ -863,7 +866,7 @@ static RPCHelpMan getspentinfo()
     }
 
     if (!found) {
-        const IndexSummary summary = g_spentindex->GetSummary();
+        const IndexSummary summary = node.spent_index->GetSummary();
         if (!summary.synced) {
             throw JSONRPCError(RPC_MISC_ERROR, strprintf("Unable to get spent info. Spent index is syncing, current height: %d", summary.best_block_height));
         }
@@ -1193,6 +1196,7 @@ static RPCHelpMan getindexinfo()
                 },
                 [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
+    const NodeContext& node = EnsureAnyNodeContext(request.context);
     UniValue result(UniValue::VOBJ);
     const std::string index_name = request.params[0].isNull() ? "" : request.params[0].get_str();
 
@@ -1208,16 +1212,16 @@ static RPCHelpMan getindexinfo()
         result.pushKVs(SummaryToJSON(index.GetSummary(), index_name));
     });
 
-    if (g_addressindex) {
-        result.pushKVs(SummaryToJSON(g_addressindex->GetSummary(), index_name));
+    if (node.address_index) {
+        result.pushKVs(SummaryToJSON(node.address_index->GetSummary(), index_name));
     }
 
-    if (g_timestampindex) {
-        result.pushKVs(SummaryToJSON(g_timestampindex->GetSummary(), index_name));
+    if (node.timestamp_index) {
+        result.pushKVs(SummaryToJSON(node.timestamp_index->GetSummary(), index_name));
     }
 
-    if (g_spentindex) {
-        result.pushKVs(SummaryToJSON(g_spentindex->GetSummary(), index_name));
+    if (node.spent_index) {
+        result.pushKVs(SummaryToJSON(node.spent_index->GetSummary(), index_name));
     }
 
     return result;

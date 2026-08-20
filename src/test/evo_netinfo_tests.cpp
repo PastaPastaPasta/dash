@@ -5,6 +5,8 @@
 #include <test/util/setup_common.h>
 
 #include <evo/netinfo.h>
+#include <evo/types.h>
+#include <interfaces/node.h>
 #include <util/helpers.h>
 
 #include <chainparams.h>
@@ -19,8 +21,8 @@ BOOST_FIXTURE_TEST_SUITE(evo_netinfo_tests, BasicTestingSetup)
 
 struct TestEntry {
     std::pair</*purpose=*/NetInfoPurpose, /*addr=*/std::string> input;
-    NetInfoStatus expected_ret_mn;
-    NetInfoStatus expected_ret_ext;
+    NetInfoStatus expected_ret_mn{NetInfoStatus::BadInput};
+    NetInfoStatus expected_ret_ext{NetInfoStatus::BadInput};
 };
 
 static const std::vector<TestEntry> addr_vals_main{
@@ -133,6 +135,47 @@ BOOST_AUTO_TEST_CASE(mnnetinfo_rules_main)
 }
 
 BOOST_AUTO_TEST_CASE(extnetinfo_rules_main) { TestExtNetInfo(addr_vals_main); }
+
+BOOST_AUTO_TEST_CASE(provider_network_fields_main)
+{
+    auto node{interfaces::MakeNode(m_node)};
+    interfaces::ProviderNetInfo net_info{
+        .core_p2p = {strprintf("1.1.1.1:%d", MainParams().GetDefaultPort())},
+        .platform_p2p = MainParams().GetDefaultPlatformP2PPort(),
+        .platform_https = MainParams().GetDefaultPlatformHTTPPort(),
+    };
+    BOOST_CHECK(!node->evo().validateProviderNetInfo(net_info, MnType::Evo, ProTxVersion::BasicBLS, /*optional=*/false));
+
+    net_info.platform_p2p = static_cast<uint16_t>(MainParams().GetDefaultPlatformP2PPort() + 1);
+    auto validation_error{
+        node->evo().validateProviderNetInfo(net_info, MnType::Evo, ProTxVersion::BasicBLS, /*optional=*/false)};
+    BOOST_REQUIRE(validation_error);
+    BOOST_CHECK_EQUAL(validation_error->reject_reason, "bad-protx-platform-p2p-port");
+
+    net_info.platform_p2p = MainParams().GetDefaultPlatformP2PPort();
+    net_info.platform_https = static_cast<uint16_t>(MainParams().GetDefaultPlatformHTTPPort() + 1);
+    validation_error = node->evo().validateProviderNetInfo(net_info, MnType::Evo, ProTxVersion::BasicBLS,
+                                                           /*optional=*/false);
+    BOOST_REQUIRE(validation_error);
+    BOOST_CHECK_EQUAL(validation_error->reject_reason, "bad-protx-platform-http-port");
+
+    net_info.platform_p2p = MainParams().GetDefaultPort();
+    net_info.platform_https = MainParams().GetDefaultPlatformHTTPPort();
+    validation_error = node->evo().validateProviderNetInfo(net_info, MnType::Evo, ProTxVersion::BasicBLS,
+                                                           /*optional=*/false);
+    BOOST_REQUIRE(validation_error);
+    BOOST_CHECK_EQUAL(validation_error->reject_reason, "bad-protx-platform-p2p-port");
+
+    net_info = {
+        .core_p2p = {"127.0.0.1:9999"},
+        .platform_p2p = std::vector<std::string>{"1.1.1.2:22200"},
+        .platform_https = std::vector<std::string>{"server.example.com:443"},
+    };
+    validation_error = node->evo().validateProviderNetInfo(net_info, MnType::Evo, ProTxVersion::ExtAddr,
+                                                           /*optional=*/false);
+    BOOST_REQUIRE(validation_error);
+    BOOST_CHECK(validation_error->message.original.find("unroutable address") != std::string::npos);
+}
 
 static const std::vector<TestEntry> addr_vals_reg{
     // - MnNetInfo doesn't mind using port 0
@@ -497,6 +540,92 @@ BOOST_AUTO_TEST_CASE(domainport_rules)
     }
 }
 
+// DomainPort used a bare std::string unserialize path (bounded only by
+// MAX_SIZE == 32 MiB) and NetInfoEntry::Unserialize swallowed ios_base::failure.
+// That combination allowed a tiny ProTx ExtNetInfo payload to force repeated
+// allocate-and-zero of multi-megabyte strings. These tests pin the serialization
+// layer to reject oversized domain claims without performing the large allocation.
+static CDataStream MakeOversizedDomainPortStream(const size_t claimed_len)
+{
+    CDataStream ds(SER_DISK, CLIENT_VERSION);
+    WriteCompactSize(ds, claimed_len);
+    // Provide a full body so pre-fix code can complete the string read; the
+    // bound must reject based on the CompactSize alone, not on a short read.
+    const std::string body(claimed_len, 'a');
+    if (!body.empty()) {
+        ds.write(MakeByteSpan(body));
+    }
+    ser_writedata16be(ds, 443);
+    return ds;
+}
+
+BOOST_AUTO_TEST_CASE(domainport_deser_rejects_oversized_string)
+{
+    // DOMAIN_MAX_LEN is 253; a fully-formed 1000-byte domain must be rejected at
+    // deserialization time (LIMITED_STRING), not accepted then failed later in
+    // ValidateDomain.
+    constexpr size_t kOversized{1000};
+    CDataStream ds{MakeOversizedDomainPortStream(kOversized)};
+
+    DomainPort domain;
+    BOOST_CHECK_THROW(ds >> domain, std::ios_base::failure);
+}
+
+BOOST_AUTO_TEST_CASE(netinfoentry_domain_deser_rejects_oversized_string)
+{
+    // NetInfoEntry must not swallow the length-limit failure: rethrow so the
+    // enclosing ProTx payload deserialization aborts and the peer is penalised.
+    constexpr size_t kOversized{1000};
+    CDataStream ds(SER_DISK, CLIENT_VERSION);
+    ds << uint8_t{NetInfoEntry::NetInfoType::Domain};
+    {
+        CDataStream body{MakeOversizedDomainPortStream(kOversized)};
+        ds.write(MakeByteSpan(body));
+    }
+
+    NetInfoEntry entry;
+    BOOST_CHECK_THROW(ds >> entry, std::ios_base::failure);
+}
+
+BOOST_AUTO_TEST_CASE(domainport_deser_rejects_huge_claimed_length)
+{
+    // CompactSize claims 1 MiB with no body. Pre-fix this would allocate 1 MiB
+    // then throw on short-read; post-fix LIMITED_STRING rejects before resize.
+    // Either way the operation must throw; the important property is that a
+    // declared length above DOMAIN_MAX_LEN never produces a successful DomainPort.
+    CDataStream ds(SER_DISK, CLIENT_VERSION);
+    WriteCompactSize(ds, size_t{1} << 20);
+
+    DomainPort domain;
+    BOOST_CHECK_THROW(ds >> domain, std::ios_base::failure);
+}
+
+BOOST_AUTO_TEST_CASE(extnetinfo_domain_amplification_rejected)
+{
+    // Simulate the attack shape: ExtNetInfo vector of Domain entries each
+    // claiming a large string length from a small stream. Pre-fix,
+    // NetInfoEntry swallows the short-read and the vector loop continues
+    // (stream position does not advance on the failed body read), producing
+    // repeated large allocations. Post-fix the first oversized claim throws
+    // and aborts the whole ExtNetInfo unserialize.
+    constexpr size_t kClaimed{1 << 16}; // 64 KiB — large enough to prove, small enough to not OOM pre-fix
+    constexpr size_t kEntries{8};
+
+    CDataStream ds(SER_DISK, CLIENT_VERSION);
+    ds << uint8_t{1}; // ExtNetInfo version
+    WriteCompactSize(ds, 1); // one purpose
+    ds << NetInfoPurpose::PLATFORM_HTTPS;
+    WriteCompactSize(ds, kEntries);
+    for (size_t i = 0; i < kEntries; ++i) {
+        ds << uint8_t{NetInfoEntry::NetInfoType::Domain};
+        // Claim kClaimed bytes but supply none — CompactSize only.
+        WriteCompactSize(ds, kClaimed);
+    }
+
+    ExtNetInfo netInfo;
+    BOOST_CHECK_THROW(ds >> netInfo, std::ios_base::failure);
+}
+
 BOOST_FIXTURE_TEST_CASE(extnetinfo_validate_deser, RegTestingSetup)
 {
     // The in-memory builder (AddEntry/ProcessCandidate) refuses duplicates, domains
@@ -558,6 +687,30 @@ BOOST_FIXTURE_TEST_CASE(extnetinfo_validate_deser, RegTestingSetup)
         ds >> netInfo;
         BOOST_CHECK_EQUAL(netInfo.Validate(), NetInfoStatus::BadInput);
     }
+}
+
+BOOST_AUTO_TEST_CASE(domain_port_wire_compatibility)
+{
+    DomainPort domain;
+    BOOST_REQUIRE_EQUAL(domain.Set("example.com", 443), DomainPort::Status::Success);
+
+    CDataStream encoded{SER_NETWORK, CLIENT_VERSION};
+    encoded << domain;
+    CDataStream expected{SER_NETWORK, CLIENT_VERSION};
+    expected << std::string{"example.com"} << Using<BigEndianFormatter<2>>(uint16_t{443});
+    BOOST_CHECK_EQUAL_COLLECTIONS(encoded.begin(), encoded.end(), expected.begin(), expected.end());
+
+    CDataStream oversized{SER_NETWORK, CLIENT_VERSION};
+    oversized << NetInfoEntry::NetInfoType::Domain;
+    constexpr size_t MAX_DOMAIN_LENGTH{253};
+    WriteCompactSize(oversized, MAX_DOMAIN_LENGTH + 1);
+    const std::string oversized_addr(MAX_DOMAIN_LENGTH + 1, 'a');
+    oversized.write(MakeByteSpan(oversized_addr));
+    oversized << Using<BigEndianFormatter<2>>(uint16_t{443});
+
+    NetInfoEntry entry;
+    BOOST_CHECK_EXCEPTION(oversized >> entry, std::ios_base::failure,
+                          [](const auto& e) { return std::string{e.what()}.find("String length limit exceeded") != std::string::npos; });
 }
 
 BOOST_AUTO_TEST_SUITE_END()

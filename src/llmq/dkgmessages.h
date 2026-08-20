@@ -20,7 +20,7 @@ namespace llmq {
 class CDKGContribution
 {
 public:
-    Consensus::LLMQType llmqType;
+    Consensus::LLMQType llmqType{Consensus::LLMQType::LLMQ_NONE};
     uint256 quorumHash;
     uint256 proTxHash;
     BLSVerificationVectorPtr vvec;
@@ -82,7 +82,7 @@ public:
 public:
     CDKGComplaint() = default;
     explicit CDKGComplaint(const Consensus::LLMQParams& params) :
-            badMembers((size_t)params.size), complainForMembers((size_t)params.size) {};
+            badMembers(static_cast<size_t>(params.size)), complainForMembers(static_cast<size_t>(params.size)) {};
 
     SERIALIZE_METHODS(CDKGComplaint, obj)
     {
@@ -107,11 +107,11 @@ public:
 class CDKGJustification
 {
 public:
-    Consensus::LLMQType llmqType;
+    Consensus::LLMQType llmqType{Consensus::LLMQType::LLMQ_NONE};
     uint256 quorumHash;
     uint256 proTxHash;
     struct Contribution {
-        uint32_t index;
+        uint32_t index{0};
         CBLSSecretKey key;
         SERIALIZE_METHODS(Contribution, obj)
         {
@@ -156,7 +156,7 @@ public:
 public:
     CDKGPrematureCommitment() = default;
     explicit CDKGPrematureCommitment(const Consensus::LLMQParams& params) :
-            validMembers((size_t)params.size) {};
+            validMembers(static_cast<size_t>(params.size)) {};
 
     [[nodiscard]] int CountValidMembers() const
     {

@@ -57,7 +57,6 @@
 #include <instantsend/instantsend.h>
 #include <instantsend/lock.h>
 #include <llmq/commitment.h>
-#include <llmq/context.h>
 #include <util/helpers.h>
 
 #include <cstdint>
@@ -70,7 +69,7 @@ using node::GetTransaction;
 using node::NodeContext;
 using node::PSBTAnalysis;
 
-void TxToJSON(const CTransaction& tx, const uint256 hashBlock, const  CTxMemPool& mempool, const Chainstate& active_chainstate, const chainlock::Chainlocks& chainlocks, const llmq::CInstantSendManager& isman, UniValue& entry, TxVerbosity verbosity = TxVerbosity::SHOW_DETAILS)
+void TxToJSON(const CTransaction& tx, const uint256 hashBlock, const  CTxMemPool& mempool, const Chainstate& active_chainstate, const chainlock::Chainlocks& chainlocks, const llmq::CInstantSendManager& isman, const SpentIndex* spent_index, UniValue& entry, TxVerbosity verbosity = TxVerbosity::SHOW_DETAILS)
 {
     CHECK_NONFATAL(verbosity >= TxVerbosity::SHOW_DETAILS);
 
@@ -79,9 +78,9 @@ void TxToJSON(const CTransaction& tx, const uint256 hashBlock, const  CTxMemPool
 
     // Add spent information if spentindex is enabled
     CSpentIndexTxInfo txSpentInfo;
-    if (g_spentindex) {
+    if (spent_index) {
         // Sync once before all queries to ensure consistent snapshot
-        g_spentindex->BlockUntilSyncedToCurrentChain();
+        spent_index->BlockUntilSyncedToCurrentChain();
 
         txSpentInfo = CSpentIndexTxInfo{};
         // Collect spent info for inputs
@@ -89,7 +88,7 @@ void TxToJSON(const CTransaction& tx, const uint256 hashBlock, const  CTxMemPool
             if (!tx.IsCoinBase()) {
                 CSpentIndexValue spentInfo;
                 CSpentIndexKey spentKey(txin.prevout.hash, txin.prevout.n);
-                if (g_spentindex->GetSpentInfo(spentKey, spentInfo)) {
+                if (spent_index->GetSpentInfo(spentKey, spentInfo)) {
                     txSpentInfo.mSpentInfo.emplace(spentKey, spentInfo);
                 }
             }
@@ -98,7 +97,7 @@ void TxToJSON(const CTransaction& tx, const uint256 hashBlock, const  CTxMemPool
         for (unsigned int i = 0; i < tx.vout.size(); i++) {
             CSpentIndexValue spentInfo;
             CSpentIndexKey spentKey(txid, i);
-            if (g_spentindex->GetSpentInfo(spentKey, spentInfo)) {
+            if (spent_index->GetSpentInfo(spentKey, spentInfo)) {
                 txSpentInfo.mSpentInfo.emplace(spentKey, spentInfo);
             }
         }
@@ -185,6 +184,9 @@ static std::vector<RPCResult> DecodeTxDoc(const std::string& txid_field_doc)
                     {RPCResult::Type::STR, "asm", "Disassembly of the signature script"},
                     {RPCResult::Type::STR_HEX, "hex", "The raw signature script bytes, hex-encoded"},
                 }},
+                {RPCResult::Type::STR_AMOUNT, "value", /*optional=*/true, "The value of the spent output in " + CURRENCY_UNIT + " (only if spentindex is enabled)"},
+                {RPCResult::Type::NUM, "valueSat", /*optional=*/true, "The value of the spent output in duffs (only if spentindex is enabled)"},
+                {RPCResult::Type::STR, "address", /*optional=*/true, "The Dash address of the spent output (only if spentindex is enabled and a well-defined address exists)"},
                 {RPCResult::Type::NUM, "sequence", "The script sequence number"},
             }},
         }},
@@ -193,6 +195,7 @@ static std::vector<RPCResult> DecodeTxDoc(const std::string& txid_field_doc)
             {RPCResult::Type::OBJ, "", "",
             {
                 {RPCResult::Type::STR_AMOUNT, "value", "The value in " + CURRENCY_UNIT},
+                {RPCResult::Type::NUM, "valueSat", "The value in duffs"},
                 {RPCResult::Type::NUM, "n", "index"},
                 {RPCResult::Type::OBJ, "scriptPubKey", "",
                 {
@@ -202,6 +205,9 @@ static std::vector<RPCResult> DecodeTxDoc(const std::string& txid_field_doc)
                     {RPCResult::Type::STR, "type", "The type, eg 'pubkeyhash'"},
                     {RPCResult::Type::STR, "address", /*optional=*/true, "The Dash address (only if a well-defined address exists)"},
                 }},
+                {RPCResult::Type::STR_HEX, "spentTxId", /*optional=*/true, "The transaction id that spent this output (only if spentindex is enabled)"},
+                {RPCResult::Type::NUM, "spentIndex", /*optional=*/true, "The input index of the spending transaction (only if spentindex is enabled)"},
+                {RPCResult::Type::NUM, "spentHeight", /*optional=*/true, "The block height of the spending transaction (only if spentindex is enabled)"},
             }},
         }},
         {RPCResult::Type::NUM, "extraPayloadSize", /*optional=*/true, "Size of DIP2 extra payload. Only present if it's a special TX"},
@@ -348,7 +354,7 @@ static RPCHelpMan getrawtransaction()
                          {
                              {RPCResult::Type::BOOL, "in_active_chain", /*optional=*/true, "Whether specified block is in the active chain or not (only present with explicit \"blockhash\" argument)"},
                              {RPCResult::Type::STR_HEX, "blockhash", /*optional=*/true, "the block hash"},
-                             {RPCResult::Type::NUM, "height", "The block height"},
+                             {RPCResult::Type::NUM, "height", /*optional=*/true, "The block height (only present if the transaction is mined)"},
                              {RPCResult::Type::NUM, "confirmations", /*optional=*/true, "The confirmations"},
                              {RPCResult::Type::NUM_TIME, "blocktime", /*optional=*/true, "The block time expressed in " + UNIX_EPOCH_TIME},
                              {RPCResult::Type::NUM, "time", /*optional=*/true, "Same as \"blocktime\""},
@@ -427,13 +433,13 @@ static RPCHelpMan getrawtransaction()
         return EncodeHexTx(*tx);
     }
 
-    const LLMQContext& llmq_ctx = EnsureLLMQContext(node);
+    const llmq::CInstantSendManager& isman = EnsureInstantSendManager(node);
     const CTxMemPool& mempool = EnsureMemPool(node);
     CHECK_NONFATAL(node.chainlocks);
 
     UniValue result(UniValue::VOBJ);
     if (blockindex) result.pushKV("in_active_chain", in_active_chain);
-    TxToJSON(*tx, hash_block, mempool, chainman.ActiveChainstate(), *node.chainlocks, *llmq_ctx.isman, result);
+    TxToJSON(*tx, hash_block, mempool, chainman.ActiveChainstate(), *node.chainlocks, isman, node.spent_index.get(), result);
     return result;
 },
     };
@@ -460,16 +466,14 @@ static RPCHelpMan getrawtransactionmulti() {
                      "If false, return a string, otherwise return a json object"},
             },
             RPCResult{
-                RPCResult::Type::OBJ, "", "",
+                RPCResult::Type::OBJ_DYN, "", "json object with transaction id as keys",
                 {
-                    {"If verbose is not set or set to false",
-                        RPCResult::Type::STR_HEX, "txid", "The serialized, hex-encoded data for 'txid'"},
-                    {"if verbose is set to true",
-                        RPCResult::Type::OBJ, "txid", "The decoded network-serialized transaction.",
-                        {
-                            {RPCResult::Type::ELISION, "", "The layout is the same as the output of getrawtransaction."},
-                        }},
-                    {"If tx is unknown", RPCResult::Type::STR, "txid", "None"},
+                    // Conditional variants are only resolved for top-level results, so the
+                    // per-verbosity shapes cannot be spelled out as alternatives here.
+                    {RPCResult::Type::ANY, "txid", "The serialized, hex-encoded data for 'txid' if verbose is not set or "
+                                                   "set to false; the decoded transaction (same layout as the output of "
+                                                   "getrawtransaction) if verbose is set to true; the string \"None\" if "
+                                                   "the transaction is unknown"},
                 },
             },
             RPCExamples{
@@ -490,7 +494,7 @@ static RPCHelpMan getrawtransactionmulti() {
 
     const NodeContext& node{EnsureAnyNodeContext(request.context)};
     const ChainstateManager& chainman{EnsureChainman(node)};
-    const LLMQContext& llmq_ctx{EnsureLLMQContext(node)};
+    const llmq::CInstantSendManager& isman{EnsureInstantSendManager(node)};
     CHECK_NONFATAL(node.chainlocks);
     CTxMemPool& mempool{EnsureMemPool(node)};
 
@@ -526,7 +530,7 @@ static RPCHelpMan getrawtransactionmulti() {
                 result.pushKV(txid_str, "None");
             } else if (fVerbose) {
                 UniValue tx_data{UniValue::VOBJ};
-                TxToJSON(*tx, hash_block, mempool, chainman.ActiveChainstate(), *node.chainlocks, *llmq_ctx.isman, tx_data);
+                TxToJSON(*tx, hash_block, mempool, chainman.ActiveChainstate(), *node.chainlocks, isman, node.spent_index.get(), tx_data);
                 result.pushKV(txid_str, tx_data);
             } else {
                 result.pushKV(txid_str, EncodeHexTx(*tx));
@@ -567,10 +571,10 @@ static RPCHelpMan getislocks()
                     {RPCResult::Type::STR_HEX, "cycleHash", "The Cycle Hash"},
                     {RPCResult::Type::STR_HEX, "signature", "The InstantSend's BLS signature"},
                     {RPCResult::Type::STR_HEX, "hex", "The serialized, hex-encoded data for 'txid'"},
-                }},
-                RPCResult{"if no InstantSend Lock is known for specified txid",
-                     RPCResult::Type::STR, "data", "Just 'None' string"
                 },
+                // An element is the plain string "None" when no InstantSend Lock is known for
+                // that txid, so the element type cannot be checked against this object.
+                /*skip_type_check=*/true},
             }},
         RPCExamples{
             HelpExampleCli("getislocks", "'[\"txid\",...]'")
@@ -586,11 +590,11 @@ static RPCHelpMan getislocks()
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Up to 100 txids only");
     }
 
-    const LLMQContext& llmq_ctx = EnsureLLMQContext(node);
+    const llmq::CInstantSendManager& isman = EnsureInstantSendManager(node);
     for (const auto idx : util::irange(txids.size())) {
         const uint256 txid(ParseHashV(txids[idx], "txid"));
 
-        if (const instantsend::InstantSendLockPtr islock = llmq_ctx.isman->GetInstantSendLockByTxid(txid); islock != nullptr) {
+        if (const instantsend::InstantSendLockPtr islock = isman.GetInstantSendLockByTxid(txid); islock != nullptr) {
             UniValue objIS(UniValue::VOBJ);
             objIS.pushKV("txid", islock->txid.ToString());
             UniValue inputs(UniValue::VARR);
@@ -920,6 +924,7 @@ static RPCHelpMan decodescript()
                 {RPCResult::Type::STR, "desc", "Inferred descriptor for the script"},
                 {RPCResult::Type::STR, "type", "The output type (e.g. " + GetAllOutputTypes() + ")"},
                 {RPCResult::Type::STR, "address", /*optional=*/true, "The Dash address (only if a well-defined address exists)"},
+                {RPCResult::Type::STR, "p2sh", /*optional=*/true, "address of P2SH script wrapping this redeem script (not returned for types that should not be wrapped)"},
             },
         },
         RPCExamples{

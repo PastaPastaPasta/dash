@@ -52,7 +52,7 @@ CSimplifiedMNListEntry CDeterministicMN::to_sml_entry() const
 
 std::string CDeterministicMN::ToString() const
 {
-    return strprintf("CDeterministicMN(proTxHash=%s, collateralOutpoint=%s, nOperatorReward=%f, state=%s", proTxHash.ToString(), collateralOutpoint.ToStringShort(), (double)nOperatorReward / 100, pdmnState->ToString());
+    return strprintf("CDeterministicMN(proTxHash=%s, collateralOutpoint=%s, nOperatorReward=%f, state=%s", proTxHash.ToString(), collateralOutpoint.ToStringShort(), static_cast<double>(nOperatorReward) / 100, pdmnState->ToString());
 }
 
 bool CDeterministicMNList::IsMNValid(const uint256& proTxHash) const
@@ -270,7 +270,7 @@ int CDeterministicMNList::CalcMaxPoSePenalty() const
     // Maximum PoSe penalty is dynamic and equals the number of registered MNs
     // It's however at least 100.
     // This means that the max penalty is usually equal to a full payment cycle
-    return std::max(100, (int)GetCounts().total());
+    return std::max(100, static_cast<int>(GetCounts().total()));
 }
 
 int CDeterministicMNList::CalcPenalty(int percent) const
@@ -376,13 +376,34 @@ void CDeterministicMNList::ApplyDiff(gsl::not_null<const CBlockIndex*> pindex, c
 
     for (const auto& id : diff.removedMns) {
         auto dmn = GetMNByInternalId(id);
+        if (!dmn) throw std::runtime_error(strprintf("%s: can't find a removed masternode, id=%d", __func__, id));
+        RemoveMN(dmn->proTxHash);
+    }
+    for (const auto& dmn : diff.addedMNs) AddMN(dmn);
+    for (const auto& p : diff.updatedMNs) {
+        auto dmn = GetMNByInternalId(p.first);
+        if (!dmn) throw std::runtime_error(strprintf("%s: can't find an updated masternode, id=%d", __func__, p.first));
+        UpdateMN(*dmn, p.second);
+    }
+}
+
+void CDeterministicMNList::ApplyDiffForSnapshot(const uint256& block_hash, int height,
+                                                uint32_t total_registered_count,
+                                                const CDeterministicMNListDiff& diff)
+{
+    if (height < 0) throw std::runtime_error("negative historical MN-list height");
+    blockHash = block_hash;
+    nHeight = height;
+
+    for (const auto& id : diff.removedMns) {
+        auto dmn = GetMNByInternalId(id);
         if (!dmn) {
             throw std::runtime_error(strprintf("%s: can't find a removed masternode, id=%d", __func__, id));
         }
         RemoveMN(dmn->proTxHash);
     }
     for (const auto& dmn : diff.addedMNs) {
-        AddMN(dmn);
+        AddMN(dmn, /*fBumpTotalCount=*/false);
     }
     for (const auto& p : diff.updatedMNs) {
         auto dmn = GetMNByInternalId(p.first);
@@ -391,6 +412,7 @@ void CDeterministicMNList::ApplyDiff(gsl::not_null<const CBlockIndex*> pindex, c
         }
         UpdateMN(*dmn, p.second);
     }
+    nTotalRegisteredCount = total_registered_count;
 }
 
 void CDeterministicMNList::AddMN(const CDeterministicMNCPtr& dmn, bool fBumpTotalCount)
@@ -456,7 +478,7 @@ void CDeterministicMNList::AddMN(const CDeterministicMNCPtr& dmn, bool fBumpTota
     InvalidateSMLCache();
     if (fBumpTotalCount) {
         // nTotalRegisteredCount acts more like a checkpoint, not as a limit,
-        nTotalRegisteredCount = std::max(dmn->GetInternalId() + 1, (uint64_t)nTotalRegisteredCount);
+        nTotalRegisteredCount = std::max(dmn->GetInternalId() + 1, static_cast<uint64_t>(nTotalRegisteredCount));
     }
 }
 
@@ -622,6 +644,18 @@ CDeterministicMNManager::CDeterministicMNManager(CEvoDB& evoDb, CMasternodeMetaM
 
 CDeterministicMNManager::~CDeterministicMNManager() = default;
 
+bool CDeterministicMNManager::SeedListForBlock(const CDeterministicMNList& list)
+{
+    return m_evoDb.WriteDerived(std::make_pair(DB_LIST_SNAPSHOT, list.GetBlockHash()), list);
+}
+
+void CDeterministicMNManager::InvalidateListCacheForBlock(const uint256& block_hash)
+{
+    LOCK(cs);
+    mnListsCache.erase(block_hash);
+    mnListDiffsCache.erase(block_hash);
+}
+
 bool CDeterministicMNManager::ProcessBlock(const CBlock& block, gsl::not_null<const CBlockIndex*> pindex,
                                            BlockValidationState& state, const CDeterministicMNList& newList,
                                            std::optional<MNListUpdates>& updatesRet)
@@ -669,7 +703,7 @@ bool CDeterministicMNManager::ProcessBlock(const CBlock& block, gsl::not_null<co
 
         // apply platform unban for platform revive too, after all persistent
         // payload checks have succeeded
-        for (int i = 1; i < (int)block.vtx.size(); i++) {
+        for (int i = 1; i < static_cast<int>(block.vtx.size()); i++) {
             const CTransaction& tx = *block.vtx[i];
             if (!tx.IsSpecialTxVersion() || tx.nType != TRANSACTION_PROVIDER_UPDATE_SERVICE) {
                 // only interested in revive transactions
@@ -789,6 +823,7 @@ CDeterministicMNList CDeterministicMNManager::GetListForBlockInternal(gsl::not_n
             mnListsCache.emplace(pindex->GetBlockHash(), snapshot);
             break;
         }
+        if (m_list_snapshot_miss_hook) m_list_snapshot_miss_hook(pindex);
 
         // no snapshot found yet, check diffs
         auto itDiffs = mnListDiffsCache.find(pindex->GetBlockHash());
@@ -1135,8 +1170,7 @@ bool CDeterministicMNManager::MigrateLegacyDiffs(const CBlockIndex* const tip_in
 }
 
 CDeterministicMNManager::RecalcDiffsResult CDeterministicMNManager::RecalculateAndRepairDiffs(
-    const CBlockIndex* start_index, const CBlockIndex* stop_index, ChainstateManager& chainman,
-    BuildListFromBlockFunc build_list_func, bool repair)
+    const CBlockIndex* start_index, const CBlockIndex* stop_index, BuildListFromBlockFunc build_list_func, bool repair)
 {
     RecalcDiffsResult result;
     result.start_height = start_index->nHeight;
@@ -1237,7 +1271,7 @@ CDeterministicMNManager::RecalcDiffsResult CDeterministicMNManager::RecalculateA
 
     // Write repaired diffs to database
     if (repair) {
-        WriteRepairedDiffs(recalculated_diffs, result);
+        WriteRepairedDiffs(recalculated_diffs);
     }
 
     return result;
@@ -1426,7 +1460,7 @@ std::vector<std::pair<uint256, CDeterministicMNListDiff>> CDeterministicMNManage
 }
 
 void CDeterministicMNManager::WriteRepairedDiffs(
-    const std::vector<std::pair<uint256, CDeterministicMNListDiff>>& recalculated_diffs, RecalcDiffsResult& result)
+    const std::vector<std::pair<uint256, CDeterministicMNListDiff>>& recalculated_diffs)
 {
     AssertLockNotHeld(cs);
 

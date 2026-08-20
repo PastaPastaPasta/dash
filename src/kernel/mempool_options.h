@@ -15,6 +15,11 @@
 #include <optional>
 
 class CBlockPolicyEstimator;
+class CDeterministicMNManager;
+
+namespace llmq {
+class CInstantSendManager;
+} // namespace llmq
 
 /** Default for -maxmempool, maximum megabytes of mempool memory usage */
 static constexpr unsigned int DEFAULT_MAX_MEMPOOL_SIZE_MB{300};
@@ -32,6 +37,10 @@ namespace kernel {
 struct MemPoolOptions {
     /* Used to estimate appropriate transaction fees. */
     CBlockPolicyEstimator* estimator{nullptr};
+    /* Used to validate special transactions; required, must outlive the mempool. */
+    CDeterministicMNManager* dmnman{nullptr};
+    /* Used to protect InstantSend-locked transactions; required, must outlive the mempool. */
+    llmq::CInstantSendManager* isman{nullptr};
     /* The ratio used to determine how often sanity checks will run.  */
     int check_ratio{0};
     int64_t max_size_bytes{DEFAULT_MAX_MEMPOOL_SIZE_MB * 1'000'000};
@@ -50,6 +59,8 @@ struct MemPoolOptions {
     std::optional<unsigned> max_datacarrier_bytes{DEFAULT_ACCEPT_DATACARRIER ? std::optional{MAX_OP_RETURN_RELAY} : std::nullopt};
     bool permit_bare_multisig{DEFAULT_PERMIT_BAREMULTISIG};
     bool require_standard{true};
+    bool address_index_enabled{false};
+    bool spent_index_enabled{false};
     MemPoolLimits limits{};
 };
 } // namespace kernel

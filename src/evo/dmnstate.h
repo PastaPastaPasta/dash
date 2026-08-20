@@ -7,7 +7,9 @@
 
 #include <bls/bls.h>
 #include <crypto/sha256.h>
+#include <evo/netinfo.h>
 #include <evo/providertx.h>
+#include <evo/types.h>
 #include <netaddress.h>
 #include <pubkey.h>
 #include <script/script.h>
@@ -233,6 +235,16 @@ public:
             using BaseType = std::decay_t<decltype(member)>;
             if constexpr (BaseType::mask == Field_netInfo) {
                 if (util::shared_ptr_not_equal(member.get(a), member.get(b))) {
+                    member.get(state) = member.get(b);
+                    fields |= member.mask;
+                }
+            } else if constexpr (BaseType::mask == Field_pubKeyOperator) {
+                // CBLSLazyPublicKey::operator== compares the underlying key and ignores its BLS
+                // encoding, but a scheme migration re-encodes the same key (legacy->basic). That must
+                // be captured in the diff -- GetHash() is scheme-dependent -- or a diff-reconstructed
+                // list keeps the old encoding while an online-built list has the new one, and the two
+                // diverge (mnUniquePropertyMap included).
+                if (member.get(a).GetHash() != member.get(b).GetHash()) {
                     member.get(state) = member.get(b);
                     fields |= member.mask;
                 }

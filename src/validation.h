@@ -336,26 +336,23 @@ private:
     unsigned int nIn;
     unsigned int nFlags;
     bool cacheStore;
-    ScriptError error;
+    ScriptError error{SCRIPT_ERR_UNKNOWN_ERROR};
     PrecomputedTransactionData *txdata;
 
 public:
-    CScriptCheck(): ptxTo(nullptr), nIn(0), nFlags(0), cacheStore(false), error(SCRIPT_ERR_UNKNOWN_ERROR) {}
     CScriptCheck(const CTxOut& outIn, const CTransaction& txToIn, unsigned int nInIn, unsigned int nFlagsIn, bool cacheIn, PrecomputedTransactionData* txdataIn) :
-        m_tx_out(outIn), ptxTo(&txToIn), nIn(nInIn), nFlags(nFlagsIn), cacheStore(cacheIn), error(SCRIPT_ERR_UNKNOWN_ERROR), txdata(txdataIn) { }
+        m_tx_out(outIn), ptxTo(&txToIn), nIn(nInIn), nFlags(nFlagsIn), cacheStore(cacheIn), txdata(txdataIn)
+        {
+            // Reference txdata to avoid -Wunused-private-field on some compilers (e.g. AppleClang).
+            (void)txdata;
+        }
+
+    CScriptCheck(const CScriptCheck&) = delete;
+    CScriptCheck& operator=(const CScriptCheck&) = delete;
+    CScriptCheck(CScriptCheck&&) = default;
+    CScriptCheck& operator=(CScriptCheck&&) = default;
 
     bool operator()();
-
-    void swap(CScriptCheck& check) noexcept
-    {
-        std::swap(ptxTo, check.ptxTo);
-        std::swap(m_tx_out, check.m_tx_out);
-        std::swap(nIn, check.nIn);
-        std::swap(nFlags, check.nFlags);
-        std::swap(cacheStore, check.cacheStore);
-        std::swap(error, check.error);
-        std::swap(txdata, check.txdata);
-    }
 
     ScriptError GetScriptError() const { return error; }
 };
@@ -581,6 +578,7 @@ public:
      * std::nullopt if this chainstate was not created from a snapshot.
      */
     const std::optional<uint256> m_from_snapshot_blockhash;
+    std::optional<std::set<uint256>> m_required_background_mn_list_hashes;
 
     /**
      * The base of the snapshot this chainstate was created from.
@@ -670,9 +668,10 @@ public:
     void ForceFlushStateToDisk();
 
     /** Persist the hash of the MN list this chainstate derived when connecting
-     *  the snapshot base block. No-op on any other block or chainstate, so
-     *  ordinary block connection never pays for hashing the full list. */
+     *  the snapshot base or a required historical work block. No-op on any
+     *  other block or chainstate. */
     void RecordBackgroundMNListHash(const CBlockIndex* pindex, const CDeterministicMNList& mn_list);
+    void SetRequiredBackgroundMNListHashes(const std::vector<uint256>& block_hashes);
 
     //! Prune blockfiles from the disk if necessary and then flush chainstate changes
     //! if we pruned.
@@ -1084,6 +1083,14 @@ public:
             [](bilingual_str msg) { AbortNode(msg.original, msg); })
         EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
+    /** Mark the active assumeutxo chainstate invalid and shut down. Returns
+     * false when no snapshot is active or an EvoDB transaction must unwind
+     * before the operation can safely run. */
+    bool HandleSnapshotStateMismatch(
+        const std::string& reason,
+        std::function<void(bilingual_str)> shutdown_fnc =
+            [](bilingual_str msg) { AbortNode(msg.original, msg); });
+
     //! The most-work chain.
     Chainstate& ActiveChainstate() const;
     CChain& ActiveChain() const EXCLUSIVE_LOCKS_REQUIRED(GetMutex()) { return ActiveChainstate().m_chain; }
@@ -1238,6 +1245,10 @@ public:
     bool DetectSnapshotChainstate(CTxMemPool* mempool, bilingual_str& error) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     void ResetChainstates() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
+    //! Keep the snapshot base block available for deferred Dash evo validation.
+    void ProtectSnapshotBaseFromPruning() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    void ReleaseSnapshotPruneLock() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     //! Switch the active chainstate to one based on a UTXO snapshot that was loaded
     //! previously.

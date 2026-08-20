@@ -1399,6 +1399,73 @@ BOOST_AUTO_TEST_CASE(test_Capitalize)
     BOOST_CHECK_EQUAL(Capitalize("\x00\xfe\xff"), "\x00\xfe\xff");
 }
 
+BOOST_AUTO_TEST_CASE(test_CRanges_deserialize_validation)
+{
+    const auto encoded = [](std::initializer_list<std::pair<uint64_t, uint64_t>> ranges) {
+        CDataStream stream{SER_NETWORK, 0};
+        WriteCompactSize(stream, ranges.size());
+        for (const auto& [begin, end] : ranges) stream << begin << end;
+        return stream;
+    };
+
+    for (auto malformed : {encoded({{0, 0}}),              // full uint64_t domain (unrepresentable size)
+                           encoded({{4, 4}}),              // empty
+                           encoded({{4, 8}, {7, 10}}),      // overlapping
+                           encoded({{4, 8}, {8, 10}}),      // adjacent (must be merged)
+                           encoded({{12, 14}, {4, 8}})}) {  // unordered
+        CRangesSet decoded;
+        BOOST_CHECK_THROW(malformed >> decoded, std::ios_base::failure);
+    }
+
+    auto canonical{encoded({{4, 8}, {10, 12}})};
+    CRangesSet decoded;
+    BOOST_CHECK_NO_THROW(canonical >> decoded);
+    BOOST_CHECK_EQUAL(decoded.Size(), 6U);
+    BOOST_CHECK(decoded.Contains(4));
+    BOOST_CHECK(decoded.Contains(11));
+    BOOST_CHECK(!decoded.Contains(8));
+
+    constexpr uint64_t max{std::numeric_limits<uint64_t>::max()};
+    CRangesSet max_value;
+    BOOST_CHECK(max_value.Add(max - 2));
+    BOOST_CHECK(max_value.Add(max - 1));
+    BOOST_CHECK(max_value.Add(max));
+    CDataStream max_encoded{SER_NETWORK, 0};
+    max_encoded << max_value;
+    CRangesSet max_decoded;
+    max_encoded >> max_decoded;
+    BOOST_CHECK_EQUAL(max_decoded.Size(), 3U);
+    BOOST_CHECK(max_decoded.Contains(max - 2));
+    BOOST_CHECK(max_decoded.Contains(max - 1));
+    BOOST_CHECK(max_decoded.Contains(max));
+
+    BOOST_CHECK(max_decoded.Remove(max));
+    CDataStream removed_max_encoded{SER_NETWORK, 0};
+    removed_max_encoded << max_decoded;
+    CRangesSet removed_max_decoded;
+    removed_max_encoded >> removed_max_decoded;
+    BOOST_CHECK_EQUAL(removed_max_decoded.Size(), 2U);
+    BOOST_CHECK(removed_max_decoded.Contains(max - 2));
+    BOOST_CHECK(removed_max_decoded.Contains(max - 1));
+    BOOST_CHECK(!removed_max_decoded.Contains(max));
+
+    BOOST_CHECK(max_value.Remove(max - 1));
+    CDataStream removed_interior_encoded{SER_NETWORK, 0};
+    removed_interior_encoded << max_value;
+    CRangesSet removed_interior_decoded;
+    removed_interior_encoded >> removed_interior_decoded;
+    BOOST_CHECK_EQUAL(removed_interior_decoded.Size(), 2U);
+    BOOST_CHECK(removed_interior_decoded.Contains(max - 2));
+    BOOST_CHECK(!removed_interior_decoded.Contains(max - 1));
+    BOOST_CHECK(removed_interior_decoded.Contains(max));
+
+    auto invalid_wrapped{encoded({{5, 0}, {10, 12}})};
+    BOOST_CHECK_THROW(invalid_wrapped >> decoded, std::ios_base::failure);
+
+    auto invalid_reverse{encoded({{5, 4}})};
+    BOOST_CHECK_THROW(invalid_reverse >> decoded, std::ios_base::failure);
+}
+
 BOOST_AUTO_TEST_CASE(test_CRanges)
 {
     std::mt19937 gen;
@@ -1423,6 +1490,35 @@ BOOST_AUTO_TEST_CASE(test_CRanges)
             BOOST_CHECK(ranges.Size() > ((1u << test) / 4));
         }
     }
+
+    // The range containing UINT64_MAX is stored with a wrapped half-open end
+    // of 0. Membership, sizing, duplicate detection, and removal must all
+    // treat that representation as "extends through the maximum value".
+    const uint64_t max{std::numeric_limits<uint64_t>::max()};
+    CRangesSet max_values;
+    BOOST_CHECK(max_values.Add(max - 2));
+    BOOST_CHECK(max_values.Add(max - 1));
+    BOOST_CHECK(max_values.Add(max));
+    BOOST_CHECK_EQUAL(max_values.Size(), 3U);
+    BOOST_CHECK(max_values.Contains(max - 2));
+    BOOST_CHECK(max_values.Contains(max - 1));
+    BOOST_CHECK(max_values.Contains(max));
+    BOOST_CHECK(!max_values.Contains(0));
+    BOOST_CHECK(!max_values.Add(max));
+    BOOST_CHECK(max_values.Remove(max));
+    BOOST_CHECK_EQUAL(max_values.Size(), 2U);
+    BOOST_CHECK(max_values.Contains(max - 1));
+    BOOST_CHECK(!max_values.Contains(max));
+    BOOST_CHECK(max_values.Add(max));
+    BOOST_CHECK(max_values.Contains(max));
+
+    CRangesSet lone_max;
+    BOOST_CHECK(lone_max.Add(max));
+    BOOST_CHECK_EQUAL(lone_max.Size(), 1U);
+    BOOST_CHECK(lone_max.Contains(max));
+    BOOST_CHECK(!lone_max.Add(max));
+    BOOST_CHECK(lone_max.Remove(max));
+    BOOST_CHECK(lone_max.IsEmpty());
 }
 
 static std::string SpanToStr(const Span<const char>& span)

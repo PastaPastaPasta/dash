@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <functional>
 #include <limits>
 #include <numeric>
 #include <stdexcept>
@@ -339,6 +340,8 @@ public:
         assert(nHeight >= 0);
         return nHeight;
     }
+    /** Snapshot hashing also covers the pre-DIP3 default list (height -1). */
+    [[nodiscard]] int GetHeightForSnapshotCodec() const noexcept { return nHeight; }
     void SetHeight(int _height)
     {
         assert(_height >= 0);
@@ -422,6 +425,10 @@ public:
      */
     void ApplyDiff(gsl::not_null<const CBlockIndex*> pindex, const CDeterministicMNListDiff& diff)
         EXCLUSIVE_LOCKS_REQUIRED(!m_cached_sml_mutex);
+    /** Apply a snapshot-local historical diff without dereferencing block data. */
+    void ApplyDiffForSnapshot(const uint256& block_hash, int height, uint32_t total_registered_count,
+                              const CDeterministicMNListDiff& diff)
+        EXCLUSIVE_LOCKS_REQUIRED(!m_cached_sml_mutex);
 
     void AddMN(const CDeterministicMNCPtr& dmn, bool fBumpTotalCount = true) EXCLUSIVE_LOCKS_REQUIRED(!m_cached_sml_mutex);
     void UpdateMN(const CDeterministicMN& oldDmn, const std::shared_ptr<const CDeterministicMNState>& pdmnState)
@@ -445,6 +452,35 @@ public:
             return nullptr;
         }
         return GetMN(p->first);
+    }
+
+    /**
+     * Is this operator public key already held by a masternode other than `self`, under *either* BLS
+     * encoding?
+     *
+     * mnUniquePropertyMap is keyed by GetUniquePropertyHash(), which serializes its argument, and a
+     * BLS key serializes differently under the legacy and basic schemes. So one public key sits in
+     * one of two possible slots and a single lookup sees only one of them, which is why operator key
+     * uniqueness is otherwise enforced per encoding rather than per key. There are exactly two
+     * schemes, so probing both is O(1) rather than a scan.
+     *
+     * Both slots are probed even when one resolves to `self`: where a cross-scheme duplicate pair
+     * already exists, returning early on a self-match would miss the other member.
+     *
+     * Pass uint256() as `self` to exclude nothing. An invalid pubkey is never considered held:
+     * it is rejected up front rather than relying on the map never containing a null entry.
+     */
+    [[nodiscard]] bool HasOperatorKeyUnderAnyScheme(const CBLSPublicKey& pubkey, const uint256& self) const
+    {
+        if (!pubkey.IsValid()) return false;
+        for (const bool legacy_scheme : {true, false}) {
+            CBLSLazyPublicKey wrapped;
+            wrapped.Set(pubkey, legacy_scheme);
+            if (!HasUniqueProperty(wrapped)) continue;
+            const auto holder = GetUniquePropertyMN(wrapped);
+            if (holder && holder->proTxHash != self) return true;
+        }
+        return false;
     }
 
     // Compare two masternode lists for equality, ignoring non-deterministic members.
@@ -489,7 +525,7 @@ public:
 
 private:
     template <typename T>
-    [[nodiscard]] uint256 GetUniquePropertyHash(const T& v) const
+    [[nodiscard]] static uint256 GetUniquePropertyHash(const T& v)
     {
 #define DMNL_NO_TEMPLATE(name) \
     static_assert(!std::is_same_v<std::decay_t<T>, name>, "GetUniquePropertyHash cannot be templated against " #name)
@@ -555,7 +591,16 @@ private:
     template <typename T>
     [[nodiscard]] bool UpdateUniqueProperty(const CDeterministicMN& dmn, const T& oldValue, const T& newValue)
     {
-        if (oldValue == newValue) {
+        // A BLS operator key can keep the same point while its serialized encoding (legacy<->basic)
+        // changes on a version transition. The map is keyed by GetUniquePropertyHash(), so only that
+        // hash reveals the entry must be re-keyed to the new scheme; CBLSLazyPublicKey::operator==
+        // compares the point and ignores the scheme, so it would wrongly short-circuit. Compare the
+        // serialized hashes for BLS keys and the plain value for every other unique property.
+        if constexpr (std::is_same_v<std::decay_t<T>, CBLSLazyPublicKey>) {
+            if (GetUniquePropertyHash(oldValue) == GetUniquePropertyHash(newValue)) {
+                return true;
+            }
+        } else if (oldValue == newValue) {
             return true;
         }
         static const T nullValue{};
@@ -728,6 +773,7 @@ private:
 
     Uint256HashMap<CDeterministicMNList> mnListsCache GUARDED_BY(cs);
     Uint256HashMap<CDeterministicMNListDiff> mnListDiffsCache GUARDED_BY(cs);
+    std::function<void(const CBlockIndex*)> m_list_snapshot_miss_hook GUARDED_BY(cs);
     const CBlockIndex* tipIndex GUARDED_BY(cs) {nullptr};
     const CBlockIndex* m_initial_snapshot_index GUARDED_BY(cs) {nullptr};
 
@@ -750,6 +796,21 @@ public:
         return GetListForBlockInternal(pindex);
     };
     CDeterministicMNList GetListAtChainTip() EXCLUSIVE_LOCKS_REQUIRED(!cs);
+
+    /** Seed a canonical full-list snapshot in the current EvoDB transaction. */
+    bool SeedListForBlock(const CDeterministicMNList& list) EXCLUSIVE_LOCKS_REQUIRED(!cs);
+
+    /** Invalidate cached list data so the next lookup reloads it from EvoDB. */
+    void InvalidateListCacheForBlock(const uint256& block_hash) EXCLUSIVE_LOCKS_REQUIRED(!cs);
+
+    /** Test-only guard invoked after a full-list cache/EvoDB miss, before
+     * ordinary diff-chain reconstruction can access earlier NORMAL state. */
+    void SetListSnapshotMissHookForTesting(std::function<void(const CBlockIndex*)> hook)
+        EXCLUSIVE_LOCKS_REQUIRED(!cs)
+    {
+        LOCK(cs);
+        m_list_snapshot_miss_hook = std::move(hook);
+    }
 
     void SetListForBlockForTesting(const CDeterministicMNList& list) EXCLUSIVE_LOCKS_REQUIRED(!cs)
     {
@@ -783,7 +844,7 @@ public:
         CDeterministicMNList& mnListRet)>;
 
     [[nodiscard]] RecalcDiffsResult RecalculateAndRepairDiffs(const CBlockIndex* start_index,
-                                                              const CBlockIndex* stop_index, ChainstateManager& chainman,
+                                                              const CBlockIndex* stop_index,
                                                               BuildListFromBlockFunc build_list_func, bool repair)
         EXCLUSIVE_LOCKS_REQUIRED(!cs);
     [[nodiscard]] bool IsRepaired() const;
@@ -798,15 +859,16 @@ private:
     CDeterministicMNList GetListForBlockInternal(gsl::not_null<const CBlockIndex*> pindex) EXCLUSIVE_LOCKS_REQUIRED(cs);
 
     // Helper methods for RecalculateAndRepairDiffs
-    std::vector<const CBlockIndex*> CollectSnapshotBlocks(const CBlockIndex* start_index, const CBlockIndex* stop_index,
-                                                          const Consensus::Params& consensus_params);
+    static std::vector<const CBlockIndex*> CollectSnapshotBlocks(const CBlockIndex* start_index,
+                                                                 const CBlockIndex* stop_index,
+                                                                 const Consensus::Params& consensus_params);
     bool VerifySnapshotPair(const CBlockIndex* from_index, const CBlockIndex* to_index,
                             const CDeterministicMNList& from_snapshot, const CDeterministicMNList& to_snapshot,
                             RecalcDiffsResult& result);
-    std::vector<std::pair<uint256, CDeterministicMNListDiff>> RepairSnapshotPair(
+    static std::vector<std::pair<uint256, CDeterministicMNListDiff>> RepairSnapshotPair(
         const CBlockIndex* from_index, const CBlockIndex* to_index, const CDeterministicMNList& from_snapshot,
         const CDeterministicMNList& to_snapshot, BuildListFromBlockFunc build_list_func, RecalcDiffsResult& result);
-    void WriteRepairedDiffs(const std::vector<std::pair<uint256, CDeterministicMNListDiff>>& recalculated_diffs,
-                            RecalcDiffsResult& result) EXCLUSIVE_LOCKS_REQUIRED(!cs);
+    void WriteRepairedDiffs(const std::vector<std::pair<uint256, CDeterministicMNListDiff>>& recalculated_diffs)
+        EXCLUSIVE_LOCKS_REQUIRED(!cs);
 };
 #endif // BITCOIN_EVO_DETERMINISTICMNS_H

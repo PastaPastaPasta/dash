@@ -15,6 +15,7 @@
 #include <evo/mnhftx.h>
 #include <evo/netinfo.h>
 #include <evo/simplifiedmns.h>
+#include <evo/snapshot.h>
 #include <llmq/blockprocessor.h>
 #include <llmq/commitment.h>
 #include <llmq/quorumsman.h>
@@ -42,6 +43,13 @@ static bool AddNetInfoEntries(const std::shared_ptr<NetInfoInterface>& net_info,
     return true;
 }
 
+// Raising a masternode's state version out of the legacy BLS scheme re-encodes its operator key and
+// moves it to a new scheme-dependent unique-property slot; the collision guards key off this.
+static bool IsSchemeMigration(int old_version, int new_version)
+{
+    return old_version == ProTxVersion::LegacyBLS && new_version > ProTxVersion::LegacyBLS;
+}
+
 static bool SetStateVersion(CDeterministicMNState& state_mn, uint16_t nVersion, MnType nType,
                             BlockValidationState& state)
 {
@@ -52,6 +60,19 @@ static bool SetStateVersion(CDeterministicMNState& state_mn, uint16_t nVersion, 
         state_mn.payouts = LegacyPayoutAsList(state_mn.scriptPayout);
         state_mn.scriptPayout.clear();
     }
+
+    // Keep the operator key's BLS encoding a deterministic function of nVersion, matching the SML and
+    // on-disk serialization, so the stored key and the (scheme-dependent) unique-property index use
+    // the same scheme on every node whether the list was built online or reloaded from a snapshot.
+    // Set() rather than SetLegacy(): the latter only flips the flag and leaves the cached
+    // serialization in the old encoding, so a reloaded node would decode a different key. This runs
+    // before the early return because callers pre-set nVersion, so the version may already match here
+    // while the key still needs re-encoding.
+    if (state_mn.pubKeyOperator != CBLSLazyPublicKey()) {
+        const CBLSPublicKey& pubkey{state_mn.pubKeyOperator.Get()};
+        state_mn.pubKeyOperator.Set(pubkey, nVersion == ProTxVersion::LegacyBLS);
+    }
+
     if (state_mn.nVersion == nVersion && state_mn.netInfo->CanStorePlatform() == needs_extended) {
         return true;
     }
@@ -220,7 +241,7 @@ static bool CheckSpecialTxInner(CDeterministicMNManager& dmnman, llmq::CQuorumSn
             return chain ? CheckMNHFTx(chainman, qman, *chain, tx, pindexPrev, state) :
                            CheckMNHFTx(chainman, qman, tx, pindexPrev, state);
         case TRANSACTION_ASSET_LOCK:
-            return CheckAssetLockTx(tx, state);
+            return CheckAssetLockTx(tx, state, DeploymentActiveAfter(pindexPrev, chainman, Consensus::DEPLOYMENT_V24));
         case TRANSACTION_ASSET_UNLOCK:
             return chain ? CheckAssetUnlockTx(chainman.m_blockman, qman, *chain, tx, pindexPrev, indexes, state) :
                            CheckAssetUnlockTx(chainman.m_blockman, qman, tx, pindexPrev, indexes, state);
@@ -273,6 +294,7 @@ bool CSpecialTxProcessor::RebuildListFromBlock(const CBlock& block, gsl::not_nul
 {
     // Verify that prevList either represents an empty/initial state (default-constructed),
     // or it matches the previous block's hash.
+    // cppcheck-suppress assertWithSideEffect
     assert(prevList == CDeterministicMNList() || prevList.GetBlockHash() == pindexPrev->GetBlockHash());
 
     int nHeight = pindexPrev->nHeight + 1;
@@ -308,7 +330,7 @@ bool CSpecialTxProcessor::RebuildListFromBlock(const CBlock& block, gsl::not_nul
     const bool is_v24_deployed{DeploymentActiveAfter(pindexPrev, m_chainman, Consensus::DEPLOYMENT_V24)};
 
     // we skip the coinbase
-    for (int i = 1; i < (int)block.vtx.size(); i++) {
+    for (int i = 1; i < static_cast<int>(block.vtx.size()); i++) {
         const CTransaction& tx = *block.vtx[i];
 
         if (!tx.IsSpecialTxVersion()) {
@@ -388,6 +410,15 @@ bool CSpecialTxProcessor::RebuildListFromBlock(const CBlock& block, gsl::not_nul
             }
             dmn->pdmnState = dmnState;
 
+            // CheckProRegTx ran against pindexPrev, so transactions in this same block are invisible
+            // to each other and two of them could claim one operator key under different encodings.
+            // Re-probe the list as rebuilt so far. AddMN() reports a duplicate by throwing, which
+            // would escape block assembly, so reject cleanly here instead.
+            if (is_v24_deployed &&
+                newList.HasOperatorKeyUnderAnyScheme(dmn->pdmnState->pubKeyOperator.Get(), /*self=*/uint256())) {
+                return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-protx-dup-key");
+            }
+
             newList.AddMN(dmn);
 
             if (debugLogs) {
@@ -465,6 +496,17 @@ bool CSpecialTxProcessor::RebuildListFromBlock(const CBlock& block, gsl::not_nul
                 }
             }
 
+            // Migrating a legacy masternode to the basic scheme re-encodes its stored key
+            // (SetStateVersion), moving it to the basic-scheme slot. Per-transaction checks ran
+            // against pindexPrev, so re-check against the list as rebuilt so far: if another
+            // masternode holds this key under either encoding, the re-key in UpdateMN() would throw
+            // out of block assembly.
+            if (is_v24_deployed && IsSchemeMigration(current_version, target_version) &&
+                newList.HasOperatorKeyUnderAnyScheme(dmn->pdmnState->pubKeyOperator.Get(),
+                                                     /*self=*/opt_proTx->proTxHash)) {
+                return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-protx-dup-key");
+            }
+
             newList.UpdateMN(opt_proTx->proTxHash, newState);
             if (debugLogs) {
                 LogPrintf("%s -- MN %s updated at height %d: %s\n", __func__, opt_proTx->proTxHash.ToString(), nHeight,
@@ -485,6 +527,23 @@ bool CSpecialTxProcessor::RebuildListFromBlock(const CBlock& block, gsl::not_nul
             const bool operator_changed{newState->pubKeyOperator != opt_proTx->pubKeyOperator};
             const uint16_t target_version{is_v24_deployed ? std::max<uint16_t>(old_version, opt_proTx->nVersion)
                                                           : (operator_changed ? opt_proTx->nVersion : old_version)};
+
+            // Per-transaction checks ran against pindexPrev, so an earlier transaction in this same
+            // block is invisible to them. Re-evaluate against the list as rebuilt so far: this update
+            // moves the operator key to a new unique-property slot if it rotates the key or crosses
+            // the legacy->basic boundary (which re-encodes the key), and if that slot is held by
+            // another masternode the re-key in UpdateMN() would throw out of block assembly. Reject
+            // cleanly. Scoped to those two cases so a pre-existing cross-scheme pair's non-migrating
+            // routine update is not blocked.
+            {
+                const bool migrating{IsSchemeMigration(old_version, target_version)};
+                if (is_v24_deployed && (operator_changed || migrating) &&
+                    newList.HasOperatorKeyUnderAnyScheme(opt_proTx->pubKeyOperator.Get(),
+                                                         /*self=*/opt_proTx->proTxHash)) {
+                    return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-protx-dup-key");
+                }
+            }
+
             if (operator_changed) {
                 // reset all operator related fields and put MN into PoSe-banned state in case the operator key changes
                 newState->ResetOperatorFields();
@@ -492,11 +551,11 @@ bool CSpecialTxProcessor::RebuildListFromBlock(const CBlock& block, gsl::not_nul
                 newState->pubKeyOperator = opt_proTx->pubKeyOperator;
             }
             newState->keyIDVoting = opt_proTx->keyIDVoting;
+            // SetStateVersion() re-encodes the operator key to target_version's scheme, so the stored
+            // key stays consistent with its version whether it was carried in this payload (possibly
+            // under a different version's encoding) or migrated in place.
             if (!SetStateVersion(*newState, target_version, dmn->nType, state)) {
                 return false;
-            }
-            if (operator_changed) {
-                newState->pubKeyOperator.SetLegacy(target_version == ProTxVersion::LegacyBLS);
             }
             if (target_version >= ProTxVersion::ExtAddr) {
                 newState->payouts = opt_proTx->nVersion >= ProTxVersion::ExtAddr
@@ -576,7 +635,7 @@ bool CSpecialTxProcessor::RebuildListFromBlock(const CBlock& block, gsl::not_nul
     }
 
     // we skip the coinbase
-    for (int i = 1; i < (int)block.vtx.size(); i++) {
+    for (int i = 1; i < static_cast<int>(block.vtx.size()); i++) {
         const CTransaction& tx = *block.vtx[i];
 
         // check if any existing MN collateral is spent by this transaction
@@ -642,9 +701,6 @@ bool CSpecialTxProcessor::ProcessSpecialTxsInBlock(Chainstate& chainstate, const
         static int64_t nTimeLoop = 0;
         static int64_t nTimeQuorum = 0;
         static int64_t nTimeDMN = 0;
-        static int64_t nTimeMerkleMNL = 0;
-        static int64_t nTimeMerkleQuorums = 0;
-        static int64_t nTimeCbTxCL = 0;
         static int64_t nTimeMnehf = 0;
         static int64_t nTimePayload = 0;
         static int64_t nTimeCreditPool = 0;
@@ -732,7 +788,10 @@ bool CSpecialTxProcessor::ProcessSpecialTxsInBlock(Chainstate& chainstate, const
         LogPrint(BCLog::BENCHMARK, "      - m_qblockman.ProcessBlock: %.2fms [%.2fs]\n", 0.001 * (nTime5 - nTime4),
                  nTimeQuorum * 0.000001);
 
-        CDeterministicMNList mn_list;
+        // Even before DIP3, bind the canonical empty list to the block so the
+        // independently derived completion hash has the same identity as an
+        // empty evo snapshot section.
+        CDeterministicMNList mn_list{pindex->GetBlockHash(), pindex->nHeight, 0};
         if (DeploymentActiveAt(*pindex, m_consensus_params, Consensus::DEPLOYMENT_DIP0003)) {
             if (!BuildNewListFromBlock(block, pindex->pprev, view, true, state, mn_list)) {
                 // pass the state returned by the function above
@@ -761,6 +820,10 @@ bool CSpecialTxProcessor::ProcessSpecialTxsInBlock(Chainstate& chainstate, const
                  nTimeDMN * 0.000001);
 
         if (opt_cbTx.has_value()) {
+            static int64_t nTimeMerkleMNL = 0;
+            static int64_t nTimeMerkleQuorums = 0;
+            static int64_t nTimeCbTxCL = 0;
+
             uint256 calculatedMerkleRootMNL;
             if (!CalcCbTxMerkleRootMNList(calculatedMerkleRootMNL, mn_list.to_sml(), state)) {
                 // pass the state returned by the function above
@@ -834,7 +897,7 @@ bool CSpecialTxProcessor::ProcessSpecialTxsInBlock(Chainstate& chainstate, const
     return true;
 }
 
-bool CSpecialTxProcessor::UndoSpecialTxsInBlock(Chainstate& chainstate, const CBlock& block, const CBlockIndex* pindex, std::optional<MNListUpdates>& updatesRet)
+bool CSpecialTxProcessor::UndoSpecialTxsInBlock(const Chainstate& chainstate, const CBlock& block, const CBlockIndex* pindex, std::optional<MNListUpdates>& updatesRet)
 {
     AssertLockHeld(::cs_main);
 
@@ -897,75 +960,6 @@ bool CSpecialTxProcessor::CheckCreditPoolDiffForBlock(const CBlock& block, const
     } catch (const std::exception& e) {
         LogPrintf("CSpecialTxProcessor::%s -- FAILURE! %s\n", __func__, e.what());
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "failed-checkcreditpooldiff");
-    }
-
-    return true;
-}
-
-template <typename ProTx>
-static bool CheckService(const ProTx& proTx, TxValidationState& state)
-{
-    switch (proTx.netInfo->Validate()) {
-    case NetInfoStatus::BadAddress:
-        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-netinfo-addr");
-    case NetInfoStatus::BadPort:
-        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-netinfo-port");
-    case NetInfoStatus::BadType:
-        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-netinfo-addr-type");
-    case NetInfoStatus::NotRoutable:
-        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-netinfo-addr-unroutable");
-    case NetInfoStatus::Malformed:
-        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-netinfo-bad");
-    case NetInfoStatus::Success:
-        return true;
-    // Reachable through a serialized netInfo that bypasses the in-memory builder's checks
-    case NetInfoStatus::BadInput:
-        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-netinfo-entry");
-    case NetInfoStatus::Duplicate:
-        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-dup-netinfo-entry");
-    case NetInfoStatus::MaxLimit:
-        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-netinfo-maxlimit");
-    } // no default case, so the compiler can warn about missing cases
-    assert(false);
-}
-
-template <typename ProTx>
-static bool CheckPlatformFields(const ProTx& proTx, bool is_extended_addr, TxValidationState& state)
-{
-    if (proTx.platformNodeID.IsNull()) {
-        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-platform-nodeid");
-    }
-
-    if (is_extended_addr) {
-        // platformHTTPPort and platformP2PPort have been subsumed by netInfo. They should always be zero.
-        if (proTx.platformP2PPort != 0) {
-            return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-platform-p2p-port");
-        }
-        if (proTx.platformHTTPPort != 0) {
-            return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-platform-http-port");
-        }
-        return true;
-    }
-
-    if (::IsNodeOnMainnet()) {
-        if (proTx.platformP2PPort != ::MainParams().GetDefaultPlatformP2PPort()) {
-            return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-platform-p2p-port");
-        }
-        if (proTx.platformHTTPPort != ::MainParams().GetDefaultPlatformHTTPPort()) {
-            return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-platform-http-port");
-        }
-    }
-    if (proTx.platformP2PPort == ::MainParams().GetDefaultPort()) {
-        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-platform-p2p-port");
-    }
-    if (proTx.platformHTTPPort == ::MainParams().GetDefaultPort()) {
-        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-platform-http-port");
-    }
-
-    const uint16_t core_port{proTx.netInfo->GetPrimary().GetPort()};
-    if (proTx.platformP2PPort == proTx.platformHTTPPort || proTx.platformP2PPort == core_port ||
-        proTx.platformHTTPPort == core_port) {
-        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-platform-dup-ports");
     }
 
     return true;
@@ -1067,15 +1061,9 @@ bool CheckProRegTx(const CTransaction& tx, gsl::not_null<const CBlockIndex*> pin
 
     // It's allowed to set addr to 0, which will put the MN into PoSe-banned state and require a ProUpServTx to be
     // issues later. If any of both is set, it must be valid however
-    if (!opt_ptx->netInfo->IsEmpty() && !CheckService(*opt_ptx, state)) {
-        // pass the state returned by the function above
+    if (!CheckProviderNetworkFields(opt_ptx->netInfo, opt_ptx->nType, opt_ptx->nVersion, &opt_ptx->platformNodeID,
+                                    opt_ptx->platformP2PPort, opt_ptx->platformHTTPPort, /*allow_empty=*/true, state)) {
         return false;
-    }
-
-    if (opt_ptx->nType == MnType::Evo) {
-        if (!CheckPlatformFields(*opt_ptx, opt_ptx->nVersion >= ProTxVersion::ExtAddr, state)) {
-            return false;
-        }
     }
 
     CTxDestination collateralTxDest;
@@ -1148,6 +1136,15 @@ bool CheckProRegTx(const CTransaction& tx, gsl::not_null<const CBlockIndex*> pin
             return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-dup-key");
         }
 
+        // The check above only sees the operator key under the encoding this payload happens to use,
+        // so it misses a key an existing masternode holds under the other one. A ProRegTx never
+        // proves ownership of the operator key, so that gap lets anyone claim a masternode's key.
+        // Nothing is excluded here: a duplicate key is never allowed, even for a ProTx replacing an
+        // existing masternode.
+        if (is_v24_active && mnList.HasOperatorKeyUnderAnyScheme(opt_ptx->pubKeyOperator.Get(), /*self=*/uint256())) {
+            return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-dup-key");
+        }
+
         // never allow duplicate platformNodeIds for EvoNodes
         if (opt_ptx->nType == MnType::Evo) {
             if (mnList.HasUniqueProperty(opt_ptx->platformNodeID)) {
@@ -1192,15 +1189,9 @@ bool CheckProUpServTx(const CTransaction& tx, gsl::not_null<const CBlockIndex*> 
         return false;
     }
 
-    if (!CheckService(*opt_ptx, state)) {
-        // pass the state returned by the function above
+    if (!CheckProviderNetworkFields(opt_ptx->netInfo, opt_ptx->nType, opt_ptx->nVersion, &opt_ptx->platformNodeID,
+                                    opt_ptx->platformP2PPort, opt_ptx->platformHTTPPort, /*allow_empty=*/false, state)) {
         return false;
-    }
-
-    if (opt_ptx->nType == MnType::Evo) {
-        if (!CheckPlatformFields(*opt_ptx, opt_ptx->nVersion >= ProTxVersion::ExtAddr, state)) {
-            return false;
-        }
     }
 
     auto mnList = dmnman.GetListForBlock(pindexPrev);
@@ -1220,6 +1211,16 @@ bool CheckProUpServTx(const CTransaction& tx, gsl::not_null<const CBlockIndex*> 
     if (!IsVersionChangeValid(pindexPrev, dmn->pdmnState->nVersion, opt_ptx->nVersion, chainman, state)) {
         // pass the state returned by the function above
         return false;
+    }
+
+    // A service update carries no operator key, but raising a legacy masternode to the basic scheme
+    // re-encodes its stored key, moving it to the basic-scheme unique-property slot. If another
+    // masternode already holds that key under either encoding, the re-key in UpdateMN() would throw
+    // out of block assembly, so reject the migration cleanly here.
+    if (DeploymentActiveAfter(pindexPrev, chainman, Consensus::DEPLOYMENT_V24) &&
+        IsSchemeMigration(dmn->pdmnState->nVersion, opt_ptx->nVersion) &&
+        mnList.HasOperatorKeyUnderAnyScheme(dmn->pdmnState->pubKeyOperator.Get(), /*self=*/opt_ptx->proTxHash)) {
+        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-dup-key");
     }
 
     // don't allow updating to addresses already used by other MNs
@@ -1291,6 +1292,20 @@ bool CheckProUpRegTx(const CTransaction& tx, gsl::not_null<const CBlockIndex*> p
         return false;
     }
 
+    // This update moves the masternode's operator key to a new unique-property slot when it either
+    // rotates the key or crosses the legacy->basic scheme boundary (which re-encodes the key). Reject
+    // if that target slot is already held by another masternode -- under either encoding -- so the
+    // re-key in UpdateMN() cannot collide and throw out of block assembly. Scoped to those two cases
+    // so a pre-existing cross-scheme pair's non-migrating routine update is not blocked.
+    if (DeploymentActiveAfter(pindexPrev, chainman, Consensus::DEPLOYMENT_V24)) {
+        const bool key_changed{!(opt_ptx->pubKeyOperator == dmn->pdmnState->pubKeyOperator)};
+        const bool migrating{IsSchemeMigration(dmn->pdmnState->nVersion, opt_ptx->nVersion)};
+        if ((key_changed || migrating) &&
+            mnList.HasOperatorKeyUnderAnyScheme(opt_ptx->pubKeyOperator.Get(), /*self=*/opt_ptx->proTxHash)) {
+            return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-dup-key");
+        }
+    }
+
     const auto owner_payouts = GetOwnerPayouts(*opt_ptx);
     if (!IsPayoutListTriviallyValid(owner_payouts, dmn->pdmnState->keyIDOwner, opt_ptx->keyIDVoting, state)) return false;
 
@@ -1316,6 +1331,8 @@ bool CheckProUpRegTx(const CTransaction& tx, gsl::not_null<const CBlockIndex*> p
             return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-dup-key");
         }
     }
+    // Cross-scheme duplicates for this update are rejected earlier (see the collision guard after the
+    // version-change check), which also covers the key-less migration case.
 
     if (!DeploymentDIP0003Enforced(pindexPrev->nHeight, Params().GetConsensus())) {
         if (dmn->pdmnState->keyIDOwner != opt_ptx->keyIDVoting) {

@@ -270,14 +270,14 @@ void Interrupt(NodeContext& node)
     if (g_txindex) {
         g_txindex->Interrupt();
     }
-    if (g_addressindex) {
-        g_addressindex->Interrupt();
+    if (node.address_index) {
+        node.address_index->Interrupt();
     }
-    if (g_timestampindex) {
-        g_timestampindex->Interrupt();
+    if (node.timestamp_index) {
+        node.timestamp_index->Interrupt();
     }
-    if (g_spentindex) {
-        g_spentindex->Interrupt();
+    if (node.spent_index) {
+        node.spent_index->Interrupt();
     }
     ForEachBlockFilterIndex([](BlockFilterIndex& index) { index.Interrupt(); });
     if (g_coin_stats_index) {
@@ -396,17 +396,17 @@ void PrepareShutdown(NodeContext& node)
         g_txindex->Stop();
         g_txindex.reset();
     }
-    if (g_addressindex) {
-        g_addressindex->Stop();
-        g_addressindex.reset();
+    if (node.address_index) {
+        node.address_index->Stop();
+        node.address_index.reset();
     }
-    if (g_timestampindex) {
-        g_timestampindex->Stop();
-        g_timestampindex.reset();
+    if (node.timestamp_index) {
+        node.timestamp_index->Stop();
+        node.timestamp_index.reset();
     }
-    if (g_spentindex) {
-        g_spentindex->Stop();
-        g_spentindex.reset();
+    if (node.spent_index) {
+        node.spent_index->Stop();
+        node.spent_index.reset();
     }
     if (g_coin_stats_index) {
         g_coin_stats_index->Stop();
@@ -429,13 +429,12 @@ void PrepareShutdown(NodeContext& node)
                 chainstate->ResetCoinsViews();
             }
         }
-        // The mempool holds raw pointers to dmnman and llmq_ctx->isman, so it has to
-        // let go of them before either manager is destroyed.
-        if (node.mempool) {
-            node.mempool->DisconnectManagers();
-        }
+        // The mempool holds raw pointers to dmnman and isman, so it must be
+        // destroyed before either manager.
+        node.mempool.reset();
         node.chain_helper.reset();
         node.llmq_ctx.reset();
+        node.isman.reset();
         node.dmnman.reset();
         node.evodb.reset();
     }
@@ -900,7 +899,7 @@ static void PeriodicStats(NodeContext& node)
     assert(::g_stats_client->active());
     ChainstateManager& chainman = *Assert(node.chainman);
     const CTxMemPool& mempool = *Assert(node.mempool);
-    const llmq::CInstantSendManager& isman = *Assert(node.llmq_ctx->isman);
+    const llmq::CInstantSendManager& isman = *Assert(node.isman);
     chainman.ActiveChainstate().ForceFlushStateToDisk();
     const auto maybe_stats = WITH_LOCK(::cs_main, return GetUTXOStats(&chainman.ActiveChainstate().CoinsDB(), chainman.m_blockman, /*hash_type=*/CoinStatsHashType::NONE, node.rpc_interruption_point, chainman.ActiveChain().Tip(), /*index_requested=*/true));
     if (maybe_stats.has_value()) {
@@ -1949,7 +1948,30 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     LogPrintf("* Using %.1f MiB for in-memory UTXO set (plus up to %.1f MiB of unused mempool space)\n", cache_sizes.coins * (1.0 / 1024 / 1024), mempool_opts.max_size_bytes * (1.0 / 1024 / 1024));
 
     for (bool fLoaded = false; !fLoaded && !ShutdownRequested();) {
-        node.mempool = std::make_unique<CTxMemPool>(mempool_opts);
+        // On a retry iteration the previous instances still hold the on-disk
+        // database locks, so release them before opening the databases again.
+        node.mempool.reset();
+        node.isman.reset();
+        node.dmnman.reset();
+        node.evodb.reset();
+        auto catch_exceptions = [](auto&& f) {
+            try {
+                return f();
+            } catch (const std::exception& e) {
+                LogPrintf("%s\n", e.what());
+                return std::make_tuple(node::ChainstateLoadStatus::FAILURE, _("Error opening block database"));
+            }
+        };
+        auto [status, error] = catch_exceptions([&]() -> node::ChainstateLoadResult {
+            node.evodb = std::make_unique<CEvoDB>(util::DbWrapperParams{.path = args.GetDataDirNet(), .memory = false, .wipe = node::fReindex || fReindexChainState});
+            node.dmnman = std::make_unique<CDeterministicMNManager>(*node.evodb, *node.mn_metaman);
+            node.isman = std::make_unique<llmq::CInstantSendManager>(*node.sporkman, util::DbWrapperParams{.path = args.GetDataDirNet(), .memory = false, .wipe = node::fReindex || fReindexChainState});
+
+            mempool_opts.dmnman = node.dmnman.get();
+            mempool_opts.isman = node.isman.get();
+            node.mempool = std::make_unique<CTxMemPool>(mempool_opts);
+            return {node::ChainstateLoadStatus::SUCCESS, {}};
+        });
 
         const ChainstateManager::Options chainman_opts{
             .chainparams = chainparams,
@@ -1968,9 +1990,6 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         node.mn_sync = std::make_unique<CMasternodeSync>(std::make_unique<NodeSyncNotifierImpl>(*node.connman, *node.netfulfilledman));
 
         node::ChainstateLoadOptions options;
-        options.mempool = Assert(node.mempool.get());
-        options.mn_metaman = Assert(node.mn_metaman.get());
-        options.sporkman = Assert(node.sporkman.get());
         options.chainlocks = Assert(node.chainlocks.get());
         options.mn_sync = Assert(node.mn_sync.get());
         options.data_dir = args.GetDataDirNet();
@@ -2000,15 +2019,11 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
         uiInterface.InitMessage(_("Loading block index…").translated);
         const auto load_block_index_start_time{SteadyClock::now()};
-        auto catch_exceptions = [](auto&& f) {
-            try {
-                return f();
-            } catch (const std::exception& e) {
-                LogPrintf("%s\n", e.what());
-                return std::make_tuple(node::ChainstateLoadStatus::FAILURE, _("Error opening block database"));
-            }
-        };
-        auto [status, error] = catch_exceptions([&]{ return LoadChainstate(chainman, cache_sizes, options, node.evodb, node.dmnman, node.llmq_ctx, node.chain_helper); });
+        if (status == node::ChainstateLoadStatus::SUCCESS) {
+            options.mempool = Assert(node.mempool.get());
+            options.isman = Assert(node.isman.get());
+            std::tie(status, error) = catch_exceptions([&]{ return LoadChainstate(chainman, cache_sizes, options, *node.evodb, *node.dmnman, node.llmq_ctx, node.chain_helper); });
+        }
         if (status == node::ChainstateLoadStatus::SUCCESS) {
             uiInterface.InitMessage(_("Verifying blocks…").translated);
             if (chainman.m_blockman.m_have_pruned && options.check_blocks > MIN_BLOCKS_TO_KEEP) {
@@ -2083,7 +2098,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         // Will init later in ThreadImport
         node.active_ctx = std::make_unique<ActiveContext>(*node.llmq_ctx->bls_worker, chainman, *node.connman, *node.dmnman,
                                                           *node.govman, *node.chain_helper->superblocks,
-                                                          *node.sporkman, *node.chainlocks, *node.mempool, *node.clhandler, *node.llmq_ctx->isman,
+                                                          *node.sporkman, *node.chainlocks, *node.mempool, *node.clhandler, *node.isman,
                                                           *node.llmq_ctx->qman, *node.llmq_ctx->qsnapman, *node.llmq_ctx->sigman,
                                                           *node.mn_sync, operator_sk, dash_db_params, quorums_watch);
         RegisterValidationInterface(node.active_ctx.get());
@@ -2093,12 +2108,21 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         RegisterValidationInterface(node.observer_ctx.get());
     }
 
+    assert(!node.cj_walletman);
+#ifdef ENABLE_WALLET
+    if (!node.active_ctx) {
+        // Only constructed in wallet-enabled builds; stays null otherwise, must check before use
+        node.cj_walletman = CJWalletManager::make(chainman, *node.dmnman, *node.mn_metaman, *node.mempool, *node.mn_sync,
+                                                  *node.isman, !ignores_incoming_txs);
+    }
+#endif
+
     assert(!node.peerman);
     node.peerman = PeerManager::make(*node.connman, *node.addrman, node.banman.get(), *node.dstxman,
                                      chainman, *node.mempool, *node.mn_metaman, *node.mn_sync,
                                      *node.sporkman, *node.chainlocks, *node.clhandler,
                                      node.active_ctx ? node.active_ctx->nodeman.get() : nullptr,
-                                     node.dmnman, node.cj_walletman, node.llmq_ctx, ignores_incoming_txs);
+                                     *node.dmnman, node.cj_walletman.get(), *node.isman, *node.llmq_ctx, ignores_incoming_txs);
     RegisterValidationInterface(node.peerman.get());
 
     node.ds_notification_interface = std::make_unique<CDSNotificationInterface>(
@@ -2108,7 +2132,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
     // ********************************************************* Step 7d: Setup other Dash services
 
-    node.peerman->AddExtraHandler(std::make_unique<NetInstantSend>(node.peerman.get(), *node.llmq_ctx->isman, node.active_ctx ? node.active_ctx->is_signer.get() : nullptr, *node.llmq_ctx->sigman, *node.llmq_ctx->qman, *node.chainlocks, chainman, *node.mempool, *node.mn_sync));
+    node.peerman->AddExtraHandler(std::make_unique<NetInstantSend>(node.peerman.get(), *node.isman, node.active_ctx ? node.active_ctx->is_signer.get() : nullptr, *node.llmq_ctx->sigman, *node.llmq_ctx->qman, *node.chainlocks, chainman, *node.mempool, *node.mn_sync));
     node.peerman->AddExtraHandler(std::make_unique<llmq::NetSigning>(node.peerman.get(), *node.llmq_ctx->sigman, node.active_ctx ? node.active_ctx->shareman.get() : nullptr, *node.sporkman));
 
     {
@@ -2140,16 +2164,9 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
     if (node.active_ctx) {
         auto cj_server = std::make_unique<CCoinJoinServer>(node.peerman.get(), chainman, *node.connman, *node.dmnman, *node.dstxman, *node.mn_metaman,
-                                                           *node.mempool, *node.active_ctx->nodeman, *node.mn_sync, *node.llmq_ctx->isman);
+                                                           *node.mempool, *node.active_ctx->nodeman, *node.mn_sync, *node.isman);
         node.active_ctx->SetCJServer(cj_server.get());
         node.peerman->AddExtraHandler(std::move(cj_server));
-    } else {
-        assert(!node.cj_walletman);
-        // Only constructed in wallet-enabled builds; stays null otherwise, must check before use
-#ifdef ENABLE_WALLET
-        node.cj_walletman = CJWalletManager::make(chainman, *node.dmnman, *node.mn_metaman, *node.mempool, *node.mn_sync,
-                                                  *node.llmq_ctx->isman, !ignores_incoming_txs);
-#endif
     }
 
     if (node.cj_walletman) {
@@ -2199,22 +2216,22 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     }
 
     if (args.GetBoolArg("-addressindex", DEFAULT_ADDRESSINDEX)) {
-        g_addressindex = std::make_unique<AddressIndex>(interfaces::MakeChain(node), cache_sizes.address_index, false, fReindex);
-        if (!g_addressindex->Start()) {
+        node.address_index = std::make_unique<AddressIndex>(interfaces::MakeChain(node), cache_sizes.address_index, false, fReindex);
+        if (!node.address_index->Start()) {
             return false;
         }
     }
 
     if (args.GetBoolArg("-timestampindex", DEFAULT_TIMESTAMPINDEX)) {
-        g_timestampindex = std::make_unique<TimestampIndex>(interfaces::MakeChain(node), cache_sizes.timestamp_index, false, fReindex);
-        if (!g_timestampindex->Start()) {
+        node.timestamp_index = std::make_unique<TimestampIndex>(interfaces::MakeChain(node), cache_sizes.timestamp_index, false, fReindex);
+        if (!node.timestamp_index->Start()) {
             return false;
         }
     }
 
     if (args.GetBoolArg("-spentindex", DEFAULT_SPENTINDEX)) {
-        g_spentindex = std::make_unique<SpentIndex>(interfaces::MakeChain(node), cache_sizes.spent_index, false, fReindex);
-        if (!g_spentindex->Start()) {
+        node.spent_index = std::make_unique<SpentIndex>(interfaces::MakeChain(node), cache_sizes.spent_index, false, fReindex);
+        if (!node.spent_index->Start()) {
             return false;
         }
     }
@@ -2386,7 +2403,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         // Seed InstantSend tip-height cache; NetInstantSend receives future
         // updates via CValidationInterface but misses InitializeCurrentBlockTip.
         // TODO: move cache updates from NetInstantSend to g_ds_notification due to specific of Tip's processing
-        node.llmq_ctx->isman->CacheTipHeight(WITH_LOCK(::cs_main, return chainman.ActiveChain().Tip()));
+        node.isman->CacheTipHeight(WITH_LOCK(::cs_main, return chainman.ActiveChain().Tip()));
 
         {
             // Get all UTXOs for each MN collateral in one go so that we can fill coin cache early
@@ -2427,7 +2444,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
                                                        CDeterministicMNList& mnListRet) -> bool {
                     return node.chain_helper->special_tx->RebuildListFromBlock(block, pindexPrev, prevList, view, debugLogs, state, mnListRet);
                 };
-                auto result = node.dmnman->RecalculateAndRepairDiffs(start_index, stop_index, chainman, build_list_func, true);
+                auto result = node.dmnman->RecalculateAndRepairDiffs(start_index, stop_index, build_list_func, true);
 
                 if (!result.verification_errors.empty()) {
                     LogPrintf("WARNING: Verification errors:\n%s\n", Join(result.verification_errors, "\n"));

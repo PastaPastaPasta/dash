@@ -72,8 +72,8 @@ void CBLSWorker::Stop()
 #ifndef BUILD_BITCOIN_INTERNAL
 bool CBLSWorker::GenerateContributions(int quorumThreshold, Span<CBLSId> ids, BLSVerificationVectorPtr& vvecRet, std::vector<CBLSSecretKey>& skSharesRet)
 {
-    auto svec = std::vector<CBLSSecretKey>((size_t)quorumThreshold);
-    vvecRet = std::make_shared<std::vector<CBLSPublicKey>>((size_t)quorumThreshold);
+    auto svec = std::vector<CBLSSecretKey>(static_cast<size_t>(quorumThreshold));
+    vvecRet = std::make_shared<std::vector<CBLSPublicKey>>(static_cast<size_t>(quorumThreshold));
     skSharesRet.resize(ids.size());
 
     for (int i = 0; i < quorumThreshold; i++) {
@@ -83,7 +83,7 @@ bool CBLSWorker::GenerateContributions(int quorumThreshold, Span<CBLSId> ids, BL
     std::vector<std::future<bool>> futures;
     futures.reserve((quorumThreshold / batchSize + ids.size() / batchSize) + 2);
 
-    for (size_t i = 0; i < size_t(quorumThreshold); i += batchSize) {
+    for (size_t i = 0; i < static_cast<size_t>(quorumThreshold); i += batchSize) {
         size_t start = i;
         size_t count = std::min(batchSize, quorumThreshold - start);
         auto f = [&, start, count](int threadId) {
@@ -155,8 +155,8 @@ struct Aggregator : public std::enable_shared_from_this<Aggregator<T>> {
         }
     }
 
-    const T* pointer(const T& v) { return &v; }
-    const T* pointer(const T* v) { return v; }
+    static const T* pointer(const T& v) { return &v; }
+    static const T* pointer(const T* v) { return v; }
 
     // Starts aggregation.
     // If parallel=true, then this will return fast, otherwise this will block until aggregation is done
@@ -297,7 +297,7 @@ struct Aggregator : public std::enable_shared_from_this<Aggregator<T>> {
     }
 
     template <typename TP>
-    T SyncAggregate(Span<TP> vec, size_t start, size_t count)
+    static T SyncAggregate(Span<TP> vec, size_t start, size_t count)
     {
         T result = *vec[start];
         for (size_t j = 1; j < count; j++) {
@@ -382,8 +382,8 @@ struct VectorAggregator : public std::enable_shared_from_this<VectorAggregator<T
 // Same rules as in Aggregator apply for the inputs
 struct ContributionVerifier : public std::enable_shared_from_this<ContributionVerifier> {
     struct BatchState {
-        size_t start;
-        size_t count;
+        size_t start{0};
+        size_t count{0};
 
         BLSVerificationVectorPtr vvec;
         CBLSSecretKey skShare;

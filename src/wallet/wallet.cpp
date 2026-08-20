@@ -22,6 +22,7 @@
 #include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <psbt.h>
+#include <random.h>
 #include <script/descriptor.h>
 #include <script/script.h>
 #include <script/sign.h>
@@ -43,6 +44,7 @@
 #include <wallet/coincontrol.h>
 #include <wallet/context.h>
 #include <wallet/external_signer_scriptpubkeyman.h>
+#include <wallet/platformkeys.h>
 #include <warnings.h>
 
 #include <coinjoin/options.h>
@@ -2066,34 +2068,6 @@ CWallet::ScanResult CWallet::ScanForWalletTransactions(const uint256& start_bloc
     return result;
 }
 
-void CWallet::ReacceptWalletTransactions()
-{
-    // If transactions aren't being broadcasted, don't let them into local mempool either
-    if (!fBroadcastTransactions)
-        return;
-    std::map<int64_t, CWalletTx*> mapSorted;
-
-    // Sort pending wallet transactions based on their initial wallet insertion order
-    for (std::pair<const uint256, CWalletTx>& item : mapWallet) {
-        const uint256& wtxid = item.first;
-        CWalletTx& wtx = item.second;
-        assert(wtx.GetHash() == wtxid);
-
-        int nDepth = GetTxDepthInMainChain(wtx);
-
-        if (!wtx.IsCoinBase() && (nDepth == 0 && !IsTxLockedByInstantSend(wtx) && !wtx.isAbandoned())) {
-            mapSorted.insert(std::make_pair(wtx.nOrderPos, &wtx));
-        }
-    }
-
-    // Try to add wallet transactions to memory pool
-    for (const std::pair<const int64_t, CWalletTx*>& item : mapSorted) {
-        CWalletTx& wtx = *(item.second);
-        bilingual_str unused_err_string;
-        SubmitTxMemoryPoolAndRelay(wtx, unused_err_string, false);
-    }
-}
-
 bool CWallet::CanTxBeResent(const CWalletTx& wtx) const
 {
     AssertLockHeld(cs_wallet);
@@ -2144,43 +2118,77 @@ std::set<uint256> CWallet::GetTxConflicts(const CWalletTx& wtx) const
     return result;
 }
 
-// Rebroadcast transactions from the wallet. We do this on a random timer
-// to slightly obfuscate which transactions come from our wallet.
+bool CWallet::ShouldResend() const
+{
+    // Don't attempt to resubmit if the wallet is configured to not broadcast
+    if (!fBroadcastTransactions) return false;
+
+    // During reindex, importing and IBD, old wallet transactions become
+    // unconfirmed. Don't resend them as that would spam other nodes.
+    // We only allow forcing mempool submission when not relaying to avoid this spam.
+    if (!chain().isReadyToBroadcast()) return false;
+
+    // Do this infrequently and randomly to avoid giving away
+    // that these are our transactions.
+    if (GetTime() < m_next_resend) return false;
+
+    return true;
+}
+
+int64_t CWallet::GetDefaultNextResend() { return GetTime() + (1 * 60 * 60) + GetRand(2 * 60 * 60); }
+
+// Resubmit transactions from the wallet to the mempool, optionally asking the
+// mempool to relay them. On startup, we will do this for all unconfirmed
+// transactions but will not ask the mempool to relay them. We do this on startup
+// to ensure that our own mempool is aware of our transactions, and to also
+// initialize m_next_resend so that the actual rebroadcast is scheduled. There
+// is a privacy side effect here as not broadcasting on startup also means that we won't
+// inform the world of our wallet's state, particularly if the wallet (or node) is not
+// yet synced.
 //
-// Ideally, we'd only resend transactions that we think should have been
+// Otherwise this function is called periodically in order to relay our unconfirmed txs.
+// We do this on a random timer to slightly obfuscate which transactions
+// come from our wallet.
+//
+// TODO: Ideally, we'd only resend transactions that we think should have been
 // mined in the most recent block. Any transaction that wasn't in the top
 // blockweight of transactions in the mempool shouldn't have been mined,
 // and so is probably just sitting in the mempool waiting to be confirmed.
 // Rebroadcasting does nothing to speed up confirmation and only damages
 // privacy.
-void CWallet::ResendWalletTransactions()
+//
+// The `force` option results in all unconfirmed transactions being submitted to
+// the mempool. This does not necessarily result in those transactions being relayed,
+// that depends on the `relay` option. Periodic rebroadcast uses the pattern
+// relay=true force=false, while loading into the mempool
+// (on start, or after import) uses relay=false force=true.
+void CWallet::ResubmitWalletTransactions(bool relay, bool force)
 {
-    // During reindex, importing and IBD, old wallet transactions become
-    // unconfirmed. Don't resend them as that would spam other nodes.
-    if (!chain().isReadyToBroadcast()) return;
-
-    // Do this infrequently and randomly to avoid giving away
-    // that these are our transactions.
-    if (GetTime() < m_next_resend || !fBroadcastTransactions) return;
-    bool fFirst = (m_next_resend == 0);
-    // resend 1-3 hours from now, ~2 hours on average.
-    m_next_resend = GetTime() + (1 * 60 * 60) + GetRand(2 * 60 * 60);
-    if (fFirst) return;
+    // Don't attempt to resubmit if the wallet is configured to not broadcast,
+    // even if forcing.
+    if (!fBroadcastTransactions) return;
 
     int submitted_tx_count = 0;
 
     { // cs_wallet scope
         LOCK(cs_wallet);
 
-        // Relay transactions
-        for (std::pair<const uint256, CWalletTx>& item : mapWallet) {
-            CWalletTx& wtx = item.second;
+        // First filter for the transactions we want to rebroadcast.
+        // We use a set with WalletTxOrderComparator so that rebroadcasting occurs in insertion order
+        std::set<CWalletTx*, WalletTxOrderComparator> to_submit;
+        for (auto& [txid, wtx] : mapWallet) {
+            // Only rebroadcast unconfirmed txs
+            if (!wtx.isUnconfirmed()) continue;
+
             // Attempt to rebroadcast all txes more than 5 minutes older than
-            // the last block. SubmitTxMemoryPoolAndRelay() will not rebroadcast
-            // any confirmed or conflicting txs.
-            if (wtx.nTimeReceived > m_best_block_time - 5 * 60) continue;
+            // the last block, or all txs if forcing.
+            if (!force && wtx.nTimeReceived > m_best_block_time - 5 * 60) continue;
+            to_submit.insert(&wtx);
+        }
+        // Now try submitting the transactions to the memory pool and (optionally) relay them.
+        for (auto wtx : to_submit) {
             bilingual_str unused_err_string;
-            if (SubmitTxMemoryPoolAndRelay(wtx, unused_err_string, true)) ++submitted_tx_count;
+            if (SubmitTxMemoryPoolAndRelay(*wtx, unused_err_string, relay)) ++submitted_tx_count;
         }
     } // cs_wallet
 
@@ -2194,7 +2202,9 @@ void CWallet::ResendWalletTransactions()
 void MaybeResendWalletTxs(WalletContext& context)
 {
     for (const std::shared_ptr<CWallet>& pwallet : GetWallets(context)) {
-        pwallet->ResendWalletTransactions();
+        if (!pwallet->ShouldResend()) continue;
+        pwallet->ResubmitWalletTransactions(/*relay=*/true, /*force=*/false);
+        pwallet->SetNextResend();
     }
 }
 
@@ -3137,8 +3147,12 @@ std::shared_ptr<CWallet> CWallet::Create(WalletContext& context, const std::stri
             warnings.push_back(strprintf(_("Error reading %s! Transaction data may be missing or incorrect."
                                            " Rescanning wallet."), walletFile));
             rescan_required = true;
-        }
-        else {
+        } else if (nLoadWalletRet == DBErrors::UNKNOWN_DESCRIPTOR) {
+            error = strprintf(_("Unrecognized descriptor found. Loading wallet %s\n\n"
+                                "The wallet might had been created on a newer version.\n"
+                                "Please try running the latest software version.\n"), walletFile);
+            return nullptr;
+        } else {
             error = strprintf(_("Error loading %s"), walletFile);
             return nullptr;
         }
@@ -3578,14 +3592,12 @@ const CAddressBookData* CWallet::FindAddressBookEntry(const CTxDestination& dest
 
 void CWallet::postInitProcess()
 {
-    LOCK(cs_wallet);
-
     // Add wallet transactions that aren't already in a block to mempool
     // Do this here as mempool requires genesis block to be loaded
-    ReacceptWalletTransactions();
+    ResubmitWalletTransactions(/*relay=*/false, /*force=*/true);
 
     // Update wallet transactions with current mempool transactions.
-    chain().requestMempoolTransactions(*this);
+    WITH_LOCK(cs_wallet, chain().requestMempoolTransactions(*this));
 }
 
 void CWallet::InitAutoBackup()
@@ -3800,6 +3812,162 @@ bool CWallet::WriteGovernanceObject(const Governance::Object& obj)
     return batch.WriteGovernanceObject(obj) && LoadGovernanceObject(obj);
 }
 
+void CWallet::LoadPlatformData(const std::string& key, const std::vector<unsigned char>& value)
+{
+    AssertLockHeld(cs_wallet);
+    m_platform_data[key] = value;
+}
+
+bool CWallet::WritePlatformData(const std::string& key, const std::vector<unsigned char>& value)
+{
+    AssertLockHeld(cs_wallet);
+    WalletBatch batch(GetDatabase());
+    if (value.empty()) {
+        if (!batch.ErasePlatformData(key)) return false;
+        m_platform_data.erase(key);
+        return true;
+    }
+    if (!batch.WritePlatformData(key, value)) return false;
+    m_platform_data[key] = value;
+    return true;
+}
+
+std::map<std::string, std::vector<unsigned char>> CWallet::GetPlatformData(const std::string& prefix) const
+{
+    AssertLockHeld(cs_wallet);
+    std::map<std::string, std::vector<unsigned char>> ret;
+    for (auto it = m_platform_data.lower_bound(prefix); it != m_platform_data.end(); ++it) {
+        if (it->first.compare(0, prefix.size(), prefix) != 0) break;
+        ret.emplace(it->first, it->second);
+    }
+    return ret;
+}
+
+PlatformKeyStatus CWallet::GetPlatformKeySource(const ScriptPubKeyMan*& source) const
+{
+    AssertLockHeld(cs_wallet);
+    source = nullptr;
+    if (!IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS) || IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS) ||
+        IsWalletFlagSet(WALLET_FLAG_EXTERNAL_SIGNER)) {
+        return PlatformKeyStatus::NOT_SUPPORTED;
+    }
+
+    std::vector<unsigned char> selected_id;
+    for (const auto* spk_man : GetActiveScriptPubKeyMans()) {
+        std::vector<unsigned char> candidate_id;
+        const auto status{spk_man->GetPlatformKeySource(candidate_id)};
+        if (status == PlatformKeyStatus::NOT_SUPPORTED) continue;
+        if (status != PlatformKeyStatus::SUCCESS) return status;
+        if (source && candidate_id != selected_id) return PlatformKeyStatus::AMBIGUOUS_SOURCE;
+        if (!source) {
+            source = spk_man;
+            selected_id = std::move(candidate_id);
+        }
+    }
+    return source ? PlatformKeyStatus::SUCCESS : PlatformKeyStatus::NOT_SUPPORTED;
+}
+
+PlatformKeyStatus CWallet::DerivePlatformKey(const platformkeys::Path& path, platformkeys::ExtKey256& out) const
+{
+    AssertLockHeld(cs_wallet);
+    const ScriptPubKeyMan* source{nullptr};
+    const auto status{GetPlatformKeySource(source)};
+    if (status != PlatformKeyStatus::SUCCESS) return status;
+    return source->DerivePlatformKey(path, out);
+}
+
+PlatformKeyStatus CWallet::DerivePlatformKey(const PlatformKeyRequest& request, platformkeys::ExtKey256& out) const
+{
+    AssertLockHeld(cs_wallet);
+    return DerivePlatformKey(platformkeys::PlatformKeyPath(static_cast<uint32_t>(Params().ExtCoinType()), request), out);
+}
+
+PlatformKeyResult<CPubKey> CWallet::GetPlatformPubKey(const PlatformKeyRequest& request) const
+{
+    LOCK(cs_wallet);
+    platformkeys::ExtKey256 key;
+    PlatformKeyResult<CPubKey> result;
+    result.status = DerivePlatformKey(request, key);
+    if (result.status == PlatformKeyStatus::SUCCESS) result.value = key.key.GetPubKey();
+    return result;
+}
+
+PlatformKeyResult<std::vector<unsigned char>> CWallet::SignPlatformDigest(const PlatformKeyRequest& request,
+                                                                          const uint256& digest) const
+{
+    LOCK(cs_wallet);
+    platformkeys::ExtKey256 key;
+    PlatformKeyResult<std::vector<unsigned char>> result;
+    result.status = DerivePlatformKey(request, key);
+    if (result.status == PlatformKeyStatus::SUCCESS && !key.key.SignCompact(digest, result.value)) {
+        result.status = PlatformKeyStatus::DERIVATION_ERROR;
+        result.value.clear();
+    }
+    return result;
+}
+
+PlatformKeyResult<SecureVector> CWallet::PlatformECDHSecret(const IdentityAuthKey& request, const CPubKey& counterparty) const
+{
+    LOCK(cs_wallet);
+    PlatformKeyResult<SecureVector> result;
+    if (!counterparty.IsFullyValid()) {
+        result.status = PlatformKeyStatus::INVALID_ARGUMENT;
+        return result;
+    }
+    platformkeys::ExtKey256 key;
+    result.status = DerivePlatformKey(PlatformKeyRequest{request}, key);
+    if (result.status == PlatformKeyStatus::SUCCESS &&
+        !platformkeys::ComputeECDHSecret(key.key, counterparty, result.value)) {
+        result.status = PlatformKeyStatus::DERIVATION_ERROR;
+        result.value.clear();
+    }
+    return result;
+}
+
+PlatformKeyResult<FriendshipXpub> CWallet::EnsureFriendshipReceivingKeychain(const FriendshipKeychainRequest& request)
+{
+    LOCK(cs_wallet);
+    PlatformKeyResult<FriendshipXpub> result;
+    const auto path{platformkeys::FriendshipPath(static_cast<uint32_t>(Params().ExtCoinType()), request.account,
+                                                 Span{request.local_id.begin(), uint256::size()},
+                                                 Span{request.remote_id.begin(), uint256::size()})};
+    platformkeys::ExtKey256 key;
+    result.status = DerivePlatformKey(path, key);
+    if (result.status != PlatformKeyStatus::SUCCESS) return result;
+
+    CExtKey xprv{};
+    xprv.chaincode = key.chaincode;
+    xprv.key = key.key;
+    const CExtPubKey xpub{xprv.Neuter()};
+    FlatSigningProvider provider;
+    provider.keys.emplace(xpub.pubkey.GetID(), xprv.key);
+    std::string parse_error;
+    auto parsed{Parse("pkh(" + EncodeExtPubKey(xpub) + "/*)", provider, parse_error, /*require_checksum=*/false)};
+    if (!parsed) {
+        result.status = PlatformKeyStatus::DERIVATION_ERROR;
+        return result;
+    }
+
+    const int64_t birth_time{std::max<int64_t>(request.birth_time, 0)};
+    WalletDescriptor descriptor(std::move(parsed), birth_time, /*range_start=*/0,
+                                /*range_end=*/DEFAULT_KEYPOOL_SIZE, /*next_index=*/0);
+    if (auto* existing = GetDescriptorScriptPubKeyMan(descriptor)) {
+        LOCK(existing->cs_desc_man);
+        const WalletDescriptor current{existing->GetWalletDescriptor()};
+        descriptor.range_start = current.range_start;
+        descriptor.range_end = std::max(descriptor.range_end, current.range_end);
+        descriptor.next_index = current.next_index;
+        descriptor.creation_time = std::min(descriptor.creation_time, current.creation_time);
+    }
+    if (!AddWalletDescriptor(descriptor, provider, /*label=*/"", /*internal=*/false)) {
+        result.status = PlatformKeyStatus::IMPORT_ERROR;
+        return result;
+    }
+
+    result.value = {key.key.GetPubKey(), key.chaincode};
+    return result;
+}
+
 std::vector<const Governance::Object*> CWallet::GetGovernanceObjects()
 {
     AssertLockHeld(cs_wallet);
@@ -3899,9 +4067,8 @@ bool CWallet::IsLocked(bool fForMixing) const
     if (!IsCrypted())
         return false;
 
-    if(!fForMixing && fOnlyMixingAllowed) return true;
-
     LOCK(cs_wallet);
+    if (!fForMixing && fOnlyMixingAllowed) return true;
     return vMasterKey.empty();
 }
 
@@ -3910,15 +4077,17 @@ bool CWallet::Lock(bool fAllowMixing)
     if (!IsCrypted())
         return false;
 
-    if(!fAllowMixing) {
+    {
         LOCK(cs_wallet);
-        if (!vMasterKey.empty()) {
-            memory_cleanse(vMasterKey.data(), vMasterKey.size() * sizeof(decltype(vMasterKey)::value_type));
-            vMasterKey.clear();
+        if (!fAllowMixing) {
+            if (!vMasterKey.empty()) {
+                memory_cleanse(vMasterKey.data(), vMasterKey.size() * sizeof(decltype(vMasterKey)::value_type));
+                vMasterKey.clear();
+            }
         }
+        fOnlyMixingAllowed = fAllowMixing;
     }
 
-    fOnlyMixingAllowed = fAllowMixing;
     NotifyStatusChanged(this);
     return true;
 }
@@ -4036,6 +4205,18 @@ std::unique_ptr<SigningProvider> CWallet::GetSolvingProvider(const CScript& scri
         }
     }
     return nullptr;
+}
+
+std::vector<WalletDescriptor> CWallet::GetWalletDescriptors(const CScript& script) const
+{
+    std::vector<WalletDescriptor> descs;
+    for (const auto spk_man: GetScriptPubKeyMans(script)) {
+        if (const auto desc_spk_man = dynamic_cast<DescriptorScriptPubKeyMan*>(spk_man)) {
+            LOCK(desc_spk_man->cs_desc_man);
+            descs.push_back(desc_spk_man->GetWalletDescriptor());
+        }
+    }
+    return descs;
 }
 
 LegacyScriptPubKeyMan* CWallet::GetLegacyScriptPubKeyMan() const

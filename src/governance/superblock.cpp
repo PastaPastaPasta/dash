@@ -190,7 +190,7 @@ void CSuperblock::ParsePaymentSchedule(const std::string& strPaymentAddresses, c
       AMOUNTS = [AMOUNT1|2|3|4|5|6]
     */
 
-    for (int i = 0; i < (int)vecPaymentAddresses.size(); i++) {
+    for (int i = 0; i < static_cast<int>(vecPaymentAddresses.size()); i++) {
         CTxDestination dest = DecodeDestination(vecPaymentAddresses[i]);
         if (!IsValidDestination(dest)) {
             std::string msg{strprintf("CSuperblock::%s -- Invalid Dash Address: %s", __func__, vecPaymentAddresses[i])};
@@ -226,7 +226,7 @@ void CSuperblock::ParsePaymentSchedule(const std::string& strPaymentAddresses, c
 
 bool CSuperblock::GetPayment(int nPaymentIndex, CGovernancePayment& paymentRet)
 {
-    if ((nPaymentIndex < 0) || (nPaymentIndex >= (int)vecPayments.size())) {
+    if ((nPaymentIndex < 0) || (nPaymentIndex >= static_cast<int>(vecPayments.size()))) {
         return false;
     }
 
@@ -245,14 +245,14 @@ CAmount CSuperblock::GetPaymentsTotalAmount()
 *   - Does this transaction match the superblock?
 */
 
-bool CSuperblock::IsValid(const CChain& active_chain, const CTransaction& txNew, int nBlockHeight, CAmount blockReward, bool is_v24)
+bool CSuperblock::IsValid(const CChain& active_chain, const CTransaction& txNew, int block_height, CAmount blockReward, bool is_v24)
 {
     // TODO : LOCK(cs);
     // No reason for a lock here now since this method only accesses data
     // internal to *this and since CSuperblock's are accessed only through
     // shared pointers there's no way our object can get deleted while this
     // code is running.
-    if (!IsValidBlockHeight(nBlockHeight)) {
+    if (!IsValidBlockHeight(block_height)) {
         LogPrintf("CSuperblock::IsValid -- ERROR: Block invalid, incorrect block height\n");
         return false;
     }
@@ -279,7 +279,7 @@ bool CSuperblock::IsValid(const CChain& active_chain, const CTransaction& txNew,
 
     // payments should not exceed limit
     CAmount nPaymentsTotalAmount = GetPaymentsTotalAmount();
-    CAmount nPaymentsLimit = GetPaymentsLimit(active_chain, nBlockHeight);
+    CAmount nPaymentsLimit = GetPaymentsLimit(active_chain, block_height);
     if (nPaymentsTotalAmount > nPaymentsLimit) {
         LogPrintf("CSuperblock::IsValid -- ERROR: Block invalid, payments limit exceeded: payments %lld, limit %lld\n", nPaymentsTotalAmount, nPaymentsLimit);
         return false;

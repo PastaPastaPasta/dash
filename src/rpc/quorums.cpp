@@ -21,7 +21,7 @@
 #include <llmq/signing_shares.h>
 #include <llmq/snapshot.h>
 #include <llmq/utils.h>
-#include <rpc/evo_util.h>
+#include <rpc/json_help.h>
 #include <util/helpers.h>
 
 #include <chainparams.h>
@@ -54,7 +54,7 @@ static RPCHelpMan quorum_list()
             },
         },
         RPCResult{
-            RPCResult::Type::OBJ, "", "",
+            RPCResult::Type::OBJ_DYN, "", "json object with quorum type name as keys",
             {
                 {RPCResult::Type::ARR, "quorumName", "List of quorum hashes per some quorum type",
                 {
@@ -110,19 +110,19 @@ static RPCHelpMan quorum_list_extended()
             {"height", RPCArg::Type::NUM, RPCArg::DefaultHint{"Tip height if not specified"}, "Active quorums at the height."},
         },
         RPCResult{
-            RPCResult::Type::OBJ, "", "",
+            RPCResult::Type::OBJ_DYN, "", "json object with quorum type name as keys",
             {
                 {RPCResult::Type::ARR, "quorumName", "List of quorum details per quorum type",
                 {
-                    {RPCResult::Type::OBJ, "", "",
+                    {RPCResult::Type::OBJ_DYN, "", "json object with quorum hash as keys. Note: most recent quorums come first.",
                     {
-                        {RPCResult::Type::OBJ, "xxxx", "Quorum hash. Note: most recent quorums come first.",
+                        {RPCResult::Type::OBJ, "xxxx", "Quorum details",
                         {
+                            {RPCResult::Type::NUM, "quorumIndex", /*optional=*/true, "Quorum index (applicable only to rotated quorums)."},
                             {RPCResult::Type::NUM, "creationHeight", "Block height where the DKG started."},
-                            {RPCResult::Type::NUM, "quorumIndex", "Quorum index (applicable only to rotated quorums)."},
                             {RPCResult::Type::STR_HEX, "minedBlockHash", "Blockhash where the commitment was mined."},
                             {RPCResult::Type::NUM, "numValidMembers", "The total of valid members."},
-                            {RPCResult::Type::STR_AMOUNT, "healthRatio", "The ratio of healthy members to quorum size. Range [0.0 - 1.0]."}
+                            {RPCResult::Type::STR, "healthRatio", "The ratio of healthy members to quorum size. Range [0.0 - 1.0]."}
                         }}
                     }}
                 }}
@@ -259,7 +259,7 @@ static RPCHelpMan quorum_info()
                 GetRpcResult("quorumHash"),
                 GetRpcResult("quorumIndex"),
                 {RPCResult::Type::STR_HEX, "minedBlock", "Blockhash where the commitment was mined."},
-                {RPCResult::Type::NUM, "previousConsecutiveDKGFailures", "Number of previous consecutive DKG failures. Only present for rotation-enabled quorums."},
+                {RPCResult::Type::NUM, "previousConsecutiveDKGFailures", /*optional=*/true, "Number of previous consecutive DKG failures. Only present for rotation-enabled quorums."},
                 {RPCResult::Type::ARR, "members", "Members of quorum",
                     {
                         {RPCResult::Type::OBJ, "", "",
@@ -273,6 +273,8 @@ static RPCHelpMan quorum_info()
                         }},
                     },
                 },
+                {RPCResult::Type::STR_HEX, "quorumPublicKey", "BLS public key of the quorum"},
+                {RPCResult::Type::STR_HEX, "secretKeyShare", /*optional=*/true, "Share of the BLS secret key of the quorum. Only present if includeSkShare is set and the share is valid."},
             },
         },
         RPCExamples{""},
@@ -308,7 +310,7 @@ static RPCResult quorum_dkgstatus_help()
     auto mod_inner = ret.m_inner;
     mod_inner.push_back({RPCResult::Type::ARR, "quorumConnections", "Array of objects containing quorum connection information", {
         {RPCResult::Type::OBJ, "", "", {
-            GetRpcResult("llmqType"),
+            {RPCResult::Type::STR, "llmqType", "Quorum type name"},
             GetRpcResult("quorumIndex"),
             {RPCResult::Type::NUM, "pQuorumBaseBlockIndex", /*optional=*/true, "Height of the quorum’s base block"},
             GetRpcResult("quorumHash", /*optional=*/true),
@@ -485,7 +487,7 @@ static RPCHelpMan quorum_memberof()
         CHECK_NONFATAL(llmq_params_opt.has_value());
         size_t count = llmq_params_opt->signingActiveQuorumCount;
         if (scanQuorumsCount != -1) {
-            count = (size_t)scanQuorumsCount;
+            count = static_cast<size_t>(scanQuorumsCount);
         }
         auto quorums = llmq_ctx.qman->ScanQuorums(llmq_params_opt->type, count);
         for (auto& quorum : quorums) {
@@ -1304,7 +1306,7 @@ static RPCHelpMan verifyislock()
         signHeight = pindexMined->nHeight;
     }
 
-    CBlockIndex* pBlockIndex{nullptr};
+    const CBlockIndex* pBlockIndex{nullptr};
     {
         LOCK(cs_main);
         if (signHeight == -1) {
@@ -1388,7 +1390,7 @@ static RPCHelpMan submitchainlock()
 }
 
 
-void RegisterQuorumsRPCCommands(CRPCTable &tableRPC)
+void RegisterQuorumsRPCCommands(CRPCTable& t)
 {
     static const CRPCCommand commands[]{
         {"evo", &quorum_help},
@@ -1413,6 +1415,6 @@ void RegisterQuorumsRPCCommands(CRPCTable &tableRPC)
         {"evo", &verifyislock},
     };
     for (const auto& command : commands) {
-        tableRPC.appendCommand(command.name, &command);
+        t.appendCommand(command.name, &command);
     }
 }
