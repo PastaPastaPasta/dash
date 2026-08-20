@@ -4956,17 +4956,10 @@ bool ChainstateManager::LoadBlockIndex()
 
         m_blockman.ScanAndUnlinkAlreadyPrunedFiles();
 
-        // Candidate admission below Asserts the snapshot base for the
-        // background chainstate, so a base missing from the on-disk block
-        // index must be reported here, as a recoverable startup error, before
-        // any admission runs. -reindex discards the snapshot chainstate and
-        // its EvoDB markers, so the standard rebuild advice recovers.
-        if (const auto base_hash{SnapshotBlockhash()}) {
-            if (!m_blockman.LookupBlockIndex(*base_hash)) {
-                return error("[snapshot] base block %s of the active snapshot chainstate is missing from the block index",
-                             base_hash->ToString());
-            }
-        }
+        // A snapshot chainstate may legitimately exist before its base header
+        // has arrived (a loadtxoutset node restarted before header sync), so a
+        // base missing from the block index is not a startup error: candidate
+        // admission and CheckBlockIndex tolerate a null snapshot base.
 
         std::vector<CBlockIndex*> vSortedByHeight{m_blockman.GetAllBlockIndices()};
         std::sort(vSortedByHeight.begin(), vSortedByHeight.end(),
