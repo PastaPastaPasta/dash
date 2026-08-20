@@ -6,6 +6,7 @@
 #define BITCOIN_QT_SHAREDMNDIALOGS_H
 
 #include <qt/masternodedialogs.h>
+#include <qt/protxsender.h>
 
 #include <consensus/amount.h>
 #include <interfaces/node.h>
@@ -42,6 +43,7 @@ protected:
 
 private:
     const bool m_v24_active;
+    ProTxSender* m_sender{nullptr};
 
     QComboBox* m_share_combo{nullptr};
     QValidatedLineEdit* m_reward_edit{nullptr};
@@ -178,9 +180,9 @@ protected:
     const uint32_t m_early_period_blocks;
     const int m_registered_height;
     const bool m_v24_active;
+    ProTxSender* m_sender{nullptr};
 
 private:
-    ProTxSender* m_sender;
     bool m_busy{false};
 };
 

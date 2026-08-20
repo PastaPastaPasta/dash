@@ -177,8 +177,17 @@ bool ComputeSharedSignHash(SharedSigCollector::Kind kind, const QString& pro_tx_
 
 UpdateShareDialog::UpdateShareDialog(interfaces::Node& node, WalletModel* wallet_model, const MasternodeEntry& entry, QWidget* parent) :
     MasternodeActionDialog(node, wallet_model, entry, parent),
-    m_v24_active{node.isV24Active()}
+    m_v24_active{node.isV24Active()},
+    m_sender{new ProTxSender(node, this)}
 {
+    connect(m_sender, &ProTxSender::finished, this, [this](const ProTxResult& res) {
+        setBusy(false);
+        if (res.ok) {
+            accept();
+        } else {
+            showError(res.message);
+        }
+    });
     auto* form = new QFormLayout();
 
     m_share_combo = new QComboBox(this);
@@ -202,7 +211,7 @@ UpdateShareDialog::UpdateShareDialog(interfaces::Node& node, WalletModel* wallet
             tr("Change where one collateral share of this shared masternode receives its owner rewards. Only the share's owner key (held by this wallet) can change it; the share amount and refund address are immutable."),
             form, tr("Send Update"));
 
-    if (!m_is_shared) {
+    if (!entry.isShared()) {
         showError(tr("This masternode is not shared and has no share table."));
     } else if (!m_v24_active) {
         showError(tr("Shared masternode maintenance requires the v24 hard fork to be active."));
@@ -214,7 +223,7 @@ UpdateShareDialog::UpdateShareDialog(interfaces::Node& node, WalletModel* wallet
 
 void UpdateShareDialog::validate()
 {
-    bool ok{m_is_shared && m_v24_active};
+    bool ok{m_v24_active && m_share_combo->count() > 0};
     ok &= m_share_combo->currentIndex() >= 0;
     ok &= m_reward_edit->text().isEmpty() || m_reward_edit->isValid();
     ok &= !m_fee_source->selectedAddress().isEmpty();
@@ -226,13 +235,15 @@ void UpdateShareDialog::submit()
     if (m_share_combo->currentIndex() < 0) return;
 
     UniValue params(UniValue::VOBJ);
-    params.pushKV("proTxHash", m_protx_hash.toStdString());
+    params.pushKV("proTxHash", QString::fromStdString(m_protx_hash.ToString()).toStdString());
     params.pushKV("shareIndex", m_share_combo->currentData().toInt());
     // An empty string reverts rewards to the refund script
     params.pushKV("rewardAddress", m_reward_edit->text().trimmed().toStdString());
     params.pushKV("feeSourceAddress", m_fee_source->selectedAddress().toStdString());
 
-    runProTx("protx update_share", params);
+    clearError();
+    setBusy(true);
+    m_sender->execute("protx update_share", params, m_wallet_model);
 }
 
 // ----------------------------------------------------------------------------
@@ -988,7 +999,7 @@ void DissolveDialog::submitNow()
     // explicit — from a fresh tip height, not the height captured at dialog
     // open: crossing the penalty-free boundary while the dialog was open must
     // never submit an avoidable payPenalty=true.
-    const auto is_early = [this](int height) {
+    const auto is_early = [this](int height) -> bool {
         return static_cast<int64_t>(height) + 1 - m_registered_height < static_cast<int64_t>(m_early_period_blocks);
     };
     const auto refresh_on_boundary_crossing = [this, &is_early](int fresh_height) {

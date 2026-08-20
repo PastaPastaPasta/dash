@@ -55,6 +55,32 @@
 #include <utility>
 
 namespace {
+static QStringList parseServiceList(const QString& input, QString& err)
+{
+    err.clear();
+    QStringList ret;
+    QSet<QString> seen;
+    const QStringList tokens{input.split(QRegularExpression(QStringLiteral("[,\\s]+")), Qt::SkipEmptyParts)};
+    for (const QString& token : tokens) {
+        const std::optional<CService> service{
+            Lookup(token.toStdString(), Params().GetDefaultPort(), /*fAllowLookup=*/false)};
+        if (!service.has_value() || !service->IsValid()) {
+            err = QObject::tr("Invalid address \"%1\". Expected format: IP:PORT (e.g. 1.2.3.4:%2).")
+                      .arg(token)
+                      .arg(Params().GetDefaultPort());
+            return {};
+        }
+        const QString normalized{QString::fromStdString(service->ToStringAddrPort())};
+        if (seen.contains(normalized)) {
+            err = QObject::tr("Duplicate address \"%1\".").arg(normalized);
+            return {};
+        }
+        seen.insert(normalized);
+        ret << normalized;
+    }
+    return ret;
+}
+
 
 constexpr int COL_LABEL{0};
 constexpr int COL_AMOUNT{1};
@@ -1552,7 +1578,7 @@ void SharedMnCreateDialog::freezeSession()
 
     const auto& terms{m_session.terms()};
     QString parse_error;
-    const QStringList services{MasternodeWidgetUtil::parseServiceList(terms.coreP2PAddrs, parse_error)};
+    const QStringList services{parseServiceList(terms.coreP2PAddrs, parse_error)};
     if (!parse_error.isEmpty()) {
         QMessageBox::critical(this, windowTitle(), parse_error);
         return;

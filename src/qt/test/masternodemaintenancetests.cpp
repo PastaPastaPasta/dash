@@ -81,6 +81,11 @@ public:
         return result;
     }
     const CKeyID& getKeyIdOwner() const override { return m_owner; }
+    std::vector<CKeyID> getShareOwnerKeyIds() const override { return {}; }
+    bool isShared() const override { return false; }
+    std::vector<interfaces::MnShare> getShares() const override { return {}; }
+    const uint32_t& getEarlyPeriodBlocks() const override { static const uint32_t zero{0}; return zero; }
+    const CAmount& getEarlyPenalty() const override { static const CAmount zero{0}; return zero; }
     const CKeyID& getKeyIdVoting() const override { return m_voting; }
     const COutPoint& getCollateralOutpoint() const override { return m_collateral; }
     const CScript& getScriptPayout() const override { return m_payout; }

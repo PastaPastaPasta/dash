@@ -402,7 +402,7 @@ static CMutableTransaction BuildProDisTx(const CDeterministicMN& dmn, uint16_t a
     return tx;
 }
 
-static std::string SubmitSpecialTx(const JSONRPCRequest& request, CChainstateHelper& chain_helper,
+static std::string SubmitSpecialTx(const JSONRPCRequest& request, const CChainstateHelper& chain_helper,
                                    const ChainstateManager& chainman, const CMutableTransaction& tx)
 {
     {
@@ -413,10 +413,16 @@ static std::string SubmitSpecialTx(const JSONRPCRequest& request, CChainstateHel
             throw std::runtime_error(state.ToString());
         }
     }
-    JSONRPCRequest sendRequest(request);
-    sendRequest.params.setArray();
-    sendRequest.params.push_back(EncodeHexTx(CTransaction(tx)));
-    return ::sendrawtransaction().HandleRequest(sendRequest).get_str();
+    NodeContext& node{EnsureAnyNodeContext(request.context)};
+    const CTransactionRef tx_ref{MakeTransactionRef(tx)};
+    const CAmount max_fee{node::DEFAULT_MAX_RAW_TX_FEE_RATE.GetFee(GetVirtualTransactionSize(*tx_ref))};
+    bilingual_str message;
+    const TransactionError transaction_error{
+        node::BroadcastTransaction(node, tx_ref, message, max_fee, /*relay=*/true, /*wait_callback=*/true)};
+    if (transaction_error != TransactionError::OK) {
+        throw JSONRPCError(RPC_TRANSACTION_ERROR, message.original);
+    }
+    return tx_ref->GetHash().GetHex();
 }
 
 static CKeyID ParsePubKeyIDFromAddress(const std::string& strAddress, const std::string& paramName)
@@ -1288,7 +1294,7 @@ static RPCHelpMan protx_shared_sign()
         RPCExamples{HelpExampleCli("protx", "shared_sign \"tx\"")},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    NodeContext& node = EnsureAnyNodeContext(request.context);
     CDeterministicMNManager& dmnman = *CHECK_NONFATAL(node.dmnman);
 
     std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
@@ -1386,10 +1392,9 @@ static RPCHelpMan protx_dissolve()
         RPCExamples{HelpExampleCli("protx", "dissolve \"proTxHash\" 0")},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    NodeContext& node = EnsureAnyNodeContext(request.context);
     const ChainstateManager& chainman = EnsureChainman(node);
     CDeterministicMNManager& dmnman = *CHECK_NONFATAL(node.dmnman);
-    CChainstateHelper& chain_helper = *CHECK_NONFATAL(node.chain_helper);
 
     std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
     if (!pwallet) return UniValue::VNULL;
@@ -1440,7 +1445,7 @@ static RPCHelpMan protx_dissolve()
     if (!fSubmit) {
         return EncodeHexTx(CTransaction(tx));
     }
-    return SubmitSpecialTx(request, chain_helper, chainman, tx);
+    return SubmitSpecialTx(request, *CHECK_NONFATAL(node.chain_helper), chainman, tx);
 },
     };
 }
@@ -1467,10 +1472,9 @@ static RPCHelpMan protx_update_share()
         RPCExamples{HelpExampleCli("protx", "update_share \"proTxHash\" 0 \"" + EXAMPLE_ADDRESS[1] + "\" \"" + EXAMPLE_ADDRESS[0] + "\"")},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    NodeContext& node = EnsureAnyNodeContext(request.context);
     const ChainstateManager& chainman = EnsureChainman(node);
     CDeterministicMNManager& dmnman = *CHECK_NONFATAL(node.dmnman);
-    CChainstateHelper& chain_helper = *CHECK_NONFATAL(node.chain_helper);
 
     std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
     if (!pwallet) return UniValue::VNULL;
@@ -1517,11 +1521,45 @@ static RPCHelpMan protx_update_share()
     // make sure we get enough fees added
     ptx.vchSig.resize(65);
 
-    FundSpecialTx(*pwallet, tx, ptx, feeSourceDest);
-    SignSpecialTxPayloadByHash(tx, ptx, dmn->pdmnState->shares[ptx.shareIndex].keyIDOwner, *pwallet);
+    auto wallet_interface{MakeWalletInterface(node, pwallet)};
+    SetTxPayload(tx, ptx);
+    auto funded{wallet_interface->fundTransaction(tx, feeSourceDest)};
+    if (!funded) {
+        throw JSONRPCError(RPC_INTERNAL_ERROR, util::ErrorString(funded).original);
+    }
+    tx = CMutableTransaction{**funded};
+    ptx.inputsHash = CalcTxInputsHash(CTransaction(tx));
+    ptx.vchSig.clear();
+    if (!wallet_interface->signSpecialTxPayload(::SerializeHash(ptx), dmn->pdmnState->shares[ptx.shareIndex].keyIDOwner, ptx.vchSig)) {
+        throw JSONRPCError(RPC_INTERNAL_ERROR, "failed to sign special tx");
+    }
     SetTxPayload(tx, ptx);
 
-    return SignAndSendSpecialTx(request, chain_helper, chainman, tx, fSubmit);
+    {
+        const CChainstateHelper& chain_helper = *CHECK_NONFATAL(node.chain_helper);
+        LOCK(::cs_main);
+        TxValidationState state;
+        if (!chain_helper.special_tx->CheckSpecialTx(CTransaction(tx), chainman.ActiveChain().Tip(),
+                                                     chainman.ActiveChainstate().CoinsTip(), true, state)) {
+            throw std::runtime_error(state.ToString());
+        }
+    }
+
+    auto signed_result{wallet_interface->signTransaction(tx)};
+    if (!signed_result || !signed_result->complete) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "failed to sign transaction inputs");
+    }
+    if (!fSubmit) {
+        return EncodeHexTx(*signed_result->tx);
+    }
+    const CAmount max_fee{node::DEFAULT_MAX_RAW_TX_FEE_RATE.GetFee(GetVirtualTransactionSize(*signed_result->tx))};
+    bilingual_str message;
+    const TransactionError transaction_error{
+        node::BroadcastTransaction(node, signed_result->tx, message, max_fee, /*relay=*/true, /*wait_callback=*/true)};
+    if (transaction_error != TransactionError::OK) {
+        throw JSONRPCError(RPC_TRANSACTION_ERROR, message.original);
+    }
+    return signed_result->tx->GetHash().GetHex();
 },
     };
 }
@@ -1549,7 +1587,7 @@ static RPCHelpMan protx_update_shared_registrar_prepare()
         RPCExamples{HelpExampleCli("protx", "update_shared_registrar_prepare \"proTxHash\" \"operatorPubKey\" \"\" \"" + EXAMPLE_ADDRESS[0] + "\"")},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    NodeContext& node = EnsureAnyNodeContext(request.context);
     CDeterministicMNManager& dmnman = *CHECK_NONFATAL(node.dmnman);
 
     std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
@@ -1588,8 +1626,14 @@ static RPCHelpMan protx_update_shared_registrar_prepare()
     // make sure we get enough fees added: one signature per share
     ptx.vchSigs.assign(dmn->pdmnState->shares.size(), std::vector<unsigned char>(CPubKey::COMPACT_SIGNATURE_SIZE, 0));
 
-    FundSpecialTx(*pwallet, tx, ptx, feeSourceDest);
-    UpdateSpecialTxInputsHash(tx, ptx);
+    auto wallet_interface{MakeWalletInterface(node, pwallet)};
+    SetTxPayload(tx, ptx);
+    auto funded{wallet_interface->fundTransaction(tx, feeSourceDest)};
+    if (!funded) {
+        throw JSONRPCError(RPC_INTERNAL_ERROR, util::ErrorString(funded).original);
+    }
+    tx = CMutableTransaction{**funded};
+    ptx.inputsHash = CalcTxInputsHash(CTransaction(tx));
     SetTxPayload(tx, ptx);
 
     UniValue ret(UniValue::VOBJ);
@@ -1626,7 +1670,7 @@ static RPCHelpMan protx_shared_combine()
         RPCExamples{HelpExampleCli("protx", "shared_combine \"tx\" \"[{\\\"shareIndex\\\":0,\\\"signature\\\":\\\"...\\\"}]\"")},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    NodeContext& node = EnsureAnyNodeContext(request.context);
     const ChainstateManager& chainman = EnsureChainman(node);
     CDeterministicMNManager& dmnman = *CHECK_NONFATAL(node.dmnman);
     CChainstateHelper& chain_helper = *CHECK_NONFATAL(node.chain_helper);
@@ -1726,8 +1770,34 @@ static RPCHelpMan protx_shared_combine()
         }
         SetTxPayload(tx, *opt_ptx);
         // Inserting the signatures changed the payload, so the fee inputs signed at prepare time
-        // are stale; SignAndSendSpecialTx re-signs them with this wallet before submitting
-        return SignAndSendSpecialTx(request, chain_helper, chainman, tx, fSubmit);
+        // are stale; re-sign them with this wallet before submitting
+        std::shared_ptr<CWallet> const pwallet{GetWalletForJSONRPCRequest(request)};
+        if (!pwallet) return UniValue::VNULL;
+        EnsureWalletIsUnlocked(*pwallet);
+        auto wallet_interface{MakeWalletInterface(node, pwallet)};
+        {
+            LOCK(::cs_main);
+            TxValidationState state;
+            if (!chain_helper.special_tx->CheckSpecialTx(CTransaction(tx), chainman.ActiveChain().Tip(),
+                                                         chainman.ActiveChainstate().CoinsTip(), true, state)) {
+                throw std::runtime_error(state.ToString());
+            }
+        }
+        auto signed_result{wallet_interface->signTransaction(tx)};
+        if (!signed_result || !signed_result->complete) {
+            throw JSONRPCError(RPC_WALLET_ERROR, "failed to sign transaction inputs");
+        }
+        if (!fSubmit) {
+            return EncodeHexTx(*signed_result->tx);
+        }
+        const CAmount max_fee{node::DEFAULT_MAX_RAW_TX_FEE_RATE.GetFee(GetVirtualTransactionSize(*signed_result->tx))};
+        bilingual_str message;
+        const TransactionError transaction_error{
+            node::BroadcastTransaction(node, signed_result->tx, message, max_fee, /*relay=*/true, /*wait_callback=*/true)};
+        if (transaction_error != TransactionError::OK) {
+            throw JSONRPCError(RPC_TRANSACTION_ERROR, message.original);
+        }
+        return signed_result->tx->GetHash().GetHex();
     }
     throw JSONRPCError(RPC_INVALID_PARAMETER, "transaction is not a shared masternode transaction");
 },
@@ -1864,7 +1934,7 @@ static RPCHelpMan protx_list()
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    NodeContext& node = EnsureAnyNodeContext(request.context);
     const ChainstateManager& chainman = EnsureChainman(node);
 
     CDeterministicMNManager& dmnman = *CHECK_NONFATAL(node.dmnman);
@@ -1977,7 +2047,7 @@ static RPCHelpMan protx_info()
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    NodeContext& node = EnsureAnyNodeContext(request.context);
     const ChainstateManager& chainman = EnsureChainman(node);
 
     CDeterministicMNManager& dmnman = *CHECK_NONFATAL(node.dmnman);
@@ -2071,7 +2141,7 @@ static RPCHelpMan protx_diff()
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    NodeContext& node = EnsureAnyNodeContext(request.context);
     const ChainstateManager& chainman = EnsureChainman(node);
 
     CDeterministicMNManager& dmnman = *CHECK_NONFATAL(node.dmnman);
@@ -2124,7 +2194,7 @@ static RPCHelpMan protx_listdiff()
                 RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    NodeContext& node = EnsureAnyNodeContext(request.context);
     const ChainstateManager& chainman = EnsureChainman(node);
 
     CDeterministicMNManager& dmnman = *CHECK_NONFATAL(node.dmnman);
@@ -2179,7 +2249,7 @@ static RPCHelpMan protx_listdiff()
 // Helper function for evodb verify/repair commands
 static UniValue evodb_verify_or_repair_impl(const JSONRPCRequest& request, bool repair)
 {
-    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    NodeContext& node = EnsureAnyNodeContext(request.context);
     ChainstateManager& chainman = EnsureChainman(node);
     CDeterministicMNManager& dmnman = *CHECK_NONFATAL(node.dmnman);
     CChainstateHelper& chain_helper = *CHECK_NONFATAL(node.chain_helper);
@@ -2408,7 +2478,16 @@ static RPCHelpMan protx_register_shared_prepare()
 
     ptx.shares = ParseShares(request.params[1], "shares");
 
-    ProcessNetInfoCore(ptx, request.params[2], /*optional=*/true);
+    const auto core_entries = ParseCoreNetInfo(request.params[2], /*optional=*/true);
+    for (size_t index{0}; index < core_entries.size(); ++index) {
+        if (core_entries[index].empty()) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid param for coreP2PAddrs[%zu], cannot be empty", index));
+        }
+        if (const auto status{ptx.netInfo->AddEntry(NetInfoPurpose::CORE_P2P, core_entries[index])};
+            status != NetInfoStatus::Success) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Error setting coreP2PAddrs[%zu] to '%s' (%s)", index, core_entries[index], NISToString(status)));
+        }
+    }
 
     ptx.pubKeyOperator.Set(ParseBLSPubKey(request.params[3].get_str(), "operator BLS address", /*specific_legacy_bls_scheme=*/false),
                            /*specificLegacyScheme=*/false);
@@ -2445,7 +2524,7 @@ static RPCHelpMan protx_register_shared_prepare()
     // Placeholder consent signatures; filled in by "protx shared_combine"
     ptx.vchJoinSigs.assign(ptx.shares.size(), std::vector<unsigned char>(CPubKey::COMPACT_SIGNATURE_SIZE, 0));
 
-    UpdateSpecialTxInputsHash(tx, ptx);
+    ptx.inputsHash = CalcTxInputsHash(CTransaction(tx));
 
     // Preflight the payload with the same stateless rules consensus applies, so consensus-invalid
     // terms (bad share sums, penalty bounds, payee reuse, ...) fail here with a clear error
@@ -2485,7 +2564,7 @@ static RPCHelpMan protx_dissolve_prepare()
         RPCExamples{HelpExampleCli("protx", "dissolve_prepare \"proTxHash\" 0")},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    NodeContext& node = EnsureAnyNodeContext(request.context);
     CDeterministicMNManager& dmnman = *CHECK_NONFATAL(node.dmnman);
 
     const uint256 proTxHash(ParseHashV(request.params[0], "proTxHash"));
