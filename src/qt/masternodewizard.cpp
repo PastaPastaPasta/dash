@@ -388,6 +388,7 @@ QWidget* RegisterMasternodeWizard::createKeysPage()
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->viewport()->setAutoFillBackground(false);
     auto* key_container{new QWidget(scroll)};
     auto* key_layout{MakePageLayout(key_container)};
     key_layout->setContentsMargins(0, 0, ROW_SPACING, 0);
@@ -580,6 +581,7 @@ QWidget* RegisterMasternodeWizard::createReviewPage()
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->viewport()->setAutoFillBackground(false);
     m_review_container = new QWidget(scroll);
     m_review_layout = new QVBoxLayout(m_review_container);
     m_review_layout->setContentsMargins(0, 0, ROW_SPACING, 0);
@@ -683,6 +685,7 @@ QWidget* RegisterMasternodeWizard::createResultPage()
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->viewport()->setAutoFillBackground(false);
     auto* result_container{new QWidget(scroll)};
     auto* result_layout{new QVBoxLayout(result_container)};
     result_layout->setContentsMargins(0, 0, ROW_SPACING, 0);

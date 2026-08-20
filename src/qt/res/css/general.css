@@ -59,6 +59,7 @@ QDialog {
 }
 
 QFrame#mnCard {
+    background-color: #00000000;
     border: 1px solid;
     border-radius: 3px;
 }
@@ -811,7 +812,12 @@ QRadioButton::indicator:unchecked:disabled {
 QScrollArea
 ******************************************************/
 
-.QScrollArea {
+QScrollArea,
+QScrollArea > QWidget,
+QScrollArea > QWidget > QWidget,
+.QScrollArea,
+.QScrollArea > QWidget,
+.QScrollArea > QWidget > QWidget {
     background-color: #00000000;
     border: 0px;
 }
