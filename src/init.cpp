@@ -2253,7 +2253,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         if (!node.address_index->Start()) {
             return false;
         }
-        node.indexes.push_back(g_addressindex.get());
+        node.indexes.push_back(node.address_index.get());
     }
 
     if (args.GetBoolArg("-timestampindex", DEFAULT_TIMESTAMPINDEX)) {
@@ -2261,7 +2261,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         if (!node.timestamp_index->Start()) {
             return false;
         }
-        node.indexes.push_back(g_timestampindex.get());
+        node.indexes.push_back(node.timestamp_index.get());
     }
 
     if (args.GetBoolArg("-spentindex", DEFAULT_SPENTINDEX)) {
@@ -2269,7 +2269,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         if (!node.spent_index->Start()) {
             return false;
         }
-        node.indexes.push_back(g_spentindex.get());
+        node.indexes.push_back(node.spent_index.get());
     }
 
     for (const auto& filter_type : g_enabled_filter_types) {
