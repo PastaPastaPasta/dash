@@ -6115,25 +6115,23 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
     index->nChainTx = au_data.nChainTx;
     snapshot_chainstate.setBlockIndexCandidates.insert(snapshot_start_block);
 
-    // Until the loadtxoutset milestone the snapshot carries no Dash payload,
-    // so the base MN list is only derivable when this node's own background
-    // chainstate has already validated the base block. On a cold start
-    // (background tip below the base) it is not derivable at all: attempting
-    // the lookup would take GetListForBlockInternal's legacy bootstrap branch
-    // (the dual-chainstate marker is not durable yet at this point), fabricate
-    // an empty "initial snapshot" list for the base block, and poison the
-    // shared list cache that the background chainstate later derives base+1
-    // from. Capture the lifecycle hashes only when the base state genuinely
-    // exists; completion skips the comparison when the markers are absent.
-    // The background chainstate never re-connects a base block it has already
-    // validated, so RecordBackgroundMNListHash cannot fire for it either --
-    // this capture stands in for it.
-    // TODO(assumeutxo, loadtxoutset): once the snapshot payload carries the
-    // base MN list, derive the SNAPSHOT-side marker from the payload so it is
-    // always present and independent of local state.
+    // The BACKGROUND-side lifecycle marker records the base MN list this
+    // node derived on its own, independent of the seeded snapshot payload.
+    // It is only derivable here when the background chainstate has already
+    // validated the base block; a background chainstate that validated the
+    // base never re-connects it, so RecordBackgroundMNListHash cannot fire
+    // for it and this capture stands in for it. On a cold start (base never
+    // validated) it is not derivable at all: attempting the lookup would take
+    // GetListForBlockInternal's legacy bootstrap branch (the dual-chainstate
+    // marker is not durable yet at this point), fabricate an empty "initial
+    // snapshot" list for the base block, and poison the shared list cache
+    // that the background chainstate later derives base+1 from. There the
+    // background sync captures the marker when it connects the base itself.
     std::optional<uint256> base_mn_list_hash;
-    if (const CBlockIndex* ibd_tip = m_ibd_chainstate->m_chain.Tip();
-        ibd_tip != nullptr && ibd_tip->GetBlockHash() == base_blockhash) {
+    // What makes the lookup safe is that this node fully validated the base
+    // block itself, not where the background tip happens to point (the test
+    // harness temporarily rewinds it around activation).
+    if (snapshot_start_block->IsValid(BLOCK_VALID_SCRIPTS)) {
         base_mn_list_hash =
             snapshot_chainstate.ChainHelper().GetDeterministicMNListHash(snapshot_start_block);
         auto db_tx = snapshot_chainstate.m_evoDb.BeginTransaction(::EvoDbIdentity::NORMAL);
