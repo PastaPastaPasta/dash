@@ -1397,7 +1397,9 @@ void RegisterMasternodeWizard::populateReview()
     row(tr("Operator share"), QString("%1%").arg(QString::number(m_operator_reward->value(), 'f', 2)));
 
     begin_section(tr("Funding"));
-    row(tr("Fee source"), m_fee_picker->selectedAddress(), /*monospace=*/true);
+    const QString fee_source{m_fee_picker->selectedAddress()};
+    row(tr("Fee source"), fee_source.isEmpty() ? tr("Automatic (wallet funds)") : fee_source,
+        /*monospace=*/!fee_source.isEmpty());
     row(tr("Network fee"), tr("Calculated at submission using the wallet's current fee settings"));
 
     m_review_layout->insertWidget(

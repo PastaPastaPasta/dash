@@ -30,7 +30,7 @@ in the <theme.css> file.
 /* do not modify! section updated by update-css-files.py
 <colors>
 
-# Used colors in general.css for commit 6266b98656fa
+# Used colors in general.css for commit f645c6e71615
 
 #00000000
 #222222
@@ -60,7 +60,6 @@ QDialog {
 
 QFrame#mnCard {
     background-color: #00000000;
-    border: 1px solid;
     border-radius: 3px;
 }
 

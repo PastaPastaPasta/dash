@@ -80,6 +80,7 @@ class MasternodeActionDialog : public QDialog
     Q_OBJECT
 
     friend class MasternodeMaintenanceTests;
+    friend class MasternodeWidgetTests;
 
 public Q_SLOTS:
     void reject() override;
@@ -133,6 +134,7 @@ class UpdateServiceDialog : public MasternodeActionDialog
     Q_OBJECT
 
     friend class MasternodeMaintenanceTests;
+    friend class MasternodeWidgetTests;
 
 public:
     UpdateServiceDialog(interfaces::Node& node, WalletModel* wallet_model, const MasternodeEntry& entry,
@@ -169,6 +171,7 @@ class UpdateRegistrarDialog : public MasternodeActionDialog
     Q_OBJECT
 
     friend class MasternodeMaintenanceTests;
+    friend class MasternodeWidgetTests;
 
 public:
     UpdateRegistrarDialog(interfaces::Node& node, WalletModel* wallet_model, const MasternodeEntry& entry,
@@ -202,6 +205,7 @@ class RevokeDialog : public MasternodeActionDialog
     Q_OBJECT
 
     friend class MasternodeMaintenanceTests;
+    friend class MasternodeWidgetTests;
 
 public:
     RevokeDialog(interfaces::Node& node, WalletModel* wallet_model, const MasternodeEntry& entry,
