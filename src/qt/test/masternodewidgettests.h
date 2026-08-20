@@ -38,7 +38,6 @@ private Q_SLOTS:
     void registrationResultStates();
     void destinationValidation();
     void operatorKeyModes();
-    void captureScreenshots();
 
 private:
     interfaces::Node& m_node;

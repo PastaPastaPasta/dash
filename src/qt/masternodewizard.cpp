@@ -385,6 +385,7 @@ QWidget* RegisterMasternodeWizard::createKeysPage()
     layout->addWidget(MakeTitle(tr("Keys"), page));
 
     auto* scroll{new QScrollArea(page)};
+    scroll->setObjectName("mnWizardScroll");
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -578,6 +579,7 @@ QWidget* RegisterMasternodeWizard::createReviewPage()
     // An EvoNode summary is a third longer than a masternode one, so the review
     // scrolls instead of squeezing its cards
     auto* scroll{new QScrollArea(page)};
+    scroll->setObjectName("mnWizardScroll");
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -635,7 +637,18 @@ QWidget* RegisterMasternodeWizard::createSecretPage()
                                   "be recovered from the wallet."),
                                page));
 
-    auto* secret_box{makeCard(page)};
+    auto* scroll{new QScrollArea(page)};
+    scroll->setObjectName("mnWizardScroll");
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->viewport()->setAutoFillBackground(false);
+    auto* secret_container{new QWidget(scroll)};
+    auto* secret_layout{new QVBoxLayout(secret_container)};
+    secret_layout->setContentsMargins(0, 0, ROW_SPACING, 0);
+    secret_layout->setSpacing(GROUP_SPACING);
+
+    auto* secret_box{makeCard(secret_container)};
     auto* box{new QVBoxLayout(secret_box)};
     box->setContentsMargins(CARD_PADDING, CARD_PADDING, CARD_PADDING, CARD_PADDING);
     box->setSpacing(TITLE_SPACING);
@@ -670,8 +683,10 @@ QWidget* RegisterMasternodeWizard::createSecretPage()
     m_confirm_edit->setMaximumWidth(120);
     confirm_layout->addWidget(m_confirm_edit);
     box->addWidget(confirm_box);
-    layout->addWidget(secret_box);
-    layout->addStretch();
+    secret_layout->addWidget(secret_box);
+    secret_layout->addStretch();
+    scroll->setWidget(secret_container);
+    layout->addWidget(scroll, /*stretch=*/1);
     return page;
 }
 
@@ -682,6 +697,7 @@ QWidget* RegisterMasternodeWizard::createResultPage()
     layout->addWidget(MakeTitle(tr("Masternode registered"), page));
 
     auto* scroll{new QScrollArea(page)};
+    scroll->setObjectName("mnWizardScroll");
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -1398,7 +1414,7 @@ void RegisterMasternodeWizard::populateReview()
 
     begin_section(tr("Funding"));
     const QString fee_source{m_fee_picker->selectedAddress()};
-    row(tr("Fee source"), fee_source.isEmpty() ? tr("Automatic (wallet funds)") : fee_source,
+    row(tr("Fee source"), fee_source.isEmpty() ? tr("Not selected") : fee_source,
         /*monospace=*/!fee_source.isEmpty());
     row(tr("Network fee"), tr("Calculated at submission using the wallet's current fee settings"));
 

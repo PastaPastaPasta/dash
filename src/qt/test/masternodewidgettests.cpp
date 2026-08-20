@@ -18,11 +18,7 @@
 #include <qt/masternodewizard.h>
 #include <qt/optionsmodel.h>
 #include <qt/qvalidatedlineedit.h>
-#include <qt/guiutil.h>
-#include <qt/masternodedialogs.h>
 #include <qt/walletmodel.h>
-#include <QDir>
-#include <QSettings>
 #include <random.h>
 #include <script/script.h>
 #include <script/standard.h>
@@ -609,19 +605,19 @@ void MasternodeWidgetTests::wizardMinimumGeometry()
 
     for (const auto page : {RegisterMasternodeWizard::PageType, RegisterMasternodeWizard::PageCollateral,
                             RegisterMasternodeWizard::PageService, RegisterMasternodeWizard::PagePayout,
-                            RegisterMasternodeWizard::PageFee, RegisterMasternodeWizard::PageSecret,
-                            RegisterMasternodeWizard::PageSign}) {
+                            RegisterMasternodeWizard::PageFee, RegisterMasternodeWizard::PageSign}) {
         controls_fit(page);
     }
     controls_fit(RegisterMasternodeWizard::PagePlatform);
 
     for (const auto page_id : {RegisterMasternodeWizard::PageKeys, RegisterMasternodeWizard::PageReview,
-                               RegisterMasternodeWizard::PageResult}) {
+                               RegisterMasternodeWizard::PageSecret, RegisterMasternodeWizard::PageResult}) {
         wizard.enterPage(page_id);
         QApplication::processEvents();
         QWidget* const page{wizard.m_pages->widget(page_id)};
         auto* const scroll{page->findChild<QScrollArea*>()};
         QVERIFY(scroll != nullptr);
+        QCOMPARE(scroll->objectName(), QString("mnWizardScroll"));
         QVERIFY(scroll->widgetResizable());
         QCOMPARE(scroll->horizontalScrollBarPolicy(), Qt::ScrollBarAlwaysOff);
         QCOMPARE(scroll->verticalScrollBarPolicy(), Qt::ScrollBarAsNeeded);
@@ -1056,174 +1052,4 @@ void MasternodeWidgetTests::operatorKeyModes()
     edit->setText(QString::fromStdString(secret.GetPublicKey().ToString(false)));
     QVERIFY(widget.isValid());
     QVERIFY(widget.secretHex().isEmpty());
-}
-
-namespace {
-class MockScreenshotEntry final : public interfaces::MnEntry {
-    MnType m_t{MnType::Regular};
-    CKeyID m_owner;
-    CKeyID m_voting;
-    CScript m_payout;
-    CScript m_operator_payout;
-    uint256 m_hash;
-    COutPoint m_collateral;
-public:
-    MockScreenshotEntry(MnType t) : interfaces::MnEntry(CDeterministicMNCPtr{}), m_t(t)
-    {
-        m_hash.SetHex("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
-        uint160 u;
-        u.SetHex("0123456789abcdef0123456789abcdef01234567");
-        m_owner = CKeyID(u);
-        m_voting = CKeyID(u);
-        m_payout = GetScriptForDestination(PKHash{u});
-        m_operator_payout = GetScriptForDestination(PKHash{u});
-    }
-    bool isBanned() const override { return false; }
-    CService getNetInfoPrimary() const override { return LookupNumeric("192.0.2.1", 9999); }
-    std::vector<CService> getPlatformHTTPSAddrs() const override { return {}; }
-    MnType getType() const override { return m_t; }
-    UniValue toJson() const override
-    {
-        UniValue result(UniValue::VOBJ);
-        result.pushKV("collateralHash", uint256::ONE.ToString());
-        result.pushKV("collateralIndex", 0);
-        UniValue state(UniValue::VOBJ);
-        state.pushKV("version", 1);
-        state.pushKV("pubKeyOperator", "96e632616f7ec017a1cf11cb20268a73229b0f4fa6e4df2e9d554a9fc485c269fb9f5c490ff456e30bc5b40c6a51dff6");
-        state.pushKV("platformNodeID", "0123456789abcdef0123456789abcdef01234567");
-        UniValue addresses(UniValue::VOBJ);
-        UniValue core_arr(UniValue::VARR); core_arr.push_back("192.0.2.1:9999");
-        UniValue p2p_arr(UniValue::VARR); p2p_arr.push_back("192.0.2.1:26656");
-        UniValue https_arr(UniValue::VARR); https_arr.push_back("192.0.2.1:443");
-        addresses.pushKV("core_p2p", core_arr);
-        addresses.pushKV("platform_p2p", p2p_arr);
-        addresses.pushKV("platform_https", https_arr);
-        state.pushKV("addresses", addresses);
-        result.pushKV("state", state);
-        return result;
-    }
-    const CKeyID& getKeyIdOwner() const override { return m_owner; }
-    const CKeyID& getKeyIdVoting() const override { return m_voting; }
-    const COutPoint& getCollateralOutpoint() const override { return m_collateral; }
-    const CScript& getScriptPayout() const override { return m_payout; }
-    std::vector<CScript> getScriptPayouts() const override { return {m_payout}; }
-    const CScript& getScriptOperatorPayout() const override { return m_operator_payout; }
-    const int32_t& getLastPaidHeight() const override { static int32_t h{100}; return h; }
-    const int32_t& getPoSePenalty() const override { static int32_t p{0}; return p; }
-    const int32_t& getRegisteredHeight() const override { static int32_t r{50}; return r; }
-    const uint16_t& getOperatorReward() const override { static uint16_t rew{0}; return rew; }
-    const uint256& getProTxHash() const override { return m_hash; }
-};
-} // namespace
-
-void MasternodeWidgetTests::captureScreenshots()
-{
-    const char* screenshot_dir_env = getenv("GENERATE_UI_SCREENSHOTS");
-    if (!screenshot_dir_env || !*screenshot_dir_env) return;
-
-    QString base_dir = QString::fromUtf8(screenshot_dir_env);
-    QDir().mkpath(base_dir + "/registration");
-    QDir().mkpath(base_dir + "/maintenance");
-
-    QFile fileGeneral(":/css/general");
-    fileGeneral.open(QFile::ReadOnly);
-    QString style = QLatin1String(fileGeneral.readAll());
-    QFile fileTheme(":/css/Light");
-    fileTheme.open(QFile::ReadOnly);
-    style += QLatin1Char('\n') + QLatin1String(fileTheme.readAll());
-
-    TestChain100Setup test;
-    m_node.setContext(&test.m_node);
-
-    std::shared_ptr<const interfaces::MnEntry> mock_entry{std::make_shared<MockScreenshotEntry>(MnType::Regular)};
-    MasternodeEntry mn_entry{mock_entry, "yZXS63pBfK4z37aYJp4h6K7X6dYV2V7R41", 100};
-
-    auto save_widget = [](QWidget& w, const QString& path) {
-        w.ensurePolished();
-        QPixmap pixmap(w.size());
-        pixmap.fill(Qt::white);
-        w.render(&pixmap);
-        pixmap.save(path);
-    };
-
-    // Maintenance Dialogs
-    {
-        UpdateServiceDialog service_dlg(m_node, nullptr, mn_entry, interfaces::ProviderTxCapabilities{ProTxVersion::BasicBLS, false}, nullptr);
-        service_dlg.setStyleSheet(style);
-        service_dlg.resize(600, 360);
-        save_widget(service_dlg, base_dir + "/maintenance/01-update-service-current-values.png");
-
-        UpdateRegistrarDialog registrar(m_node, nullptr, mn_entry, interfaces::ProviderTxCapabilities{ProTxVersion::BasicBLS, false}, nullptr);
-        registrar.setStyleSheet(style);
-        registrar.resize(600, 420);
-        save_widget(registrar, base_dir + "/maintenance/04-update-registrar-current-values.png");
-
-        RevokeDialog revoke(m_node, nullptr, mn_entry, nullptr);
-        revoke.setStyleSheet(style);
-        revoke.resize(600, 320);
-        save_widget(revoke, base_dir + "/maintenance/06-revoke-default.png");
-    }
-
-    // Wizard Pages
-    {
-        RegisterMasternodeWizard wizard(m_node, nullptr, nullptr);
-        wizard.setStyleSheet(style);
-        wizard.resize(700, 560);
-
-        // 02 Type Regular
-        wizard.m_type_regular->setChecked(true);
-        wizard.goToPage(RegisterMasternodeWizard::PageType);
-        save_widget(wizard, base_dir + "/registration/02-type-regular.png");
-
-        // 06 Keys Generated
-        wizard.m_owner_edit->setText(QStringLiteral("yXm7vQp8vKyT5F9gH2j7v1w3X4y5Z6a7b8"));
-        wizard.m_voting_edit->setText(QStringLiteral("yVYv4z5w6x7Y8z9A1b2C3d4E5f6G7h8I9j"));
-        wizard.goToPage(RegisterMasternodeWizard::PageKeys);
-        save_widget(wizard, base_dir + "/registration/06-keys-generated-no-derivation.png");
-
-        // 09 Review Regular (fully populated)
-        wizard.m_type_regular->setChecked(true);
-        wizard.m_col_fund->setChecked(true);
-        wizard.m_col_address->setText(QStringLiteral("yZXS63pBfK4z37aYJp4h6K7X6dYV2V7R41"));
-        wizard.m_service_edit->setText(QStringLiteral("192.0.2.1:9999"));
-        wizard.m_owner_edit->setText(QStringLiteral("yXm7vQp8vKyT5F9gH2j7v1w3X4y5Z6a7b8"));
-        wizard.m_voting_edit->setText(QStringLiteral("yVYv4z5w6x7Y8z9A1b2C3d4E5f6G7h8I9j"));
-        wizard.m_payout_edit->setText(QStringLiteral("yP9vW8x7y6Z5a4B3c2D1e0F9g8H7i6J5k4"));
-        wizard.m_operator_reward->setValue(0.0);
-        wizard.goToPage(RegisterMasternodeWizard::PageReview);
-        save_widget(wizard, base_dir + "/registration/09-review-regular.png");
-
-        // 11 Save Operator Key
-        wizard.goToPage(RegisterMasternodeWizard::PageSecret);
-        save_widget(wizard, base_dir + "/registration/11-save-operator-key-before-registration.png");
-
-        // 14 Type Evo
-        wizard.m_type_evo->setChecked(true);
-        wizard.goToPage(RegisterMasternodeWizard::PageType);
-        save_widget(wizard, base_dir + "/registration/14-type-evo.png");
-
-        // 18 Evo Platform Complete
-        wizard.m_type_evo->setChecked(true);
-        wizard.m_platform_nodeid->setText(QStringLiteral("0123456789abcdef0123456789abcdef01234567"));
-        wizard.m_platform_p2p->setText(QStringLiteral("192.0.2.1:26656"));
-        wizard.m_platform_https->setText(QStringLiteral("192.0.2.1:443"));
-        wizard.goToPage(RegisterMasternodeWizard::PagePlatform);
-        save_widget(wizard, base_dir + "/registration/18-evo-platform-complete.png");
-
-        // 21 External Collateral
-        wizard.m_type_regular->setChecked(true);
-        wizard.m_col_external->setChecked(true);
-        wizard.m_col_txid->setText(QStringLiteral("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"));
-        wizard.m_col_vout->setValue(0);
-        wizard.goToPage(RegisterMasternodeWizard::PageCollateral);
-        save_widget(wizard, base_dir + "/registration/21-external-collateral.png");
-
-        // 24 External Sign Message
-        wizard.m_col_external->setChecked(true);
-        wizard.m_sign_message->setPlainText(QStringLiteral("ProRegTx:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:0|yOwnerAddress123456789|96e632616f7ec017a1cf11cb20268a73229b0f4fa6e4df2e9d554a9fc485c269fb9f5c490ff456e30bc5b40c6a51dff6"));
-        wizard.goToPage(RegisterMasternodeWizard::PageSign);
-        save_widget(wizard, base_dir + "/registration/24-external-sign-message.png");
-    }
-
-    m_node.setContext(nullptr);
 }
