@@ -117,10 +117,14 @@ QString MnShareSession::StageName(Stage stage)
 {
     switch (stage) {
     case Stage::Draft: return Tr("Draft");
-    case Stage::Frozen: return Tr("Frozen");
-    case Stage::Signing: return Tr("Collecting signatures");
-    case Stage::Combined: return Tr("Signatures combined");
-    case Stage::FundingSigned: return Tr("Funding signed");
+    case Stage::Frozen:
+        return Tr("Terms locked");
+    case Stage::Signing:
+        return Tr("Collecting approvals");
+    case Stage::Combined:
+        return Tr("Approvals combined");
+    case Stage::FundingSigned:
+        return Tr("Contributions signed");
     case Stage::Broadcast: return Tr("Broadcast");
     }
     return {};
@@ -568,7 +572,8 @@ bool MnShareSession::rebuildFundingTx(QString& error)
 bool MnShareSession::addContribution(const Contribution& contribution, QString& error)
 {
     if (m_stage != Stage::Draft) {
-        error = Tr("Funding can only be changed while the session is a draft. Unfreeze it first (this discards all collected signatures).");
+        error = Tr("Funding can only be changed while the session is editable. Unlock the terms first (this discards "
+                   "all collected approvals).");
         return false;
     }
     if (contribution.label.isEmpty()) {
@@ -613,7 +618,8 @@ bool MnShareSession::addContribution(const Contribution& contribution, QString& 
 bool MnShareSession::removeContribution(const QString& label, QString& error)
 {
     if (m_stage != Stage::Draft) {
-        error = Tr("Funding can only be changed while the session is a draft. Unfreeze it first (this discards all collected signatures).");
+        error = Tr("Funding can only be changed while the session is editable. Unlock the terms first (this discards "
+                   "all collected approvals).");
         return false;
     }
     for (auto it = m_contributions.begin(); it != m_contributions.end(); ++it) {
@@ -631,7 +637,7 @@ bool MnShareSession::removeContribution(const QString& label, QString& error)
 bool MnShareSession::freeze(const QString& protx_hex, const QString& consent_hash_hex, int collateral_index, QString& error)
 {
     if (m_stage != Stage::Draft) {
-        error = Tr("Only a draft session can be frozen.");
+        error = Tr("Only an editable session can be locked.");
         return false;
     }
     CMutableTransaction tx;
@@ -679,7 +685,7 @@ void MnShareSession::unfreeze()
 bool MnShareSession::verifySignature(int share_index, const QString& sig_b64, QString& error) const
 {
     if (m_protx.isEmpty() || m_consent_hash.isEmpty()) {
-        error = Tr("The session is not frozen yet; there is nothing to sign.");
+        error = Tr("The terms are not locked yet; there is nothing to approve.");
         return false;
     }
     CMutableTransaction tx;
@@ -873,12 +879,14 @@ MnShareSession::MergeResult MnShareSession::mergeEnvelope(const MnShareSession& 
     if (frozen != other_frozen) {
         // Freezing does not bump the revision, so a frozen copy supersedes a
         // draft copy of the same revision
-        error = other_frozen ? Tr("The imported copy of this session has already been frozen and supersedes this draft.")
-                             : Tr("This session has already been frozen; the imported copy is still a draft. Send the sender the newer file.");
+        error = other_frozen ? Tr("The imported copy has locked terms and supersedes this editable copy.")
+                             : Tr("This session's terms are already locked; the imported copy is still editable. Send "
+                                  "the sender the newer update.");
         return other_frozen ? MergeResult::OtherNewer : MergeResult::OtherOlder;
     }
     if (frozen && m_consent_hash.compare(other.m_consent_hash, Qt::CaseInsensitive) != 0) {
-        error = Tr("Both copies claim revision %1 but were frozen with different terms (check phrase %2 vs %3). They cannot be merged — agree on one authoritative copy, bump its revision and re-circulate it.")
+        error = Tr("Both copies claim revision %1 but locked different terms (check phrase %2 vs %3). They cannot be "
+                   "merged — agree on one authoritative copy, bump its revision and re-circulate it.")
                     .arg(m_revision)
                     .arg(consentCheckPhrase(), other.consentCheckPhrase());
         return MergeResult::Conflict;
@@ -899,6 +907,54 @@ MnShareSession::MergeResult MnShareSession::mergeEnvelope(const MnShareSession& 
             warnings << sig_error;
         }
     }
+
+    // Contributors sign the same Combined transaction independently. Merge
+    // those copies input-by-input so this is one parallel signing round,
+    // rather than forcing participants to pass one partially signed copy
+    // around serially. Nothing except scriptSig may differ between copies.
+    if (m_stage == Stage::Combined && other.m_stage == Stage::Combined) {
+        CMutableTransaction ours;
+        CMutableTransaction theirs;
+        CProRegTx ours_payload;
+        CProRegTx theirs_payload;
+        QString decode_error;
+        if (!DecodeSharedProTx(m_protx, ours, ours_payload, decode_error) ||
+            !DecodeSharedProTx(other.m_protx, theirs, theirs_payload, decode_error)) {
+            error = Tr("A funding-signed copy contains an invalid registration transaction. It was not merged.");
+            return MergeResult::Conflict;
+        }
+        if (ours_payload.MakeSharedRegConsentHash(CTransaction(ours)) != uint256S(m_consent_hash.toStdString()) ||
+            theirs_payload.MakeSharedRegConsentHash(CTransaction(theirs)) != uint256S(m_consent_hash.toStdString())) {
+            error = Tr("A funding-signed copy does not match the terms everyone approved. It was not merged.");
+            return MergeResult::Conflict;
+        }
+
+        CMutableTransaction unsigned_ours{ours};
+        CMutableTransaction unsigned_theirs{theirs};
+        for (auto& input : unsigned_ours.vin)
+            input.scriptSig.clear();
+        for (auto& input : unsigned_theirs.vin)
+            input.scriptSig.clear();
+        if (EncodeHexTx(CTransaction(unsigned_ours)) != EncodeHexTx(CTransaction(unsigned_theirs))) {
+            error = Tr("The funding-signed copies are not the same transaction. They cannot be merged.");
+            return MergeResult::Conflict;
+        }
+
+        for (size_t i = 0; i < ours.vin.size(); ++i) {
+            const CScript& incoming{theirs.vin[i].scriptSig};
+            if (incoming.empty()) continue;
+            if (!ours.vin[i].scriptSig.empty() && ours.vin[i].scriptSig != incoming) {
+                error = Tr("Funding input %1 has two different signatures. The copies cannot be merged.").arg(i + 1);
+                return MergeResult::Conflict;
+            }
+            ours.vin[i].scriptSig = incoming;
+        }
+        m_protx = QString::fromStdString(EncodeHexTx(CTransaction(ours)));
+        if (std::all_of(ours.vin.begin(), ours.vin.end(), [](const CTxIn& input) { return !input.scriptSig.empty(); })) {
+            m_stage = Stage::FundingSigned;
+        }
+    }
+
     // Adopt a further-advanced stage together with its transaction (the protx
     // field evolves along the stages: combined join sigs, then funding
     // signatures live in the same transaction hex). Validate the incoming
@@ -923,7 +979,7 @@ MnShareSession::MergeResult MnShareSession::mergeEnvelope(const MnShareSession& 
 bool MnShareSession::setCombinedTx(const QString& tx_hex, QString& error)
 {
     if (m_stage != Stage::Frozen && m_stage != Stage::Signing) {
-        error = Tr("The session is not collecting signatures.");
+        error = Tr("The session is not collecting approvals.");
         return false;
     }
     if (signedCount() < static_cast<int>(m_shares.size())) {
@@ -949,7 +1005,7 @@ bool MnShareSession::setCombinedTx(const QString& tx_hex, QString& error)
 bool MnShareSession::setFundingSignedTx(const QString& tx_hex, QString& error)
 {
     if (m_stage != Stage::Combined && m_stage != Stage::FundingSigned) {
-        error = Tr("The consent signatures have to be combined before the funding inputs are signed.");
+        error = Tr("The owner approvals have to be combined before the contributions are signed.");
         return false;
     }
     CMutableTransaction tx;

@@ -4,6 +4,7 @@
 
 #include <qt/sharedmncreatedialog.h>
 
+#include <bls/bls.h>
 #include <coins.h>
 #include <core_io.h>
 #include <evo/dmn_types.h>
@@ -28,7 +29,6 @@
 #include <qt/walletmodeltransaction.h>
 
 #include <QApplication>
-#include <QCheckBox>
 #include <QClipboard>
 #include <QComboBox>
 #include <QDoubleSpinBox>
@@ -41,12 +41,15 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSpinBox>
 #include <QStackedWidget>
 #include <QTableWidget>
 #include <QTableWidgetItem>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -154,6 +157,18 @@ std::map<QString, bool> InputSignatureMap(const QString& tx_hex)
     return ret;
 }
 
+QSet<QString> WalletOutpoints(const WalletModel* wallet_model)
+{
+    QSet<QString> ret;
+    if (wallet_model == nullptr) return ret;
+    for (const auto& [dest, coins] : wallet_model->wallet().listCoins()) {
+        for (const auto& [outpoint, txout] : coins) {
+            ret.insert(OutpointKey(QString::fromStdString(outpoint.hash.ToString()), outpoint.n));
+        }
+    }
+    return ret;
+}
+
 QString ShareDisplayLabel(const MnShareSession& session, int index)
 {
     if (index >= 0 && static_cast<size_t>(index) < session.shares().size() &&
@@ -172,13 +187,18 @@ SharedMnCreateDialog::SharedMnCreateDialog(interfaces::Node& node, WalletModel* 
     m_v24_active{node.isV24Active()},
     m_sender{new ProTxSender(node, this)}
 {
-    setMinimumSize(980, 720);
+    setObjectName(QStringLiteral("SharedMnCreateDialog"));
+    setMinimumSize(900, 720);
 
     auto* layout = new QVBoxLayout(this);
     layout->addWidget(buildHeader());
 
     m_pages = new QStackedWidget(this);
-    m_pages->insertWidget(PageDraft, buildDraftPage());
+    m_pages->insertWidget(PageLanding, buildLandingPage());
+    m_pages->insertWidget(PageParticipants, buildParticipantsPage());
+    m_pages->insertWidget(PageSettings, buildSettingsPage());
+    m_pages->insertWidget(PageFunding, buildFundingPage());
+    m_pages->insertWidget(PageReview, buildReviewPage());
     m_pages->insertWidget(PageSigning, buildSigningPage());
     m_pages->insertWidget(PageCombined, buildCombinedPage());
     m_pages->insertWidget(PageBroadcast, buildBroadcastPage());
@@ -199,33 +219,35 @@ QWidget* SharedMnCreateDialog::buildHeader()
     layout->setContentsMargins(0, 0, 0, 0);
 
     auto* top_row = new QHBoxLayout();
+    m_role_label = new QLabel(header);
+    GUIUtil::setFont({m_role_label}, GUIUtil::FontWeight::Bold);
+    top_row->addWidget(m_role_label);
+
     m_breadcrumb = new QLabel(header);
     m_breadcrumb->setTextFormat(Qt::RichText);
     top_row->addWidget(m_breadcrumb, /*stretch=*/1);
 
-    m_import_button = new QPushButton(tr("Import"), header);
-    m_import_button->setToolTip(tr("Merge a session copy from the clipboard into this session."));
+    m_import_button = new QPushButton(tr("Open Update"), header);
+    m_import_button->setToolTip(tr("Merge a session update from the clipboard."));
     connect(m_import_button, &QPushButton::clicked, this, &SharedMnCreateDialog::importFromClipboard);
     top_row->addWidget(m_import_button);
 
-    m_load_button = new QPushButton(tr("Load…"), header);
-    m_load_button->setToolTip(tr("Merge a session file into this session."));
-    connect(m_load_button, &QPushButton::clicked, this, &SharedMnCreateDialog::loadFromFile);
-    top_row->addWidget(m_load_button);
-
-    m_export_button = new QPushButton(tr("Export"), header);
-    m_export_button->setToolTip(tr("Copy this session to the clipboard to pass to another participant."));
+    m_export_button = new QPushButton(tr("Copy Update"), header);
+    m_export_button->setToolTip(tr("Copy the latest session update for another participant."));
     connect(m_export_button, &QPushButton::clicked, this, &SharedMnCreateDialog::exportToClipboard);
     top_row->addWidget(m_export_button);
 
-    m_save_button = new QPushButton(tr("Save…"), header);
-    m_save_button->setToolTip(tr("Save this session to a file to pass to another participant."));
-    connect(m_save_button, &QPushButton::clicked, this, &SharedMnCreateDialog::saveToFile);
-    top_row->addWidget(m_save_button);
+    m_more_button = new QPushButton(header);
+    m_more_button->setText(tr("More"));
+    auto* recovery_menu = new QMenu(m_more_button);
+    recovery_menu->addAction(tr("Open Session File…"), this, &SharedMnCreateDialog::loadFromFile);
+    recovery_menu->addAction(tr("Save Session Backup…"), this, &SharedMnCreateDialog::saveToFile);
+    m_more_button->setMenu(recovery_menu);
+    top_row->addWidget(m_more_button);
     layout->addLayout(top_row);
 
-    layout->addWidget(MakeHint(tr("This file is the session — any participant with the latest copy can continue it."),
-                               header));
+    m_next_action_label = MakeHint(QString(), header);
+    layout->addWidget(m_next_action_label);
 
     m_phrase_label = new QLabel(header);
     m_phrase_label->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -233,7 +255,7 @@ QWidget* SharedMnCreateDialog::buildHeader()
     GUIUtil::setFont({m_phrase_label}, GUIUtil::FontWeight::Bold, 22);
     layout->addWidget(m_phrase_label);
 
-    m_phrase_hint = MakeHint(tr("Check phrase — read this aloud to the other participants before signing. Everyone "
+    m_phrase_hint = MakeHint(tr("Check phrase — read this aloud to the other participants before approving. Everyone "
                                 "must see the same phrase; a different phrase means different terms."),
                              header);
     m_phrase_hint->setAlignment(Qt::AlignCenter);
@@ -242,12 +264,68 @@ QWidget* SharedMnCreateDialog::buildHeader()
     return header;
 }
 
-QWidget* SharedMnCreateDialog::buildDraftPage()
+QWidget* SharedMnCreateDialog::buildLandingPage()
+{
+    auto* page = new QWidget(this);
+    auto* layout = new QVBoxLayout(page);
+    layout->addStretch();
+
+    auto* title = new QLabel(tr("Set up a shared masternode"), page);
+    title->setAlignment(Qt::AlignCenter);
+    GUIUtil::setFont({title}, GUIUtil::FontWeight::Bold, 22);
+    layout->addWidget(title);
+
+    auto* subtitle = MakeHint(tr("Choose your role for this session. The coordinator creates the terms; each "
+                                 "participant joins the coordinator's session and adds their part."),
+                              page);
+    subtitle->setAlignment(Qt::AlignCenter);
+    layout->addWidget(subtitle);
+
+    auto* choices = new QHBoxLayout();
+    auto* create_box = new QGroupBox(tr("Create a shared masternode"), page);
+    auto* create_layout = new QVBoxLayout(create_box);
+    create_layout->addWidget(MakeHint(tr("I will coordinate the participants, define the terms, collect updates, "
+                                         "and broadcast the final registration."),
+                                      create_box));
+    create_layout->addStretch();
+    auto* create_button = new QPushButton(tr("Create New Session"), create_box);
+    connect(create_button, &QPushButton::clicked, this, &SharedMnCreateDialog::createSession);
+    create_layout->addWidget(create_button);
+    auto* resume_button = new QPushButton(tr("Resume My Session Backup…"), create_box);
+    connect(resume_button, &QPushButton::clicked, this, &SharedMnCreateDialog::resumeCoordinatorSession);
+    create_layout->addWidget(resume_button);
+    choices->addWidget(create_box);
+
+    auto* join_box = new QGroupBox(tr("Join an existing session"), page);
+    auto* join_layout = new QVBoxLayout(join_box);
+    join_layout->addWidget(MakeHint(tr("I received a session update from the coordinator and need to add my "
+                                       "addresses, funding, approval, or contribution signature."),
+                                    join_box));
+    join_layout->addStretch();
+    auto* paste_button = new QPushButton(tr("Paste Coordinator Update"), join_box);
+    connect(paste_button, &QPushButton::clicked, this, &SharedMnCreateDialog::joinFromClipboard);
+    join_layout->addWidget(paste_button);
+    auto* file_button = new QPushButton(tr("Open Coordinator File…"), join_box);
+    connect(file_button, &QPushButton::clicked, this, &SharedMnCreateDialog::joinFromFile);
+    join_layout->addWidget(file_button);
+    choices->addWidget(join_box);
+    layout->addLayout(choices);
+    layout->addStretch();
+    return page;
+}
+
+QWidget* SharedMnCreateDialog::buildParticipantsPage()
 {
     auto* page = new QWidget(this);
     auto* layout = new QVBoxLayout(page);
 
-    auto* shares_box = new QGroupBox(tr("Shares (2–8 participants, amounts must sum to the collateral)"), page);
+    auto* title = new QLabel(tr("Participants and shares"), page);
+    GUIUtil::setFont({title}, GUIUtil::FontWeight::Bold, 18);
+    layout->addWidget(title);
+    m_participants_hint = MakeHint(QString(), page);
+    layout->addWidget(m_participants_hint);
+
+    auto* shares_box = new QGroupBox(tr("Share allocation"), page);
     auto* shares_layout = new QVBoxLayout(shares_box);
     m_share_table = new QTableWidget(0, 5, shares_box);
     m_share_table->setHorizontalHeaderLabels(
@@ -266,21 +344,73 @@ QWidget* SharedMnCreateDialog::buildDraftPage()
     m_remove_share_button = new QPushButton(tr("Remove Share"), shares_box);
     connect(m_remove_share_button, &QPushButton::clicked, this, &SharedMnCreateDialog::removeShareRow);
     share_buttons->addWidget(m_remove_share_button);
-    m_my_address_button = new QPushButton(tr("Use My Wallet Address"), shares_box);
-    m_my_address_button->setToolTip(tr("Fill the selected owner, refund or reward cell with a fresh address from "
-                                       "this wallet."));
-    connect(m_my_address_button, &QPushButton::clicked, this, &SharedMnCreateDialog::useMyWalletAddress);
-    share_buttons->addWidget(m_my_address_button);
     share_buttons->addStretch();
     m_sum_label = new QLabel(shares_box);
     share_buttons->addWidget(m_sum_label);
     shares_layout->addLayout(share_buttons);
-    layout->addWidget(shares_box);
 
-    auto* middle = new QHBoxLayout();
+    auto* wallet_buttons = new QHBoxLayout();
+    wallet_buttons->addWidget(new QLabel(tr("Selected row:"), shares_box));
+    m_my_address_button = new QPushButton(tr("Use My Address for Owner"), shares_box);
+    m_my_address_button->setToolTip(tr("Fill the selected row's owner address from this wallet."));
+    connect(m_my_address_button, &QPushButton::clicked, this, &SharedMnCreateDialog::useMyOwnerAddress);
+    wallet_buttons->addWidget(m_my_address_button);
+    m_my_refund_button = new QPushButton(tr("Use My Address for Refund"), shares_box);
+    m_my_refund_button->setToolTip(tr("Fill the selected row's refund address from this wallet."));
+    connect(m_my_refund_button, &QPushButton::clicked, this, &SharedMnCreateDialog::useMyRefundAddress);
+    wallet_buttons->addWidget(m_my_refund_button);
+    m_my_reward_button = new QPushButton(tr("Use My Address for Rewards"), shares_box);
+    m_my_reward_button->setToolTip(tr("Optionally fill the selected row's reward address from this wallet."));
+    connect(m_my_reward_button, &QPushButton::clicked, this, &SharedMnCreateDialog::useMyRewardAddress);
+    wallet_buttons->addWidget(m_my_reward_button);
+    wallet_buttons->addStretch();
+    shares_layout->addLayout(wallet_buttons);
+    layout->addWidget(shares_box, /*stretch=*/1);
 
-    auto* terms_box = new QGroupBox(tr("Terms"), page);
+    auto* nav = new QHBoxLayout();
+    auto* cancel = new QPushButton(tr("Cancel"), page);
+    connect(cancel, &QPushButton::clicked, this, &SharedMnCreateDialog::reject);
+    nav->addWidget(cancel);
+    nav->addStretch();
+    auto* next = new QPushButton(tr("Continue to Masternode Settings"), page);
+    connect(next, &QPushButton::clicked, this, &SharedMnCreateDialog::showSettingsPage);
+    nav->addWidget(next);
+    layout->addLayout(nav);
+
+    if (m_wallet_model == nullptr) {
+        for (QPushButton* button : {m_my_address_button, m_my_refund_button, m_my_reward_button}) {
+            button->setEnabled(false);
+            button->setToolTip(tr("No wallet is available."));
+        }
+    }
+    return page;
+}
+
+QWidget* SharedMnCreateDialog::buildSettingsPage()
+{
+    auto* page = new QWidget(this);
+    auto* layout = new QVBoxLayout(page);
+
+    m_settings_title = new QLabel(page);
+    GUIUtil::setFont({m_settings_title}, GUIUtil::FontWeight::Bold, 18);
+    layout->addWidget(m_settings_title);
+    m_settings_hint = MakeHint(QString(), page);
+    layout->addWidget(m_settings_hint);
+
+    auto* scroll = new QScrollArea(page);
+    scroll->setObjectName(QStringLiteral("sharedMnSettingsScroll"));
+    scroll->viewport()->setObjectName(QStringLiteral("sharedMnSettingsViewport"));
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setWidgetResizable(true);
+    auto* content = new QWidget(scroll);
+    content->setObjectName(QStringLiteral("sharedMnSettingsContent"));
+    auto* content_layout = new QVBoxLayout(content);
+    content_layout->setContentsMargins(0, 0, 0, 0);
+    content_layout->setSizeConstraint(QLayout::SetMinAndMaxSize);
+
+    auto* terms_box = new QGroupBox(tr("Registration settings"), content);
     auto* terms_form = new QFormLayout(terms_box);
+    terms_form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
     m_service_edit = new QLineEdit(terms_box);
     m_service_edit->setPlaceholderText(tr("IP:PORT — leave empty to set later with a service update"));
@@ -290,6 +420,7 @@ QWidget* SharedMnCreateDialog::buildDraftPage()
     m_operator_widget = new OperatorKeyWidget(terms_box);
     connect(m_operator_widget, &OperatorKeyWidget::changed, this, &SharedMnCreateDialog::onTermsChanged);
     terms_form->addRow(tr("Operator key:"), m_operator_widget);
+    m_operator_field_label = qobject_cast<QLabel*>(terms_form->labelForField(m_operator_widget));
 
     m_operator_session_key_label = new QLabel(terms_box);
     m_operator_session_key_label->setTextFormat(Qt::PlainText);
@@ -316,46 +447,82 @@ QWidget* SharedMnCreateDialog::buildDraftPage()
     connect(m_voting_edit, &QLineEdit::textChanged, this, &SharedMnCreateDialog::onTermsChanged);
     terms_form->addRow(tr("Voting address:"), m_voting_edit);
 
-    m_operator_reward_spin = new QDoubleSpinBox(terms_box);
+    content_layout->addWidget(terms_box);
+
+    auto* advanced_box = new QGroupBox(tr("Advanced reward and dissolution terms"), content);
+    auto* advanced_layout = new QVBoxLayout(advanced_box);
+    auto* advanced_toggle = new QToolButton(advanced_box);
+    advanced_toggle->setText(tr("Show advanced terms"));
+    advanced_toggle->setArrowType(Qt::RightArrow);
+    advanced_toggle->setCheckable(true);
+    advanced_toggle->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    advanced_layout->addWidget(advanced_toggle, /*stretch=*/0, Qt::AlignLeft);
+    auto* advanced_body = new QWidget(advanced_box);
+    auto* advanced_form = new QFormLayout(advanced_body);
+    advanced_form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    advanced_layout->addWidget(advanced_body);
+    advanced_body->setVisible(false);
+    connect(advanced_toggle, &QToolButton::toggled, this, [advanced_toggle, advanced_body](bool visible) {
+        advanced_toggle->setArrowType(visible ? Qt::DownArrow : Qt::RightArrow);
+        advanced_body->setVisible(visible);
+    });
+
+    m_operator_reward_spin = new QDoubleSpinBox(advanced_box);
     m_operator_reward_spin->setRange(0.0, 100.0);
     m_operator_reward_spin->setDecimals(2);
     m_operator_reward_spin->setSuffix(QStringLiteral(" %"));
     connect(m_operator_reward_spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
             &SharedMnCreateDialog::onTermsChanged);
-    terms_form->addRow(tr("Operator reward:"), m_operator_reward_spin);
+    advanced_form->addRow(tr("Operator reward:"), m_operator_reward_spin);
 
-    m_early_period_spin = new QSpinBox(terms_box);
+    m_early_period_spin = new QSpinBox(advanced_box);
     m_early_period_spin->setRange(0, static_cast<int>(CProRegTx::MAX_EARLY_PERIOD_BLOCKS));
     connect(m_early_period_spin, QOverload<int>::of(&QSpinBox::valueChanged), this,
             &SharedMnCreateDialog::onTermsChanged);
-    m_early_period_hint = new QLabel(terms_box);
+    m_early_period_hint = new QLabel(advanced_box);
     auto* early_period_box = new QVBoxLayout();
     early_period_box->addWidget(m_early_period_spin);
     early_period_box->addWidget(m_early_period_hint);
-    terms_form->addRow(tr("Early period (blocks):"), early_period_box);
+    advanced_form->addRow(tr("Early period (blocks):"), early_period_box);
 
-    m_early_penalty_field = new BitcoinAmountField(terms_box);
+    m_early_penalty_field = new BitcoinAmountField(advanced_box);
     connect(m_early_penalty_field, &BitcoinAmountField::valueChanged, this, &SharedMnCreateDialog::onTermsChanged);
-    m_early_penalty_hint = new QLabel(terms_box);
+    m_early_penalty_hint = new QLabel(advanced_box);
     m_early_penalty_hint->setWordWrap(true);
     auto* early_penalty_box = new QVBoxLayout();
     early_penalty_box->addWidget(m_early_penalty_field);
     early_penalty_box->addWidget(m_early_penalty_hint);
-    terms_form->addRow(tr("Early penalty:"), early_penalty_box);
+    advanced_form->addRow(tr("Early penalty:"), early_penalty_box);
+    content_layout->addWidget(advanced_box);
+    content_layout->addStretch();
+    scroll->setWidget(content);
+    layout->addWidget(scroll, /*stretch=*/1);
 
-    middle->addWidget(terms_box, /*stretch=*/1);
+    auto* nav = new QHBoxLayout();
+    auto* back = new QPushButton(tr("Back"), page);
+    connect(back, &QPushButton::clicked, this, &SharedMnCreateDialog::showParticipantsPage);
+    nav->addWidget(back);
+    nav->addStretch();
+    auto* next = new QPushButton(tr("Continue to Funding"), page);
+    connect(next, &QPushButton::clicked, this, &SharedMnCreateDialog::showFundingPage);
+    nav->addWidget(next);
+    layout->addLayout(nav);
+    return page;
+}
 
-    auto* right_column = new QVBoxLayout();
+QWidget* SharedMnCreateDialog::buildFundingPage()
+{
+    auto* page = new QWidget(this);
+    auto* layout = new QVBoxLayout(page);
 
-    auto* validation_box = new QGroupBox(tr("Validation"), page);
-    auto* validation_layout = new QVBoxLayout(validation_box);
-    m_validation_list = new QListWidget(validation_box);
-    m_validation_list->setSelectionMode(QAbstractItemView::NoSelection);
-    m_validation_list->setFocusPolicy(Qt::NoFocus);
-    validation_layout->addWidget(m_validation_list);
-    right_column->addWidget(validation_box, /*stretch=*/1);
+    auto* title = new QLabel(tr("Collect funding"), page);
+    GUIUtil::setFont({title}, GUIUtil::FontWeight::Bold, 18);
+    layout->addWidget(title);
+    layout->addWidget(MakeHint(tr("Prepare your contribution, then share the updated session. Each participant "
+                                  "contributes exactly their total share amount."),
+                               page));
 
-    auto* funding_box = new QGroupBox(tr("Funding"), page);
+    auto* funding_box = new QGroupBox(tr("My contribution"), page);
     auto* funding_layout = new QVBoxLayout(funding_box);
     funding_layout->addWidget(
         MakeHint(tr("Each participant contributes a single output of exactly their total share amount. The "
@@ -364,24 +531,41 @@ QWidget* SharedMnCreateDialog::buildDraftPage()
                  funding_box));
 
     auto* funding_form = new QFormLayout();
+    funding_form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     m_my_label_edit = new QLineEdit(funding_box);
     m_my_label_edit->setPlaceholderText(tr("How the other participants know you, e.g. Alice"));
     funding_form->addRow(tr("My participant label:"), m_my_label_edit);
 
-    m_coordinator_check = new QCheckBox(tr("I am the coordinator (add the fee input and take the change)"), funding_box);
-    funding_form->addRow(QString(), m_coordinator_check);
-
-    m_fee_amount_field = new BitcoinAmountField(funding_box);
+    m_fee_box = new QGroupBox(tr("Coordinator transaction fee"), funding_box);
+    auto* fee_layout = new QVBoxLayout(m_fee_box);
+    auto* fee_toggle = new QToolButton(m_fee_box);
+    fee_toggle->setText(tr("Show fee settings"));
+    fee_toggle->setArrowType(Qt::RightArrow);
+    fee_toggle->setCheckable(true);
+    fee_toggle->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    fee_layout->addWidget(fee_toggle, /*stretch=*/0, Qt::AlignLeft);
+    auto* fee_body = new QWidget(m_fee_box);
+    auto* fee_form = new QFormLayout(fee_body);
+    fee_form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    fee_layout->addWidget(fee_body);
+    fee_body->setVisible(false);
+    connect(fee_toggle, &QToolButton::toggled, this, [fee_toggle, fee_body](bool visible) {
+        fee_toggle->setArrowType(visible ? Qt::DownArrow : Qt::RightArrow);
+        fee_body->setVisible(visible);
+    });
+    m_fee_amount_field = new BitcoinAmountField(fee_body);
     m_fee_amount_field->setValue(100000); // 0.001 DASH covers even a maximal 8-share registration
-    funding_form->addRow(tr("Transaction fee:"), m_fee_amount_field);
+    fee_form->addRow(tr("Registration fee:"), m_fee_amount_field);
 
-    m_fee_utxo_combo = new QComboBox(funding_box);
+    m_fee_utxo_combo = new QComboBox(fee_body);
     m_fee_utxo_combo->setToolTip(tr("A small wallet output the coordinator adds to pay the fee from."));
-    funding_form->addRow(tr("Fee input:"), m_fee_utxo_combo);
+    fee_form->addRow(tr("Wallet output used for fee:"), m_fee_utxo_combo);
+    connect(m_fee_amount_field, &BitcoinAmountField::valueChanged, this, &SharedMnCreateDialog::refreshFundingCandidates);
     funding_layout->addLayout(funding_form);
+    funding_layout->addWidget(m_fee_box);
 
     auto* funding_buttons = new QHBoxLayout();
-    m_add_funding_button = new QPushButton(tr("Add My Funding"), funding_box);
+    m_add_funding_button = new QPushButton(tr("Prepare My Contribution"), funding_box);
     connect(m_add_funding_button, &QPushButton::clicked, this, &SharedMnCreateDialog::addMyFunding);
     funding_buttons->addWidget(m_add_funding_button);
     m_remove_funding_button = new QPushButton(tr("Remove Selected"), funding_box);
@@ -394,29 +578,74 @@ QWidget* SharedMnCreateDialog::buildDraftPage()
     funding_layout->addLayout(funding_buttons);
 
     m_contrib_list = new QListWidget(funding_box);
+    m_contrib_list->setObjectName(QStringLiteral("sharedMnSessionList"));
     m_contrib_list->setToolTip(tr("Funding contributions recorded in the session."));
     funding_layout->addWidget(m_contrib_list);
     m_funding_status_label = new QLabel(funding_box);
     m_funding_status_label->setWordWrap(true);
     funding_layout->addWidget(m_funding_status_label);
-    right_column->addWidget(funding_box, /*stretch=*/2);
+    layout->addWidget(funding_box, /*stretch=*/1);
 
-    middle->addLayout(right_column, /*stretch=*/1);
-    layout->addLayout(middle, /*stretch=*/1);
-
-    auto* freeze_row = new QHBoxLayout();
-    freeze_row->addStretch();
-    m_freeze_button = new QPushButton(tr("Freeze Terms…"), page);
-    connect(m_freeze_button, &QPushButton::clicked, this, &SharedMnCreateDialog::freezeSession);
-    freeze_row->addWidget(m_freeze_button);
-    layout->addLayout(freeze_row);
+    auto* nav = new QHBoxLayout();
+    auto* back = new QPushButton(tr("Back"), page);
+    connect(back, &QPushButton::clicked, this, &SharedMnCreateDialog::showSettingsPage);
+    nav->addWidget(back);
+    nav->addStretch();
+    auto* next = new QPushButton(tr("Continue to Review"), page);
+    connect(next, &QPushButton::clicked, this, &SharedMnCreateDialog::showReviewPage);
+    nav->addWidget(next);
+    layout->addLayout(nav);
 
     if (m_wallet_model == nullptr) {
-        for (QPushButton* button : {m_my_address_button, m_add_funding_button, m_remove_funding_button}) {
+        for (QPushButton* button : {m_add_funding_button, m_remove_funding_button}) {
             button->setEnabled(false);
             button->setToolTip(tr("No wallet is available."));
         }
     }
+    return page;
+}
+
+QWidget* SharedMnCreateDialog::buildReviewPage()
+{
+    auto* page = new QWidget(this);
+    auto* layout = new QVBoxLayout(page);
+
+    m_review_title = new QLabel(page);
+    GUIUtil::setFont({m_review_title}, GUIUtil::FontWeight::Bold, 18);
+    layout->addWidget(m_review_title);
+    m_review_hint = MakeHint(QString(), page);
+    layout->addWidget(m_review_hint);
+
+    m_review_summary = new QLabel(page);
+    m_review_summary->setTextFormat(Qt::RichText);
+    m_review_summary->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_review_summary->setWordWrap(true);
+    layout->addWidget(m_review_summary);
+
+    auto* validation_box = new QGroupBox(tr("Readiness"), page);
+    auto* validation_layout = new QVBoxLayout(validation_box);
+    m_validation_list = new QListWidget(validation_box);
+    m_validation_list->setObjectName(QStringLiteral("sharedMnSessionList"));
+    m_validation_list->setSelectionMode(QAbstractItemView::NoSelection);
+    m_validation_list->setFocusPolicy(Qt::NoFocus);
+    validation_layout->addWidget(m_validation_list);
+    layout->addWidget(validation_box, /*stretch=*/1);
+
+    auto* nav = new QHBoxLayout();
+    auto* back = new QPushButton(tr("Back"), page);
+    connect(back, &QPushButton::clicked, this, &SharedMnCreateDialog::showFundingPage);
+    nav->addWidget(back);
+    nav->addStretch();
+    m_freeze_button = new QPushButton(tr("Lock Terms and Request Approval"), page);
+    connect(m_freeze_button, &QPushButton::clicked, this, [this] {
+        if (m_role == Role::Coordinator) {
+            freezeSession();
+        } else {
+            exportToClipboard();
+        }
+    });
+    nav->addWidget(m_freeze_button);
+    layout->addLayout(nav);
     return page;
 }
 
@@ -425,7 +654,7 @@ QWidget* SharedMnCreateDialog::buildSigningPage()
     auto* page = new QWidget(this);
     auto* layout = new QVBoxLayout(page);
 
-    auto* sheet_box = new QGroupBox(tr("Frozen terms"), page);
+    auto* sheet_box = new QGroupBox(tr("Locked terms"), page);
     auto* sheet_layout = new QVBoxLayout(sheet_box);
     m_term_sheet = new QLabel(sheet_box);
     m_term_sheet->setTextFormat(Qt::RichText);
@@ -434,7 +663,7 @@ QWidget* SharedMnCreateDialog::buildSigningPage()
     sheet_layout->addWidget(m_term_sheet);
     layout->addWidget(sheet_box, /*stretch=*/1);
 
-    auto* sigs_box = new QGroupBox(tr("Consent signatures"), page);
+    auto* sigs_box = new QGroupBox(tr("Owner approvals"), page);
     auto* sigs_layout = new QVBoxLayout(sigs_box);
     m_sig_table = new QTableWidget(0, 3, sigs_box);
     m_sig_table->setHorizontalHeaderLabels({tr("Share"), tr("Participant"), tr("Status")});
@@ -446,11 +675,11 @@ QWidget* SharedMnCreateDialog::buildSigningPage()
     sigs_layout->addWidget(m_sig_table);
 
     auto* sign_row = new QHBoxLayout();
-    m_sign_button = new QPushButton(tr("Sign With This Wallet"), sigs_box);
+    m_sign_button = new QPushButton(tr("Approve Locked Terms"), sigs_box);
     connect(m_sign_button, &QPushButton::clicked, this, &SharedMnCreateDialog::signConsent);
     sign_row->addWidget(m_sign_button);
-    m_unfreeze_button = new QPushButton(tr("Unfreeze…"), sigs_box);
-    m_unfreeze_button->setToolTip(tr("Return the session to a draft. All collected signatures are discarded."));
+    m_unfreeze_button = new QPushButton(tr("Unlock Terms…"), sigs_box);
+    m_unfreeze_button->setToolTip(tr("Return to editing. All collected approvals are discarded."));
     connect(m_unfreeze_button, &QPushButton::clicked, this, &SharedMnCreateDialog::unfreezeSession);
     sign_row->addWidget(m_unfreeze_button);
     sign_row->addStretch();
@@ -470,26 +699,27 @@ QWidget* SharedMnCreateDialog::buildCombinedPage()
     layout->addWidget(m_combined_status);
 
     auto* combine_row = new QHBoxLayout();
-    m_combine_button = new QPushButton(tr("Combine Signatures"), page);
-    m_combine_button->setToolTip(tr("Embed every share owner's consent signature into the transaction."));
+    m_combine_button = new QPushButton(tr("Combine Approvals"), page);
+    m_combine_button->setToolTip(tr("Embed every share owner's approval into the transaction."));
     connect(m_combine_button, &QPushButton::clicked, this, &SharedMnCreateDialog::combineSignatures);
     combine_row->addWidget(m_combine_button);
     combine_row->addStretch();
     layout->addLayout(combine_row);
 
-    auto* funding_box = new QGroupBox(tr("Funding signatures"), page);
+    auto* funding_box = new QGroupBox(tr("Contribution signatures"), page);
     auto* funding_layout = new QVBoxLayout(funding_box);
     funding_layout->addWidget(
-        MakeHint(tr("After combining, every contributor signs their own funding inputs in turn. Pass the session "
-                    "to the next participant listed as pending."),
+        MakeHint(tr("This is one parallel signing round. Give every contributor the same combined update; each "
+                    "person signs only their own contribution and returns that signed copy to the coordinator."),
                  funding_box));
     m_funding_sig_list = new QListWidget(funding_box);
+    m_funding_sig_list->setObjectName(QStringLiteral("sharedMnSessionList"));
     m_funding_sig_list->setSelectionMode(QAbstractItemView::NoSelection);
     m_funding_sig_list->setFocusPolicy(Qt::NoFocus);
     funding_layout->addWidget(m_funding_sig_list);
 
     auto* sign_row = new QHBoxLayout();
-    m_sign_funding_button = new QPushButton(tr("Sign Funding Inputs With This Wallet"), funding_box);
+    m_sign_funding_button = new QPushButton(tr("Sign My Contribution"), funding_box);
     connect(m_sign_funding_button, &QPushButton::clicked, this, &SharedMnCreateDialog::signFundingInputs);
     sign_row->addWidget(m_sign_funding_button);
     sign_row->addStretch();
@@ -603,17 +833,23 @@ void SharedMnCreateDialog::setBusy(bool busy)
         QApplication::restoreOverrideCursor();
     }
     m_pages->setEnabled(!busy);
-    for (QPushButton* button : {m_import_button, m_load_button, m_export_button, m_save_button}) {
+    for (QPushButton* button : {m_import_button, m_export_button}) {
         button->setEnabled(!busy);
     }
+    m_more_button->setEnabled(!busy);
 }
 
 void SharedMnCreateDialog::refreshAll()
 {
-    refreshHeader();
     if (m_dead) {
         m_dead_label->setText(m_dead_reason);
         m_pages->setCurrentIndex(PageDead);
+        refreshHeader();
+        return;
+    }
+    if (m_role == Role::Undecided) {
+        m_pages->setCurrentIndex(PageLanding);
+        refreshHeader();
         return;
     }
     const int total{static_cast<int>(m_session.shares().size())};
@@ -621,7 +857,7 @@ void SharedMnCreateDialog::refreshAll()
     switch (m_session.stage()) {
     case MnShareSession::Stage::Draft:
         refreshDraftPage();
-        m_pages->setCurrentIndex(PageDraft);
+        if (!isDraftPage(m_pages->currentIndex())) m_pages->setCurrentIndex(PageParticipants);
         break;
     case MnShareSession::Stage::Frozen:
     case MnShareSession::Stage::Signing:
@@ -643,21 +879,129 @@ void SharedMnCreateDialog::refreshAll()
         m_pages->setCurrentIndex(PageBroadcast);
         break;
     }
+    refreshHeader();
 }
 
 void SharedMnCreateDialog::refreshHeader()
 {
-    setWindowTitle(tr("Shared Masternode Session %1").arg(m_session.sessionId().left(8)));
-
-    QStringList crumbs;
-    for (const auto stage : {MnShareSession::Stage::Draft, MnShareSession::Stage::Frozen,
-                             MnShareSession::Stage::Signing, MnShareSession::Stage::Combined,
-                             MnShareSession::Stage::FundingSigned, MnShareSession::Stage::Broadcast}) {
-        const QString name{MnShareSession::StageName(stage).toHtmlEscaped()};
-        crumbs << (stage == m_session.stage() ? QStringLiteral("<b>%1</b>").arg(name) : name);
+    const bool landing{m_pages->currentIndex() == PageLanding};
+    for (QWidget* widget : {static_cast<QWidget*>(m_role_label), static_cast<QWidget*>(m_breadcrumb),
+                            static_cast<QWidget*>(m_next_action_label), static_cast<QWidget*>(m_import_button),
+                            static_cast<QWidget*>(m_export_button), static_cast<QWidget*>(m_more_button)}) {
+        widget->setVisible(!landing);
     }
-    m_breadcrumb->setText(crumbs.join(QStringLiteral(" → ")) +
-                          QStringLiteral(" &nbsp;·&nbsp; ") + tr("revision %1").arg(m_session.revision()));
+    if (landing) {
+        setWindowTitle(tr("Shared Masternode"));
+        m_phrase_label->setVisible(false);
+        m_phrase_hint->setVisible(false);
+        return;
+    }
+
+    setWindowTitle(tr("Shared Masternode — %1").arg(m_session.sessionId().left(8)));
+    m_role_label->setText(m_role == Role::Coordinator ? tr("Coordinator") : tr("Participant"));
+
+    QString task;
+    QString next;
+    switch (m_pages->currentIndex()) {
+    case PageParticipants:
+        task = tr("Step 1 of 4 · Participants");
+        next = m_role == Role::Coordinator
+                   ? tr("Next: define every participant's share and addresses, then continue to settings.")
+                   : tr("Next: find your row, add your wallet addresses, then review the settings.");
+        break;
+    case PageSettings:
+        task = tr("Step 2 of 4 · Settings");
+        next = m_role == Role::Coordinator
+                   ? tr("Next: choose the operator and voting keys, then continue to funding.")
+                   : tr("Next: review the coordinator's settings, then continue to your contribution.");
+        break;
+    case PageFunding:
+        task = tr("Step 3 of 4 · Funding");
+        next = m_role == Role::Coordinator
+                   ? tr("Next: prepare your contribution and open each participant's funding update.")
+                   : tr("Next: prepare your contribution, review it, then copy the update for the coordinator.");
+        break;
+    case PageReview:
+        task = tr("Step 4 of 4 · Review");
+        next = m_role == Role::Coordinator
+                   ? tr("Next: resolve every readiness item, then lock the terms and request approval.")
+                   : tr("Next: check your share and funding, then copy the update for the coordinator.");
+        break;
+    case PageSigning:
+        task = tr("Approve locked terms");
+        {
+            const auto my_indexes{myShareIndexes()};
+            const bool mine_pending{std::any_of(my_indexes.begin(), my_indexes.end(),
+                                                [this](int index) { return m_session.signatureFor(index).isEmpty(); })};
+            if (mine_pending) {
+                next = tr("Next: verify the check phrase and approve the locked terms once.");
+            } else if (m_role == Role::Coordinator) {
+                next = tr("Next: open participant approval updates (%1 of %2 shares approved).")
+                           .arg(m_session.signedCount())
+                           .arg(m_session.shares().size());
+            } else {
+                next = tr("Next: copy your approved update for the coordinator.");
+            }
+        }
+        break;
+    case PageCombined:
+        if (m_session.stage() != MnShareSession::Stage::Combined) {
+            task = tr("Combine approvals");
+            next = m_role == Role::Coordinator
+                       ? tr("Next: combine every approval, then distribute one update for parallel contribution "
+                            "signing.")
+                       : tr("Next: copy the complete approval update for the coordinator to combine.");
+        } else {
+            task = tr("Sign contributions");
+            const auto signed_map{InputSignatureMap(m_session.protxHex())};
+            int complete_contributions{0};
+            bool mine_pending{false};
+            const QSet<QString> wallet_outpoints{WalletOutpoints(m_wallet_model)};
+            for (const auto& contribution : m_session.contributions()) {
+                bool complete{true};
+                for (const auto& input : contribution.inputs) {
+                    const QString key{OutpointKey(input.txid, input.vout)};
+                    const auto it{signed_map.find(key)};
+                    const bool signed_input{it != signed_map.end() && it->second};
+                    complete &= signed_input;
+                    mine_pending |= !signed_input && wallet_outpoints.contains(key);
+                }
+                if (complete) ++complete_contributions;
+            }
+            if (mine_pending) {
+                next = m_role == Role::Coordinator
+                           ? tr("Next: copy this combined update to every participant, then sign your contribution "
+                                "once.")
+                           : tr("Next: sign your contribution once, then copy the signed update for the coordinator.");
+            } else if (m_role == Role::Coordinator) {
+                next = tr("Next: open participant signed updates (%1 of %2 contributions complete).")
+                           .arg(complete_contributions)
+                           .arg(m_session.contributions().size());
+            } else {
+                next = tr("Next: copy your signed update for the coordinator.");
+            }
+        }
+        break;
+    case PageBroadcast:
+        task = m_session.stage() == MnShareSession::Stage::Broadcast ? tr("Registration complete")
+                                                                     : tr("Ready to broadcast");
+        next = m_session.stage() == MnShareSession::Stage::Broadcast
+                   ? tr("Done: keep a backup of the final session and prepare standby dissolutions after confirmation.")
+                   : (m_role == Role::Coordinator ? tr("Next: broadcast the fully signed registration.")
+                                                  : tr("Next: copy the fully signed update for the coordinator."));
+        break;
+    case PageDead:
+        task = tr("Session cannot continue");
+        next = tr("Next: unlock your reserved coins and restart with a new session.");
+        break;
+    }
+    m_breadcrumb->setText(task + QStringLiteral(" &nbsp;·&nbsp; ") + tr("revision %1").arg(m_session.revision()));
+    m_next_action_label->setText(QStringLiteral("<b>%1</b>").arg(next.toHtmlEscaped()));
+    m_export_button->setText(m_role == Role::Coordinator ? tr("Copy Update for Participants")
+                                                         : tr("Copy Update for Coordinator"));
+    if (m_role == Role::Participant && m_pages->currentIndex() == PageReview) {
+        m_export_button->setVisible(false);
+    }
 
     const bool show_phrase{!m_dead && m_session.stage() != MnShareSession::Stage::Draft &&
                            !m_session.consentHash().isEmpty()};
@@ -672,9 +1016,42 @@ void SharedMnCreateDialog::refreshDraftPage()
 {
     refreshSharesTable();
     pushTermsToWidgets();
+    const bool coordinator{m_role == Role::Coordinator};
+    m_participants_hint->setText(
+        coordinator ? tr("Add one row per participant. Shares must total 1,000 DASH; each owner and refund address "
+                         "must be unique.")
+                    : tr("Find your assigned row and add wallet addresses for its owner, refund, and optional reward. "
+                         "The coordinator controls participant labels and share amounts."));
+    m_settings_title->setText(coordinator ? tr("Masternode settings") : tr("Review masternode settings"));
+    m_settings_hint->setText(
+        coordinator ? tr("Choose the operator and voting keys. Service details may be added later with a service "
+                         "update.")
+                    : tr("These settings come from the coordinator and are read-only. Review them before preparing "
+                         "your contribution."));
+    m_review_title->setText(coordinator ? tr("Review and lock terms") : tr("Review your session update"));
+    m_review_hint->setText(
+        coordinator ? tr("Review the complete allocation, settings, and funding status. Locking creates the exact "
+                         "terms every owner will approve.")
+                    : tr("Check your share addresses and contribution, then return this update to the coordinator. "
+                         "Only the coordinator can lock the final terms."));
+    for (QLineEdit* edit : {m_service_edit, m_secret_holder_edit, m_voting_edit}) {
+        edit->setEnabled(coordinator);
+    }
+    if (coordinator && !m_operator_key_from_import) {
+        m_operator_widget->setEnabled(true);
+    } else {
+        m_operator_widget->setEnabled(false);
+    }
+    for (QWidget* widget : {static_cast<QWidget*>(m_operator_reward_spin), static_cast<QWidget*>(m_early_period_spin),
+                            static_cast<QWidget*>(m_early_penalty_field)}) {
+        widget->setEnabled(coordinator);
+    }
     refreshContributions();
     refreshValidation();
+    refreshReviewPage();
 }
+
+bool SharedMnCreateDialog::isDraftPage(int page) const { return page >= PageParticipants && page <= PageReview; }
 
 void SharedMnCreateDialog::refreshSharesTable()
 {
@@ -690,6 +1067,9 @@ void SharedMnCreateDialog::refreshSharesTable()
                 m_share_table->setItem(row, column, item);
             }
             item->setText(text);
+            const bool participant_structure{m_role == Role::Participant && (column == COL_LABEL || column == COL_AMOUNT)};
+            item->setFlags(participant_structure ? item->flags() & ~Qt::ItemIsEditable
+                                                 : item->flags() | Qt::ItemIsEditable);
         };
         set_cell(COL_LABEL, share.label);
         set_cell(COL_AMOUNT, share.amount > 0 ? AmountCellText(share.amount) : QString());
@@ -698,12 +1078,20 @@ void SharedMnCreateDialog::refreshSharesTable()
         set_cell(COL_REWARD, share.rewardAddress);
     }
     m_updating = false;
-    m_add_share_button->setEnabled(shares.size() < CProRegTx::MAX_SHARES);
+    m_add_share_button->setEnabled(m_role == Role::Coordinator && shares.size() < CProRegTx::MAX_SHARES);
+    m_remove_share_button->setEnabled(m_role == Role::Coordinator);
 }
 
 void SharedMnCreateDialog::refreshValidation()
 {
-    const QStringList errors{m_session.validateShares()};
+    QStringList errors{m_session.validateShares()};
+    CBLSPublicKey operator_key;
+    if (!operator_key.SetHexStr(m_session.terms().operatorPubKey.toStdString(), /*specificLegacyScheme=*/false)) {
+        errors << tr("The operator public key must be a valid basic-scheme BLS public key.");
+    }
+    QString service_error;
+    parseServiceList(m_session.terms().coreP2PAddrs, service_error);
+    if (!service_error.isEmpty()) errors << service_error;
     m_validation_list->clear();
     if (errors.isEmpty()) {
         auto* item = new QListWidgetItem(tr("The share table and terms are valid."), m_validation_list);
@@ -734,20 +1122,25 @@ void SharedMnCreateDialog::refreshValidation()
                                          "must stay below the smallest share."));
     }
 
-    const bool can_freeze{m_v24_active && errors.isEmpty() && !m_session.contributions().empty() && !m_busy};
-    m_freeze_button->setEnabled(can_freeze);
-    if (!m_v24_active) {
+    const bool coordinator{m_role == Role::Coordinator};
+    const bool can_freeze{coordinator && m_v24_active && errors.isEmpty() && !m_session.contributions().empty() && !m_busy};
+    m_freeze_button->setText(coordinator ? tr("Lock Terms and Request Approval") : tr("Copy Update for Coordinator"));
+    m_freeze_button->setEnabled(coordinator ? can_freeze : !m_busy);
+    if (!coordinator) {
+        m_freeze_button->setToolTip(tr("Return your addresses and funding contribution to the coordinator."));
+    } else if (!m_v24_active) {
         m_freeze_button->setToolTip(tr("Shared masternodes require the v24 hard fork to be active."));
     } else if (errors.isEmpty() && m_session.contributions().empty()) {
         m_freeze_button->setToolTip(tr("Add at least one funding contribution first."));
     } else {
-        m_freeze_button->setToolTip(tr("Prepare the registration transaction and fix the terms. After freezing, "
-                                       "every share owner signs the consent check phrase."));
+        m_freeze_button->setToolTip(tr("Lock the registration terms. Every share owner then verifies the same check "
+                                       "phrase and approves those terms."));
     }
 }
 
 void SharedMnCreateDialog::refreshContributions()
 {
+    m_fee_box->setVisible(m_role == Role::Coordinator);
     m_contrib_list->clear();
     CAmount resolved_total{0};
     int unknown_inputs{0};
@@ -773,6 +1166,12 @@ void SharedMnCreateDialog::refreshContributions()
         }
         new QListWidgetItem(text, m_contrib_list);
     }
+    if (m_session.contributions().empty()) {
+        new QListWidgetItem(m_role == Role::Coordinator
+                                ? tr("No contributions yet. Prepare yours, then open each participant's update.")
+                                : tr("No contribution from this wallet yet. Prepare it before returning the update."),
+                            m_contrib_list);
+    }
 
     const CAmount required{GetMnType(MnType::Regular).collat_amount};
     QString status{tr("Funding inputs resolve to %1 of the %2 collateral plus fee.")
@@ -784,6 +1183,35 @@ void SharedMnCreateDialog::refreshContributions()
                      nullptr, unknown_inputs);
     }
     m_funding_status_label->setText(status);
+
+    const CAmount mine{myShareTotal()};
+    m_add_funding_button->setText(mine > 0 ? tr("Prepare My %1 Contribution").arg(FormatAmount(m_wallet_model, mine))
+                                           : tr("Prepare My Contribution"));
+}
+
+void SharedMnCreateDialog::refreshReviewPage()
+{
+    CAmount share_total{0};
+    for (const auto& share : m_session.shares())
+        share_total += share.amount;
+
+    const auto& terms{m_session.terms()};
+    QStringList rows;
+    rows << QStringLiteral("<b>%1</b> %2 · %3")
+                .arg(tr("Participants:"), tr("%n share(s)", nullptr, static_cast<int>(m_session.shares().size())),
+                     FormatAmount(m_wallet_model, share_total));
+    rows << QStringLiteral("<b>%1</b> %2")
+                .arg(tr("Operator:"),
+                     terms.operatorPubKey.isEmpty() ? tr("not set") : terms.operatorPubKey.toHtmlEscaped());
+    rows << QStringLiteral("<b>%1</b> %2")
+                .arg(tr("Voting:"), terms.votingAddress.isEmpty() ? tr("not set") : terms.votingAddress.toHtmlEscaped());
+    rows << QStringLiteral("<b>%1</b> %2")
+                .arg(tr("Service:"),
+                     terms.coreP2PAddrs.isEmpty() ? tr("will be set later") : terms.coreP2PAddrs.toHtmlEscaped());
+    rows << QStringLiteral("<b>%1</b> %2")
+                .arg(tr("Funding:"),
+                     tr("%n contribution(s) recorded", nullptr, static_cast<int>(m_session.contributions().size())));
+    m_review_summary->setText(rows.join(QStringLiteral("<br>")));
 }
 
 void SharedMnCreateDialog::refreshSigningPage()
@@ -827,6 +1255,8 @@ void SharedMnCreateDialog::refreshSigningPage()
     // envelope loaded from disk is re-verified here so a stale or tampered
     // signature is surfaced instead of counted (A7).
     const auto my_indexes{myShareIndexes()};
+    const bool has_pending_approval{std::any_of(my_indexes.begin(), my_indexes.end(),
+                                                [this](int index) { return m_session.signatureFor(index).isEmpty(); })};
     m_sig_table->setRowCount(static_cast<int>(shares.size()));
     for (int i = 0; i < static_cast<int>(shares.size()); ++i) {
         const QString label{ShareDisplayLabel(m_session, i)};
@@ -835,7 +1265,7 @@ void SharedMnCreateDialog::refreshSigningPage()
         if (sig.isEmpty()) {
             status = tr("Pending — ask %1 to sign").arg(label);
         } else if (QString sig_error; m_session.verifySignature(i, sig, sig_error)) {
-            status = tr("Signed");
+            status = tr("Approved");
         } else {
             status = sig_error;
         }
@@ -853,16 +1283,19 @@ void SharedMnCreateDialog::refreshSigningPage()
 
     const bool signing_stage{m_session.stage() == MnShareSession::Stage::Frozen ||
                              m_session.stage() == MnShareSession::Stage::Signing};
-    m_sign_button->setEnabled(signing_stage && canSign() && !my_indexes.empty() && !m_busy);
+    m_sign_button->setEnabled(signing_stage && canSign() && has_pending_approval && !m_busy);
     if (!canSign()) {
         m_sign_button->setToolTip(m_wallet_model == nullptr ? tr("No wallet is available.") :
                                                               tr("This wallet is watch-only and cannot sign."));
     } else if (my_indexes.empty()) {
         m_sign_button->setToolTip(tr("This wallet holds none of the share owner keys."));
+    } else if (!has_pending_approval) {
+        m_sign_button->setToolTip(tr("This wallet has already approved all of its shares."));
     } else {
-        m_sign_button->setToolTip(tr("Sign the consent check phrase with every share owner key in this wallet."));
+        m_sign_button->setToolTip(tr("Approve the locked terms with every share owner key in this wallet."));
     }
     m_unfreeze_button->setEnabled(signing_stage && !m_busy);
+    m_unfreeze_button->setVisible(m_role == Role::Coordinator);
 }
 
 void SharedMnCreateDialog::refreshCombinedPage()
@@ -871,24 +1304,36 @@ void SharedMnCreateDialog::refreshCombinedPage()
     const bool combined{m_session.stage() == MnShareSession::Stage::Combined};
     const bool ready_to_combine{!combined && total > 0 && m_session.signedCount() == total};
 
-    m_combine_button->setVisible(!combined);
-    m_combine_button->setEnabled(ready_to_combine && m_v24_active && !m_busy);
+    m_combine_button->setVisible(!combined && m_role == Role::Coordinator);
+    m_combine_button->setEnabled(ready_to_combine && m_v24_active && !m_busy && m_role == Role::Coordinator);
     if (!m_v24_active) m_combine_button->setToolTip(tr("Shared masternodes require the v24 hard fork to be active."));
-    m_combined_status->setText(combined ?
-                                   tr("All %n consent signature(s) are embedded in the transaction. The funding "
-                                      "inputs now have to be signed by their contributors.",
-                                      nullptr, total) :
-                                   tr("Every share owner has signed. Combine the signatures into the transaction to "
-                                      "continue."));
+    m_combined_status->setText(combined
+                                   ? (m_role == Role::Coordinator
+                                          ? tr("All %n owner approval(s) are embedded. Send this same update to every "
+                                               "contributor for one parallel contribution-signing round.",
+                                               nullptr, total)
+                                          : tr("All %n owner approval(s) are embedded. Sign your contribution once and "
+                                               "return this copy to the coordinator.",
+                                               nullptr, total))
+                                   : (m_role == Role::Coordinator
+                                          ? tr("Every share owner has approved the locked terms. Combine the approvals "
+                                               "to continue.")
+                                          : tr("Every share owner has approved the locked terms. Copy this update for "
+                                               "the coordinator to combine.")));
 
     m_funding_sig_list->clear();
     const auto signed_map{InputSignatureMap(m_session.protxHex())};
+    const QSet<QString> wallet_outpoints{WalletOutpoints(m_wallet_model)};
     int outstanding{0};
+    bool mine_pending{false};
     for (const auto& contribution : m_session.contributions()) {
         int done{0};
         for (const auto& input : contribution.inputs) {
             const auto it{signed_map.find(OutpointKey(input.txid, input.vout))};
             if (it != signed_map.end() && it->second) ++done;
+            if ((it == signed_map.end() || !it->second) && wallet_outpoints.contains(OutpointKey(input.txid, input.vout))) {
+                mine_pending = true;
+            }
         }
         const int inputs{static_cast<int>(contribution.inputs.size())};
         if (done < inputs) ++outstanding;
@@ -901,10 +1346,11 @@ void SharedMnCreateDialog::refreshCombinedPage()
         new QListWidgetItem(tr("All funding inputs are signed."), m_funding_sig_list);
     }
 
-    m_sign_funding_button->setEnabled(combined && canSign() && !m_busy);
-    m_sign_funding_button->setToolTip(!combined ? tr("Combine the consent signatures first.") :
-                                      canSign()  ? tr("Sign every funding input this wallet holds the keys for.") :
-                                                   tr("No wallet able to sign is available."));
+    m_sign_funding_button->setEnabled(combined && canSign() && mine_pending && !m_busy);
+    m_sign_funding_button->setToolTip(!combined      ? tr("Combine the owner approvals first.")
+                                      : !canSign()   ? tr("No wallet able to sign is available.")
+                                      : mine_pending ? tr("Sign this wallet's contribution once.")
+                                                     : tr("This wallet has no unsigned contribution in this update."));
 }
 
 void SharedMnCreateDialog::refreshBroadcastPage()
@@ -926,8 +1372,8 @@ void SharedMnCreateDialog::refreshBroadcastPage()
                 .arg(m_session.collateralIndex());
     m_broadcast_summary->setText(rows.join(QStringLiteral("<br>")));
 
-    m_broadcast_button->setVisible(!broadcast);
-    m_broadcast_button->setEnabled(!broadcast && m_v24_active && !m_busy);
+    m_broadcast_button->setVisible(!broadcast && m_role == Role::Coordinator);
+    m_broadcast_button->setEnabled(!broadcast && m_v24_active && !m_busy && m_role == Role::Coordinator);
     if (!m_v24_active) m_broadcast_button->setToolTip(tr("Shared masternodes require the v24 hard fork to be active."));
 
     m_success_label->setVisible(broadcast);
@@ -1001,13 +1447,15 @@ void SharedMnCreateDialog::pushTermsToWidgets()
     m_secret_holder_edit->setText(m_session.operatorSecretHolder());
 
     const bool imported_key{m_operator_key_from_import && !terms.operatorPubKey.isEmpty()};
+    m_operator_widget->setVisible(!imported_key);
+    if (m_operator_field_label != nullptr) m_operator_field_label->setVisible(!imported_key);
     m_operator_widget->setEnabled(!imported_key);
     m_operator_session_key_label->setVisible(imported_key);
     if (imported_key) {
         m_operator_widget->setToolTip(tr("The imported session already carries the group's agreed operator key; "
                                          "it is kept as-is."));
         m_operator_session_key_label->setText(tr("Operator key from the imported session (used as-is): %1")
-                                                  .arg(terms.operatorPubKey));
+                                                  .arg(MasternodeWidgetUtil::chunked(terms.operatorPubKey)));
         if (m_operator_widget->publicKeyHex() != terms.operatorPubKey) {
             m_operator_secret_label->setVisible(false); // the widget's local secret is not the session key
         }
@@ -1015,6 +1463,71 @@ void SharedMnCreateDialog::pushTermsToWidgets()
         m_operator_widget->setToolTip(QString());
     }
     m_updating = false;
+}
+
+void SharedMnCreateDialog::createSession()
+{
+    m_role = Role::Coordinator;
+    if (m_session.shares().empty()) {
+        addShareRow();
+        addShareRow();
+    }
+    showParticipantsPage();
+}
+
+void SharedMnCreateDialog::resumeCoordinatorSession()
+{
+    m_role = Role::Coordinator;
+    loadFromFile();
+    if (m_session.shares().empty() && !m_dirty) m_role = Role::Undecided;
+    refreshAll();
+}
+
+void SharedMnCreateDialog::joinFromClipboard()
+{
+    m_role = Role::Participant;
+    importFromClipboard();
+    if (m_session.shares().empty() && !m_dirty) m_role = Role::Undecided;
+    refreshAll();
+}
+
+void SharedMnCreateDialog::joinFromFile()
+{
+    m_role = Role::Participant;
+    loadFromFile();
+    if (m_session.shares().empty() && !m_dirty) m_role = Role::Undecided;
+    refreshAll();
+}
+
+void SharedMnCreateDialog::showParticipantsPage()
+{
+    refreshDraftPage();
+    m_pages->setCurrentIndex(PageParticipants);
+    refreshHeader();
+}
+
+void SharedMnCreateDialog::showSettingsPage()
+{
+    syncTermsToSession();
+    refreshDraftPage();
+    m_pages->setCurrentIndex(PageSettings);
+    refreshHeader();
+}
+
+void SharedMnCreateDialog::showFundingPage()
+{
+    syncTermsToSession();
+    refreshDraftPage();
+    m_pages->setCurrentIndex(PageFunding);
+    refreshHeader();
+}
+
+void SharedMnCreateDialog::showReviewPage()
+{
+    syncTermsToSession();
+    refreshDraftPage();
+    m_pages->setCurrentIndex(PageReview);
+    refreshHeader();
 }
 
 void SharedMnCreateDialog::importFromClipboard()
@@ -1039,8 +1552,8 @@ void SharedMnCreateDialog::exportToClipboard()
 {
     GUIUtil::setClipboard(m_session.toJsonString());
     QMessageBox::information(this, windowTitle(),
-                             tr("The session was copied to the clipboard. Also save it to a file so it cannot be "
-                                "lost to a clipboard overwrite."));
+                             m_role == Role::Coordinator ? tr("The update was copied for the participants.")
+                                                         : tr("The update was copied for the coordinator."));
 }
 
 void SharedMnCreateDialog::saveToFile()
@@ -1137,6 +1650,7 @@ void SharedMnCreateDialog::adoptImportedText(const QString& text, const QString&
 
 void SharedMnCreateDialog::afterImport()
 {
+    if (m_role == Role::Undecided) m_role = Role::Participant;
     // A7: an adopted envelope's signatures were stored as-is by fromJson;
     // re-verify them all and drop any that do not verify against the frozen
     // terms so they are flagged instead of counted (mergeEnvelope verifies on
@@ -1218,15 +1732,13 @@ void SharedMnCreateDialog::markDirty()
 void SharedMnCreateDialog::offerExport(const QString& why)
 {
     if (m_dead) return;
-    const auto choice{QMessageBox::question(
-        this, windowTitle(),
-        why + QStringLiteral("\n\n") +
-            tr("Copy the updated session to the clipboard and save it to a file now? The other participants need "
-               "the latest copy to continue."),
-        QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes)};
+    const QString recipient{m_role == Role::Coordinator ? tr("participants") : tr("coordinator")};
+    const auto choice{QMessageBox::question(this, windowTitle(),
+                                            why + QStringLiteral("\n\n") +
+                                                tr("Copy the updated session for the %1 now?").arg(recipient),
+                                            QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes)};
     if (choice != QMessageBox::Yes) return;
     GUIUtil::setClipboard(m_session.toJsonString());
-    writeSessionToFile();
 }
 
 void SharedMnCreateDialog::addShareRow()
@@ -1254,7 +1766,13 @@ void SharedMnCreateDialog::removeShareRow()
     refreshValidation();
 }
 
-void SharedMnCreateDialog::useMyWalletAddress()
+void SharedMnCreateDialog::useMyOwnerAddress() { fillSelectedAddress(COL_OWNER); }
+
+void SharedMnCreateDialog::useMyRefundAddress() { fillSelectedAddress(COL_REFUND); }
+
+void SharedMnCreateDialog::useMyRewardAddress() { fillSelectedAddress(COL_REWARD); }
+
+void SharedMnCreateDialog::fillSelectedAddress(int column)
 {
     if (m_wallet_model == nullptr) return;
     const int row{m_share_table->currentRow()};
@@ -1262,9 +1780,6 @@ void SharedMnCreateDialog::useMyWalletAddress()
         QMessageBox::information(this, windowTitle(), tr("Select a share row first."));
         return;
     }
-    int column{m_share_table->currentColumn()};
-    if (column != COL_OWNER && column != COL_REFUND && column != COL_REWARD) column = COL_OWNER;
-
     QString error;
     const QString address{freshAddress(error)};
     if (address.isEmpty()) {
@@ -1401,6 +1916,7 @@ void SharedMnCreateDialog::refreshFundingCandidates()
         }
     }
     std::sort(candidates.begin(), candidates.end());
+    int selected_index{-1};
     for (const auto& [value, txid, vout] : candidates) {
         m_fee_utxo_combo->addItem(QStringLiteral("%1 — %2:%3").arg(FormatAmount(m_wallet_model, value),
                                                                    txid.left(16) + QStringLiteral("…"),
@@ -1409,7 +1925,9 @@ void SharedMnCreateDialog::refreshFundingCandidates()
         m_fee_utxo_combo->setItemData(index, txid, FEE_UTXO_TXID_ROLE);
         m_fee_utxo_combo->setItemData(index, vout, FEE_UTXO_VOUT_ROLE);
         m_fee_utxo_combo->setItemData(index, static_cast<qlonglong>(value), FEE_UTXO_VALUE_ROLE);
+        if (selected_index < 0 && value >= m_fee_amount_field->value()) selected_index = index;
     }
+    m_fee_utxo_combo->setCurrentIndex(selected_index);
     refreshContributions();
 }
 
@@ -1452,11 +1970,17 @@ void SharedMnCreateDialog::addMyFunding()
     }
     contribution.inputs.push_back(*chip);
 
-    if (m_coordinator_check->isChecked()) {
+    if (m_role == Role::Coordinator) {
         const int fee_index{m_fee_utxo_combo->currentIndex()};
         const CAmount fee{m_fee_amount_field->value()};
-        if (fee_index < 0 || fee <= 0) {
-            QMessageBox::information(this, windowTitle(), tr("Select a fee input and a positive fee amount."));
+        if (fee <= 0) {
+            QMessageBox::information(this, windowTitle(), tr("Enter a positive registration fee."));
+            return;
+        }
+        if (fee_index < 0) {
+            QMessageBox::information(this, windowTitle(),
+                                     tr("No unlocked wallet output is large enough to pay the %1 registration fee.")
+                                         .arg(FormatAmount(m_wallet_model, fee)));
             return;
         }
         MnShareSession::Input fee_input;
@@ -1496,6 +2020,7 @@ void SharedMnCreateDialog::addMyFunding()
     markDirty();
     refreshContributions();
     refreshValidation();
+    refreshHeader();
 }
 
 void SharedMnCreateDialog::removeSelectedContribution()
@@ -1517,6 +2042,7 @@ void SharedMnCreateDialog::removeSelectedContribution()
     markDirty();
     refreshContributions();
     refreshValidation();
+    refreshHeader();
 }
 
 void SharedMnCreateDialog::setContributionLocked(const MnShareSession::Contribution& contribution, bool lock)
@@ -1634,13 +2160,13 @@ void SharedMnCreateDialog::freezeSession()
     }
 
     const auto choice{QMessageBox::question(
-        this, tr("Freeze the session terms?"),
-        tr("Freezing prepares the registration transaction and fixes the share table, the terms and every funding "
-           "input. Afterwards every share owner must sign the consent check phrase; any further change discards all "
-           "collected signatures.") +
+        this, tr("Lock the session terms?"),
+        tr("Locking prepares the registration transaction and fixes the share table, the terms and every funding "
+           "input. Afterwards every share owner approves the same check phrase; editing again discards all "
+           "collected approvals.") +
             QStringLiteral("\n\n") + funding_note + QStringLiteral("\n\n") +
-            tr("Make sure every participant has contributed funding — the funding inputs cannot be changed without "
-               "unfreezing."),
+            tr("Make sure every participant has contributed funding — changing an input requires unlocking the "
+               "terms and collecting approvals again."),
         QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Yes)};
     if (choice != QMessageBox::Yes) return;
 
@@ -1695,7 +2221,7 @@ void SharedMnCreateDialog::freezeSession()
     }
     markDirty();
     refreshAll();
-    offerExport(tr("The terms are frozen. Every participant must now verify the check phrase and sign."));
+    offerExport(tr("The terms are locked. Every participant must now verify the check phrase and approve them."));
 }
 
 void SharedMnCreateDialog::signConsent()
@@ -1739,7 +2265,7 @@ void SharedMnCreateDialog::signConsent()
     markDirty();
     refreshAll();
     if (added > 0) {
-        offerExport(tr("%n signature(s) were recorded (%1 of %2 shares signed).", nullptr, added)
+        offerExport(tr("%n approval(s) were recorded (%1 of %2 shares approved).", nullptr, added)
                         .arg(m_session.signedCount())
                         .arg(m_session.shares().size()));
     }
@@ -1751,12 +2277,12 @@ void SharedMnCreateDialog::unfreezeSession()
         return;
     }
     const int sigs{m_session.signedCount()};
-    const auto choice{QMessageBox::question(
-        this, tr("Unfreeze the session?"),
-        tr("Unfreezing returns the session to a draft and discards %n collected signature(s). Everyone will have to "
-           "sign again after the terms are re-frozen.",
-           nullptr, sigs),
-        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel)};
+    const auto choice{QMessageBox::question(this, tr("Unlock the session terms?"),
+                                            tr("Unlocking returns the session to editing and discards %n collected "
+                                               "approval(s). Everyone will have to "
+                                               "approve again after the terms are locked.",
+                                               nullptr, sigs),
+                                            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel)};
     if (choice != QMessageBox::Yes) return;
     m_session.unfreeze();
     markDirty();
@@ -1798,7 +2324,8 @@ void SharedMnCreateDialog::combineSignatures()
     }
     markDirty();
     refreshAll();
-    offerExport(tr("The consent signatures are combined. Every contributor must now sign their funding inputs."));
+    offerExport(
+        tr("The approvals are combined. Send this same update to every contributor for the one signing round."));
 }
 
 void SharedMnCreateDialog::signFundingInputs()
@@ -1830,14 +2357,18 @@ void SharedMnCreateDialog::signFundingInputs()
         }
         markDirty();
         refreshAll();
-        offerExport(tr("All funding inputs are signed. The registration is ready to broadcast."));
+        if (m_role == Role::Coordinator) {
+            QMessageBox::information(this, windowTitle(),
+                                     tr("All contributions are signed. The registration is ready to broadcast."));
+        } else {
+            offerExport(tr("All contributions are signed. Return the fully signed update to the coordinator."));
+        }
         return;
     }
 
     if (signed_hex == before) {
         QMessageBox::information(this, windowTitle(),
-                                 tr("This wallet could not add any funding signatures. Pass the session to a "
-                                    "participant whose inputs are still pending."));
+                                 tr("This wallet does not control any unsigned contribution inputs in this update."));
         return;
     }
     if (!replaceSessionProTx(signed_hex, error)) {
@@ -1846,8 +2377,14 @@ void SharedMnCreateDialog::signFundingInputs()
     }
     markDirty();
     refreshAll();
-    offerExport(tr("This wallet's funding inputs are signed; other contributors still have to sign theirs. Pass "
-                   "the session to the next participant."));
+    if (m_role == Role::Coordinator) {
+        QMessageBox::information(this, windowTitle(),
+                                 tr("Your contribution is signed. Keep this session open and use Open Update for "
+                                    "each participant's signed reply."));
+    } else {
+        offerExport(tr("This wallet's contribution is signed. Return this signed update to the coordinator; other "
+                       "contributors sign their own copies in parallel."));
+    }
 }
 
 bool SharedMnCreateDialog::replaceSessionProTx(const QString& tx_hex, QString& error)
@@ -1898,6 +2435,7 @@ void SharedMnCreateDialog::restartFromDraft()
     m_dead_reason.clear();
     m_dirty = false;
     m_operator_key_from_import = false;
+    m_role = Role::Undecided;
     refreshFundingCandidates();
     refreshAll();
 }

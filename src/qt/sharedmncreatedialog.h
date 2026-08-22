@@ -27,9 +27,9 @@ class Node;
 } // namespace interfaces
 
 QT_BEGIN_NAMESPACE
-class QCheckBox;
 class QComboBox;
 class QDoubleSpinBox;
+class QGroupBox;
 class QLabel;
 class QLineEdit;
 class QListWidget;
@@ -59,6 +59,12 @@ public:
     void reject() override;
 
 private Q_SLOTS:
+    // Entry experience
+    void createSession();
+    void resumeCoordinatorSession();
+    void joinFromClipboard();
+    void joinFromFile();
+
     // Session envelope plumbing (always available)
     void importFromClipboard();
     void exportToClipboard();
@@ -68,7 +74,9 @@ private Q_SLOTS:
     // Draft page
     void addShareRow();
     void removeShareRow();
-    void useMyWalletAddress();
+    void useMyOwnerAddress();
+    void useMyRefundAddress();
+    void useMyRewardAddress();
     void onShareCellChanged(int row, int column);
     void onTermsChanged();
     void addMyFunding();
@@ -90,17 +98,37 @@ private Q_SLOTS:
     // Dead-session page
     void restartFromDraft();
 
+    // Draft navigation
+    void showParticipantsPage();
+    void showSettingsPage();
+    void showFundingPage();
+    void showReviewPage();
+
 private:
     enum Page : int {
-        PageDraft = 0,
+        PageLanding = 0,
+        PageParticipants,
+        PageSettings,
+        PageFunding,
+        PageReview,
         PageSigning,
         PageCombined,
         PageBroadcast,
         PageDead,
     };
 
+    enum class Role {
+        Undecided,
+        Coordinator,
+        Participant,
+    };
+
     QWidget* buildHeader();
-    QWidget* buildDraftPage();
+    QWidget* buildLandingPage();
+    QWidget* buildParticipantsPage();
+    QWidget* buildSettingsPage();
+    QWidget* buildFundingPage();
+    QWidget* buildReviewPage();
     QWidget* buildSigningPage();
     QWidget* buildCombinedPage();
     QWidget* buildBroadcastPage();
@@ -124,6 +152,9 @@ private:
     void refreshSigningPage();
     void refreshCombinedPage();
     void refreshBroadcastPage();
+    void refreshReviewPage();
+    void fillSelectedAddress(int column);
+    bool isDraftPage(int page) const;
 
     // UI -> session
     void syncShareFromTable(int row);
@@ -177,28 +208,38 @@ private:
     bool m_dead{false};
     QString m_dead_reason;
     bool m_updating{false}; //!< guards table/widget refresh against change signals
+    Role m_role{Role::Undecided};
     //! The session was imported with an agreed operator key: display it
     //! read-only and never overwrite it from this dialog's key widget
     bool m_operator_key_from_import{false};
 
     // Header
     QLabel* m_breadcrumb{nullptr};
+    QLabel* m_role_label{nullptr};
+    QLabel* m_next_action_label{nullptr};
     QLabel* m_phrase_label{nullptr};
     QLabel* m_phrase_hint{nullptr};
     QPushButton* m_import_button{nullptr};
     QPushButton* m_export_button{nullptr};
-    QPushButton* m_load_button{nullptr};
-    QPushButton* m_save_button{nullptr};
+    QPushButton* m_more_button{nullptr};
 
     QStackedWidget* m_pages{nullptr};
 
-    // Draft page
+    // Draft pages
+    QLabel* m_participants_hint{nullptr};
+    QLabel* m_settings_title{nullptr};
+    QLabel* m_settings_hint{nullptr};
+    QLabel* m_review_title{nullptr};
+    QLabel* m_review_hint{nullptr};
     QTableWidget* m_share_table{nullptr};
     QPushButton* m_add_share_button{nullptr};
     QPushButton* m_remove_share_button{nullptr};
     QPushButton* m_my_address_button{nullptr};
+    QPushButton* m_my_refund_button{nullptr};
+    QPushButton* m_my_reward_button{nullptr};
     QLineEdit* m_service_edit{nullptr};
     OperatorKeyWidget* m_operator_widget{nullptr};
+    QLabel* m_operator_field_label{nullptr};
     QLabel* m_operator_secret_label{nullptr};
     QLabel* m_operator_session_key_label{nullptr};
     QLineEdit* m_secret_holder_edit{nullptr};
@@ -211,7 +252,7 @@ private:
     QListWidget* m_validation_list{nullptr};
     QLabel* m_sum_label{nullptr};
     QLineEdit* m_my_label_edit{nullptr};
-    QCheckBox* m_coordinator_check{nullptr};
+    QGroupBox* m_fee_box{nullptr};
     BitcoinAmountField* m_fee_amount_field{nullptr};
     QComboBox* m_fee_utxo_combo{nullptr};
     QPushButton* m_add_funding_button{nullptr};
@@ -220,6 +261,7 @@ private:
     QListWidget* m_contrib_list{nullptr};
     QLabel* m_funding_status_label{nullptr};
     QPushButton* m_freeze_button{nullptr};
+    QLabel* m_review_summary{nullptr};
 
     // Frozen/Signing page
     QLabel* m_term_sheet{nullptr};

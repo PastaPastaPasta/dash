@@ -19,6 +19,7 @@
 #include <test/util/setup_common.h>
 #include <util/strencodings.h>
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -282,4 +283,108 @@ void MnShareSessionTests::signatureVerification()
     envelope.pushKV("consentHash", evil_hash.ToString());
     MnShareSession imported;
     QVERIFY(!imported.fromJson(envelope, error));
+}
+
+void MnShareSessionTests::parallelFundingSignatureMerge()
+{
+    BasicTestingSetup setup{CBaseChainParams::REGTEST};
+    std::vector<CKey> owner_keys;
+    MnShareSession combined{ValidSession(owner_keys)};
+
+    CBLSSecretKey operator_secret;
+    operator_secret.MakeNewKey();
+    combined.terms().operatorPubKey = QString::fromStdString(
+        operator_secret.GetPublicKey().ToString(/*specificLegacyScheme=*/false));
+
+    CProRegTx payload;
+    payload.nVersion = ProTxVersion::ExtAddr;
+    payload.nType = MnType::Regular;
+    payload.collateralOutpoint = COutPoint(uint256(), 0);
+    payload.netInfo = NetInfoInterface::MakeNetInfo(payload.nVersion);
+    for (const auto& share : combined.shares()) {
+        const CTxDestination owner{DecodeDestination(share.ownerAddress.toStdString())};
+        const CTxDestination refund{DecodeDestination(share.refundAddress.toStdString())};
+        payload.shares.emplace_back(share.amount, GetScriptForDestination(refund), CScript(),
+                                    ToKeyID(std::get<PKHash>(owner)));
+    }
+    payload.vchJoinSigs.assign(payload.shares.size(), std::vector<unsigned char>(CPubKey::COMPACT_SIGNATURE_SIZE));
+    payload.keyIDVoting = ToKeyID(std::get<PKHash>(DecodeDestination(combined.terms().votingAddress.toStdString())));
+    payload.pubKeyOperator.Set(operator_secret.GetPublicKey(), /*bls_legacy_scheme=*/false);
+    payload.nOperatorReward = combined.terms().operatorReward;
+    payload.nEarlyPeriodBlocks = combined.terms().earlyPeriodBlocks;
+    payload.nEarlyPenalty = combined.terms().earlyPenalty;
+
+    CMutableTransaction tx;
+    tx.nVersion = 3;
+    tx.nType = TRANSACTION_PROVIDER_REGISTER;
+    tx.vin.emplace_back(COutPoint(uint256::ONE, 0));
+    tx.vin.emplace_back(COutPoint(uint256::ONE, 1));
+    tx.vout.emplace_back(1000 * COIN, CScript() << OP_TRUE);
+    SetTxPayload(tx, payload);
+
+    const uint256 consent_hash{payload.MakeSharedRegConsentHash(CTransaction(tx))};
+    const QString tx_hex{QString::fromStdString(EncodeHexTx(CTransaction(tx)))};
+    QString error;
+    QVERIFY2(combined.freeze(tx_hex, QString::fromStdString(consent_hash.ToString()), 0, error), qPrintable(error));
+    for (int i = 0; i < static_cast<int>(owner_keys.size()); ++i) {
+        std::vector<unsigned char> signature;
+        QVERIFY(CHashSigner::SignHash(consent_hash, owner_keys[i], signature));
+        QVERIFY2(combined.addSignature(i, QString::fromStdString(EncodeBase64(signature)), error), qPrintable(error));
+    }
+    QVERIFY2(combined.setCombinedTx(tx_hex, error), qPrintable(error));
+
+    const auto signed_copy = [&](int input_index, opcodetype opcode) -> std::optional<MnShareSession> {
+        CMutableTransaction partial{tx};
+        partial.vin[input_index].scriptSig = CScript() << opcode;
+        UniValue json{combined.toJson()};
+        json.pushKV("protx", EncodeHexTx(CTransaction(partial)));
+        MnShareSession result;
+        if (!result.fromJson(json, error)) return std::nullopt;
+        return result;
+    };
+    const auto alice_copy{signed_copy(0, OP_1)};
+    QVERIFY2(alice_copy.has_value(), qPrintable(error));
+    const MnShareSession alice{*alice_copy};
+    const auto bob_copy{signed_copy(1, OP_2)};
+    QVERIFY2(bob_copy.has_value(), qPrintable(error));
+    const MnShareSession bob{*bob_copy};
+
+    // Both participants sign the same unsigned transaction independently.
+    // The coordinator can merge their replies in either order and obtains one
+    // fully signed transaction without a serial signing handoff.
+    MnShareSession alice_then_bob{combined};
+    QCOMPARE(int(alice_then_bob.mergeEnvelope(alice, error)), int(MnShareSession::MergeResult::Merged));
+    QCOMPARE(int(alice_then_bob.stage()), int(MnShareSession::Stage::Combined));
+    QCOMPARE(int(alice_then_bob.mergeEnvelope(bob, error)), int(MnShareSession::MergeResult::Merged));
+    QCOMPARE(int(alice_then_bob.stage()), int(MnShareSession::Stage::FundingSigned));
+
+    MnShareSession bob_then_alice{combined};
+    QCOMPARE(int(bob_then_alice.mergeEnvelope(bob, error)), int(MnShareSession::MergeResult::Merged));
+    QCOMPARE(int(bob_then_alice.mergeEnvelope(alice, error)), int(MnShareSession::MergeResult::Merged));
+    QCOMPARE(bob_then_alice.protxHex(), alice_then_bob.protxHex());
+
+    CMutableTransaction merged;
+    QVERIFY(DecodeHexTx(merged, alice_then_bob.protxHex().toStdString()));
+    QCOMPARE(merged.vin[0].scriptSig, CScript() << OP_1);
+    QCOMPARE(merged.vin[1].scriptSig, CScript() << OP_2);
+
+    // Different signatures for the same input, or any non-signature
+    // transaction difference, are conflicts rather than last-writer-wins.
+    const auto conflicting_copy{signed_copy(0, OP_2)};
+    QVERIFY2(conflicting_copy.has_value(), qPrintable(error));
+    MnShareSession conflicting{*conflicting_copy};
+    MnShareSession conflict_target{alice};
+    QCOMPARE(int(conflict_target.mergeEnvelope(conflicting, error)), int(MnShareSession::MergeResult::Conflict));
+
+    CProRegTx changed_payload{payload};
+    changed_payload.vchJoinSigs[0][0] = 1;
+    CMutableTransaction changed{tx};
+    changed.vin[1].scriptSig = CScript() << OP_2;
+    SetTxPayload(changed, changed_payload);
+    UniValue changed_json{combined.toJson()};
+    changed_json.pushKV("protx", EncodeHexTx(CTransaction(changed)));
+    MnShareSession structurally_changed;
+    QVERIFY(structurally_changed.fromJson(changed_json, error));
+    MnShareSession structure_target{alice};
+    QCOMPARE(int(structure_target.mergeEnvelope(structurally_changed, error)), int(MnShareSession::MergeResult::Conflict));
 }

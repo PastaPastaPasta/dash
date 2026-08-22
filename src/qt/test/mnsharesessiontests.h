@@ -17,6 +17,7 @@ private Q_SLOTS:
     void envelopeRoundTrip();
     void penaltyPreviewMath();
     void signatureVerification();
+    void parallelFundingSignatureMerge();
 };
 
 #endif // BITCOIN_QT_TEST_MNSHARESESSIONTESTS_H
