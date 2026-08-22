@@ -52,7 +52,7 @@ private:
 
 //! Collects share owner signatures for a multi-party shared masternode
 //! transaction (unanimous ProDisTx or ProUpSharedRegTx): shows the prepared
-//! transaction and its check phrase, exports/imports a small session envelope
+//! transaction, exports/imports a small session envelope
 //! via clipboard and file, and verifies every imported signature natively
 //! against the share owner keys (an unverifiable signature is never counted).
 class SharedSigCollector : public QWidget
@@ -111,7 +111,6 @@ private:
     std::map<int, QString> m_sigs; //!< shareIndex -> base64 signature
 
     QPlainTextEdit* m_tx_view{nullptr};
-    QLabel* m_phrase_label{nullptr};
     QLabel* m_checklist_label{nullptr};
     QLabel* m_status_label{nullptr};
     QPushButton* m_copy_button{nullptr};

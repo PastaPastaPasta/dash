@@ -141,6 +141,10 @@ public:
     const QString& operatorSecretHolder() const { return m_operator_secret_holder; }
     void setOperatorSecretHolder(const QString& label) { m_operator_secret_holder = label; }
 
+    //! Record a direct edit to draft shares or terms so a circulated baton
+    //! supersedes older copies even when no funding contribution changed.
+    void noteDraftChange();
+
     //! Serialize the envelope
     UniValue toJson() const;
     QString toJsonString() const;
@@ -204,9 +208,6 @@ public:
     //! Mark the session broadcast
     bool setBroadcast(QString& error);
 
-    //! First 8 hex characters of the consent hash, uppercased: the phrase
-    //! participants read aloud to each other before signing
-    QString consentCheckPhrase() const;
     //! Approximate duration of a block count at 2.5 minutes per block
     static QString HumanEarlyPeriod(uint32_t blocks);
 

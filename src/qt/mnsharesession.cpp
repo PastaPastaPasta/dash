@@ -422,6 +422,28 @@ bool MnShareSession::fromJson(const UniValue& json, QString& error)
                     return false;
                 }
             }
+            if (parsed.m_stage >= Stage::Combined &&
+                parsed.signedCount() != static_cast<int>(parsed.m_shares.size())) {
+                error = Tr("The session file claims the approvals are combined, but not every share has an approval.");
+                return false;
+            }
+            if (parsed.m_stage >= Stage::Combined) {
+                for (const auto& sig : parsed.m_sigs) {
+                    QString sig_error;
+                    if (!parsed.verifySignature(sig.shareIndex, sig.signatureB64, sig_error)) {
+                        error = Tr("The session file claims the approvals are combined, but an approval is invalid: %1")
+                                    .arg(sig_error);
+                        return false;
+                    }
+                }
+            }
+            if (parsed.m_stage >= Stage::FundingSigned &&
+                std::any_of(frozen_tx.vin.begin(), frozen_tx.vin.end(),
+                            [](const CTxIn& input) { return input.scriptSig.empty(); })) {
+                error = Tr("The session file claims every contribution is signed, but one or more funding inputs "
+                           "are unsigned.");
+                return false;
+            }
         }
 
         *this = std::move(parsed);
@@ -537,6 +559,11 @@ QStringList MnShareSession::validateShares() const
         errors << Tr("The early penalty must be below the smallest share amount (%1 DASH).").arg(FormatDash(min_amount));
     }
     return errors;
+}
+
+void MnShareSession::noteDraftChange()
+{
+    if (m_stage == Stage::Draft) ++m_revision;
 }
 
 bool MnShareSession::rebuildFundingTx(QString& error)
@@ -885,10 +912,9 @@ MnShareSession::MergeResult MnShareSession::mergeEnvelope(const MnShareSession& 
         return other_frozen ? MergeResult::OtherNewer : MergeResult::OtherOlder;
     }
     if (frozen && m_consent_hash.compare(other.m_consent_hash, Qt::CaseInsensitive) != 0) {
-        error = Tr("Both copies claim revision %1 but locked different terms (check phrase %2 vs %3). They cannot be "
-                   "merged — agree on one authoritative copy, bump its revision and re-circulate it.")
-                    .arg(m_revision)
-                    .arg(consentCheckPhrase(), other.consentCheckPhrase());
+        error = Tr("Both copies claim revision %1 but locked different terms. They cannot be merged — agree on one "
+                   "authoritative copy, bump its revision and re-circulate it.")
+                    .arg(m_revision);
         return MergeResult::Conflict;
     }
     if (!frozen) {
@@ -900,10 +926,14 @@ MnShareSession::MergeResult MnShareSession::mergeEnvelope(const MnShareSession& 
         return MergeResult::Merged;
     }
 
+    // Stage all changes in a copy so a conflicting funding signature or
+    // advanced transaction cannot partially mutate the current session.
+    MnShareSession merged{*this};
+
     // Same frozen terms: absorb the union of the other copy's verified signatures
     QStringList warnings;
     for (const auto& sig : other.m_sigs) {
-        if (QString sig_error; !addSignature(sig.shareIndex, sig.signatureB64, sig_error)) {
+        if (QString sig_error; !merged.addSignature(sig.shareIndex, sig.signatureB64, sig_error)) {
             warnings << sig_error;
         }
     }
@@ -912,13 +942,13 @@ MnShareSession::MergeResult MnShareSession::mergeEnvelope(const MnShareSession& 
     // those copies input-by-input so this is one parallel signing round,
     // rather than forcing participants to pass one partially signed copy
     // around serially. Nothing except scriptSig may differ between copies.
-    if (m_stage == Stage::Combined && other.m_stage == Stage::Combined) {
+    if (merged.m_stage == Stage::Combined && other.m_stage == Stage::Combined) {
         CMutableTransaction ours;
         CMutableTransaction theirs;
         CProRegTx ours_payload;
         CProRegTx theirs_payload;
         QString decode_error;
-        if (!DecodeSharedProTx(m_protx, ours, ours_payload, decode_error) ||
+        if (!DecodeSharedProTx(merged.m_protx, ours, ours_payload, decode_error) ||
             !DecodeSharedProTx(other.m_protx, theirs, theirs_payload, decode_error)) {
             error = Tr("A funding-signed copy contains an invalid registration transaction. It was not merged.");
             return MergeResult::Conflict;
@@ -949,29 +979,37 @@ MnShareSession::MergeResult MnShareSession::mergeEnvelope(const MnShareSession& 
             }
             ours.vin[i].scriptSig = incoming;
         }
-        m_protx = QString::fromStdString(EncodeHexTx(CTransaction(ours)));
+        merged.m_protx = QString::fromStdString(EncodeHexTx(CTransaction(ours)));
         if (std::all_of(ours.vin.begin(), ours.vin.end(), [](const CTxIn& input) { return !input.scriptSig.empty(); })) {
-            m_stage = Stage::FundingSigned;
+            merged.m_stage = Stage::FundingSigned;
         }
     }
 
-    // Adopt a further-advanced stage together with its transaction (the protx
-    // field evolves along the stages: combined join sigs, then funding
-    // signatures live in the same transaction hex). Validate the incoming
-    // transaction the same way the direct setters do so a tampered "advanced"
-    // copy can neither overwrite a good protx nor fake completion.
-    if (other.m_stage > m_stage) {
-        CMutableTransaction tx;
-        CProRegTx payload;
-        QString decode_error;
-        if (!DecodeSharedProTx(other.m_protx, tx, payload, decode_error) ||
-            payload.MakeSharedRegConsentHash(CTransaction(tx)) != uint256S(m_consent_hash.toStdString())) {
-            error = Tr("The imported copy claims to be further along but its transaction does not match the terms everyone signed. It was not adopted.");
+    // Adopt a further-advanced stage through the normal validated transitions.
+    // The protx field evolves along the stages: combined join sigs, then
+    // funding signatures live in the same transaction hex.
+    if (other.m_stage > merged.m_stage) {
+        QString transition_error;
+        if (merged.m_stage < Stage::Combined && other.m_stage >= Stage::Combined &&
+            !merged.setCombinedTx(other.m_protx, transition_error)) {
+            error = Tr("The imported copy claims the approvals are combined, but that state is invalid: %1")
+                        .arg(transition_error);
             return MergeResult::Conflict;
         }
-        m_stage = other.m_stage;
-        m_protx = other.m_protx;
+        if (other.m_stage >= Stage::FundingSigned &&
+            !merged.setFundingSignedTx(other.m_protx, transition_error)) {
+            error = Tr("The imported copy claims every contribution is signed, but that state is invalid: %1")
+                        .arg(transition_error);
+            return MergeResult::Conflict;
+        }
+        if (merged.m_stage < Stage::Broadcast && other.m_stage == Stage::Broadcast &&
+            !merged.setBroadcast(transition_error)) {
+            error = Tr("The imported copy claims the registration was broadcast, but that state is invalid: %1")
+                        .arg(transition_error);
+            return MergeResult::Conflict;
+        }
     }
+    *this = std::move(merged);
     error = warnings.join(QLatin1Char('\n'));
     return MergeResult::Merged;
 }
@@ -1036,11 +1074,6 @@ bool MnShareSession::setBroadcast(QString& error)
     }
     m_stage = Stage::Broadcast;
     return true;
-}
-
-QString MnShareSession::consentCheckPhrase() const
-{
-    return m_consent_hash.left(8).toUpper();
 }
 
 QString MnShareSession::HumanEarlyPeriod(uint32_t blocks)

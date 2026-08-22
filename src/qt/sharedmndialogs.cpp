@@ -260,20 +260,12 @@ SharedSigCollector::SharedSigCollector(Kind kind, const QString& pro_tx_hash,
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
 
-    m_phrase_label = new QLabel(this);
-    QFont phrase_font{m_phrase_label->font()};
-    phrase_font.setPointSize(phrase_font.pointSize() + 8);
-    phrase_font.setBold(true);
-    phrase_font.setLetterSpacing(QFont::AbsoluteSpacing, 2);
-    m_phrase_label->setFont(phrase_font);
-    m_phrase_label->setAlignment(Qt::AlignCenter);
-    m_phrase_label->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    layout->addWidget(m_phrase_label);
-
-    auto* phrase_caption = new QLabel(tr("Check phrase — every participant must see the same phrase; read it aloud to each other before anyone signs."), this);
-    phrase_caption->setWordWrap(true);
-    phrase_caption->setAlignment(Qt::AlignCenter);
-    layout->addWidget(phrase_caption);
+    auto* review_hint = new QLabel(
+        tr("Review the prepared action and its exact terms before signing. Your signature approves that action for "
+           "your share."),
+        this);
+    review_hint->setWordWrap(true);
+    layout->addWidget(review_hint);
 
     m_tx_view = new QPlainTextEdit(this);
     m_tx_view->setReadOnly(true);
@@ -533,9 +525,6 @@ void SharedSigCollector::loadEnvelope()
 void SharedSigCollector::refreshUi()
 {
     m_tx_view->setPlainText(m_tx_hex);
-    const QString hash_hex{signHashHex()};
-    m_phrase_label->setText(hash_hex.isEmpty() ? QStringLiteral("--------") : hash_hex.left(8).toUpper());
-
     QStringList lines;
     for (size_t i = 0; i < m_shares.size(); ++i) {
         const bool signed_here{m_sigs.count(static_cast<int>(i)) > 0};

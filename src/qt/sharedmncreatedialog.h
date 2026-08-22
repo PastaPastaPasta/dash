@@ -27,6 +27,7 @@ class Node;
 } // namespace interfaces
 
 QT_BEGIN_NAMESPACE
+class QAction;
 class QComboBox;
 class QDoubleSpinBox;
 class QGroupBox;
@@ -62,6 +63,7 @@ private Q_SLOTS:
     // Entry experience
     void createSession();
     void resumeCoordinatorSession();
+    void resumeCoordinatorFromClipboard();
     void joinFromClipboard();
     void joinFromFile();
 
@@ -77,11 +79,15 @@ private Q_SLOTS:
     void useMyOwnerAddress();
     void useMyRefundAddress();
     void useMyRewardAddress();
+    void useMyVotingAddress();
+    void onMyShareChanged(int index);
+    void onMyShareDetailsChanged();
     void onShareCellChanged(int row, int column);
     void onTermsChanged();
     void addMyFunding();
-    void removeSelectedContribution();
+    void removeMyContribution();
     void refreshFundingCandidates();
+    void copyOrFreezeDraft();
     void freezeSession();
 
     // Frozen/Signing page
@@ -146,6 +152,7 @@ private:
     void refreshAll();
     void refreshHeader();
     void refreshDraftPage();
+    void refreshMySharePanel();
     void refreshSharesTable();
     void refreshValidation();
     void refreshContributions();
@@ -153,7 +160,8 @@ private:
     void refreshCombinedPage();
     void refreshBroadcastPage();
     void refreshReviewPage();
-    void fillSelectedAddress(int column);
+    void fillMyAddress(QLineEdit* edit);
+    int myShareIndex() const;
     bool isDraftPage(int page) const;
 
     // UI -> session
@@ -162,7 +170,8 @@ private:
     void pushTermsToWidgets();
 
     //! Parse an imported envelope and adopt or merge it into the current session
-    void adoptImportedText(const QString& text, const QString& source);
+    void adoptImportedText(const QString& text, const QString& source, bool accept_newer = false);
+    void loadFromFileImpl(bool accept_newer);
     void afterImport();
     //! A8: re-check that every recorded funding input is still unspent
     void checkSessionLiveness();
@@ -217,13 +226,19 @@ private:
     QLabel* m_breadcrumb{nullptr};
     QLabel* m_role_label{nullptr};
     QLabel* m_next_action_label{nullptr};
-    QLabel* m_phrase_label{nullptr};
-    QLabel* m_phrase_hint{nullptr};
     QPushButton* m_import_button{nullptr};
     QPushButton* m_export_button{nullptr};
     QPushButton* m_more_button{nullptr};
+    QAction* m_load_action{nullptr};
 
     QStackedWidget* m_pages{nullptr};
+
+    // Landing page
+    QPushButton* m_create_session_button{nullptr};
+    QPushButton* m_resume_coordinator_button{nullptr};
+    QPushButton* m_returned_session_button{nullptr};
+    QPushButton* m_join_clipboard_button{nullptr};
+    QPushButton* m_join_file_button{nullptr};
 
     // Draft pages
     QLabel* m_participants_hint{nullptr};
@@ -237,6 +252,11 @@ private:
     QPushButton* m_my_address_button{nullptr};
     QPushButton* m_my_refund_button{nullptr};
     QPushButton* m_my_reward_button{nullptr};
+    QComboBox* m_my_share_combo{nullptr};
+    QLabel* m_my_share_hint{nullptr};
+    QLineEdit* m_my_owner_edit{nullptr};
+    QLineEdit* m_my_refund_edit{nullptr};
+    QLineEdit* m_my_reward_edit{nullptr};
     QLineEdit* m_service_edit{nullptr};
     OperatorKeyWidget* m_operator_widget{nullptr};
     QLabel* m_operator_field_label{nullptr};
@@ -244,6 +264,7 @@ private:
     QLabel* m_operator_session_key_label{nullptr};
     QLineEdit* m_secret_holder_edit{nullptr};
     QLineEdit* m_voting_edit{nullptr};
+    QPushButton* m_my_voting_button{nullptr};
     QDoubleSpinBox* m_operator_reward_spin{nullptr};
     QSpinBox* m_early_period_spin{nullptr};
     QLabel* m_early_period_hint{nullptr};
@@ -251,7 +272,6 @@ private:
     QLabel* m_early_penalty_hint{nullptr};
     QListWidget* m_validation_list{nullptr};
     QLabel* m_sum_label{nullptr};
-    QLineEdit* m_my_label_edit{nullptr};
     QGroupBox* m_fee_box{nullptr};
     BitcoinAmountField* m_fee_amount_field{nullptr};
     QComboBox* m_fee_utxo_combo{nullptr};

@@ -115,6 +115,9 @@ void MnShareSessionTests::envelopeRoundTrip()
     MnShareSession session{ValidSession(keys)};
     session.shares()[0].label = "alice";
     session.setOperatorSecretHolder("bob");
+    const int initial_revision{session.revision()};
+    session.noteDraftChange();
+    QCOMPARE(session.revision(), initial_revision + 1);
 
     MnShareSession restored;
     QString error;
@@ -326,6 +329,7 @@ void MnShareSessionTests::parallelFundingSignatureMerge()
     const QString tx_hex{QString::fromStdString(EncodeHexTx(CTransaction(tx)))};
     QString error;
     QVERIFY2(combined.freeze(tx_hex, QString::fromStdString(consent_hash.ToString()), 0, error), qPrintable(error));
+
     for (int i = 0; i < static_cast<int>(owner_keys.size()); ++i) {
         std::vector<unsigned char> signature;
         QVERIFY(CHashSigner::SignHash(consent_hash, owner_keys[i], signature));
@@ -374,7 +378,9 @@ void MnShareSessionTests::parallelFundingSignatureMerge()
     QVERIFY2(conflicting_copy.has_value(), qPrintable(error));
     MnShareSession conflicting{*conflicting_copy};
     MnShareSession conflict_target{alice};
+    const QString conflict_target_before{conflict_target.toJsonString()};
     QCOMPARE(int(conflict_target.mergeEnvelope(conflicting, error)), int(MnShareSession::MergeResult::Conflict));
+    QCOMPARE(conflict_target.toJsonString(), conflict_target_before);
 
     CProRegTx changed_payload{payload};
     changed_payload.vchJoinSigs[0][0] = 1;
@@ -386,5 +392,15 @@ void MnShareSessionTests::parallelFundingSignatureMerge()
     MnShareSession structurally_changed;
     QVERIFY(structurally_changed.fromJson(changed_json, error));
     MnShareSession structure_target{alice};
+    const QString structure_target_before{structure_target.toJsonString()};
     QCOMPARE(int(structure_target.mergeEnvelope(structurally_changed, error)), int(MnShareSession::MergeResult::Conflict));
+    QCOMPARE(structure_target.toJsonString(), structure_target_before);
+
+    // A later-phase envelope cannot claim that all funding is signed while
+    // carrying the still-unsigned combined transaction.
+    UniValue premature_json{combined.toJson()};
+    premature_json.pushKV("stage", "fundingSigned");
+    MnShareSession premature;
+    QVERIFY(!premature.fromJson(premature_json, error));
+    QVERIFY(error.contains("funding inputs"));
 }
