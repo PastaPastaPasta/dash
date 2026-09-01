@@ -38,6 +38,7 @@ private Q_SLOTS:
     void registrationResultStates();
     void destinationValidation();
     void operatorKeyModes();
+    void sharedFundingFeeCandidateRefresh();
 
 private:
     interfaces::Node& m_node;

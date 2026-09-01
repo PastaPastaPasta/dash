@@ -18,6 +18,7 @@
 #include <qt/masternodewizard.h>
 #include <qt/optionsmodel.h>
 #include <qt/qvalidatedlineedit.h>
+#include <qt/sharedmncreatedialog.h>
 #include <qt/walletmodel.h>
 #include <random.h>
 #include <script/script.h>
@@ -1052,4 +1053,87 @@ void MasternodeWidgetTests::operatorKeyModes()
     edit->setText(QString::fromStdString(secret.GetPublicKey().ToString(false)));
     QVERIFY(widget.isValid());
     QVERIFY(widget.secretHex().isEmpty());
+}
+
+void MasternodeWidgetTests::sharedFundingFeeCandidateRefresh()
+{
+    TestChain100Setup test;
+    m_node.setContext(&test.m_node);
+    WalletContext& context{*m_node.walletLoader().context()};
+    const auto wallet{std::make_shared<CWallet>(m_node.context()->chain.get(), m_node.context()->coinjoin_loader.get(),
+                                                "", gArgs, CreateMockWalletDatabase())};
+    wallet->LoadWallet();
+    wallet->SetWalletFlag(wallet::WALLET_FLAG_DESCRIPTORS);
+
+    CTxDestination collateral;
+    CTxDestination chip;
+    CTxDestination change;
+    const CBlockIndex* tip{nullptr};
+    {
+        LOCK(wallet->cs_wallet);
+        wallet->SetupDescriptorScriptPubKeyMans("", "");
+        const auto collateral_result{wallet->GetNewDestination("")};
+        const auto chip_result{wallet->GetNewDestination("")};
+        const auto change_result{wallet->GetNewDestination("")};
+        QVERIFY(collateral_result);
+        QVERIFY(chip_result);
+        QVERIFY(change_result);
+        collateral = *collateral_result;
+        chip = *chip_result;
+        change = *change_result;
+        tip = WITH_LOCK(test.m_node.chainman->GetMutex(), return test.m_node.chainman->ActiveChain().Tip());
+        QVERIFY(tip != nullptr);
+        wallet->SetLastBlockProcessed(tip->nHeight, tip->GetBlockHash());
+    }
+
+    // A coordinator whose wallet holds a single confirmed output, as after an
+    // ordinary faucet or exchange payout.
+    CMutableTransaction funding;
+    funding.vin.emplace_back(GetRandHash(), 0);
+    funding.vout.emplace_back(810 * COIN, GetScriptForDestination(collateral));
+    const CTransactionRef funding_tx{MakeTransactionRef(funding)};
+    QVERIFY(wallet->AddToWallet(funding_tx, wallet::TxStateConfirmed{tip->GetBlockHash(), tip->nHeight, /*index=*/0}) !=
+            nullptr);
+
+    OptionsModel options_model(m_node);
+    bilingual_str options_error;
+    QVERIFY(options_model.Init(options_error));
+    ClientModel client_model(m_node, &options_model);
+    WalletModel wallet_model(interfaces::MakeWallet(context, wallet), client_model);
+
+    SharedMnCreateDialog dialog(m_node, &wallet_model);
+    auto* const fee_combo{dialog.findChild<QComboBox*>(QStringLiteral("sharedMnFeeUtxoCombo"))};
+    QVERIFY(fee_combo != nullptr);
+    QVERIFY(QMetaObject::invokeMethod(&dialog, "refreshFundingCandidates"));
+    QCOMPARE(fee_combo->count(), 1);
+    QCOMPARE(fee_combo->currentIndex(), 0);
+
+    // Preparing an exact-share output spends that single coin, leaving the fee
+    // candidate captured beforehand permanently unspendable. Recording it anyway
+    // produced a contribution that could never be broadcast.
+    CMutableTransaction exact_output;
+    exact_output.vin.emplace_back(funding_tx->GetHash(), 0);
+    exact_output.vout.emplace_back(400 * COIN, GetScriptForDestination(chip));
+    exact_output.vout.emplace_back(409 * COIN, GetScriptForDestination(change));
+    const CTransactionRef exact_output_tx{MakeTransactionRef(exact_output)};
+    QVERIFY(wallet->AddToWallet(exact_output_tx, wallet::TxStateInMempool{}) != nullptr);
+
+    QVERIFY(QMetaObject::invokeMethod(&dialog, "refreshFundingCandidates"));
+    // The wallet's own mempool outputs stay eligible, so the coordinator is not
+    // stranded without any output left to pay the registration fee from.
+    QCOMPARE(fee_combo->count(), 2);
+    const QString funding_txid{QString::fromStdString(funding_tx->GetHash().ToString())};
+    for (int i = 0; i < fee_combo->count(); ++i) {
+        QVERIFY(fee_combo->itemData(i, Qt::UserRole).toString() != funding_txid);
+    }
+
+    // Candidates are ordered by value, so the cheapest coin covering the fee is the
+    // exact-share output itself. Auto-selecting it would leave the coordinator stuck
+    // against the "fee input is the funding output" guard with no way forward.
+    const QString share_txid{QString::fromStdString(exact_output_tx->GetHash().ToString())};
+    fee_combo->setCurrentIndex(0);
+    QVERIFY(QMetaObject::invokeMethod(&dialog, "autoSelectFeeCandidate", Q_ARG(QString, share_txid), Q_ARG(quint32, 0)));
+    QVERIFY(fee_combo->currentIndex() >= 0);
+    QCOMPARE(fee_combo->itemData(fee_combo->currentIndex(), Qt::UserRole).toString(), share_txid);
+    QCOMPARE(fee_combo->itemData(fee_combo->currentIndex(), Qt::UserRole + 1).toUInt(), 1u);
 }

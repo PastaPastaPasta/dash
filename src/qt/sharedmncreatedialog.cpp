@@ -577,6 +577,7 @@ QWidget* SharedMnCreateDialog::buildFundingPage()
     fee_form->addRow(tr("Registration fee:"), m_fee_amount_field);
 
     m_fee_utxo_combo = new QComboBox(fee_body);
+    m_fee_utxo_combo->setObjectName(QStringLiteral("sharedMnFeeUtxoCombo"));
     m_fee_utxo_combo->setToolTip(tr("A small wallet output the coordinator adds to pay the fee from."));
     fee_form->addRow(tr("Wallet output used for fee:"), m_fee_utxo_combo);
     connect(m_fee_amount_field, &BitcoinAmountField::valueChanged, this, &SharedMnCreateDialog::refreshFundingCandidates);
@@ -601,6 +602,7 @@ QWidget* SharedMnCreateDialog::buildFundingPage()
     m_contrib_list->setSelectionMode(QAbstractItemView::NoSelection);
     funding_layout->addWidget(m_contrib_list);
     m_funding_status_label = new QLabel(funding_box);
+    m_funding_status_label->setObjectName(QStringLiteral("sharedMnFundingStatusLabel"));
     m_funding_status_label->setWordWrap(true);
     funding_layout->addWidget(m_funding_status_label);
     layout->addWidget(funding_box, /*stretch=*/1);
@@ -2246,13 +2248,12 @@ void SharedMnCreateDialog::refreshFundingCandidates()
     std::vector<std::tuple<CAmount, QString, uint32_t>> candidates;
     for (const auto& [dest, coins] : m_wallet_model->wallet().listCoins()) {
         for (const auto& [outpoint, txout] : coins) {
-            if (txout.is_spent || txout.depth_in_main_chain < 1) continue;
+            if (txout.is_spent || txout.depth_in_main_chain < 0) continue;
             if (m_wallet_model->wallet().isLockedCoin(outpoint)) continue;
             candidates.emplace_back(txout.txout.nValue, QString::fromStdString(outpoint.hash.ToString()), outpoint.n);
         }
     }
     std::sort(candidates.begin(), candidates.end());
-    int selected_index{-1};
     for (const auto& [value, txid, vout] : candidates) {
         m_fee_utxo_combo->addItem(QStringLiteral("%1 — %2:%3").arg(FormatAmount(m_wallet_model, value),
                                                                    txid.left(16) + QStringLiteral("…"),
@@ -2261,9 +2262,9 @@ void SharedMnCreateDialog::refreshFundingCandidates()
         m_fee_utxo_combo->setItemData(index, txid, FEE_UTXO_TXID_ROLE);
         m_fee_utxo_combo->setItemData(index, vout, FEE_UTXO_VOUT_ROLE);
         m_fee_utxo_combo->setItemData(index, static_cast<qlonglong>(value), FEE_UTXO_VALUE_ROLE);
-        if (selected_index < 0 && value >= m_fee_amount_field->value()) selected_index = index;
     }
-    m_fee_utxo_combo->setCurrentIndex(selected_index);
+    m_fee_utxo_combo->setCurrentIndex(-1);
+    autoSelectFeeCandidate();
     refreshContributions();
 }
 
@@ -2309,10 +2310,16 @@ void SharedMnCreateDialog::addMyFunding()
             QMessageBox::critical(this, windowTitle(), error);
             return;
         }
+        // That send consumed wallet outputs, so any fee candidate chosen before it may
+        // now be spent - including the very coin the send drew on.
+        refreshFundingCandidates();
     }
     contribution.inputs.push_back(*chip);
 
     if (m_role == Role::Coordinator) {
+        // The share output cannot also pay the fee, and after a just-prepared chip it is
+        // the cheapest candidate, so the default selection would land on it.
+        autoSelectFeeCandidate(/*excluded_txid=*/chip->txid, /*excluded_vout=*/chip->vout);
         const int fee_index{m_fee_utxo_combo->currentIndex()};
         const CAmount fee{m_fee_amount_field->value()};
         if (fee <= 0) {
@@ -2329,6 +2336,12 @@ void SharedMnCreateDialog::addMyFunding()
         fee_input.txid = m_fee_utxo_combo->itemData(fee_index, FEE_UTXO_TXID_ROLE).toString();
         fee_input.vout = m_fee_utxo_combo->itemData(fee_index, FEE_UTXO_VOUT_ROLE).toUInt();
         const CAmount fee_value{m_fee_utxo_combo->itemData(fee_index, FEE_UTXO_VALUE_ROLE).toLongLong()};
+        if (!isSpendableFundingInput(fee_input)) {
+            QMessageBox::information(this, windowTitle(),
+                                     tr("The selected fee input is no longer available to spend. Choose another "
+                                        "output."));
+            return;
+        }
         if (fee_input.txid == chip->txid && fee_input.vout == chip->vout) {
             QMessageBox::information(this, windowTitle(),
                                      tr("The fee input is the funding output itself. Pick a different, smaller "
@@ -2423,18 +2436,50 @@ void SharedMnCreateDialog::unlockAllContributedCoins()
     }
 }
 
+void SharedMnCreateDialog::autoSelectFeeCandidate(const QString& excluded_txid, quint32 excluded_vout)
+{
+    const auto is_excluded = [this, &excluded_txid, excluded_vout](int index) {
+        return m_fee_utxo_combo->itemData(index, FEE_UTXO_TXID_ROLE).toString() == excluded_txid &&
+               m_fee_utxo_combo->itemData(index, FEE_UTXO_VOUT_ROLE).toUInt() == excluded_vout;
+    };
+    const int current{m_fee_utxo_combo->currentIndex()};
+    if (current >= 0 && !is_excluded(current)) return;
+
+    // Candidates are ordered by value, so this takes the smallest coin that still
+    // covers the fee without spending the excluded share output itself.
+    const CAmount fee{m_fee_amount_field->value()};
+    for (int i = 0; i < m_fee_utxo_combo->count(); ++i) {
+        if (is_excluded(i)) continue;
+        if (m_fee_utxo_combo->itemData(i, FEE_UTXO_VALUE_ROLE).toLongLong() < fee) continue;
+        m_fee_utxo_combo->setCurrentIndex(i);
+        return;
+    }
+}
+
+bool SharedMnCreateDialog::isSpendableFundingInput(const MnShareSession::Input& input) const
+{
+    if (m_wallet_model == nullptr) return false;
+    const COutPoint outpoint{uint256S(input.txid.toStdString()), input.vout};
+    const auto known{m_wallet_model->wallet().getCoins({outpoint})};
+    if (known.empty() || known.front().is_spent || known.front().depth_in_main_chain < 0) return false;
+    return !m_wallet_model->wallet().isLockedCoin(outpoint);
+}
+
 std::optional<CAmount> SharedMnCreateDialog::resolveInputValue(const MnShareSession::Input& input) const
 {
     const COutPoint outpoint{uint256S(input.txid.toStdString()), input.vout};
-    Coin coin;
-    if (m_node.getUnspentOutput(outpoint, coin)) return coin.out.nValue;
-    // Not confirmed: this wallet can still value its own pending outputs
+    // The chainstate UTXO set still reports a coin as unspent while the transaction
+    // spending it sits in the mempool, so this wallet's own view decides for the coins
+    // it tracks. Other participants' coins are only visible in the UTXO set.
     if (m_wallet_model != nullptr) {
         const auto known{m_wallet_model->wallet().getCoins({outpoint})};
-        if (!known.empty() && known.front().depth_in_main_chain >= 0 && !known.front().is_spent) {
+        if (!known.empty() && known.front().depth_in_main_chain >= 0) {
+            if (known.front().is_spent) return std::nullopt;
             return known.front().txout.nValue;
         }
     }
+    Coin coin;
+    if (m_node.getUnspentOutput(outpoint, coin)) return coin.out.nValue;
     return std::nullopt;
 }
 
