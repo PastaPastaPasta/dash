@@ -59,6 +59,17 @@ QFrame#mnCard {
     border-radius: 3px;
 }
 
+QWidget#sharedMnSettingsViewport,
+QWidget#sharedMnSettingsContent {
+    background-color: #323233;
+}
+
+QListWidget#sharedMnSessionList {
+    background-color: #2d2d2e;
+    border: 1px solid #4a4a4b;
+    color: #c7c7c7;
+}
+
 QCheckBox,
 QLabel,
 QListView,

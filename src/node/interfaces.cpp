@@ -120,11 +120,9 @@ namespace node {
 namespace {
 std::vector<CScript> GetOwnerPayoutScripts(const CDeterministicMNState& state)
 {
-    std::vector<CScript> ret;
-    for (const auto& payout : GetOwnerPayouts(state)) {
-        ret.emplace_back(payout.scriptPayout);
-    }
-    return ret;
+    // Shared-aware: for a shared masternode this is each share's reward script, so the GUI
+    // recognizes masternodes a wallet participates in
+    return state.GetOwnerRewardScripts();
 }
 
 class MnEntryImpl : public MnEntry
@@ -171,6 +169,16 @@ public:
     MnType getType() const override { return m_dmn->nType; }
     UniValue toJson() const override { return m_dmn->ToJson(); }
     const CKeyID& getKeyIdOwner() const override { return m_dmn->pdmnState->keyIDOwner; }
+    std::vector<CKeyID> getShareOwnerKeyIds() const override
+    {
+        // Shared-aware: a shared masternode has a null keyIDOwner, its share owner keys take its place
+        std::vector<CKeyID> ret;
+        ret.reserve(m_dmn->pdmnState->shares.size());
+        for (const auto& share : m_dmn->pdmnState->shares) {
+            ret.push_back(share.keyIDOwner);
+        }
+        return ret;
+    }
     const CKeyID& getKeyIdVoting() const override { return m_dmn->pdmnState->keyIDVoting; }
     const COutPoint& getCollateralOutpoint() const override { return m_dmn->collateralOutpoint; }
     const CScript& getScriptPayout() const override { return m_script_payout; }
@@ -181,6 +189,18 @@ public:
     const int32_t& getRegisteredHeight() const override { return m_dmn->pdmnState->nRegisteredHeight; }
     const uint16_t& getOperatorReward() const override { return m_dmn->nOperatorReward; }
     const uint256& getProTxHash() const override { return m_dmn->proTxHash; }
+    bool isShared() const override { return m_dmn->pdmnState->IsShared(); }
+    std::vector<interfaces::MnShare> getShares() const override
+    {
+        std::vector<interfaces::MnShare> ret;
+        ret.reserve(m_dmn->pdmnState->shares.size());
+        for (const auto& share : m_dmn->pdmnState->shares) {
+            ret.push_back({share.amount, share.scriptRefund, share.scriptReward, share.keyIDOwner});
+        }
+        return ret;
+    }
+    const uint32_t& getEarlyPeriodBlocks() const override { return m_dmn->pdmnState->nEarlyPeriodBlocks; }
+    const CAmount& getEarlyPenalty() const override { return m_dmn->pdmnState->nEarlyPenalty; }
 };
 
 class MnListImpl : public MnList
@@ -1059,6 +1079,11 @@ public:
         return m_context->active_ctx != nullptr;
     }
     bool isLoadingBlocks() override { return node::fReindex || node::fImporting; }
+    bool isV24Active() override
+    {
+        LOCK(::cs_main);
+        return DeploymentActiveAfter(chainman().ActiveChain().Tip(), chainman(), Consensus::DEPLOYMENT_V24);
+    }
     void setNetworkActive(bool active) override
     {
         if (m_context->connman) {

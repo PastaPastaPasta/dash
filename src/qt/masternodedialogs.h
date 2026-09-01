@@ -99,6 +99,7 @@ protected:
     void showError(const QString& message);
     void clearError();
     void abortOperation(const QString& message);
+    void setBusy(bool busy);
     void resolveOperatorKey(OperatorSecretWidget& widget, SecretCallback callback);
     void startSubmission(std::function<bool(MasternodeOperationRunner::SubmissionCallback)> start);
 
@@ -117,7 +118,6 @@ private:
 
     bool ensureUnlocked();
     void finishSubmission(MasternodeOperationRunner::SubmissionResult result);
-    void setBusy(bool busy);
 
     std::unique_ptr<UnlockHolder> m_unlock;
     QDialogButtonBox* m_button_box{nullptr};
