@@ -87,6 +87,7 @@ private Q_SLOTS:
     void addMyFunding();
     void removeMyContribution();
     void refreshFundingCandidates();
+    void autoSelectFeeCandidate(const QString& excluded_txid = {}, quint32 excluded_vout = 0);
     void copyOrFreezeDraft();
     void freezeSession();
 
@@ -201,9 +202,12 @@ private:
     //! Lock every contribution input this wallet knows (after adopting an
     //! imported session, so its funding coins cannot be spent by accident)
     void lockKnownContributedCoins();
-    //! Value of a recorded funding input: from the confirmed UTXO set, or
-    //! from this wallet for its own (possibly unconfirmed) outputs; nullopt
-    //! for other participants' unconfirmed inputs
+    //! Whether a recorded funding input can still be spent from this wallet:
+    //! tracked here, unspent, and not locked
+    bool isSpendableFundingInput(const MnShareSession::Input& input) const;
+    //! Value of a recorded funding input: from this wallet for the outputs it
+    //! tracks, else from the confirmed UTXO set; nullopt for an own output that
+    //! is already spent and for other participants' unconfirmed inputs
     std::optional<CAmount> resolveInputValue(const MnShareSession::Input& input) const;
 
     interfaces::Node& m_node;
