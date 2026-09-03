@@ -30,6 +30,7 @@
 #include <qt/walletmodel.h>
 
 #include <QAbstractItemView>
+#include <QAction>
 #include <QApplication>
 #include <QClipboard>
 #include <QDesktopServices>
@@ -56,6 +57,8 @@ ProposalList::ProposalList(QWidget* parent) :
     proposalModelProxy{new QSortFilterProxyModel(this)}
 {
     ui->setupUi(this);
+
+    proposalContextMenu->setToolTipsVisible(true);
 
     GUIUtil::setFont({ui->label_count_2, ui->countLabel},
                      GUIUtil::FontWeight::Bold, 14);
@@ -255,13 +258,15 @@ void ProposalList::updateProposalList()
         }
     }
 
+    // A PoSe ban doesn't disqualify a masternode from voting: the network accepts
+    // and tallies votes from every masternode in the deterministic list, and a ban
+    // is recoverable. Filtering banned nodes out here would silently drop the
+    // owner's vote while their node is down or still awaiting its first service
+    // update. Holding the voting key is the only requirement.
     for (const auto& entry : data_mn->m_entries) {
-        if (entry->isBanned()) {
-            continue;
-        }
         const auto script = GetScriptForDestination(PKHash(entry->keyIdVotingRaw()));
         if (walletModel->wallet().isSpendable(script)) {
-            votableMasternodes[entry->proTxHashRaw()] = entry->keyIdVotingRaw();
+            votableMasternodes[entry->proTxHashRaw()] = {entry->keyIdVotingRaw(), entry->collateralOutpointRaw()};
         }
     }
     setProposalList(std::move(ret));
@@ -357,12 +362,20 @@ void ProposalList::showProposalContextMenu(const QPoint& pos)
         proposalContextMenu->addAction(tr("Open Proposal URL…"), this, &ProposalList::openProposalUrl);
     }
 
-    // Add voting options if wallet is available and has voting capability
-    if (walletModel && canVote()) {
+    // Always offer the voting actions when a wallet is loaded, disabled with a
+    // reason when it holds no voting keys. Hiding them outright leaves an owner
+    // with no way to tell voting apart from a missing feature.
+    if (walletModel) {
         proposalContextMenu->addSeparator();
-        proposalContextMenu->addAction(tr("Vote Yes"), this, &ProposalList::voteYes);
-        proposalContextMenu->addAction(tr("Vote No"), this, &ProposalList::voteNo);
-        proposalContextMenu->addAction(tr("Vote Abstain"), this, &ProposalList::voteAbstain);
+        QAction* const votes[]{proposalContextMenu->addAction(tr("Vote Yes"), this, &ProposalList::voteYes),
+                               proposalContextMenu->addAction(tr("Vote No"), this, &ProposalList::voteNo),
+                               proposalContextMenu->addAction(tr("Vote Abstain"), this, &ProposalList::voteAbstain)};
+        if (!canVote()) {
+            for (QAction* const action : votes) {
+                action->setEnabled(false);
+                action->setToolTip(tr("This wallet holds no masternode voting keys."));
+            }
+        }
     }
 
     proposalContextMenu->exec(QCursor::pos());
@@ -538,17 +551,6 @@ void ProposalList::voteForProposal(vote_outcome_enum_t outcome)
         return;
     }
 
-    if (!m_feed_masternode) {
-        QMessageBox::warning(this, tr("Voting Failed"), tr("Unable to fetch masternode data."));
-        return;
-    }
-
-    const auto data_mn = m_feed_masternode->data();
-    if (!data_mn || !data_mn->m_valid) {
-        QMessageBox::warning(this, tr("Voting Failed"), tr("Unable to fetch masternode data."));
-        return;
-    }
-
     // Get the selected proposal
     const auto selection = ui->govTableView->selectionModel()->selectedRows();
     if (selection.isEmpty()) {
@@ -575,29 +577,14 @@ void ProposalList::voteForProposal(vote_outcome_enum_t outcome)
     QStringList failedMessages;
 
     // Vote with each masternode
-    for (const auto& [proTxHash, votingKeyID] : votableMasternodes) {
-        // Find the masternode
-        QString protx_hash{QString::fromStdString(proTxHash.ToString())};
-        const auto dmn = [&]() -> const std::shared_ptr<MasternodeEntry> {
-            for (const auto& mn : data_mn->m_entries) {
-                if (mn->proTxHash() == protx_hash) {
-                    return mn->isBanned() ? nullptr : mn;
-                }
-            }
-            return nullptr;
-        }();
-
-        if (!dmn) {
-            nFailed++;
-            failedMessages.append(tr("Masternode %1 not found").arg(protx_hash));
-            continue;
-        }
+    for (const auto& [proTxHash, masternode] : votableMasternodes) {
+        const QString protx_hash{QString::fromStdString(proTxHash.ToString())};
 
         // Create vote
-        CGovernanceVote vote(dmn->collateralOutpointRaw(), proposalHash, VOTE_SIGNAL_FUNDING, outcome);
+        CGovernanceVote vote(masternode.collateral_outpoint, proposalHash, VOTE_SIGNAL_FUNDING, outcome);
 
         // Sign vote via wallet interface
-        if (!walletModel->wallet().signGovernanceVote(votingKeyID, vote)) {
+        if (!walletModel->wallet().signGovernanceVote(masternode.voting_key, vote)) {
             nFailed++;
             failedMessages.append(tr("Failed to sign vote for masternode %1").arg(protx_hash));
             continue;
@@ -609,8 +596,7 @@ void ProposalList::voteForProposal(vote_outcome_enum_t outcome)
             nSuccessful++;
         } else {
             nFailed++;
-            failedMessages.append(
-                tr("Masternode %1: %2").arg(QString::fromStdString(proTxHash.ToString()), QString::fromStdString(strError)));
+            failedMessages.append(tr("Masternode %1: %2").arg(protx_hash, QString::fromStdString(strError)));
         }
     }
 
