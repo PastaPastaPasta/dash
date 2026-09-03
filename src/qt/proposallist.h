@@ -63,8 +63,15 @@ private:
     QMenu* proposalContextMenu{nullptr};
     QSortFilterProxyModel* proposalModelProxy{nullptr};
     std::atomic<bool> m_col_refresh{false};
-    Uint256HashMap<CKeyID> votableMasternodes;
     WalletModel* walletModel{nullptr};
+
+    //! Everything needed to cast a vote, so voting doesn't have to look the
+    //! masternode up in a feed that may have been refreshed in the meantime.
+    struct VotableMasternode {
+        CKeyID voting_key;
+        COutPoint collateral_outpoint;
+    };
+    Uint256HashMap<VotableMasternode> votableMasternodes;
 
     bool canVote() const { return !votableMasternodes.empty(); }
     int queryCollateralDepth(const uint256& collateralHash) const;
