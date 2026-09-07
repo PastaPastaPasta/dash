@@ -191,16 +191,16 @@ bool CBloomFilter::CheckSpecialTransactionMatchesAndUpdate(const CTransaction &t
     case(TRANSACTION_PROVIDER_DISSOLVE): {
         // the refund payments are literal transaction outputs, matched by the generic output loop
         if (const auto opt_proTx = GetTxPayload<CProDisTx>(tx)) {
-            if(contains(opt_proTx->proTxHash))
+            if (contains(opt_proTx->proTxHash))
                 return true;
         }
         return false;
     }
     case(TRANSACTION_PROVIDER_UPDATE_SHARE): {
         if (const auto opt_proTx = GetTxPayload<CProUpShareTx>(tx)) {
-            if(contains(opt_proTx->proTxHash))
+            if (contains(opt_proTx->proTxHash))
                 return true;
-            if(CheckScript(opt_proTx->scriptReward)) {
+            if (CheckScript(opt_proTx->scriptReward)) {
                 if ((nFlags & BLOOM_UPDATE_MASK) == BLOOM_UPDATE_ALL)
                     insert(opt_proTx->proTxHash);
                 return true;
@@ -210,9 +210,9 @@ bool CBloomFilter::CheckSpecialTransactionMatchesAndUpdate(const CTransaction &t
     }
     case(TRANSACTION_PROVIDER_UPDATE_SHARED_REGISTRAR): {
         if (const auto opt_proTx = GetTxPayload<CProUpSharedRegTx>(tx)) {
-            if(contains(opt_proTx->proTxHash))
+            if (contains(opt_proTx->proTxHash))
                 return true;
-            if(contains(opt_proTx->keyIDVoting)) {
+            if (contains(opt_proTx->keyIDVoting)) {
                 if ((nFlags & BLOOM_UPDATE_MASK) == BLOOM_UPDATE_ALL)
                     insert(opt_proTx->proTxHash);
                 return true;
