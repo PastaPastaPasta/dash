@@ -50,7 +50,7 @@ void CNetFulfilledRequestManager::RemoveAllFulfilledRequests(const CService& add
     fulfilledreqmap_t::iterator it = mapFulfilledRequests.find(addr);
 
     if (it != mapFulfilledRequests.end()) {
-        mapFulfilledRequests.erase(it++);
+        mapFulfilledRequests.erase(it);
     }
 }
 
