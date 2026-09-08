@@ -583,7 +583,7 @@ public:
 
     /** Overridden from CValidationInterface. */
     void BlockConnected(const std::shared_ptr<const CBlock>& pblock, const CBlockIndex* pindexConnected) override
-        EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, !m_recent_confirmed_transactions_mutex);
+        EXCLUSIVE_LOCKS_REQUIRED(!m_object_request_mutex, !m_peer_mutex, !m_recent_confirmed_transactions_mutex);
     void BlockDisconnected(const std::shared_ptr<const CBlock> &block, const CBlockIndex* pindex) override
         EXCLUSIVE_LOCKS_REQUIRED(!m_recent_confirmed_transactions_mutex);
     void UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockIndex *pindexFork, bool fInitialDownload) override
@@ -594,12 +594,15 @@ public:
         EXCLUSIVE_LOCKS_REQUIRED(!m_most_recent_block_mutex);
 
     /** Implement NetEventsInterface */
-    void InitializeNode(CNode& node, ServiceFlags our_services) override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
-    void FinalizeNode(const CNode& node) override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
+    void InitializeNode(CNode& node, ServiceFlags our_services) override
+        EXCLUSIVE_LOCKS_REQUIRED(!m_object_request_mutex, !m_peer_mutex);
+    void FinalizeNode(const CNode& node) override EXCLUSIVE_LOCKS_REQUIRED(!m_object_request_mutex, !m_peer_mutex);
     bool ProcessMessages(CNode* pfrom, std::atomic<bool>& interrupt) override
-        EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, !m_recent_confirmed_transactions_mutex, !m_most_recent_block_mutex, g_msgproc_mutex);
+        EXCLUSIVE_LOCKS_REQUIRED(!m_object_request_mutex, !m_peer_mutex, !m_recent_confirmed_transactions_mutex,
+                                 !m_most_recent_block_mutex, g_msgproc_mutex);
     bool SendMessages(CNode* pto) override
-        EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, !m_recent_confirmed_transactions_mutex, !m_most_recent_block_mutex, g_msgproc_mutex);
+        EXCLUSIVE_LOCKS_REQUIRED(!m_object_request_mutex, !m_peer_mutex, !m_recent_confirmed_transactions_mutex,
+                                 !m_most_recent_block_mutex, g_msgproc_mutex);
 
     /** Implement PeerManager */
     void StartScheduledTasks(CScheduler& scheduler) override;
@@ -619,10 +622,12 @@ public:
     void UnitTestMisbehaving(NodeId peer_id, int howmuch) override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex) { Misbehaving(*Assert(GetPeerRef(peer_id)), howmuch, ""); };
     void ProcessMessage(CNode& pfrom, const std::string& msg_type, CDataStream& vRecv,
                         const std::chrono::microseconds time_received, const std::atomic<bool>& interruptMsgProc) override
-        EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, !m_recent_confirmed_transactions_mutex, !m_most_recent_block_mutex, g_msgproc_mutex);
+        EXCLUSIVE_LOCKS_REQUIRED(!m_object_request_mutex, !m_peer_mutex, !m_recent_confirmed_transactions_mutex,
+                                 !m_most_recent_block_mutex, g_msgproc_mutex);
     void UpdateLastBlockAnnounceTime(NodeId node, int64_t time_in_seconds) override;
     bool IsBanned(NodeId pnode) override EXCLUSIVE_LOCKS_REQUIRED(cs_main, !m_peer_mutex);
-    size_t GetRequestedObjectCount(NodeId nodeid) const override EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    size_t GetRequestedObjectCount(NodeId nodeid) const override
+        EXCLUSIVE_LOCKS_REQUIRED(!m_object_request_mutex, ::cs_main);
 
     /** Implements external handlers logic */
     void AddExtraHandler(std::unique_ptr<NetHandler>&& handler) override;
@@ -635,10 +640,13 @@ public:
     /** Implement PeerManagerInternal */
     void PeerMisbehaving(const NodeId pnode, const int howmuch, const std::string& message = "") override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
     bool PeerIsBanned(const NodeId node_id) override EXCLUSIVE_LOCKS_REQUIRED(cs_main, !m_peer_mutex);
-    void PeerEraseObjectRequest(const NodeId nodeid, const CInv& inv) override EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
-    bool PeerConsumeObjectRequest(NodeId nodeid, const CInv& inv) override EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
-    GetDataResponse PeerConsumeGetDataResponse(NodeId nodeid, const CInv& inv) override EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
-    void PeerForgetObjectRequest(const CInv& inv) override EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    void PeerEraseObjectRequest(const NodeId nodeid, const CInv& inv) override
+        EXCLUSIVE_LOCKS_REQUIRED(!m_object_request_mutex, ::cs_main);
+    bool PeerConsumeObjectRequest(NodeId nodeid, const CInv& inv) override
+        EXCLUSIVE_LOCKS_REQUIRED(!m_object_request_mutex, ::cs_main);
+    GetDataResponse PeerConsumeGetDataResponse(NodeId nodeid, const CInv& inv) override
+        EXCLUSIVE_LOCKS_REQUIRED(!m_object_request_mutex, ::cs_main);
+    void PeerForgetObjectRequest(const CInv& inv) override EXCLUSIVE_LOCKS_REQUIRED(!m_object_request_mutex, ::cs_main);
     void PeerPushInventory(NodeId nodeid, const CInv& inv) override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
     void PeerRelayInv(const CInv& inv) override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
     void PeerRelayInvFiltered(const CInv& inv, const CTransaction& relatedTx) override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
@@ -646,15 +654,18 @@ public:
     void PeerRelayDSQ(const CCoinJoinQueue& queue) override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
     void PeerRelayTransaction(const uint256& txid) override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
     void PeerRelayRecoveredSig(const llmq::CRecoveredSig& sig, bool proactive_relay) override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
-    void PeerAskPeersForTransaction(const uint256& txid) override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
-    size_t PeerGetRequestedObjectCount(NodeId nodeid) const override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, ::cs_main);
-    void PeerPostProcessMessage(MessageProcessingResult&& ret) override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
+    void PeerAskPeersForTransaction(const uint256& txid) override
+        EXCLUSIVE_LOCKS_REQUIRED(!m_object_request_mutex, !m_peer_mutex);
+    size_t PeerGetRequestedObjectCount(NodeId nodeid) const override
+        EXCLUSIVE_LOCKS_REQUIRED(!m_object_request_mutex, !m_peer_mutex, ::cs_main);
+    void PeerPostProcessMessage(MessageProcessingResult&& ret) override
+        EXCLUSIVE_LOCKS_REQUIRED(!m_object_request_mutex, !m_peer_mutex);
 
 private:
     void _RelayTransaction(const uint256& txid) EXCLUSIVE_LOCKS_REQUIRED(cs_main, !m_peer_mutex);
 
     /** Ask peers that have a transaction in their inventory to relay it to us. */
-    void AskPeersForTransaction(const uint256& txid) EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
+    void AskPeersForTransaction(const uint256& txid) EXCLUSIVE_LOCKS_REQUIRED(!m_object_request_mutex, !m_peer_mutex);
 
     /** Relay inventories to peers that find it relevant */
     void RelayInvFiltered(const CInv& inv, const CTransaction& relatedTx) EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
@@ -668,14 +679,15 @@ private:
     /** Register with m_object_request that an inv has been received from a peer, computing the
      *  request delay from the peer's preferredness and in-flight load. */
     void AddObjectAnnouncement(const CNode& node, const CInv& inv, std::chrono::microseconds current_time)
-        EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+        EXCLUSIVE_LOCKS_REQUIRED(!m_object_request_mutex, ::cs_main);
 
     /** Delete all announcements of a transaction across all peers, under both inv types it may
      *  have been announced with (MSG_TX and MSG_DSTX). */
-    void ForgetTx(const uint256& txid) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    void ForgetTx(const uint256& txid) EXCLUSIVE_LOCKS_REQUIRED(!m_object_request_mutex, ::cs_main);
 
     /** Helper to process result of external handlers of message */
-    void PostProcessMessage(MessageProcessingResult&& ret, NodeId node) override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
+    void PostProcessMessage(MessageProcessingResult&& ret, NodeId node) override
+        EXCLUSIVE_LOCKS_REQUIRED(!m_object_request_mutex, !m_peer_mutex);
 
     /** Consider evicting an outbound peer based on the amount of time they've been behind our tip */
     void ConsiderEviction(CNode& pto, Peer& peer, std::chrono::seconds time_in_seconds) EXCLUSIVE_LOCKS_REQUIRED(cs_main, g_msgproc_mutex);
@@ -745,8 +757,7 @@ private:
      *                     reconsidered.
      * @return             True if there are still orphans in this peer's work set.
      */
-    bool ProcessOrphanTx(NodeId node_id)
-        EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, cs_main);
+    bool ProcessOrphanTx(NodeId node_id) EXCLUSIVE_LOCKS_REQUIRED(!m_object_request_mutex, !m_peer_mutex, cs_main);
     /** Process a single headers message from a peer. */
     void ProcessHeadersMessage(CNode& pfrom, Peer& peer,
                                const std::vector<CBlockHeader>& headers,
