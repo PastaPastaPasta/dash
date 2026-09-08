@@ -29,7 +29,6 @@
 #include <random.h>
 #include <saltedhasher.h>
 #include <scheduler.h>
-#include <span.h>
 #include <streams.h>
 #include <sync.h>
 #include <timedata.h>
@@ -91,8 +90,6 @@ static constexpr int32_t MAX_PEER_OBJECT_REQUEST_IN_FLIGHT = 100;
  *  Unlike Bitcoin, this is not reduced to 5000: governance vote sync legitimately announces up to
  *  MAX_INV_SZ objects from a single peer (see CGovernanceManager). */
 static constexpr int32_t MAX_PEER_OBJECT_ANNOUNCEMENTS = std::max<int32_t>(5000, 2 * MAX_INV_SZ);
-/** Bound each cs_main acquisition while processing INV and NOTFOUND. */
-static constexpr size_t MAX_INV_PROCESSING_BATCH_SIZE{100};
 /** How long to delay requesting transactions from non-preferred peers */
 static constexpr auto NONPREF_PEER_TX_DELAY{2s};
 /** How long to delay requesting objects from overloaded peers (see
@@ -1098,8 +1095,10 @@ private:
 
     /** Tracks announced inventories (transactions and all Dash-specific object types), and which
      *  peer to request them from next. All policy (preferredness, delays, per-type expiry) is
-     *  decided by the callers; see AddObjectAnnouncement and the getdata section of SendMessages. */
-    TxRequestTracker m_object_request GUARDED_BY(::cs_main);
+     *  decided by the callers; see AddObjectAnnouncement and the getdata section of SendMessages.
+     *  Acquire cs_main before m_object_request_mutex when both are needed. */
+    mutable Mutex m_object_request_mutex;
+    TxRequestTracker m_object_request GUARDED_BY(m_object_request_mutex);
 
     void AddToCompactExtraTransactions(const CTransactionRef& tx) EXCLUSIVE_LOCKS_REQUIRED(g_msgproc_mutex);
 
@@ -1619,6 +1618,7 @@ void PeerManagerImpl::AddObjectAnnouncement(const CNode& node, const CInv& inv, 
     const CNodeState* state = State(node.GetId());
     if (state == nullptr) return;
 
+    LOCK(m_object_request_mutex);
     if (m_object_request.Count(node.GetId()) >= MAX_PEER_OBJECT_ANNOUNCEMENTS) {
         // Too many queued announcements from this peer
         return;
@@ -1645,6 +1645,7 @@ void PeerManagerImpl::AddObjectAnnouncement(const CNode& node, const CInv& inv, 
 void PeerManagerImpl::ForgetTx(const uint256& txid)
 {
     AssertLockHeld(cs_main);
+    LOCK(m_object_request_mutex);
     m_object_request.ForgetTxHash(CInv(MSG_TX, txid));
     m_object_request.ForgetTxHash(CInv(MSG_DSTX, txid));
 }
@@ -1652,6 +1653,7 @@ void PeerManagerImpl::ForgetTx(const uint256& txid)
 size_t PeerManagerImpl::GetRequestedObjectCount(NodeId nodeid) const
 {
     AssertLockHeld(cs_main);
+    LOCK(m_object_request_mutex);
     return m_object_request.Count(nodeid);
 }
 
@@ -1714,7 +1716,7 @@ void PeerManagerImpl::InitializeNode(CNode& node, ServiceFlags our_services) {
     {
         LOCK(cs_main);
         m_node_states.emplace_hint(m_node_states.end(), std::piecewise_construct, std::forward_as_tuple(nodeid), std::forward_as_tuple(node.IsInboundConn()));
-        assert(m_object_request.Count(nodeid) == 0);
+        assert(WITH_LOCK(m_object_request_mutex, return m_object_request.Count(nodeid)) == 0);
     }
     PeerRef peer = std::make_shared<Peer>(nodeid, our_services);
     {
@@ -1780,7 +1782,7 @@ void PeerManagerImpl::FinalizeNode(const CNode& node) {
         }
     }
     m_orphanage.EraseForPeer(nodeid);
-    m_object_request.DisconnectedPeer(nodeid);
+    WITH_LOCK(m_object_request_mutex, m_object_request.DisconnectedPeer(nodeid));
     if (m_txreconciliation) m_txreconciliation->ForgetPeer(nodeid);
     m_num_preferred_download_peers -= state->fPreferredDownload;
     m_peers_downloading_from -= (!state->vBlocksInFlight.empty());
@@ -1797,7 +1799,7 @@ void PeerManagerImpl::FinalizeNode(const CNode& node) {
         assert(m_peers_downloading_from == 0);
         assert(m_outbound_peers_with_protect_from_disconnect == 0);
         assert(m_orphanage.Size() == 0);
-        assert(m_object_request.Size() == 0);
+        assert(WITH_LOCK(m_object_request_mutex, return m_object_request.Size()) == 0);
     }
     } // cs_main
 
@@ -2453,7 +2455,8 @@ void PeerManagerImpl::AskPeersForTransaction(const uint256& txid)
             LogPrintf("PeerManagerImpl::%s -- txid=%s: asking other peer %d for correct TX\n", __func__,
                       txid.ToString(), peer->m_id);
 
-            m_object_request.ReceivedInv(peer->m_id, CInv(MSG_TX, txid), /*preferred=*/true, current_time);
+            WITH_LOCK(m_object_request_mutex,
+                      m_object_request.ReceivedInv(peer->m_id, CInv(MSG_TX, txid), /*preferred=*/true, current_time));
         }
     }
 }
@@ -3753,7 +3756,7 @@ void PeerManagerImpl::PostProcessMessage(MessageProcessingResult&& result, NodeI
         if (peer) Misbehaving(*peer, result.m_error->score, result.m_error->message);
     }
     if (result.m_to_erase) {
-        WITH_LOCK(cs_main, m_object_request.ReceivedResponse(node, result.m_to_erase.value()));
+        WITH_LOCK(m_object_request_mutex, m_object_request.ReceivedResponse(node, result.m_to_erase.value()));
     }
     for (const auto& tx : result.m_transactions) {
         WITH_LOCK(cs_main, _RelayTransaction(tx));
@@ -3761,7 +3764,7 @@ void PeerManagerImpl::PostProcessMessage(MessageProcessingResult&& result, NodeI
     for (const auto& inv : result.m_inventory) {
         // An inv being relayed is available locally, so there is no need to request it from
         // anyone anymore.
-        WITH_LOCK(cs_main, m_object_request.ForgetTxHash(inv));
+        WITH_LOCK(m_object_request_mutex, m_object_request.ForgetTxHash(inv));
         RelayInv(inv);
     }
 }
@@ -4443,77 +4446,70 @@ void PeerManagerImpl::ProcessMessage(
 
         const bool reject_tx_invs{RejectIncomingTxs(pfrom)};
 
+        LOCK(cs_main);
+
         const auto current_time{GetTime<std::chrono::microseconds>()};
         uint256* best_block{nullptr};
 
-        Span<CInv> remaining{vInv};
-        while (!remaining.empty()) {
-            const auto batch = remaining.first(std::min(remaining.size(), MAX_INV_PROCESSING_BATCH_SIZE));
-            remaining = remaining.subspan(batch.size());
-            LOCK(cs_main);
-            for (CInv& inv : batch) {
-                if (!inv.IsKnownType()) {
-                    LogPrint(BCLog::NET, "got inv of unknown type %d: %s peer=%d\n", inv.type, inv.hash.ToString(),
-                             pfrom.GetId());
-                    continue;
+        for (CInv& inv : vInv) {
+            if(!inv.IsKnownType()) {
+                LogPrint(BCLog::NET, "got inv of unknown type %d: %s peer=%d\n", inv.type, inv.hash.ToString(), pfrom.GetId());
+                continue;
+            }
+
+            if (interruptMsgProc) return;
+
+            if (inv.IsMsgBlk()) {
+                const bool fAlreadyHave = AlreadyHaveBlock(inv.hash);
+                LogPrint(BCLog::NET, "got inv: %s  %s peer=%d\n", inv.ToString(), fAlreadyHave ? "have" : "new", pfrom.GetId());
+                ::g_stats_client->inc(strprintf("message.received.inv_%s", inv.GetCommand()), 1.0f);
+
+                UpdateBlockAvailability(pfrom.GetId(), inv.hash);
+                if (!fAlreadyHave && !fImporting && !fReindex && !IsBlockRequested(inv.hash)) {
+                    // Headers-first is the primary method of announcement on
+                    // the network. If a node fell back to sending blocks by
+                    // inv, it may be for a re-org, or because we haven't
+                    // completed initial headers sync. The final block hash
+                    // provided should be the highest, so send a getheaders and
+                    // then fetch the blocks we need to catch up.
+                    best_block = &inv.hash;
+                }
+            } else {
+                if (reject_tx_invs && NetMessageViolatesBlocksOnly(inv.GetCommand())) {
+                    LogPrint(BCLog::NET, "%s (%s) inv sent in violation of protocol, disconnecting peer=%d\n", inv.GetCommand(), inv.hash.ToString(), pfrom.GetId());
+                    pfrom.fDisconnect = true;
+                    return;
                 }
 
-                if (interruptMsgProc) return;
+                const bool fAlreadyHave = AlreadyHave(inv);
+                LogPrint(BCLog::NET, "got inv: %s  %s peer=%d\n", inv.ToString(), fAlreadyHave ? "have" : "new", pfrom.GetId());
+                ::g_stats_client->inc(strprintf("message.received.inv_%s", inv.GetCommand()), 1.0f);
 
-                if (inv.IsMsgBlk()) {
-                    const bool fAlreadyHave = AlreadyHaveBlock(inv.hash);
-                    LogPrint(BCLog::NET, "got inv: %s  %s peer=%d\n", inv.ToString(), fAlreadyHave ? "have" : "new",
-                             pfrom.GetId());
-                    ::g_stats_client->inc(strprintf("message.received.inv_%s", inv.GetCommand()), 1.0f);
+                static std::set<int> allowWhileInIBDObjs = {
+                        MSG_SPORK
+                };
 
-                    UpdateBlockAvailability(pfrom.GetId(), inv.hash);
-                    if (!fAlreadyHave && !fImporting && !fReindex && !IsBlockRequested(inv.hash)) {
-                        // Headers-first is the primary method of announcement on
-                        // the network. If a node fell back to sending blocks by
-                        // inv, it may be for a re-org, or because we haven't
-                        // completed initial headers sync. The final block hash
-                        // provided should be the highest, so send a getheaders and
-                        // then fetch the blocks we need to catch up.
-                        best_block = &inv.hash;
-                    }
-                } else {
-                    if (reject_tx_invs && NetMessageViolatesBlocksOnly(inv.GetCommand())) {
+                AddKnownInv(*peer, inv.hash);
+                if (!fAlreadyHave) {
+                    if (reject_tx_invs && inv.type == MSG_ISDLOCK) {
+                        if (pfrom.GetCommonVersion() <= ADDRV2_PROTO_VERSION) {
+                            // It's ok to receive these invs, we just ignore them
+                            // and do not request corresponding objects.
+                            continue;
+                        }
+                        // Peers with newer versions should never send us these invs when we are in blocks-relay-only mode
                         LogPrint(BCLog::NET, "%s (%s) inv sent in violation of protocol, disconnecting peer=%d\n", inv.GetCommand(), inv.hash.ToString(), pfrom.GetId());
                         pfrom.fDisconnect = true;
                         return;
                     }
-
-                    const bool fAlreadyHave = AlreadyHave(inv);
-                    LogPrint(BCLog::NET, "got inv: %s  %s peer=%d\n", inv.ToString(), fAlreadyHave ? "have" : "new",
-                             pfrom.GetId());
-                    ::g_stats_client->inc(strprintf("message.received.inv_%s", inv.GetCommand()), 1.0f);
-
-                    static std::set<int> allowWhileInIBDObjs = {MSG_SPORK};
-
-                    AddKnownInv(*peer, inv.hash);
-                    if (!fAlreadyHave) {
-                        if (reject_tx_invs && inv.type == MSG_ISDLOCK) {
-                            if (pfrom.GetCommonVersion() <= ADDRV2_PROTO_VERSION) {
-                                // It's ok to receive these invs, we just ignore them
-                                // and do not request corresponding objects.
-                                continue;
-                            }
-                            // Peers with newer versions should never send us these invs when we are in blocks-relay-only mode
-                            LogPrint(BCLog::NET, "%s (%s) inv sent in violation of protocol, disconnecting peer=%d\n",
-                                     inv.GetCommand(), inv.hash.ToString(), pfrom.GetId());
-                            pfrom.fDisconnect = true;
-                            return;
-                        }
-                        bool allowWhileInIBD = allowWhileInIBDObjs.count(inv.type);
-                        if (allowWhileInIBD || !m_chainman.ActiveChainstate().IsInitialBlockDownload()) {
-                            AddObjectAnnouncement(pfrom, inv, current_time);
-                        }
+                    bool allowWhileInIBD = allowWhileInIBDObjs.count(inv.type);
+                    if (allowWhileInIBD || !m_chainman.ActiveChainstate().IsInitialBlockDownload()) {
+                        AddObjectAnnouncement(pfrom, inv, current_time);
                     }
                 }
             }
         }
         if (best_block != nullptr) {
-            LOCK(cs_main);
             // If we haven't started initial headers-sync with this peer, then
             // consider sending a getheaders now. On initial startup, there's a
             // reliability vs bandwidth tradeoff, where we are only trying to do
@@ -4823,6 +4819,7 @@ void PeerManagerImpl::ProcessMessage(
             // A MSG_TX request may be answered with a DSTX message and vice versa (a getdata for
             // either type serves the underlying transaction), so complete whichever announcement
             // type the request was tracked under.
+            LOCK(m_object_request_mutex);
             m_object_request.ReceivedResponse(pfrom.GetId(), CInv(MSG_TX, txid));
             m_object_request.ReceivedResponse(pfrom.GetId(), CInv(MSG_DSTX, txid));
         }
@@ -5611,13 +5608,13 @@ void PeerManagerImpl::ProcessMessage(
 
         uint256 hash = spork.GetHash();
         CInv spork_inv{MSG_SPORK, hash};
-        WITH_LOCK(::cs_main, m_object_request.ReceivedResponse(pfrom.GetId(), spork_inv));
+        WITH_LOCK(m_object_request_mutex, m_object_request.ReceivedResponse(pfrom.GetId(), spork_inv));
         if (!m_sporkman.IsValidSpork(spork)) {
             Misbehaving(*peer, 100, strprintf("invalid spork received. peer=%d", pfrom.GetId()));
             return;
         }
         if (m_sporkman.ProcessSpork(spork, strprintf(" peer=%d", pfrom.GetId()))) {
-            WITH_LOCK(::cs_main, m_object_request.ForgetTxHash(spork_inv));
+            WITH_LOCK(m_object_request_mutex, m_object_request.ForgetTxHash(spork_inv));
             RelayInv(spork_inv);
         }
         return;
@@ -5665,17 +5662,12 @@ void PeerManagerImpl::ProcessMessage(
             return;
         }
 
-        Span<CInv> remaining{vInv};
-        while (!remaining.empty()) {
-            const auto batch = remaining.first(std::min(remaining.size(), MAX_INV_PROCESSING_BATCH_SIZE));
-            remaining = remaining.subspan(batch.size());
-            LOCK(cs_main);
-            for (const CInv& inv : batch) {
-                if (inv.IsKnownType()) {
-                    // If we receive a NOTFOUND message for an inv we requested, mark the announcement
-                    // as completed, so a fallback peer can be tried.
-                    m_object_request.ReceivedResponse(pfrom.GetId(), inv);
-                }
+        LOCK(m_object_request_mutex);
+        for (CInv &inv : vInv) {
+            if (inv.IsKnownType()) {
+                // If we receive a NOTFOUND message for an inv we requested, mark the announcement
+                // as completed, so a fallback peer can be tried.
+                m_object_request.ReceivedResponse(pfrom.GetId(), inv);
             }
         }
         return;
@@ -6247,6 +6239,7 @@ bool PeerManagerImpl::SendMessages(CNode* pto)
 
     MaybeSendAddr(*pto, *peer, current_time);
 
+    std::vector<CInv> vGetData;
     {
         LOCK(cs_main);
 
@@ -6732,7 +6725,6 @@ bool PeerManagerImpl::SendMessages(CNode* pto)
         //
         // Message: getdata (blocks)
         //
-        std::vector<CInv> vGetData;
         if (CanServeBlocks(*peer) && pto->CanRelay() && ((sync_blocks_and_headers_from_peer && !IsLimitedPeer(*peer)) || !m_chainman.ActiveChainstate().IsInitialBlockDownload()) && state.vBlocksInFlight.size() < MAX_BLOCKS_IN_TRANSIT_PER_PEER) {
             std::vector<const CBlockIndex*> vToDownload;
             NodeId staller = -1;
@@ -6750,49 +6742,50 @@ bool PeerManagerImpl::SendMessages(CNode* pto)
                 }
             }
         }
-
-        //
-        // Message: getdata (non-blocks)
-        //
-
-        // DASH unlike Bitcoin, this loop requests all Dash-specific object types too. The request
-        // expiry doubles as the fallback-to-another-peer trigger, so time-sensitive object types
-        // use a shorter per-type interval (see GetObjectInterval).
-        std::vector<std::pair<NodeId, CInv>> expired;
-        auto requestable = m_object_request.GetRequestable(pto->GetId(), current_time, &expired);
-        for (const auto& entry : expired) {
-            LogPrint(BCLog::NET, "timeout of inflight object %s from peer=%d\n", entry.second.ToString(), entry.first);
-        }
-        for (const CInv& inv : requestable) {
-            if (!AlreadyHave(inv)) {
-                LogPrint(BCLog::NET, "Requesting %s peer=%d\n", inv.ToString(), pto->GetId());
-                vGetData.push_back(inv);
-                if (vGetData.size() >= MAX_GETDATA_SZ) {
-                    m_connman.PushMessage(pto, msgMaker.Make(NetMsgType::GETDATA, vGetData));
-                    vGetData.clear();
-                }
-                m_object_request.RequestedTx(pto->GetId(), inv, current_time + GetObjectInterval(inv.type));
-                if (IsGetDataOnlyObject(inv.type)) {
-                    // Remember that we asked, so that an answer arriving after the tracker entry is
-                    // gone -- expired, or erased because the object turned up elsewhere -- is not
-                    // mistaken for an unsolicited push. See GetDataResponse.
-                    state.m_recent_object_requests.insert(inv.hash,
-                                                          RequestedObject{inv.type, current_time});
-                }
-            } else {
-                // We have already seen this object, no need to download. This is for belated
-                // announcements of objects which arrived via another peer; the tracker has no
-                // direct means to remove them once the object is received elsewhere.
-                m_object_request.ForgetTxHash(inv);
-            }
-        }
-
-
-        if (!vGetData.empty()) {
-            m_connman.PushMessage(pto, msgMaker.Make(NetMsgType::GETDATA, vGetData));
-            LogPrint(BCLog::NET, "SendMessages -- GETDATA -- pushed size = %lu peer=%d\n", vGetData.size(), pto->GetId());
-        }
     } // release cs_main
+
+    //
+    // Message: getdata (non-blocks)
+    //
+
+    // DASH unlike Bitcoin, this loop requests all Dash-specific object types too. The request
+    // expiry doubles as the fallback-to-another-peer trigger, so time-sensitive object types
+    // use a shorter per-type interval (see GetObjectInterval).
+    std::vector<std::pair<NodeId, CInv>> expired;
+    auto requestable = WITH_LOCK(m_object_request_mutex,
+                                 return m_object_request.GetRequestable(pto->GetId(), current_time, &expired));
+    for (const auto& entry : expired) {
+        LogPrint(BCLog::NET, "timeout of inflight object %s from peer=%d\n", entry.second.ToString(), entry.first);
+    }
+    for (const CInv& inv : requestable) {
+        LOCK(cs_main);
+        if (!AlreadyHave(inv)) {
+            LogPrint(BCLog::NET, "Requesting %s peer=%d\n", inv.ToString(), pto->GetId());
+            vGetData.push_back(inv);
+            if (vGetData.size() >= MAX_GETDATA_SZ) {
+                m_connman.PushMessage(pto, msgMaker.Make(NetMsgType::GETDATA, vGetData));
+                vGetData.clear();
+            }
+            WITH_LOCK(m_object_request_mutex,
+                      m_object_request.RequestedTx(pto->GetId(), inv, current_time + GetObjectInterval(inv.type)));
+            if (IsGetDataOnlyObject(inv.type)) {
+                // Remember that we asked, so that an answer arriving after the tracker entry is
+                // gone -- expired, or erased because the object turned up elsewhere -- is not
+                // mistaken for an unsolicited push. See GetDataResponse.
+                State(pto->GetId())->m_recent_object_requests.insert(inv.hash, RequestedObject{inv.type, current_time});
+            }
+        } else {
+            // We have already seen this object, no need to download. This is for belated
+            // announcements of objects which arrived via another peer; the tracker has no
+            // direct means to remove them once the object is received elsewhere.
+            WITH_LOCK(m_object_request_mutex, m_object_request.ForgetTxHash(inv));
+        }
+    }
+
+    if (!vGetData.empty()) {
+        m_connman.PushMessage(pto, msgMaker.Make(NetMsgType::GETDATA, vGetData));
+        LogPrint(BCLog::NET, "SendMessages -- GETDATA -- pushed size = %lu peer=%d\n", vGetData.size(), pto->GetId());
+    }
     return true;
 }
 
@@ -6812,18 +6805,18 @@ void PeerManagerImpl::PeerEraseObjectRequest(const NodeId nodeid, const CInv& in
     // Completing only this peer's announcement is deliberate: an invalid or unusable object must
     // not stop us from fetching it from honest peers. Cleanup across peers happens once the object
     // is accepted and AlreadyHave(inv) turns true.
-    m_object_request.ReceivedResponse(nodeid, inv);
+    WITH_LOCK(m_object_request_mutex, m_object_request.ReceivedResponse(nodeid, inv));
 }
 
 bool PeerManagerImpl::PeerConsumeObjectRequest(NodeId nodeid, const CInv& inv)
 {
-    return m_object_request.ReceivedResponse(nodeid, inv);
+    return WITH_LOCK(m_object_request_mutex, return m_object_request.ReceivedResponse(nodeid, inv));
 }
 
 GetDataResponse PeerManagerImpl::PeerConsumeGetDataResponse(NodeId nodeid, const CInv& inv)
 {
     CNodeState* state = State(nodeid);
-    if (m_object_request.ReceivedRequestedResponse(nodeid, inv)) {
+    if (WITH_LOCK(m_object_request_mutex, return m_object_request.ReceivedRequestedResponse(nodeid, inv))) {
         // Answered on time. Spend the late-answer grace too, so the GETDATA cannot also pay for a
         // replay of the same payload.
         if (state != nullptr) state->m_recent_object_requests.erase(inv.hash);
@@ -6853,7 +6846,7 @@ GetDataResponse PeerManagerImpl::PeerConsumeGetDataResponse(NodeId nodeid, const
 
 void PeerManagerImpl::PeerForgetObjectRequest(const CInv& inv)
 {
-    m_object_request.ForgetTxHash(inv);
+    WITH_LOCK(m_object_request_mutex, m_object_request.ForgetTxHash(inv));
 }
 
 void PeerManagerImpl::PeerPushInventory(NodeId nodeid, const CInv& inv)

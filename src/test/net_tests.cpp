@@ -4,6 +4,7 @@
 
 #include <test/util/setup_common.h>
 
+#include <arith_uint256.h>
 #include <chainparams.h>
 #include <clientversion.h>
 #include <compat/compat.h>
@@ -29,6 +30,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <future>
 #include <ios>
 #include <memory>
 #include <optional>
@@ -71,6 +73,97 @@ BOOST_AUTO_TEST_CASE(cnode_listen_port)
     BOOST_CHECK(gArgs.SoftSetArg("-port", ToString(altPort)));
     port = GetListenPort();
     BOOST_CHECK(port == altPort);
+}
+
+BOOST_AUTO_TEST_CASE(inventory_request_accounting)
+{
+    LOCK(NetEventsInterface::g_msgproc_mutex);
+    auto& chainstate = *static_cast<TestChainState*>(&m_node.chainman->ActiveChainstate());
+    chainstate.JumpOutOfIbd();
+    auto peer{MakeTestPeer(/*id=*/0)};
+    auto fallback{MakeTestPeer(/*id=*/1)};
+    auto& peerman = *m_node.peerman;
+    peerman.InitializeNode(*peer, NODE_NETWORK);
+    peerman.InitializeNode(*fallback, NODE_NETWORK);
+
+    std::vector<CInv> objects;
+    for (uint32_t i = 1; i <= 128; ++i) {
+        objects.emplace_back(MSG_SPORK, ArithToUint256(arith_uint256{i}));
+        objects.emplace_back(MSG_CLSIG, ArithToUint256(arith_uint256{i}));
+    }
+    auto batch = objects;
+    batch.insert(batch.end(), objects.begin(), objects.end()); // Duplicate announcements.
+    batch.emplace_back(0, objects.front().hash);               // Unknown types must not affect accounting.
+    const std::atomic<bool> interrupt{false};
+    const auto process_batch =
+        [&](CNode& node, const std::string& command, const std::vector<CInv>& invs)
+            EXCLUSIVE_LOCKS_REQUIRED(NetEventsInterface::g_msgproc_mutex) {
+                CDataStream stream{SER_NETWORK, PROTOCOL_VERSION};
+                stream << invs;
+                peerman.ProcessMessage(node, command, stream, GetTime<std::chrono::microseconds>(), interrupt);
+            };
+    process_batch(*peer, NetMsgType::INV, batch);
+    process_batch(*fallback, NetMsgType::INV, batch);
+    BOOST_CHECK_EQUAL(WITH_LOCK(cs_main, return peerman.GetRequestedObjectCount(peer->GetId())), objects.size());
+    BOOST_CHECK_EQUAL(WITH_LOCK(cs_main, return peerman.GetRequestedObjectCount(fallback->GetId())), objects.size());
+
+    SetMockTime(GetTime<std::chrono::seconds>() + 61s);
+    peerman.SendMessages(peer.get());
+    // Mix requested entries with duplicate, unknown, and unsolicited NOTFOUND entries.
+    batch.emplace_back(MSG_SPORK, uint256S("ffff"));
+    process_batch(*peer, NetMsgType::NOTFOUND, batch);
+    // Completed entries remain tracked until the fallback also completes.
+    BOOST_CHECK_EQUAL(WITH_LOCK(cs_main, return peerman.GetRequestedObjectCount(peer->GetId())), objects.size());
+    for (const auto& inv : objects) {
+        BOOST_CHECK(!WITH_LOCK(cs_main, return peerman.PeerConsumeObjectRequest(peer->GetId(), inv)));
+    }
+    BOOST_CHECK_EQUAL(WITH_LOCK(cs_main, return peerman.GetRequestedObjectCount(fallback->GetId())), objects.size());
+    peerman.SendMessages(fallback.get());
+    for (const auto& inv : objects) {
+        BOOST_CHECK(WITH_LOCK(cs_main, return peerman.PeerConsumeObjectRequest(fallback->GetId(), inv)));
+        BOOST_CHECK(!WITH_LOCK(cs_main, return peerman.PeerConsumeObjectRequest(fallback->GetId(), inv)));
+    }
+    BOOST_CHECK_EQUAL(WITH_LOCK(cs_main, return peerman.GetRequestedObjectCount(fallback->GetId())), 0U);
+    BOOST_CHECK_EQUAL(WITH_LOCK(cs_main, return peerman.GetRequestedObjectCount(peer->GetId())), 0U);
+
+    // Fresh announcements after completion remain requestable and are removed on disconnect.
+    process_batch(*peer, NetMsgType::INV, objects);
+    BOOST_CHECK_EQUAL(WITH_LOCK(cs_main, return peerman.GetRequestedObjectCount(peer->GetId())), objects.size());
+    peerman.FinalizeNode(*peer);
+    peerman.FinalizeNode(*fallback);
+    chainstate.ResetIbd();
+    SetMockTime(0s);
+}
+
+BOOST_AUTO_TEST_CASE(notfound_does_not_wait_for_chainstate)
+{
+    auto peer{MakeTestPeer(/*id=*/0)};
+    auto& peerman = *m_node.peerman;
+    peerman.InitializeNode(*peer, NODE_NETWORK);
+    const CInv inv{MSG_SPORK, uint256S("01")};
+    {
+        LOCK(NetEventsInterface::g_msgproc_mutex);
+        ProcessInv(peerman, *peer, inv);
+    }
+    std::future<void> response;
+    std::future_status status;
+    {
+        LOCK(cs_main);
+        BOOST_CHECK_EQUAL(peerman.GetRequestedObjectCount(peer->GetId()), 1U);
+        response = std::async(std::launch::async, [&] {
+            LOCK(NetEventsInterface::g_msgproc_mutex);
+            CDataStream stream{SER_NETWORK, PROTOCOL_VERSION};
+            stream << std::vector<CInv>{inv};
+            const std::atomic<bool> interrupt{false};
+            peerman.ProcessMessage(*peer, NetMsgType::NOTFOUND, stream, GetTime<std::chrono::microseconds>(), interrupt);
+        });
+        // The timeout bounds failure cleanup; completion while cs_main is held is the invariant.
+        status = response.wait_for(5s);
+    }
+    response.get();
+    BOOST_CHECK(status == std::future_status::ready);
+    BOOST_CHECK_EQUAL(WITH_LOCK(cs_main, return peerman.GetRequestedObjectCount(peer->GetId())), 0U);
+    peerman.FinalizeNode(*peer);
 }
 
 BOOST_AUTO_TEST_CASE(peer_requested_object_authorizes_and_erases_per_peer_state)
