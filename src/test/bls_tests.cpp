@@ -249,14 +249,85 @@ void FuncDHExchange(const bool legacy_scheme)
     pk1 = sk1.GetPublicKey();
     pk2 = sk2.GetPublicKey();
 
-    // Perform diffie-helman exchange
+    // Perform diffie-hellman exchange
     CBLSPublicKey pke1, pke2;
-    pke1.DHKeyExchange(sk1, pk2);
-    pke2.DHKeyExchange(sk2, pk1);
+    BOOST_CHECK(pke1.DHKeyExchange(sk1, pk2));
+    BOOST_CHECK(pke2.DHKeyExchange(sk2, pk1));
 
     BOOST_CHECK(pke1.IsValid());
     BOOST_CHECK(pke2.IsValid());
     BOOST_CHECK(pke1 == pke2);
+
+    // Test commutativity: DH(a, B) == DH(b, A)
+    CBLSPublicKey pke3, pke4;
+    BOOST_CHECK(pke3.DHKeyExchange(sk1, pk2));
+    BOOST_CHECK(pke4.DHKeyExchange(sk2, pk1));
+    BOOST_CHECK(pke3 == pke4);
+    BOOST_CHECK(pke1 == pke3);
+
+    // Test with invalid secret key
+    CBLSSecretKey invalidSk;
+    CBLSPublicKey resultInvalidSk;
+    BOOST_CHECK(!resultInvalidSk.DHKeyExchange(invalidSk, pk1));
+    BOOST_CHECK(!resultInvalidSk.IsValid());
+
+    // Test with invalid public key
+    CBLSPublicKey invalidPk;
+    CBLSPublicKey resultInvalidPk;
+    BOOST_CHECK(!resultInvalidPk.DHKeyExchange(sk1, invalidPk));
+    BOOST_CHECK(!resultInvalidPk.IsValid());
+
+    // Test with both invalid keys
+    CBLSPublicKey resultBothInvalid;
+    BOOST_CHECK(!resultBothInvalid.DHKeyExchange(invalidSk, invalidPk));
+    BOOST_CHECK(!resultBothInvalid.IsValid());
+
+    // Test deterministic behavior - same inputs should produce same output
+    CBLSPublicKey pke5, pke6;
+    BOOST_CHECK(pke5.DHKeyExchange(sk1, pk2));
+    BOOST_CHECK(pke6.DHKeyExchange(sk1, pk2));
+    BOOST_CHECK(pke5 == pke6);
+
+    // Test different key pairs produce different results
+    CBLSSecretKey sk3;
+    sk3.MakeNewKey();
+    CBLSPublicKey pk3 = sk3.GetPublicKey();
+    CBLSPublicKey pke7;
+    BOOST_CHECK(pke7.DHKeyExchange(sk1, pk3));
+    BOOST_CHECK(pke1 != pke7); // Different public key should give different result
+}
+
+void FuncDHExchangeExtended(const bool legacy_scheme)
+{
+    bls::bls_legacy_scheme.store(legacy_scheme);
+
+    // Test multiple participants in DH exchange
+    std::vector<CBLSSecretKey> secretKeys(5);
+    std::vector<CBLSPublicKey> publicKeys(5);
+    
+    for (int i = 0; i < 5; i++) {
+        secretKeys[i].MakeNewKey();
+        publicKeys[i] = secretKeys[i].GetPublicKey();
+    }
+
+    // Test that DH exchange works between all pairs
+    for (int i = 0; i < 5; i++) {
+        for (int j = 0; j < 5; j++) {
+            if (i != j) {
+                CBLSPublicKey result1, result2;
+                BOOST_CHECK(result1.DHKeyExchange(secretKeys[i], publicKeys[j]));
+                BOOST_CHECK(result2.DHKeyExchange(secretKeys[j], publicKeys[i]));
+                BOOST_CHECK(result1.IsValid());
+                BOOST_CHECK(result2.IsValid());
+                BOOST_CHECK(result1 == result2); // Commutativity
+            }
+        }
+    }
+
+    // Test that self-exchange works (though not typically used)
+    CBLSPublicKey selfResult;
+    BOOST_CHECK(selfResult.DHKeyExchange(secretKeys[0], publicKeys[0]));
+    BOOST_CHECK(selfResult.IsValid());
 }
 
 struct Message
@@ -370,6 +441,108 @@ void FuncBatchVerifier(const bool legacy_scheme)
     Verify(msgs);
 }
 
+void FuncSecretKeyShare(const bool legacy_scheme)
+{
+    bls::bls_legacy_scheme.store(legacy_scheme);
+
+    // Test basic SecretKeyShare functionality
+    std::vector<CBLSSecretKey> msk;
+    for (int i = 0; i < 5; i++) {
+        CBLSSecretKey sk;
+        sk.MakeNewKey();
+        msk.push_back(sk);
+    }
+
+    // Test with valid ID
+    CBLSId id(GetRandHash());
+    CBLSSecretKey share;
+    BOOST_CHECK(share.SecretKeyShare(msk, id));
+    BOOST_CHECK(share.IsValid());
+
+    // Test with invalid ID
+    CBLSId invalidId;
+    CBLSSecretKey invalidShare;
+    BOOST_CHECK(!invalidShare.SecretKeyShare(msk, invalidId));
+    BOOST_CHECK(!invalidShare.IsValid());
+
+    // Test with empty master secret key vector
+    std::vector<CBLSSecretKey> emptyMsk;
+    CBLSSecretKey emptyShare;
+    BOOST_CHECK(!emptyShare.SecretKeyShare(emptyMsk, id));
+    BOOST_CHECK(!emptyShare.IsValid());
+
+    // Test with invalid master secret key in vector
+    std::vector<CBLSSecretKey> invalidMsk = msk;
+    invalidMsk.push_back(CBLSSecretKey()); // Add invalid key
+    CBLSSecretKey invalidMskShare;
+    BOOST_CHECK(!invalidMskShare.SecretKeyShare(invalidMsk, id));
+    BOOST_CHECK(!invalidMskShare.IsValid());
+
+    // Test deterministic behavior - same inputs should produce same output
+    CBLSSecretKey share1, share2;
+    BOOST_CHECK(share1.SecretKeyShare(msk, id));
+    BOOST_CHECK(share2.SecretKeyShare(msk, id));
+    BOOST_CHECK(share1 == share2);
+}
+
+void FuncPublicKeyShare(const bool legacy_scheme)
+{
+    bls::bls_legacy_scheme.store(legacy_scheme);
+
+    // Create master secret keys and derive public keys
+    std::vector<CBLSSecretKey> msk;
+    std::vector<CBLSPublicKey> mpk;
+    for (int i = 0; i < 5; i++) {
+        CBLSSecretKey sk;
+        sk.MakeNewKey();
+        msk.push_back(sk);
+        mpk.push_back(sk.GetPublicKey());
+    }
+
+    // Test basic PublicKeyShare functionality
+    CBLSId id(GetRandHash());
+    CBLSPublicKey pkShare;
+    BOOST_CHECK(pkShare.PublicKeyShare(mpk, id));
+    BOOST_CHECK(pkShare.IsValid());
+
+    // Test consistency with SecretKeyShare
+    CBLSSecretKey skShare;
+    BOOST_CHECK(skShare.SecretKeyShare(msk, id));
+    CBLSPublicKey derivedPkShare = skShare.GetPublicKey();
+    BOOST_CHECK(pkShare == derivedPkShare);
+
+    // Test with invalid ID
+    CBLSId invalidId;
+    CBLSPublicKey invalidShare;
+    BOOST_CHECK(!invalidShare.PublicKeyShare(mpk, invalidId));
+    BOOST_CHECK(!invalidShare.IsValid());
+
+    // Test with empty master public key vector
+    std::vector<CBLSPublicKey> emptyMpk;
+    CBLSPublicKey emptyShare;
+    BOOST_CHECK(!emptyShare.PublicKeyShare(emptyMpk, id));
+    BOOST_CHECK(!emptyShare.IsValid());
+
+    // Test with invalid master public key in vector
+    std::vector<CBLSPublicKey> invalidMpk = mpk;
+    invalidMpk.push_back(CBLSPublicKey()); // Add invalid key
+    CBLSPublicKey invalidMpkShare;
+    BOOST_CHECK(!invalidMpkShare.PublicKeyShare(invalidMpk, id));
+    BOOST_CHECK(!invalidMpkShare.IsValid());
+
+    // Test deterministic behavior - same inputs should produce same output
+    CBLSPublicKey share1, share2;
+    BOOST_CHECK(share1.PublicKeyShare(mpk, id));
+    BOOST_CHECK(share2.PublicKeyShare(mpk, id));
+    BOOST_CHECK(share1 == share2);
+
+    // Test with different IDs produce different shares
+    CBLSId id2(GetRandHash());
+    CBLSPublicKey share3;
+    BOOST_CHECK(share3.PublicKeyShare(mpk, id2));
+    BOOST_CHECK(share1 != share3); // Different IDs should produce different shares
+}
+
 void FuncThresholdSignature(const bool legacy_scheme)
 {
     bls::bls_legacy_scheme.store(legacy_scheme);
@@ -462,10 +635,28 @@ BOOST_AUTO_TEST_CASE(bls_sig_agg_secure_tests)
     FuncSigAggSecure(false);
 }
 
+BOOST_AUTO_TEST_CASE(bls_secret_key_share_tests)
+{
+    FuncSecretKeyShare(true);
+    FuncSecretKeyShare(false);
+}
+
+BOOST_AUTO_TEST_CASE(bls_public_key_share_tests)
+{
+    FuncPublicKeyShare(true);
+    FuncPublicKeyShare(false);
+}
+
 BOOST_AUTO_TEST_CASE(bls_dh_exchange_tests)
 {
     FuncDHExchange(true);
     FuncDHExchange(false);
+}
+
+BOOST_AUTO_TEST_CASE(bls_dh_exchange_extended_tests)
+{
+    FuncDHExchangeExtended(true);
+    FuncDHExchangeExtended(false);
 }
 
 BOOST_AUTO_TEST_CASE(batch_verifier_tests)
