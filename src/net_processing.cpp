@@ -29,6 +29,7 @@
 #include <random.h>
 #include <saltedhasher.h>
 #include <scheduler.h>
+#include <span.h>
 #include <streams.h>
 #include <sync.h>
 #include <timedata.h>
@@ -90,6 +91,8 @@ static constexpr int32_t MAX_PEER_OBJECT_REQUEST_IN_FLIGHT = 100;
  *  Unlike Bitcoin, this is not reduced to 5000: governance vote sync legitimately announces up to
  *  MAX_INV_SZ objects from a single peer (see CGovernanceManager). */
 static constexpr int32_t MAX_PEER_OBJECT_ANNOUNCEMENTS = std::max<int32_t>(5000, 2 * MAX_INV_SZ);
+/** Bound each cs_main acquisition while processing INV and NOTFOUND. */
+static constexpr size_t MAX_INV_PROCESSING_BATCH_SIZE{100};
 /** How long to delay requesting transactions from non-preferred peers */
 static constexpr auto NONPREF_PEER_TX_DELAY{2s};
 /** How long to delay requesting objects from overloaded peers (see
@@ -4440,70 +4443,77 @@ void PeerManagerImpl::ProcessMessage(
 
         const bool reject_tx_invs{RejectIncomingTxs(pfrom)};
 
-        LOCK(cs_main);
-
         const auto current_time{GetTime<std::chrono::microseconds>()};
         uint256* best_block{nullptr};
 
-        for (CInv& inv : vInv) {
-            if(!inv.IsKnownType()) {
-                LogPrint(BCLog::NET, "got inv of unknown type %d: %s peer=%d\n", inv.type, inv.hash.ToString(), pfrom.GetId());
-                continue;
-            }
-
-            if (interruptMsgProc) return;
-
-            if (inv.IsMsgBlk()) {
-                const bool fAlreadyHave = AlreadyHaveBlock(inv.hash);
-                LogPrint(BCLog::NET, "got inv: %s  %s peer=%d\n", inv.ToString(), fAlreadyHave ? "have" : "new", pfrom.GetId());
-                ::g_stats_client->inc(strprintf("message.received.inv_%s", inv.GetCommand()), 1.0f);
-
-                UpdateBlockAvailability(pfrom.GetId(), inv.hash);
-                if (!fAlreadyHave && !fImporting && !fReindex && !IsBlockRequested(inv.hash)) {
-                    // Headers-first is the primary method of announcement on
-                    // the network. If a node fell back to sending blocks by
-                    // inv, it may be for a re-org, or because we haven't
-                    // completed initial headers sync. The final block hash
-                    // provided should be the highest, so send a getheaders and
-                    // then fetch the blocks we need to catch up.
-                    best_block = &inv.hash;
-                }
-            } else {
-                if (reject_tx_invs && NetMessageViolatesBlocksOnly(inv.GetCommand())) {
-                    LogPrint(BCLog::NET, "%s (%s) inv sent in violation of protocol, disconnecting peer=%d\n", inv.GetCommand(), inv.hash.ToString(), pfrom.GetId());
-                    pfrom.fDisconnect = true;
-                    return;
+        Span<CInv> remaining{vInv};
+        while (!remaining.empty()) {
+            const auto batch = remaining.first(std::min(remaining.size(), MAX_INV_PROCESSING_BATCH_SIZE));
+            remaining = remaining.subspan(batch.size());
+            LOCK(cs_main);
+            for (CInv& inv : batch) {
+                if (!inv.IsKnownType()) {
+                    LogPrint(BCLog::NET, "got inv of unknown type %d: %s peer=%d\n", inv.type, inv.hash.ToString(),
+                             pfrom.GetId());
+                    continue;
                 }
 
-                const bool fAlreadyHave = AlreadyHave(inv);
-                LogPrint(BCLog::NET, "got inv: %s  %s peer=%d\n", inv.ToString(), fAlreadyHave ? "have" : "new", pfrom.GetId());
-                ::g_stats_client->inc(strprintf("message.received.inv_%s", inv.GetCommand()), 1.0f);
+                if (interruptMsgProc) return;
 
-                static std::set<int> allowWhileInIBDObjs = {
-                        MSG_SPORK
-                };
+                if (inv.IsMsgBlk()) {
+                    const bool fAlreadyHave = AlreadyHaveBlock(inv.hash);
+                    LogPrint(BCLog::NET, "got inv: %s  %s peer=%d\n", inv.ToString(), fAlreadyHave ? "have" : "new",
+                             pfrom.GetId());
+                    ::g_stats_client->inc(strprintf("message.received.inv_%s", inv.GetCommand()), 1.0f);
 
-                AddKnownInv(*peer, inv.hash);
-                if (!fAlreadyHave) {
-                    if (reject_tx_invs && inv.type == MSG_ISDLOCK) {
-                        if (pfrom.GetCommonVersion() <= ADDRV2_PROTO_VERSION) {
-                            // It's ok to receive these invs, we just ignore them
-                            // and do not request corresponding objects.
-                            continue;
-                        }
-                        // Peers with newer versions should never send us these invs when we are in blocks-relay-only mode
+                    UpdateBlockAvailability(pfrom.GetId(), inv.hash);
+                    if (!fAlreadyHave && !fImporting && !fReindex && !IsBlockRequested(inv.hash)) {
+                        // Headers-first is the primary method of announcement on
+                        // the network. If a node fell back to sending blocks by
+                        // inv, it may be for a re-org, or because we haven't
+                        // completed initial headers sync. The final block hash
+                        // provided should be the highest, so send a getheaders and
+                        // then fetch the blocks we need to catch up.
+                        best_block = &inv.hash;
+                    }
+                } else {
+                    if (reject_tx_invs && NetMessageViolatesBlocksOnly(inv.GetCommand())) {
                         LogPrint(BCLog::NET, "%s (%s) inv sent in violation of protocol, disconnecting peer=%d\n", inv.GetCommand(), inv.hash.ToString(), pfrom.GetId());
                         pfrom.fDisconnect = true;
                         return;
                     }
-                    bool allowWhileInIBD = allowWhileInIBDObjs.count(inv.type);
-                    if (allowWhileInIBD || !m_chainman.ActiveChainstate().IsInitialBlockDownload()) {
-                        AddObjectAnnouncement(pfrom, inv, current_time);
+
+                    const bool fAlreadyHave = AlreadyHave(inv);
+                    LogPrint(BCLog::NET, "got inv: %s  %s peer=%d\n", inv.ToString(), fAlreadyHave ? "have" : "new",
+                             pfrom.GetId());
+                    ::g_stats_client->inc(strprintf("message.received.inv_%s", inv.GetCommand()), 1.0f);
+
+                    static std::set<int> allowWhileInIBDObjs = {MSG_SPORK};
+
+                    AddKnownInv(*peer, inv.hash);
+                    if (!fAlreadyHave) {
+                        if (reject_tx_invs && inv.type == MSG_ISDLOCK) {
+                            if (pfrom.GetCommonVersion() <= ADDRV2_PROTO_VERSION) {
+                                // It's ok to receive these invs, we just ignore them
+                                // and do not request corresponding objects.
+                                continue;
+                            }
+                            // Peers with newer versions should never send us these invs when we are in blocks-relay-only mode
+                            LogPrint(BCLog::NET, "%s (%s) inv sent in violation of protocol, disconnecting peer=%d\n",
+                                     inv.GetCommand(), inv.hash.ToString(), pfrom.GetId());
+                            pfrom.fDisconnect = true;
+                            return;
+                        }
+                        bool allowWhileInIBD = allowWhileInIBDObjs.count(inv.type);
+                        if (allowWhileInIBD || !m_chainman.ActiveChainstate().IsInitialBlockDownload()) {
+                            AddObjectAnnouncement(pfrom, inv, current_time);
+                        }
                     }
                 }
             }
         }
         if (best_block != nullptr) {
+            LOCK(cs_main);
             // If we haven't started initial headers-sync with this peer, then
             // consider sending a getheaders now. On initial startup, there's a
             // reliability vs bandwidth tradeoff, where we are only trying to do
@@ -5655,12 +5665,17 @@ void PeerManagerImpl::ProcessMessage(
             return;
         }
 
-        LOCK(cs_main);
-        for (CInv &inv : vInv) {
-            if (inv.IsKnownType()) {
-                // If we receive a NOTFOUND message for an inv we requested, mark the announcement
-                // as completed, so a fallback peer can be tried.
-                m_object_request.ReceivedResponse(pfrom.GetId(), inv);
+        Span<CInv> remaining{vInv};
+        while (!remaining.empty()) {
+            const auto batch = remaining.first(std::min(remaining.size(), MAX_INV_PROCESSING_BATCH_SIZE));
+            remaining = remaining.subspan(batch.size());
+            LOCK(cs_main);
+            for (const CInv& inv : batch) {
+                if (inv.IsKnownType()) {
+                    // If we receive a NOTFOUND message for an inv we requested, mark the announcement
+                    // as completed, so a fallback peer can be tried.
+                    m_object_request.ReceivedResponse(pfrom.GetId(), inv);
+                }
             }
         }
         return;

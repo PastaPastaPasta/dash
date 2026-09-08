@@ -1,0 +1,45 @@
+name: Inventory profiling
+on:
+  push:
+    branches: [codex/inventory-profile-ci]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  profile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install build and workload dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y clang build-essential automake autoconf libtool pkg-config libboost-dev libevent-dev libgmp-dev python3-dev python3-venv
+          python3 -m venv /tmp/inventory-venv
+          /tmp/inventory-venv/bin/pip install git+https://github.com/dashpay/dash_hash.git
+      - name: Build baseline and candidate with the same benchmark
+        run: |
+          mkdir -p results
+          cp src/net_processing.cpp /tmp/candidate-net-processing.cpp
+          git show c652c314a24c59599d987da3779fe1c610dc4851:src/net_processing.cpp > src/net_processing.cpp
+          sha256sum src/net_processing.cpp /tmp/candidate-net-processing.cpp > results/source-sha256.log
+          ./autogen.sh > results/autogen.log 2>&1
+          ./configure --without-gui --disable-wallet --enable-bench --disable-tests --disable-fuzz-binary --without-miniupnpc --without-natpmp --disable-zmq CC=clang CXX=clang++ CXXFLAGS='-O2 -g' CPPFLAGS=-DDEBUG_LOCKCONTENTION > results/configure.log 2>&1
+          make -j"$(nproc)" > results/build-baseline.log 2>&1
+          cp src/dashd /tmp/dashd-baseline
+          cp src/bench/bench_dash /tmp/bench-baseline
+          cp /tmp/candidate-net-processing.cpp src/net_processing.cpp
+          make -j"$(nproc)" > results/build-candidate.log 2>&1
+          cp src/dashd /tmp/dashd-candidate
+          cp src/bench/bench_dash /tmp/bench-candidate
+          sha256sum /tmp/dashd-baseline /tmp/dashd-candidate /tmp/bench-baseline /tmp/bench-candidate > results/binary-sha256.log
+      - name: Run alternating comparisons without concurrent build jobs
+        run: /tmp/inventory-venv/bin/python contrib/devtools/run_inventory_comparison.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: inventory-profile-results
+          path: results/
+          retention-days: 30
