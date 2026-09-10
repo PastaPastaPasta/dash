@@ -43,6 +43,7 @@ public:
         All,
         Regular,
         Evo,
+        Shared,
         COUNT
     };
 
@@ -92,6 +93,10 @@ private:
     QAction* m_action_update_service{nullptr};
     QAction* m_action_update_registrar{nullptr};
     QAction* m_action_revoke{nullptr};
+    QAction* m_action_update_share{nullptr};
+    QAction* m_action_dissolve{nullptr};
+    QAction* m_action_rotate_keys{nullptr};
+    QAction* m_action_filter_owner{nullptr};
     WalletModel* walletModel{nullptr};
 
     void setMasternodeList(MasternodeData&& data, QSet<QString>&& owned_mns);
@@ -107,6 +112,7 @@ private Q_SLOTS:
     void copyCollateralOutpoint_clicked();
     void copyProTxHash_clicked();
     void showRegisterWizard();
+    void showSharedMnCreateDialog();
     void extraInfoDIP3_clicked();
     void filterByCollateralAddress();
     void filterByOwnerAddress();
@@ -116,9 +122,12 @@ private Q_SLOTS:
     void on_checkBoxOwned_stateChanged(int state);
     void on_comboBoxType_currentIndexChanged(int index);
     void on_filterText_textChanged(const QString& strFilterIn);
+    void onDissolve();
     void onRevoke();
+    void onRotateSharedKeys();
     void onUpdateRegistrar();
     void onUpdateService();
+    void onUpdateShare();
     void showContextMenuDIP3(const QPoint&);
     void updateFilteredCount();
     void updateMasternodeList();
