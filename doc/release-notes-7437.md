@@ -73,3 +73,10 @@ GUI changes
 - The owned-masternode filter includes shared masternodes when the wallet holds
   a participant's refund destination, including when rewards go to a different
   wallet. (#7437)
+- The Qt masternode list adds a guided shared-masternode workflow for
+  registration, participant signing, reward-address updates, dissolution,
+  standby recovery, and operator/voting-key rotation. Each step identifies the
+  masternode and wallet keys involved, shows collateral and fee requirements,
+  and reports signing, broadcast, confirmation, cancellation, and recovery
+  states. Shared-only actions are available only when the wallet can sign for a
+  share, and the workflow can be saved and resumed from a session backup.
