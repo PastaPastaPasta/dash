@@ -34,6 +34,9 @@ private Q_SLOTS:
     void wizardPageValidation();
     void broadcastConfirmation();
     void masternodeListRegistrationAvailability();
+    void sharedMasternodeOwnedFilter();
+    void sharedMasternodeContextMenu();
+    void sharedMasternodeDetails();
     void wizardInteractionLifecycle();
     void registrationResultStates();
     void destinationValidation();
