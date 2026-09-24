@@ -18,7 +18,9 @@
 #include <qt/transactionview.h>
 #include <qt/walletmodel.h>
 #include <key_io.h>
+#include <node/context.h>
 #include <test/util/setup_common.h>
+#include <txmempool.h>
 #include <util/system.h>
 #include <validation.h>
 #include <wallet/wallet.h>
@@ -37,6 +39,7 @@
 #include <QDialogButtonBox>
 #include <QListView>
 #include <QPushButton>
+#include <QSignalSpy>
 #include <QTableView>
 #include <QTextEdit>
 #include <QTimer>
@@ -186,6 +189,24 @@ void TestGUI(interfaces::Node& node)
     QCOMPARE(transactionTableModel->rowCount({}), 107);
     QVERIFY(FindTx(*transactionTableModel, txid1).isValid());
     QVERIFY(FindTx(*transactionTableModel, txid2).isValid());
+
+    // A transaction the mempool refuses on commit is reported instead of
+    // being announced as sent: the fee ceiling is lowered once the
+    // transaction is prepared (so preparation passes) and before it is
+    // committed (so the broadcast fails).
+    {
+        QSignalSpy sent(&sendCoinsDialog, &SendCoinsDialog::coinsSent);
+        QSignalSpy messages(&sendCoinsDialog, &SendCoinsDialog::message);
+        const CAmount max_fee{wallet->m_default_max_tx_fee};
+        QTimer::singleShot(0, [&wallet] { wallet->m_default_max_tx_fee = 1; });
+        const uint256 txid3 = SendCoins(*wallet.get(), sendCoinsDialog, PKHash(), 2 * COIN);
+        wallet->m_default_max_tx_fee = max_fee;
+        QVERIFY(!txid3.IsNull());
+        QCOMPARE(sent.count(), 0);
+        QCOMPARE(messages.count(), 1);
+        QVERIFY(messages.first().at(1).toString().contains("rejected by the mempool"));
+        QVERIFY(!node.context()->mempool->exists(txid3));
+    }
 
     // Check current balance on OverviewPage
     OverviewPage overviewPage;

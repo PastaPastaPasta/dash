@@ -324,7 +324,7 @@ WalletModel::SendCoinsReturn WalletModel::prepareTransaction(WalletModelTransact
     return SendCoinsReturn(OK);
 }
 
-void WalletModel::sendCoins(WalletModelTransaction& transaction, bool fIsCoinJoin)
+WalletModel::SendCoinsReturn WalletModel::sendCoins(WalletModelTransaction& transaction, bool fIsCoinJoin)
 {
     QByteArray transaction_array; /* store serialized transaction */
 
@@ -342,7 +342,9 @@ void WalletModel::sendCoins(WalletModelTransaction& transaction, bool fIsCoinJoi
         }
 
         auto& newTx = transaction.getWtx();
-        wallet().commitTransaction(newTx, /*value_map=*/std::move(mapValue), std::move(vOrderForm));
+        if (const auto error{wallet().commitTransaction(newTx, /*value_map=*/std::move(mapValue), std::move(vOrderForm))}) {
+            return SendCoinsReturn(TransactionCommitFailed, QString::fromStdString(error->translated));
+        }
 
         CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
         ssTx << *newTx;
@@ -375,6 +377,7 @@ void WalletModel::sendCoins(WalletModelTransaction& transaction, bool fIsCoinJoi
     }
 
     checkBalanceChanged(m_wallet->getBalances()); // update balance immediately, otherwise there could be a short noticeable delay until pollBalanceChanged hits
+    return SendCoinsReturn(OK);
 }
 
 OptionsModel* WalletModel::getOptionsModel() const
