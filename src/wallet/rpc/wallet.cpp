@@ -656,7 +656,15 @@ static RPCHelpMan createwallet()
     if (!request.params[4].isNull() && request.params[4].get_bool()) {
         flags |= WALLET_FLAG_AVOID_REUSE;
     }
-    if (!request.params[5].isNull() && request.params[6].isNull()) {
+    // Up to v20 the sixth positional argument was load_on_startup.
+    // v21 inserted descriptors in front of it.
+    // A call written for v20 therefore sets descriptors flag and keep load_on_startup unset [default value], and that combination is refused whatever the value:
+    // - true silently asked for a descriptor wallet [which are default]
+    // - false silently asks for a legacy one [which will be deprecated soon]
+    // So user should set both values or use named arguments to avoid unexpected behaviour
+    const bool descriptors_given{!request.params[5].isNull()};
+    const bool load_on_startup_given{!request.params[6].isNull()};
+    if (descriptors_given && !load_on_startup_given) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "The createwallet RPC requires specifying the 'load_on_startup' flag when param 'descriptors' is specified. Dash Core v21 introduced this requirement due to breaking changes in the createwallet RPC.");
     }
     if (request.params[5].isNull() || request.params[5].get_bool()) {

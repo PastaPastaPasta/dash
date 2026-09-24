@@ -1013,6 +1013,17 @@ void CDeterministicMNManager::CleanupCache(int nHeight)
 
 }
 
+void CDeterministicMNManager::CleanupHistoricalCache()
+{
+    LOCK(cs);
+    if (tipIndex == nullptr) return;
+    const int tip_height{tipIndex->nHeight};
+    std::erase_if(mnListsCache,
+                  [tip_height](const auto& p) { return p.second.GetHeight() + LIST_DIFFS_CACHE_SIZE < tip_height; });
+    std::erase_if(mnListDiffsCache,
+                  [tip_height](const auto& p) { return p.second.nHeight + LIST_DIFFS_CACHE_SIZE < tip_height; });
+}
+
 //end
 
 void CDeterministicMNManager::DoMaintenance() {
@@ -1308,6 +1319,7 @@ bool CDeterministicMNManager::IsRepaired() const { return m_evoDb.Exists(DB_LIST
 
 void CDeterministicMNManager::CompleteRepair()
 {
+    AssertLockHeld(::cs_main);
     auto dbTx = m_evoDb.BeginTransaction();
     m_evoDb.Write(DB_LIST_REPAIRED, 1);
     dbTx->Commit();

@@ -154,7 +154,11 @@ BIP9Stats AbstractThresholdConditionChecker::GetStateStatisticsFor(const CBlockI
         signalling_blocks->assign(blocks_in_period, false);
     }
 
-    // Re-calculate current threshold
+    // Re-calculate current threshold. The anchor is deliberately not the start of the
+    // period that elapsed/count cover: on the last block of a period it resolves to pindex
+    // itself, so threshold and "possible" describe the period the next block belongs to,
+    // like status_next, which matters because Threshold() decays per attempt. Pinned by
+    // dynamic_activation_thresholds_tests; do not align it with blocks_in_period.
     const CBlockIndex* pindexEndOfPrevPeriod = pindex->GetAncestor(pindex->nHeight - ((pindex->nHeight + 1) % stats.period));
     int nAttempt{0};
     const ThresholdState state = GetStateFor(pindexEndOfPrevPeriod, params, cache);

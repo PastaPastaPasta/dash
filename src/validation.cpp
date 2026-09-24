@@ -728,6 +728,14 @@ private:
     std::optional<MempoolAcceptResult> TryAssetUnlockRefresh(const CTransactionRef& ptx, const ATMPArgs& args)
         EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_pool.cs);
 
+    // Validate a transaction's special payload for admission. A version 2 asset unlock past its
+    // height window is kept in the mempool awaiting a re-signed instance rather than expiry-evicted,
+    // so it is validated against its window instead of the tip: nodes that did not hold it (after a
+    // restart, or a new peer) admit it and its descendants too. It stays unminable and is not
+    // InstantSend-locked until refreshed, as the miner and the lock signer validate against the tip.
+    bool CheckSpecialTxForMempool(const CTransaction& tx, bool is_v24_active, TxValidationState& state)
+        EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+
     // Enforce package mempool ancestor/descendant limits (distinct from individual
     // ancestor/descendant limits done in PreChecks).
     bool PackageMempoolChecks(const std::vector<CTransactionRef>& txns,
@@ -789,6 +797,32 @@ private:
 
     CTxMemPool::Limits m_limits;
 };
+
+bool MemPoolAccept::CheckSpecialTxForMempool(const CTransaction& tx, bool is_v24_active, TxValidationState& state)
+{
+    const CChain& chain{m_active_chainstate.m_chain};
+    const auto check_at = [&](const CBlockIndex* pindex,
+                              TxValidationState& check_state) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
+        return m_chain_helper.special_tx->CheckSpecialTx(tx, pindex, is_v24_active, m_active_chainstate.CoinsTip(),
+                                                         /*check_sigs=*/true, check_state);
+    };
+    const auto payload{IsAssetUnlockWithStableTxid(tx) ? GetTxPayload<CAssetUnlockPayload>(tx) : std::nullopt};
+    if (!payload) return check_at(chain.Tip(), state);
+
+    const int64_t tip_height{chain.Height()};
+    const int64_t first_height{payload->getRequestedHeight()};
+    const int64_t last_height{first_height + CAssetUnlockPayload::HEIGHT_DIFF_EXPIRING - 1};
+    const int64_t oldest_height{tip_height -
+                                m_pool.m_expiry / m_active_chainstate.m_chainman.GetConsensus().PowTargetSpacing()};
+    if (last_height >= tip_height || first_height < oldest_height) return check_at(chain.Tip(), state);
+
+    // Expired: admit it if it was minable at some height of its window. A quorum signing it is
+    // active at the window's first height, or was mined after it and is active at the last one.
+    if (check_at(chain[first_height], state)) return true;
+    if (state.GetRejectReason() != "bad-assetunlock-too-old-quorum") return false;
+    state = TxValidationState{};
+    return check_at(chain[last_height], state);
+}
 
 bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
 {
@@ -1066,8 +1100,7 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
     // NOTE: we use UTXO here and do NOT allow mempool txes as masternode collaterals
     const CBlockIndex* tip{m_active_chainstate.m_chain.Tip()};
     const bool is_v24_active{DeploymentActiveAfter(tip, m_active_chainstate.m_chainman, Consensus::DEPLOYMENT_V24)};
-    if (!m_chain_helper.special_tx->CheckSpecialTx(tx, tip, is_v24_active, m_active_chainstate.CoinsTip(), true, state))
-        return false;
+    if (!CheckSpecialTxForMempool(tx, is_v24_active, state)) return false;
 
     if (m_pool.existsProviderTxConflict(tx)) {
         return state.Invalid(TxValidationResult::TX_CONFLICT, "protx-dup");

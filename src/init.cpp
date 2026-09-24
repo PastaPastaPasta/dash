@@ -2460,7 +2460,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
         if (skip_evodb_repair_on_reindex) {
             LogPrintf("Skipping evodb repair during reindex\n");
-            node.dmnman->CompleteRepair();  // Mark as repaired since we're rebuilding fresh
+            WITH_LOCK(::cs_main, node.dmnman->CompleteRepair());  // Mark as repaired since we're rebuilding fresh
         } else if (node.dmnman->IsRepaired() && !args.GetBoolArg("-forceevodbrepair", false)) {
             LogPrintf("Masternode list diffs are already repaired\n");
         } else {
@@ -2500,7 +2500,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
                     StartShutdown();
                     return;
                 }
-                node.dmnman->CompleteRepair();
+                WITH_LOCK(::cs_main, node.dmnman->CompleteRepair());
                 LogPrintf("Successfully repaired %d masternode list diffs, verified %d snapshots in %ds\n",
                           result.diffs_recalculated, result.snapshots_verified,
                           Ticks<std::chrono::seconds>(SteadyClock::now() - start));

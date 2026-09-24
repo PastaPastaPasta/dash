@@ -14,3 +14,12 @@ Updated RPCs
 
   * This restriction can be relaxed by setting `-deprecatedrpc=permissive_bool` at runtime
     but is liable to be removed in future versions of Dash Core.
+
+* Numeric arguments of the Dash-specific RPCs (`quorum`, `protx`, `gobject`,
+  `masternode` and their sub-commands) must now be passed as JSON numbers.
+  Strings containing a number, which earlier versions accepted, are rejected
+  with a type error (code -3). The only exception is the `baseBlock` and
+  `block` arguments of `protx diff` and `protx listdiff`, which take a block
+  hash or a height and therefore still accept a height as a string. There is
+  no runtime option to restore the old behaviour; `-deprecatedrpc=permissive_bool`
+  only applies to booleans.

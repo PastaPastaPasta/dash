@@ -729,6 +729,27 @@ BOOST_AUTO_TEST_CASE(validate_demotion_entry_wrong_output_count)
     BOOST_CHECK(!CoinJoin::ValidateDemotionEntry(vecTxIn, vecTxOut, nSmallerDenom, nMessageID));
 }
 
+BOOST_AUTO_TEST_CASE(validate_demotion_entry_largest_denom_has_no_source)
+{
+    // Invalid: nothing demotes into 10 DASH, there is no larger denomination to split
+    std::vector<CTxIn> vecTxIn;
+    std::vector<CTxOut> vecTxOut;
+
+    const int nLargestDenom = 1 << 0;  // 10 DASH
+    const CAmount nLargestAmount = CoinJoin::DenominationToAmount(nLargestDenom);
+    BOOST_CHECK_EQUAL(CoinJoin::GetLargerAdjacentDenom(nLargestDenom), 0);
+
+    vecTxIn.push_back(MakeDenomInput(0));
+
+    for (int i = 0; i < CoinJoin::PROMOTION_RATIO; ++i) {
+        vecTxOut.push_back(MakeDenomOutput(nLargestAmount, static_cast<uint8_t>(i)));
+    }
+
+    PoolMessage nMessageID = MSG_NOERR;
+    BOOST_CHECK(!CoinJoin::ValidateDemotionEntry(vecTxIn, vecTxOut, nLargestDenom, nMessageID));
+    BOOST_CHECK(nMessageID == ERR_DENOM);
+}
+
 BOOST_AUTO_TEST_CASE(denomination_adjacency_checks)
 {
     // Test AreAdjacentDenominations function

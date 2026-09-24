@@ -122,14 +122,17 @@ static bool VerifyAssetUnlockSig(const CAssetUnlockPayload& payload, ScanQuorums
     const int quorums_to_scan = llmq_params_opt->signingActiveQuorumCount + 1;
     const auto quorums = scan_quorums(llmqType, pindexTip, quorums_to_scan);
 
+    // The quorum recency and height window checks depend on the validating node's tip: the same
+    // transaction is valid a block earlier or later, so an honest peer at another height relays
+    // it. They fail as TX_BAD_SPECIAL so that relaying such a transaction is not punished.
     if (bool isActive = std::any_of(quorums.begin(), quorums.end(), [&](const auto &q) { return q->qc->quorumHash == payload.getQuorumHash(); }); !isActive) {
-        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-assetunlock-too-old-quorum");
+        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-assetunlock-too-old-quorum");
     }
 
     if (static_cast<uint32_t>(pindexTip->nHeight) < payload.getRequestedHeight() || pindexTip->nHeight >= payload.getHeightToExpiry()) {
         LogPrint(BCLog::CREDITPOOL, "Asset unlock tx %d with requested height %d could not be accepted on height: %d\n",
                 payload.getIndex(), payload.getRequestedHeight(), pindexTip->nHeight);
-        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-assetunlock-too-late");
+        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-assetunlock-too-late");
     }
 
     const auto quorum = get_quorum(llmqType, payload.getQuorumHash());

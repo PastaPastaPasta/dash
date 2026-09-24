@@ -89,29 +89,15 @@ static bool SetStateVersion(CDeterministicMNState& state_mn, uint16_t nVersion, 
                 return false;
             }
         } else if (nType == MnType::Evo && !state_mn.netInfo->IsEmpty()) {
-            const CNetAddr addr{state_mn.netInfo->GetPrimary()};
-            if ((state_mn.platformP2PPort != 0 &&
-                 converted_netinfo->AddEntry(NetInfoPurpose::PLATFORM_P2P,
-                                             CService(addr, state_mn.platformP2PPort).ToStringAddrPort()) != NetInfoStatus::Success) ||
-                (state_mn.platformHTTPPort != 0 &&
-                 converted_netinfo->AddEntry(NetInfoPurpose::PLATFORM_HTTPS,
-                                             CService(addr, state_mn.platformHTTPPort).ToStringAddrPort()) != NetInfoStatus::Success)) {
-                return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-protx-netinfo-version");
-            }
+            // The scalar Platform ports are not carried over: an EvoNode is raised to ExtAddr by a
+            // ProUpServTx that spells out its Platform entries
+            return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-protx-netinfo-version");
         }
         state_mn.platformP2PPort = 0;
         state_mn.platformHTTPPort = 0;
-    } else {
-        if (!AddNetInfoEntries(converted_netinfo, NetInfoPurpose::CORE_P2P,
-                               state_mn.netInfo->GetEntries(NetInfoPurpose::CORE_P2P), state)) {
-            return false;
-        }
-        if (nType == MnType::Evo && state_mn.netInfo->CanStorePlatform() && !state_mn.netInfo->IsEmpty()) {
-            const auto p2p_entries{state_mn.netInfo->GetEntries(NetInfoPurpose::PLATFORM_P2P)};
-            const auto http_entries{state_mn.netInfo->GetEntries(NetInfoPurpose::PLATFORM_HTTPS)};
-            state_mn.platformP2PPort = p2p_entries.empty() ? 0 : p2p_entries.front().GetPort();
-            state_mn.platformHTTPPort = http_entries.empty() ? 0 : http_entries.front().GetPort();
-        }
+    } else if (!AddNetInfoEntries(converted_netinfo, NetInfoPurpose::CORE_P2P,
+                                  state_mn.netInfo->GetEntries(NetInfoPurpose::CORE_P2P), state)) {
+        return false;
     }
 
     state_mn.nVersion = nVersion;
@@ -1359,6 +1345,12 @@ bool CheckProUpServTx(const CTransaction& tx, gsl::not_null<const CBlockIndex*> 
     if (!IsVersionChangeValid(dmn->pdmnState->nVersion, opt_ptx->nVersion, is_v24_active, state)) {
         // pass the state returned by the function above
         return false;
+    }
+
+    // From ExtAddr on the Platform ports live in netInfo and are never derived from the scalar fields,
+    // so an EvoNode service update has to spell them out
+    if (is_v24_active && opt_ptx->nType == MnType::Evo && opt_ptx->nVersion < ProTxVersion::ExtAddr) {
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-version-disallowed");
     }
 
     if (is_v24_active) {

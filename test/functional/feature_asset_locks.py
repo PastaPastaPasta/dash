@@ -528,6 +528,13 @@ class AssetLocksTest(DashTestFramework):
         self.generate(node, 1)
         self.check_mempool_result(tx=asset_unlock_tx_too_late,
                 result_expected={'allowed': False, 'reject-reason' : 'bad-assetunlock-too-late'})
+        self.log.info("A peer relaying an unlock outside the tip's height window is not punished")
+        # Validity depends on the tip, so an honest peer a block behind relays it. The
+        # Misbehaving line is logged even for this whitelisted (noban) peer.
+        late_peer = node.add_p2p_connection(P2PInterface())
+        with node.assert_debug_log(expected_msgs=["bad-assetunlock-too-late"], unexpected_msgs=["Misbehaving"]):
+            late_peer.send_and_ping(msg_tx(asset_unlock_tx_too_late))
+        node.disconnect_p2ps()
 
         block_to_reconsider = node.getbestblockhash()
         self.log.info("Test block invalidation with asset unlock tx...")
@@ -1027,6 +1034,55 @@ class AssetLocksTest(DashTestFramework):
         assert stable_txid in mempool
         assert child_txid in mempool
         assert retry_txid in mempool
+
+        self.log.info("A node without the expired instances admits them and the child from a peer")
+        expired_hexes = [node_wallet.getrawtransaction(txid) for txid in (stable_txid, retry_txid, child_txid)]
+        # Stopping dumps node's mempool, which the -persistmempool=0 run neither loads nor overwrites
+        self.restart_node(1, self.extra_args[1] + ["-persistmempool=0"])
+        assert stable_txid not in node.getrawmempool()
+        expired_peer = node.add_p2p_connection(P2PInterface())
+        with node.assert_debug_log(expected_msgs=[], unexpected_msgs=["Misbehaving"]):
+            for tx_hex in expired_hexes:
+                expired_peer.send_and_ping(msg_tx(tx_from_hex(tx_hex)))
+        mempool = node.getrawmempool()
+        assert stable_txid in mempool
+        assert retry_txid in mempool
+        assert child_txid in mempool
+
+        self.log.info("An expired instance must still carry a signature valid at its requestedHeight")
+        forged = tx_from_hex(expired_hexes[0])
+        forged_payload = CAssetUnlockTx()
+        forged_payload.deserialize(BytesIO(forged.vExtraPayload))
+        forged_payload.index = 810
+        forged.vExtraPayload = forged_payload.serialize()
+        forged_peer = node.add_p2p_connection(P2PInterface())
+        with node.assert_debug_log(expected_msgs=["bad-assetunlock-not-verified", "Misbehaving: peer=", "(0 -> 100)"]):
+            forged_peer.send_and_ping(msg_tx(forged))
+        node.disconnect_p2ps()
+
+        self.log.info("A requestedHeight overflowing the height window is rejected as too late")
+        overflow_unlock = self.create_assetunlock(812, COIN, pubkey, version=2, requested_height=2**32 - HEIGHT_DIFF_EXPIRING)
+        assert_equal(node.testmempoolaccept([overflow_unlock.serialize().hex()])[0]['reject-reason'], 'bad-assetunlock-too-late')
+
+        self.log.info("An expired instance signed by a quorum mined after its requestedHeight is admitted")
+        late_index = 811
+        late_quorum = self.mninfo[0].get_node(self).quorum("selectquorum", llmq_type_test, self.create_assetunlock_request_id(late_index))["quorumHash"]
+        late_quorum_mined_height = node.getblock(node.quorum("info", llmq_type_test, late_quorum)["minedBlock"])["height"]
+        late_quorum_unlock = self.create_assetunlock(late_index, COIN, pubkey, version=2, requested_height=late_quorum_mined_height - 1)
+        blocks_to_expiry = late_quorum_mined_height - 1 + HEIGHT_DIFF_EXPIRING - node.getblockcount()
+        if blocks_to_expiry > 0:
+            # node is still disconnected from node_wallet after its restart above
+            self.generate(node, blocks_to_expiry, sync_fun=self.no_op)
+        assert_equal(node.testmempoolaccept([late_quorum_unlock.serialize().hex()])[0]['allowed'], True)
+
+        self.log.info("The expired instances and the child survive a restart")
+        self.restart_node(1, self.extra_args[1])
+        mempool = node.getrawmempool()
+        assert stable_txid in mempool
+        assert retry_txid in mempool
+        assert child_txid in mempool
+        self.connect_nodes(1, 0)
+        self.sync_all()
 
         self.log.info("Flush leftover withdrawals from earlier phases and clear the window; the expired instance keeps waiting for a re-sign")
         # Pending unlocks from the limit tests would otherwise consume the cleared window and

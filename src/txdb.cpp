@@ -502,6 +502,13 @@ bool CBlockTreeDB::MigrateOldIndexData()
     const bool fSpentIndex = gArgs.GetBoolArg("-spentindex", false);
     const bool fAddressIndex = gArgs.GetBoolArg("-addressindex", false);
 
+    // The flags read below say whether the legacy rows still cover the chain tip. Nothing
+    // maintains those rows any more, so a disabled index falls behind from this run on:
+    // record that now, or a later run that enables the index would adopt the stale rows.
+    if (!fTimestampIndex) WriteFlag("timestampindex", false);
+    if (!fSpentIndex) WriteFlag("spentindex", false);
+    if (!fAddressIndex) WriteFlag("addressindex", false);
+
     if (!fTimestampIndex && !fSpentIndex && !fAddressIndex) {
         // No indexes enabled, skip migration entirely
         return true;
