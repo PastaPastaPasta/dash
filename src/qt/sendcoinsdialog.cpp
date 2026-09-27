@@ -17,6 +17,9 @@
 #include <qt/guiutil.h>
 #include <qt/optionsmodel.h>
 #include <qt/sendcoinsentry.h>
+#ifdef ENABLE_PLATFORM_GUI
+#include <qt/platform/platformservice.h>
+#endif
 
 #include <chainparams.h>
 #include <interfaces/node.h>
@@ -251,6 +254,18 @@ void SendCoinsDialog::setModel(WalletModel *_model)
     }
 }
 
+#ifdef ENABLE_PLATFORM_GUI
+void SendCoinsDialog::setPlatformService(PlatformService* service)
+{
+    m_platform_service = service;
+    for (int i = 0; i < ui->entries->count(); ++i) {
+        if (auto* entry = qobject_cast<SendCoinsEntry*>(ui->entries->itemAt(i)->widget())) {
+            entry->setPlatformService(service);
+        }
+    }
+}
+#endif
+
 SendCoinsDialog::~SendCoinsDialog()
 {
     QSettings settings;
@@ -283,6 +298,13 @@ bool SendCoinsDialog::PrepareSendText(QString& question_string, QString& informa
             {
                 ui->scrollArea->ensureWidgetVisible(entry);
                 valid = false;
+#ifdef ENABLE_PLATFORM_GUI
+                // A username is never sent to silently fail: say why.
+                const QString unresolved{entry->unresolvedUsername()};
+                if (!unresolved.isEmpty()) {
+                    Q_EMIT message(tr("Username not ready"), unresolved, CClientUIInterface::MSG_WARNING);
+                }
+#endif
             }
         }
     }
@@ -643,6 +665,19 @@ void SendCoinsDialog::sendButtonClicked([[maybe_unused]] bool checked)
         if (broadcast) {
             // now send the prepared transaction
             const auto send_result{model->sendCoins(*m_current_transaction, m_coin_control->IsUsingCoinJoin())};
+#ifdef ENABLE_PLATFORM_GUI
+            // A DashPay payment address is reserved when the username resolves
+            // and its cursor advances only once the payment is on its way.
+            if (m_platform_service) {
+                for (const auto& recipient : m_current_transaction->getRecipients()) {
+                    if (send_result.status == WalletModel::OK) {
+                        m_platform_service->commitPaymentAddress(recipient.address);
+                    } else {
+                        m_platform_service->cancelPaymentAddress(recipient.address);
+                    }
+                }
+            }
+#endif
             if (send_result.status != WalletModel::OK) {
                 processSendCoinsReturn(send_result);
                 send_failure = true;
@@ -696,6 +731,9 @@ SendCoinsEntry *SendCoinsDialog::addEntry()
 {
     SendCoinsEntry* entry = new SendCoinsEntry(this);
     entry->setModel(model);
+#ifdef ENABLE_PLATFORM_GUI
+    entry->setPlatformService(m_platform_service);
+#endif
     ui->entries->addWidget(entry);
     connect(entry, &SendCoinsEntry::removeEntry, this, &SendCoinsDialog::removeEntry);
     connect(entry, &SendCoinsEntry::useAvailableBalance, this, &SendCoinsDialog::useAvailableBalance);
