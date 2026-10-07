@@ -142,6 +142,44 @@ jobs:
           restore-keys: |
             ccache-${{ hashFiles('contrib/containers/ci/ci.Dockerfile', 'depends/packages/*') }}-${{ inputs.build-target }}-
 
+      - name: Configure remote ccache
+        # Second-level cache behind the GitHub one restored above. Every run
+        # reads from it; only runs given CCACHE_REMOTE_AUTH (see check-skip in
+        # build.yml) write. Any problem here leaves the build on the local
+        # cache alone rather than failing it.
+        if: vars.CCACHE_REMOTE_DISABLE == ''
+        env:
+          REMOTE_URL: ${{ vars.CCACHE_REMOTE_URL || 'https://cache.thepasta.org' }}
+          REMOTE_AUTH: ${{ secrets.CCACHE_REMOTE_AUTH }}
+        run: |
+          # Pull requests opened before the image gained ccache 4.14 still
+          # build with apt's 4.9, which rejects this configuration outright.
+          if ! command -v ccache-storage-https > /dev/null; then
+            echo "Remote ccache: off (this image has no HTTPS storage helper)"
+            exit 0
+          fi
+          if ! curl -fsS --max-time 5 -o /dev/null "${REMOTE_URL}/status"; then
+            echo "::warning::Remote ccache: off (${REMOTE_URL} is unreachable)"
+            exit 0
+          fi
+          mode="read-only"
+          options="read-only=true"
+          if [[ -n "${REMOTE_AUTH}" ]]; then
+            host="${REMOTE_URL#*://}"
+            host="${host%%/*}"
+            host="${host%%:*}"
+            netrc="${RUNNER_TEMP}/ccache-netrc"
+            (umask 077 && printf 'machine %s login %s password %s\n' \
+              "${host}" "${REMOTE_AUTH%%:*}" "${REMOTE_AUTH#*:}" > "${netrc}")
+            mode="read-write"
+            options="@netrc-file=${netrc}"
+            # Also upload local hits the remote lacks, so it refills after a wipe.
+            echo "CCACHE_RESHARE=true" >> "${GITHUB_ENV}"
+          fi
+          echo "CCACHE_REMOTE_STORAGE=${REMOTE_URL} @layout=bazel data-timeout=5s request-timeout=30s ${options}" >> "${GITHUB_ENV}"
+          echo "Remote ccache: ${mode} (${REMOTE_URL})"
+        shell: bash
+
       - name: Build source
         run: |
           CCACHE_MAXSIZE="600M"
@@ -151,6 +189,10 @@ jobs:
           BUILD_TARGET="${{ inputs.build-target }}"
           source ./ci/dash/matrix.sh
           ./ci/dash/build_src.sh
+          # Nothing after the compile needs to write, and the tests run code
+          # built from cached objects.
+          rm -f "${RUNNER_TEMP}/ccache-netrc"
+          { echo "### ccache: ${BUILD_TARGET}"; echo '```'; ccache --show-stats; echo '```'; } >> "${GITHUB_STEP_SUMMARY}"
           ccache -X 9
           ccache -c
           du -hd0 "${BASE_OUTDIR}"
