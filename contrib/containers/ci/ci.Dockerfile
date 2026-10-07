@@ -15,7 +15,6 @@ RUN set -ex; \
     bc \
     bear \
     bison \
-    ccache \
     cmake \
     g++-11 \
     g++-14 \
@@ -31,6 +30,38 @@ RUN set -ex; \
     wine64 \
     zip \
     && rm -rf /var/lib/apt/lists/*
+
+# ccache from upstream rather than apt: remote storage over HTTPS needs a
+# storage helper, which ccache supports from 4.13 (noble ships 4.9.1).
+ARG TARGETARCH
+ARG CCACHE_VERSION=4.14.1
+ARG CCACHE_HTTP_HELPER_VERSION=0.10
+RUN set -ex; \
+    ARCH_INFERRED="${TARGETARCH}"; \
+    if [ -z "${ARCH_INFERRED}" ]; then \
+        ARCH_INFERRED="$(dpkg --print-architecture || true)"; \
+    fi; \
+    case "${ARCH_INFERRED}" in \
+        amd64|x86_64) \
+            CCACHE_ARCH="x86_64"; HELPER_ARCH="amd64"; \
+            CCACHE_SHA256="ad63d19f5d09ea13f749651653a561c98a59994e673504a4266617b8754218f7"; \
+            HELPER_SHA256="88963ef2cc21ca588145d46bcb02b8295275975ed75696eedf2cdb0e9543edd0" ;; \
+        arm64|aarch64) \
+            CCACHE_ARCH="aarch64"; HELPER_ARCH="arm64"; \
+            CCACHE_SHA256="4e8f16aa3b55acc57dc24ab3b997bf2bcef049a3bde1c97e38b07397e4ed4f6d"; \
+            HELPER_SHA256="f0ee3302b52f87628b69fa53d2cc52a626c4c5c7e43b779ac9e3db481418db40" ;; \
+        *) echo "Unsupported architecture for ccache: ${ARCH_INFERRED}"; exit 1 ;; \
+    esac; \
+    curl -fL "https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/ccache-${CCACHE_VERSION}-linux-${CCACHE_ARCH}-glibc.tar.xz" -o /tmp/ccache.tar.xz; \
+    echo "${CCACHE_SHA256}  /tmp/ccache.tar.xz" | sha256sum -c -; \
+    tar -xf /tmp/ccache.tar.xz -C /tmp --strip-components=1 "ccache-${CCACHE_VERSION}-linux-${CCACHE_ARCH}-glibc/ccache"; \
+    install -m 0755 /tmp/ccache /usr/local/bin/ccache; \
+    curl -fL "https://github.com/ccache/ccache-storage-http-go/releases/download/v${CCACHE_HTTP_HELPER_VERSION}/ccache-storage-http-go-${CCACHE_HTTP_HELPER_VERSION}-linux-${HELPER_ARCH}.tar.gz" -o /tmp/helper.tar.gz; \
+    echo "${HELPER_SHA256}  /tmp/helper.tar.gz" | sha256sum -c -; \
+    tar -xf /tmp/helper.tar.gz -C /tmp --strip-components=1 "ccache-storage-http-go-${CCACHE_HTTP_HELPER_VERSION}-linux-${HELPER_ARCH}/ccache-storage-http"; \
+    install -m 0755 /tmp/ccache-storage-http /usr/local/bin/ccache-storage-https; \
+    rm -f /tmp/ccache.tar.xz /tmp/ccache /tmp/helper.tar.gz /tmp/ccache-storage-http; \
+    ccache --version | head -n 1
 
 # Install Clang + LLVM and set it as default
 RUN set -ex; \
