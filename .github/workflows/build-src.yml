@@ -51,6 +51,10 @@ jobs:
   build-src:
     name: Build source
     runs-on: ${{ inputs.runs-on }}
+    # Develop builds always finish once started; see the concurrency comment in build.yml.
+    concurrency:
+      group: ${{ github.workflow }}-${{ (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch) && github.ref || github.run_id }}-build-src-${{ inputs.build-target }}
+      cancel-in-progress: false
     outputs:
       key:  ${{ steps.bundle.outputs.key }}
     container:

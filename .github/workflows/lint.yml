@@ -16,6 +16,10 @@ jobs:
   lint:
     name: Run linters
     runs-on: ${{ inputs.runs-on }}
+    # A newer develop push cancels this; see the concurrency comment in build.yml.
+    concurrency:
+      group: ${{ github.workflow }}-${{ (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch) && github.ref || github.run_id }}-lint
+      cancel-in-progress: true
     container:
       image: ${{ inputs.container-path }}
       options: --user root

@@ -124,6 +124,10 @@ jobs:
     needs: [check-cache]
     if: needs.check-cache.outputs.cache-hit != 'true'
     runs-on: ${{ inputs.runs-on }}
+    # Develop builds always finish once started; see the concurrency comment in build.yml.
+    concurrency:
+      group: ${{ github.workflow }}-${{ (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch) && github.ref || github.run_id }}-build-depends-${{ inputs.build-target }}
+      cancel-in-progress: false
     outputs:
       built-artifact: depends-built-${{ inputs.build-target }}
     container:
