@@ -421,3 +421,35 @@ jobs:
       build-target: linux64_tsan
       container-path: ${{ needs.container-slim.outputs.path }}
       runs-on: ${{ needs.check-skip.outputs['runner-arm64'] }}
+
+  prune-ccache:
+    name: Prune old ccache generations
+    # Each develop push saves a new ccache/ctcache entry per target; keep only
+    # the newest so the 10 GB repository cache stops evicting fresh ones.
+    needs: [src-aarch64-linux, src-linux64, src-linux64_asan, src-linux64_fuzz, src-linux64_multiprocess, src-linux64_nowallet, src-linux64_sqlite, src-linux64_tsan, src-mac, src-win64]
+    if: |
+      !cancelled() &&
+      github.event_name == 'push' &&
+      github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      actions: write
+    steps:
+      - name: Delete all but the newest entry per target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+        run: |
+          for prefix in ccache ctcache; do
+            gh cache list --ref "${REF}" --key "${prefix}-" --sort created_at --order desc \
+              --limit 1000 --json id,key \
+              | jq -r --arg p "${prefix}" '
+                  map(.target = (.key | capture("^" + $p + "-[0-9a-f]{64}-(?<t>.+)-[0-9a-f]{40}$").t))
+                  | group_by(.target)[][1:][] | "\(.id) \(.key)"' \
+              | while read -r id key; do
+                  echo "Deleting ${key}"
+                  # A concurrent prune may have deleted it already.
+                  gh cache delete "${id}" || true
+                done
+          done
