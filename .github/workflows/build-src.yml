@@ -38,6 +38,10 @@ on:
         description: "Runner label to use (e.g., ubuntu-24.04 or ubuntu-24.04-arm)"
         required: true
         type: string
+    secrets:
+      CCACHE_REMOTE_AUTH:
+        description: "user:password allowed to write to the remote ccache; empty means read-only"
+        required: false
     outputs:
       key:
         description: "Key needed for restoring artifacts bundle"

@@ -476,6 +476,53 @@ class SelectDynamicRunnerTest(unittest.TestCase):
         self.assertEqual(outputs["runner_amd64"], "blacksmith-amd64")
         self.assertEqual(outputs["runner_lint"], "blacksmith-amd64")
 
+    # --- remote ccache write gate --------------------------------------------
+
+    def test_cache_write_on_any_push(self):
+        # A push only ever sees its own repository's secret, and pushing there
+        # already requires write access, so even an unlisted actor qualifies.
+        for actor in ("knst", "mallory"):
+            with self.subTest(actor=actor):
+                outputs = self._select(event_name="push", event={}, actor=actor)
+                self.assertEqual(outputs["cache_write"], "true")
+
+    def test_cache_write_for_trusted_pull_requests(self):
+        for head_owner in ("PastaPastaPasta", "dashpay"):
+            with self.subTest(head_owner=head_owner):
+                outputs = self._select(
+                    event=pull_request_event("PastaPastaPasta", head_owner=head_owner),
+                )
+                self.assertEqual(outputs["cache_write"], "true")
+
+    def test_no_cache_write_for_untrusted_pull_requests(self):
+        for author, actor, head_owner in (
+            ("mallory", "PastaPastaPasta", "mallory"),
+            ("PastaPastaPasta", "mallory", "PastaPastaPasta"),
+            ("PastaPastaPasta", "PastaPastaPasta", "mallory"),
+        ):
+            with self.subTest(author=author, actor=actor, head_owner=head_owner):
+                outputs = self._select(
+                    event=pull_request_event(author, head_owner=head_owner),
+                    actor=actor,
+                )
+                self.assertEqual(outputs["cache_write"], "false")
+
+    def test_cache_write_does_not_depend_on_the_lint_rung(self):
+        # The write gate shares the allowlist, not the self-hosted decision.
+        outputs = self._select(runner_selfhosted_var="", queued_jobs=0)
+
+        self.assertEqual(outputs["runner_lint"], MODULE.DEFAULT_RUNNER_AMD64)
+        self.assertEqual(outputs["cache_write"], "true")
+
+    def test_no_cache_write_for_other_events(self):
+        for event_name in ("workflow_dispatch", "schedule", "pull_request"):
+            with self.subTest(event_name=event_name):
+                outputs = self._select(
+                    event_name=event_name,
+                    event=pull_request_event("PastaPastaPasta"),
+                )
+                self.assertEqual(outputs["cache_write"], "false")
+
 
 if __name__ == "__main__":
     unittest.main()

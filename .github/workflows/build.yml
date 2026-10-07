@@ -32,6 +32,10 @@ jobs:
       use-blacksmith-amd64: ${{ steps.select-runner.outputs.use_blacksmith_amd64 }}
       use-blacksmith-arm64: ${{ steps.select-runner.outputs.use_blacksmith_arm64 }}
       backlog-count: ${{ steps.select-runner.outputs.backlog_count }}
+      # Gates CCACHE_REMOTE_AUTH for the src-* jobs. Their secrets: mapping is
+      # resolved before a job reaches a runner, so a run that fails this gate
+      # is handed an empty value rather than a credential it could read.
+      cache-write: ${{ steps.select-runner.outputs.cache_write }}
       decision-reason: ${{ steps.select-runner.outputs.decision_reason }}
       base-image-digest: ${{ steps.base-image.outputs.digest }}
     steps:
@@ -218,6 +222,8 @@ jobs:
       depends-dep-opts: ${{ needs.depends-aarch64-linux.outputs.dep-opts }}
       depends-artifact: ${{ needs.depends-aarch64-linux.outputs.built-artifact }}
       runs-on: ${{ needs.check-skip.outputs['runner-amd64'] }}
+    secrets: &remote-ccache-auth
+      CCACHE_REMOTE_AUTH: ${{ needs.check-skip.outputs.cache-write == 'true' && secrets.CCACHE_REMOTE_AUTH || '' }}
 
   src-linux64:
     name: linux64-build
@@ -232,6 +238,7 @@ jobs:
       depends-dep-opts: ${{ needs.depends-linux64.outputs.dep-opts }}
       depends-artifact: ${{ needs.depends-linux64.outputs.built-artifact }}
       runs-on: ${{ needs.check-skip.outputs['runner-amd64'] }}
+    secrets: *remote-ccache-auth
 
   src-linux64_asan:
     name: linux64_asan-build
@@ -246,6 +253,7 @@ jobs:
       depends-dep-opts: ${{ needs.depends-linux64.outputs.dep-opts }}
       depends-artifact: ${{ needs.depends-linux64.outputs.built-artifact }}
       runs-on: ${{ needs.check-skip.outputs['runner-amd64'] }}
+    secrets: *remote-ccache-auth
 
   src-linux64_fuzz:
     name: linux64_fuzz-build
@@ -260,6 +268,7 @@ jobs:
       depends-dep-opts: ${{ needs.depends-linux64.outputs.dep-opts }}
       depends-artifact: ${{ needs.depends-linux64.outputs.built-artifact }}
       runs-on: ${{ needs.check-skip.outputs['runner-amd64'] }}
+    secrets: *remote-ccache-auth
 
   src-linux64_multiprocess:
     name: linux64_multiprocess-build
@@ -274,6 +283,7 @@ jobs:
       depends-dep-opts: ${{ needs.depends-linux64_multiprocess.outputs.dep-opts }}
       depends-artifact: ${{ needs.depends-linux64_multiprocess.outputs.built-artifact }}
       runs-on: ${{ needs.check-skip.outputs['runner-arm64'] }}
+    secrets: *remote-ccache-auth
 
   src-linux64_nowallet:
     name: linux64_nowallet-build
@@ -287,6 +297,7 @@ jobs:
       depends-dep-opts: ${{ needs.depends-linux64_nowallet.outputs.dep-opts }}
       depends-artifact: ${{ needs.depends-linux64_nowallet.outputs.built-artifact }}
       runs-on: ${{ needs.check-skip.outputs['runner-amd64'] }}
+    secrets: *remote-ccache-auth
 
   src-linux64_sqlite:
     name: linux64_sqlite-build
@@ -301,6 +312,7 @@ jobs:
       depends-dep-opts: ${{ needs.depends-linux64.outputs.dep-opts }}
       depends-artifact: ${{ needs.depends-linux64.outputs.built-artifact }}
       runs-on: ${{ needs.check-skip.outputs['runner-amd64'] }}
+    secrets: *remote-ccache-auth
 
   src-linux64_tsan:
     name: linux64_tsan-build
@@ -315,6 +327,7 @@ jobs:
       depends-dep-opts: ${{ needs.depends-linux64_multiprocess.outputs.dep-opts }}
       depends-artifact: ${{ needs.depends-linux64_multiprocess.outputs.built-artifact }}
       runs-on: ${{ needs.check-skip.outputs['runner-arm64'] }}
+    secrets: *remote-ccache-auth
 
   src-mac:
     name: mac-build
@@ -329,6 +342,7 @@ jobs:
       depends-artifact: ${{ needs.depends-mac.outputs.built-artifact }}
       sdk-artifact: ${{ needs.depends-mac.outputs.sdk-artifact }}
       runs-on: ${{ needs.check-skip.outputs['runner-amd64'] }}
+    secrets: *remote-ccache-auth
 
   src-win64:
     name: win64-build
@@ -342,6 +356,7 @@ jobs:
       depends-dep-opts: ${{ needs.depends-win64.outputs.dep-opts }}
       depends-artifact: ${{ needs.depends-win64.outputs.built-artifact }}
       runs-on: ${{ needs.check-skip.outputs['runner-amd64'] }}
+    secrets: *remote-ccache-auth
 
   test-linux64:
     name: linux64-test

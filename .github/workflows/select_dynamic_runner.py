@@ -216,6 +216,24 @@ def is_selfhosted_allowed(
     return False
 
 
+def allows_cache_write(
+    event_name: str,
+    event: Dict,
+    actor: str,
+    allowed_authors: Set[str],
+) -> bool:
+    """Whether this run may receive the remote ccache write credential.
+
+    The credential is the repository's own secret, so any push may have it:
+    pushing already requires write access to that repository. A pull request
+    executes its head, so it gets the credential only when the people and the
+    repository behind that head are trusted to run on our own hardware too.
+    """
+    return event_name == "push" or is_selfhosted_allowed(
+        event_name, event, actor, allowed_authors
+    )
+
+
 def select_lint_runner(
     event_name: str,
     event: Dict,
@@ -340,6 +358,7 @@ def select_runners(
         decision_parts.append("error:{}".format(measurement_error[:180]))
     decision_parts.extend(fallback_parts)
 
+    allowed_authors = parse_author_allowlist(selfhosted_authors)
     runner_lint, lint_decision_reason = select_lint_runner(
         event_name=event_name,
         event=event,
@@ -347,10 +366,11 @@ def select_runners(
         backlog_count_value=backlog_count_value,
         measurement_error=measurement_error,
         selfhosted_label=runner_selfhosted_var,
-        allowed_authors=parse_author_allowlist(selfhosted_authors),
+        allowed_authors=allowed_authors,
         fallback_runner=runner_amd64,
         label_override=label_override,
     )
+    cache_write = allows_cache_write(event_name, event, actor, allowed_authors)
 
     return {
         "runner_amd64": runner_amd64,
@@ -361,6 +381,7 @@ def select_runners(
         "use_blacksmith_amd64": "true" if use_blacksmith_amd64 else "false",
         "use_blacksmith_arm64": "true" if use_blacksmith_arm64 else "false",
         "backlog_count": backlog_count,
+        "cache_write": "true" if cache_write else "false",
         "decision_reason": ";".join(decision_parts),
         "label_override": "true" if label_override else "false",
     }
@@ -404,6 +425,11 @@ def write_step_summary(path: Optional[str], outputs: Dict[str, str]) -> None:
         fh.write("- lint runner: `{}`\n".format(outputs["runner_lint"]))
         fh.write("- Decision: `{}`\n".format(outputs["decision_reason"]))
         fh.write("- Lint decision: `{}`\n".format(outputs["lint_decision_reason"]))
+        fh.write(
+            "- Remote ccache writes: {}\n".format(
+                "yes" if outputs["cache_write"] == "true" else "no"
+            )
+        )
 
 
 def env_int(name: str, default: int) -> int:
