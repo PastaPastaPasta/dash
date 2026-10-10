@@ -493,6 +493,10 @@ public:
     std::optional<CGovernanceObject> createProposal(int32_t revision, int64_t created_time,
                         const std::string& data_hex, std::string& error) override
     {
+        if (!context().govman || !context().govman->IsValid() || !governance::GetCollateralIndex()) {
+            error = "Governance is disabled on this node, so it can't submit proposals";
+            return std::nullopt;
+        }
         CGovernanceObject govobj(uint256{}, revision, created_time, uint256{}, data_hex);
         if (govobj.GetObjectType() != GovernanceObject::PROPOSAL) {
             error = "Invalid object type, only proposals can be validated";
@@ -519,6 +523,10 @@ public:
                         const uint256& fee_txid, std::string& out_object_hash, std::string& error) override
     {
         if (!context().govman || !context().dmnman || !context().chainman) { error = "Governance not available"; return false; }
+        if (!context().govman->IsValid() || !governance::GetCollateralIndex()) {
+            error = "Governance is disabled on this node, so it can't submit proposals";
+            return false;
+        }
         if(!Assert(context().mn_sync)->IsBlockchainSynced()) { error = "Client not synced"; return false; }
         const auto mnList = Assert(context().dmnman)->GetListAtChainTip();
         CGovernanceObject govobj(parent, revision, created_time, fee_txid, data_hex);

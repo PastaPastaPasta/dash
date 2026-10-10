@@ -14,6 +14,13 @@ Governance
   `-reindex` downloads the blockchain again and enables governance, and the
   node stays pruned.
 
+- `gobject prepare` and `gobject submit` now fail straight away on a node that
+  can't check or relay proposals. Before, `gobject prepare` burned the
+  proposal fee and only `gobject submit` failed afterwards, with the
+  misleading error `Invalid proposal collateral`. Collateral errors now also
+  say what is wrong with the collateral instead of only
+  `Invalid proposal collateral`.
+
 - Pruned nodes now check superblock payments against the governance
   triggers they know, like full nodes do, instead of only checking that a
   superblock stays within the budget. A node that turns on `-prune` keeps

@@ -73,6 +73,11 @@ class GovernancePrunedTest(DashTestFramework):
         self.sync_mempools([full_node, pruned_node])
         self.mine(6)
 
+        self.log.info("Collateral errors say what is wrong with the collateral")
+        assert_raises_rpc_error(-32603, "Invalid proposal collateral: Couldn't find opReturn", pruned_node.gobject,
+                                "submit", "0", 1, submitted_late["createdAt"], submitted_late["hex"],
+                                from_full_node["collateralHash"])
+
         from_full_node_hash = self.submit(full_node, from_full_node)
         from_pruned_node_hash = self.submit(pruned_node, from_pruned_node)
         for node in [full_node, pruned_node]:
@@ -158,6 +163,10 @@ class GovernancePrunedTest(DashTestFramework):
         shutil.rmtree(os.path.join(pruned_node.chain_path, "indexes", "govcollateralindex"))
         self.start_node(1)
         assert "govcollateralindex" not in pruned_node.getindexinfo()
+        assert_raises_rpc_error(-1, "Preparing a proposal now would burn its fee", pruned_node.gobject, "prepare",
+                                "0", 1, self.mocktime, from_pruned_node["hex"])
+        assert_raises_rpc_error(-1, "Governance is disabled on this node", pruned_node.gobject, "submit",
+                                "0", 1, submitted_late["createdAt"], submitted_late["hex"], submitted_late["collateralHash"])
         self.stop_node(1, expected_stderr=EXPECTED_STDERR_GOV_PRUNED_TOO_FAR)
 
         self.log.info("A -reindex downloads the chain again, builds the index and turns governance back on")
