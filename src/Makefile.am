@@ -243,6 +243,7 @@ BITCOIN_CORE_H = \
   external_signer.h \
   flat-database.h \
   flatfile.h \
+  governance/collateral.h \
   governance/common.h \
   governance/governance.h \
   governance/net_governance.h \
@@ -263,6 +264,7 @@ BITCOIN_CORE_H = \
   index/blockfilterindex.h \
   index/coinstatsindex.h \
   index/disktxpos.h \
+  index/govcollateralindex.h \
   index/spentindex.h \
   index/spentindex_types.h \
   index/timestampindex.h \
@@ -562,6 +564,7 @@ libbitcoin_node_a_SOURCES = \
   evo/specialtx_filter.cpp \
   evo/specialtxman.cpp \
   flatfile.cpp \
+  governance/collateral.cpp \
   governance/governance.cpp \
   governance/net_governance.cpp \
   governance/object.cpp \
@@ -578,6 +581,7 @@ libbitcoin_node_a_SOURCES = \
   index/base.cpp \
   index/blockfilterindex.cpp \
   index/coinstatsindex.cpp \
+  index/govcollateralindex.cpp \
   index/spentindex.cpp \
   index/timestampindex.cpp \
   index/txindex.cpp \
