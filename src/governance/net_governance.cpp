@@ -80,6 +80,8 @@ void NetGovernance::Schedule(CScheduler& scheduler)
 void NetGovernance::ProcessMessage(CNode& peer, const std::string& msg_type, CDataStream& vRecv)
 {
     if (!m_gov_manager.IsValid()) return;
+    // Until proposal collateral can be looked up, valid proposals would look invalid and their senders get punished
+    if (governance::IsCollateralIndexBehind()) return;
     if (!m_node_sync.IsBlockchainSynced()) return;
 
     // ANOTHER USER IS ASKING US TO HELP THEM SYNC GOVERNANCE OBJECT DATA
@@ -275,9 +277,9 @@ bool NetGovernance::AlreadyHave(const CInv& inv)
     if (inv.type != MSG_GOVERNANCE_OBJECT && inv.type != MSG_GOVERNANCE_OBJECT_VOTE) {
         return false;
     }
-    // When governance isn't loaded (e.g. -disablegovernance), claim we already have
-    // the item so we don't fetch or track it in the net-layer request tracker.
-    if (!m_gov_manager.IsValid()) return true;
+    // When governance isn't loaded (e.g. -disablegovernance) or can't check collateral yet, claim we
+    // already have the item so we don't fetch or track it in the net-layer request tracker.
+    if (!m_gov_manager.IsValid() || governance::IsCollateralIndexBehind()) return true;
     return !m_gov_manager.ConfirmInventoryRequest(inv);
 }
 

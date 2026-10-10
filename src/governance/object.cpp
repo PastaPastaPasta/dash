@@ -10,12 +10,14 @@
 #include <masternode/sync.h>
 
 #include <chainparams.h>
+#include <index/govcollateralindex.h>
 #include <index/txindex.h>
 #include <key_io.h>
 #include <logging.h>
 #include <node/interface_ui.h>
 #include <timedata.h>
 #include <tinyformat.h>
+#include <util/moneystr.h>
 #include <util/std23.h>
 #include <util/strencodings.h>
 #include <util/time.h>
@@ -787,6 +789,36 @@ CAmount CGovernanceObject::GetMinCollateralFee() const
     }
 }
 
+namespace {
+std::optional<governance::CollateralInfo> FindCollateral(const uint256& txid, std::string& strError)
+{
+    const BaseIndex* index{governance::GetCollateralIndex()};
+    if (!index) {
+        strError = "Can't look up collateral, this node runs neither -txindex nor -govcollateralindex";
+        return std::nullopt;
+    }
+    if (const IndexSummary summary{index->GetSummary()}; !summary.synced) {
+        strError = strprintf("Can't look up collateral until %s has synced", summary.name);
+        return std::nullopt;
+    }
+
+    std::optional<governance::CollateralInfo> collateral;
+    if (g_txindex) {
+        CTransactionRef tx;
+        uint256 block_hash;
+        if (g_txindex->FindTx(txid, block_hash, tx)) {
+            collateral = governance::GetCollateralInfo(*tx, block_hash);
+        }
+    } else {
+        collateral = Assert(g_gov_collateral_index)->FindCollateral(txid);
+    }
+    if (!collateral) {
+        strError = strprintf("Can't find collateral tx %s", txid.ToString());
+    }
+    return collateral;
+}
+} // anonymous namespace
+
 bool CGovernanceObject::IsCollateralValid(const ChainstateManager& chainman, std::string& strError, bool& fMissingConfirmations) const
 {
     AssertLockHeld(::cs_main);
@@ -795,56 +827,26 @@ bool CGovernanceObject::IsCollateralValid(const ChainstateManager& chainman, std
     fMissingConfirmations = false;
     uint256 nExpectedHash = GetHash();
 
-    CTransactionRef txCollateral;
-    uint256 nBlockHash;
-    if (g_txindex) {
-        g_txindex->FindTx(m_obj.collateralHash, nBlockHash, txCollateral);
-    }
-
-    if (!txCollateral) {
-        strError = strprintf("Can't find collateral tx %s", m_obj.collateralHash.ToString());
+    const std::optional<governance::CollateralInfo> collateral{FindCollateral(m_obj.collateralHash, strError)};
+    if (!collateral) {
         LogPrintf("CGovernanceObject::IsCollateralValid -- %s\n", strError);
         return false;
     }
+    const uint256& nBlockHash{collateral->block_hash};
 
-    if (nBlockHash == uint256()) {
-        strError = strprintf("Collateral tx %s is not mined yet", txCollateral->ToString());
-        LogPrintf("CGovernanceObject::IsCollateralValid -- %s\n", strError);
-        return false;
-    }
-
-    if (txCollateral->vout.empty()) {
-        strError = "tx vout is empty";
+    if (!collateral->outputs_standard) {
+        strError = strprintf("Invalid Script in collateral tx %s, outputs must be P2PKH or unspendable",
+                             m_obj.collateralHash.ToString());
         LogPrintf("CGovernanceObject::IsCollateralValid -- %s\n", strError);
         return false;
     }
 
     // LOOK FOR SPECIALIZED GOVERNANCE SCRIPT (PROOF OF BURN)
 
-    CScript findScript;
-    findScript << OP_RETURN << ToByteVector(nExpectedHash);
-
-    CAmount nMinFee = GetMinCollateralFee();
-
-    LogPrint(BCLog::GOBJECT, "CGovernanceObject::IsCollateralValid -- txCollateral->vout.size() = %s, findScript = %s, nMinFee = %lld\n",
-                txCollateral->vout.size(), HexStr(findScript), nMinFee);
-
-    bool foundOpReturn = false;
-    for (const auto& output : txCollateral->vout) {
-        LogPrint(BCLog::GOBJECT, "CGovernanceObject::IsCollateralValid -- txout = %s, output.nValue = %lld, output.scriptPubKey = %s\n",
-                    output.ToString(), output.nValue, HexStr(output.scriptPubKey));
-        if (!output.scriptPubKey.IsPayToPublicKeyHash() && !output.scriptPubKey.IsUnspendable()) {
-            strError = strprintf("Invalid Script %s", txCollateral->ToString());
-            LogPrintf("CGovernanceObject::IsCollateralValid -- %s\n", strError);
-            return false;
-        }
-        if (output.scriptPubKey == findScript && output.nValue >= nMinFee) {
-            foundOpReturn = true;
-        }
-    }
-
-    if (!foundOpReturn) {
-        strError = strprintf("Couldn't find opReturn %s in %s", nExpectedHash.ToString(), txCollateral->ToString());
+    const CAmount nMinFee = GetMinCollateralFee();
+    if (!collateral->BurnsAtLeast(nExpectedHash, nMinFee)) {
+        strError = strprintf("Couldn't find opReturn %s burning at least %s in collateral tx %s", nExpectedHash.ToString(),
+                             FormatMoney(nMinFee), m_obj.collateralHash.ToString());
         LogPrintf("CGovernanceObject::IsCollateralValid -- %s\n", strError);
         return false;
     }
@@ -1030,5 +1032,17 @@ bool ValidateProposal(const std::string& strDataHex, std::string& strErrorOut,
         return false;
     }
     return true;
+}
+
+const BaseIndex* GetCollateralIndex()
+{
+    if (g_txindex) return g_txindex.get();
+    return g_gov_collateral_index.get();
+}
+
+bool IsCollateralIndexBehind()
+{
+    const BaseIndex* index{GetCollateralIndex()};
+    return index && !index->GetSummary().synced;
 }
 } // namespace governance

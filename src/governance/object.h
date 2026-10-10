@@ -19,6 +19,7 @@
 #include <iosfwd>
 #include <string>
 
+class BaseIndex;
 class CBLSPublicKey;
 class CDeterministicMNList;
 class ChainstateManager;
@@ -366,6 +367,15 @@ namespace governance {
  */
 bool ValidateProposal(const std::string& strDataHex, std::string& strErrorOut,
                       bool fCheckExpiration = true, bool fAllowScript = true);
+
+/**
+ * The index proposal collateral is looked up in: the transaction index when it is enabled, otherwise
+ * the governance collateral index. Null when neither is running.
+ */
+const BaseIndex* GetCollateralIndex();
+
+/** Whether GetCollateralIndex() is still catching up with the chain, so collateral can't be checked yet. */
+bool IsCollateralIndexBehind();
 } // namespace governance
 
 #endif // BITCOIN_GOVERNANCE_OBJECT_H

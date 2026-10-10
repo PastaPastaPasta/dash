@@ -14,7 +14,7 @@
 
 #include <chainparams.h>
 #include <core_io.h>
-#include <index/txindex.h>
+#include <index/base.h>
 #include <node/context.h>
 #include <rpc/server.h>
 #include <rpc/server_util.h>
@@ -37,6 +37,13 @@ using wallet::GetWalletForJSONRPCRequest;
 using wallet::HELP_REQUIRING_PASSPHRASE;
 using wallet::isminetype;
 #endif // ENABLE_WALLET
+
+static void BlockUntilCollateralIndexSynced()
+{
+    if (const BaseIndex* index{governance::GetCollateralIndex()}) {
+        index->BlockUntilSyncedToCurrentChain();
+    }
+}
 
 static RPCHelpMan gobject_count()
 {
@@ -204,9 +211,7 @@ static RPCHelpMan gobject_prepare()
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Trigger objects need not be prepared (however only masternodes can create them)");
     }
 
-    if (g_txindex) {
-        g_txindex->BlockUntilSyncedToCurrentChain();
-    }
+    BlockUntilCollateralIndexSynced();
 
     LOCK(wallet->cs_wallet);
 
@@ -388,9 +393,7 @@ static RPCHelpMan gobject_submit()
     const CTxMemPool& mempool = EnsureMemPool(node);
     bool fMissingConfirmations;
     {
-        if (g_txindex) {
-            g_txindex->BlockUntilSyncedToCurrentChain();
-        }
+        BlockUntilCollateralIndexSynced();
 
         LOCK2(cs_main, mempool.cs);
 
@@ -625,9 +628,7 @@ static RPCHelpMan gobject_vote_alias()
 static UniValue ListObjects(CGovernanceManager& govman, const CDeterministicMNList& tip_mn_list, const ChainstateManager& chainman,
                             const std::string& strCachedSignal, const std::string& strType, int nStartTime)
 {
-    if (g_txindex) {
-        g_txindex->BlockUntilSyncedToCurrentChain();
-    }
+    BlockUntilCollateralIndexSynced();
 
     std::vector<CGovernanceObject> objs;
     govman.GetAllNewerThan(objs, nStartTime);
@@ -745,9 +746,7 @@ static RPCHelpMan gobject_get()
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    if (g_txindex) {
-        g_txindex->BlockUntilSyncedToCurrentChain();
-    }
+    BlockUntilCollateralIndexSynced();
 
     const NodeContext& node = EnsureAnyNodeContext(request.context);
     const ChainstateManager& chainman = EnsureChainman(node);

@@ -7,6 +7,7 @@
 #include <chainparams.h>
 #include <evo/deterministicmns.h>
 #include <governance/governance.h>
+#include <governance/object.h>
 #include <logging.h>
 #include <masternode/sync.h>
 #include <net.h>
@@ -250,6 +251,11 @@ void SyncManager::ProcessTick()
             if (asset_id == MASTERNODE_SYNC_GOVERNANCE) {
                 if (!m_gov_manager.IsValid()) {
                     m_node_sync.SwitchToNextAsset();
+                    return;
+                }
+                if (governance::IsCollateralIndexBehind()) {
+                    // Every proposal would fail its collateral check, so wait for the index without timing out
+                    m_node_sync.BumpAssetLastTime("SyncManager::ProcessTick");
                     return;
                 }
                 LogPrint(BCLog::GOBJECT, "Sync Tick -- nTick %d asset_id %d last_bump %lld GetTime() %lld diff %lld\n",

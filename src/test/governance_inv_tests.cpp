@@ -6,6 +6,8 @@
 #include <governance/governance.h>
 #include <governance/net_governance.h>
 #include <governance/object.h>
+#include <index/govcollateralindex.h>
+#include <interfaces/chain.h>
 #include <masternode/meta.h>
 #include <masternode/sync.h>
 #include <net.h>
@@ -17,8 +19,10 @@
 #include <uint256.h>
 #include <util/strencodings.h>
 #include <util/time.h>
+#include <validationinterface.h>
 #include <version.h>
 
+#include <test/util/index.h>
 #include <test/util/net.h>
 #include <test/util/setup_common.h>
 #include <test/util/validation.h>
@@ -52,6 +56,9 @@ struct GovernanceInvSetup : public TestingSetup {
         // -disablegovernance), so ConfirmInventoryRequest would never run.
         BOOST_REQUIRE(m_node.govman->LoadCache(/*load_cache=*/false));
 
+        // Governance messages are ignored until proposal collateral can be looked up, as at runtime.
+        StartCollateralIndex();
+
         BOOST_REQUIRE(m_node.netfulfilledman);
         // Loaded here for the later test that advances GOVERNANCE -> FINISHED;
         // the sync notifier asserts netfulfilledman.IsValid().
@@ -77,6 +84,25 @@ struct GovernanceInvSetup : public TestingSetup {
     ~GovernanceInvSetup() {
         m_node.peerman->RemoveHandlers();
         m_node.govman.reset();
+        StopCollateralIndex();
+    }
+
+    void StartCollateralIndex()
+    {
+        // A block notification still queued from setup would reach the index after it synced past that block
+        SyncWithValidationInterfaceQueue();
+        g_gov_collateral_index = std::make_unique<GovCollateralIndex>(interfaces::MakeChain(m_node), /*n_cache_size=*/0,
+                                                                      /*f_memory=*/true);
+        BOOST_REQUIRE(g_gov_collateral_index->Start());
+        IndexWaitSynced(*g_gov_collateral_index);
+    }
+
+    void StopCollateralIndex()
+    {
+        if (!g_gov_collateral_index) return;
+        SyncWithValidationInterfaceQueue();
+        g_gov_collateral_index->Stop();
+        g_gov_collateral_index.reset();
     }
 
 };
@@ -371,6 +397,47 @@ BOOST_AUTO_TEST_CASE(governance_objects_require_peer_announcement_or_request)
     m_node.peerman->FinalizeNode(*announcing_peer);
     m_node.peerman->FinalizeNode(*second_announcing_peer);
     m_node.peerman->FinalizeNode(*unsolicited_peer);
+    chainstate.ResetIbd();
+}
+
+BOOST_AUTO_TEST_CASE(governance_objects_wait_for_the_collateral_index)
+{
+    LOCK(NetEventsInterface::g_msgproc_mutex);
+
+    TestChainState& chainstate =
+        *static_cast<TestChainState*>(&m_node.chainman->ActiveChainstate());
+    chainstate.JumpOutOfIbd();
+
+    NetGovernance net_gov(m_node.peerman.get(), *m_node.govman, *m_node.mn_sync,
+                          *m_node.netfulfilledman, *m_node.connman);
+    auto peer{MakeGovernanceInvPeer(/*id=*/31)};
+    m_node.peerman->InitializeNode(*peer, NODE_NETWORK);
+
+    // Its collateral doesn't exist, so the object is invalid once collateral can be looked up
+    const CGovernanceObject govobj{MakeGovernanceObject(GetTime<std::chrono::seconds>().count(), uint256S("31"))};
+    const CInv object_inv{MSG_GOVERNANCE_OBJECT, govobj.GetHash()};
+
+    // An index that hasn't synced yet would report every collateral as missing
+    StopCollateralIndex();
+    g_gov_collateral_index = std::make_unique<GovCollateralIndex>(interfaces::MakeChain(m_node), /*n_cache_size=*/0,
+                                                                  /*f_memory=*/true);
+    BOOST_REQUIRE(governance::IsCollateralIndexBehind());
+
+    ProcessInv(*m_node.peerman, *peer, object_inv);
+    BOOST_CHECK(!WITH_LOCK(::cs_main, return m_node.peerman->PeerConsumeObjectRequest(peer->GetId(), object_inv)));
+    ProcessGovernanceObject(net_gov, *peer, govobj);
+    BOOST_CHECK(!m_node.govman->HaveObjectForHash(govobj.GetHash()));
+    AssertMisbehaviorScore(*m_node.peerman, *peer, 0);
+
+    // Once the index has synced, the same object is requested, rejected and punished
+    g_gov_collateral_index.reset();
+    StartCollateralIndex();
+    ProcessInv(*m_node.peerman, *peer, object_inv);
+    ProcessGovernanceObject(net_gov, *peer, govobj);
+    BOOST_CHECK(!m_node.govman->HaveObjectForHash(govobj.GetHash()));
+    AssertMisbehaviorScore(*m_node.peerman, *peer, 20);
+
+    m_node.peerman->FinalizeNode(*peer);
     chainstate.ResetIbd();
 }
 

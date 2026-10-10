@@ -3,10 +3,12 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <governance/collateral.h>
+#include <governance/object.h>
 #include <index/govcollateralindex.h>
 #include <index/txindex.h>
 #include <interfaces/chain.h>
 #include <key.h>
+#include <key_io.h>
 #include <primitives/transaction.h>
 #include <script/standard.h>
 #include <util/strencodings.h>
@@ -27,9 +29,14 @@ CScript BurnScript(const uint256& hash) { return CScript() << OP_RETURN << ToByt
 
 struct CollateralSetup : public TestChain100Setup {
     SimpleUTXOMap utxos;
+    std::string payment_address;
 
     CollateralSetup()
     {
+        CKey payment_key;
+        payment_key.MakeNewKey(true);
+        payment_address = EncodeDestination(PKHash(payment_key.GetPubKey()));
+
         // Matures a few coinbases so the burns below can be funded
         for (int i = 0; i < 5; ++i) {
             MineBlock({});
@@ -54,6 +61,15 @@ struct CollateralSetup : public TestChain100Setup {
         return CreateAndProcessBlock(txns, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
     }
 
+    //! Mines `tx` and enough blocks on top of it for its collateral to be fully confirmed
+    void MineConfirmed(const CMutableTransaction& tx)
+    {
+        MineBlock({tx});
+        for (int i = 1; i < GOVERNANCE_FEE_CONFIRMATIONS; ++i) {
+            MineBlock({});
+        }
+    }
+
     CMutableTransaction MakeBurn(const uint256& hash, CAmount amount)
     {
         CMutableTransaction tx;
@@ -70,6 +86,21 @@ struct CollateralSetup : public TestChain100Setup {
                                                                       /*f_memory=*/true);
         BOOST_REQUIRE(g_gov_collateral_index->Start());
         IndexWaitSynced(*g_gov_collateral_index);
+    }
+
+    //! The object hash leaves out the collateral hash, so every call returns the same proposal
+    CGovernanceObject MakeProposal(const uint256& collateral_hash) const
+    {
+        const std::string data{
+            R"({"type":1,"name":"proposal","start_epoch":1700000000,"end_epoch":1700100000,"payment_amount":1.0,"payment_address":")" +
+            payment_address + R"(","url":"https://dash.org"})"};
+        return CGovernanceObject{uint256{}, /*revision=*/1, /*nTime=*/1700000000, collateral_hash, HexStr(data)};
+    }
+
+    bool IsCollateralValid(const CGovernanceObject& govobj, std::string& error) const
+    {
+        bool missing_confirmations;
+        return WITH_LOCK(::cs_main, return govobj.IsCollateralValid(*m_node.chainman, error, missing_confirmations));
     }
 };
 } // namespace
@@ -132,6 +163,43 @@ BOOST_FIXTURE_TEST_CASE(index_records_transactions_burning_the_proposal_fee, Col
     const auto later_collateral{g_gov_collateral_index->FindCollateral(later_burn.GetHash())};
     BOOST_REQUIRE(later_collateral);
     BOOST_CHECK(later_collateral->block_hash == later_block.GetHash());
+}
+
+BOOST_FIXTURE_TEST_CASE(proposal_collateral_is_checked_against_either_index, CollateralSetup)
+{
+    const auto burn{MakeBurn(MakeProposal(uint256{}).GetHash(), GOVERNANCE_PROPOSAL_FEE_TX)};
+    const CGovernanceObject proposal{MakeProposal(burn.GetHash())};
+    MineConfirmed(burn);
+
+    // A collateral burning to a different object hash
+    const auto other_burn{MakeBurn(uint256S("aa"), GOVERNANCE_PROPOSAL_FEE_TX)};
+    const CGovernanceObject wrong_burn{MakeProposal(other_burn.GetHash())};
+    MineConfirmed(other_burn);
+
+    std::string error;
+    BOOST_CHECK(!IsCollateralValid(proposal, error));
+    BOOST_CHECK_EQUAL(error, "Can't look up collateral, this node runs neither -txindex nor -govcollateralindex");
+
+    g_gov_collateral_index = std::make_unique<GovCollateralIndex>(interfaces::MakeChain(m_node), /*n_cache_size=*/0,
+                                                                  /*f_memory=*/true);
+    BOOST_CHECK(!IsCollateralValid(proposal, error));
+    BOOST_CHECK_EQUAL(error, "Can't look up collateral until govcollateralindex has synced");
+
+    g_gov_collateral_index.reset();
+    StartGovCollateralIndex();
+    BOOST_CHECK_MESSAGE(IsCollateralValid(proposal, error), error);
+    BOOST_CHECK(!IsCollateralValid(wrong_burn, error));
+    BOOST_CHECK(error.find("Couldn't find opReturn") == 0);
+
+    // The transaction index takes precedence and gives the same answers
+    SyncWithValidationInterfaceQueue();
+    g_txindex = std::make_unique<TxIndex>(interfaces::MakeChain(m_node), /*n_cache_size=*/1 << 20, /*f_memory=*/true);
+    BOOST_REQUIRE(g_txindex->Start());
+    IndexWaitSynced(*g_txindex);
+    BOOST_CHECK(governance::GetCollateralIndex() == g_txindex.get());
+    BOOST_CHECK_MESSAGE(IsCollateralValid(proposal, error), error);
+    BOOST_CHECK(!IsCollateralValid(wrong_burn, error));
+    BOOST_CHECK(error.find("Couldn't find opReturn") == 0);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

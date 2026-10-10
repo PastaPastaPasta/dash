@@ -16,7 +16,6 @@ from test_framework.blocktools import (
 )
 from test_framework.governance import (
     EXPECTED_STDERR_NO_GOV,
-    EXPECTED_STDERR_NO_GOV_PRUNE,
 )
 from test_framework.script import (
     CScript,
@@ -128,7 +127,7 @@ class PruneTest(BitcoinTestFramework):
         self.sync_blocks(self.nodes[0:5])
 
     def test_invalid_command_line_options(self):
-        self.stop_node(0, expected_stderr=EXPECTED_STDERR_NO_GOV_PRUNE)
+        self.stop_node(0, expected_stderr=EXPECTED_STDERR_NO_GOV)
         self.nodes[0].assert_start_raises_init_error(
             expected_msg='Error: Prune cannot be configured with a negative value.',
             extra_args=['-prune=-1', '-txindex=0', '-disablegovernance'],
@@ -145,13 +144,10 @@ class PruneTest(BitcoinTestFramework):
             expected_msg='Error: Prune mode is incompatible with -reindex-chainstate. Use full -reindex instead.',
             extra_args=['-prune=550', '-reindex-chainstate'],
         )
-        self.nodes[0].assert_start_raises_init_error(
-            expected_msg='Error: Prune mode is incompatible with -disablegovernance=false.',
-            extra_args=['-prune=550', '-disablegovernance=false'],
-        )
 
     def test_rescan_blockchain(self):
-        self.restart_node(0, ["-prune=550"])
+        # Without -disablegovernance the node would keep its blocks until -govcollateralindex has read them
+        self.restart_node(0, ["-prune=550", "-disablegovernance"])
         assert_raises_rpc_error(-1, "Can't rescan beyond pruned data. Use RPC call getblockchaininfo to determine your pruned height.", self.nodes[0].rescanblockchain)
 
     def test_height_min(self):
@@ -361,21 +357,21 @@ class PruneTest(BitcoinTestFramework):
         assert not has_block(3), "blk00003.dat is still there, should be pruned by now"
 
         # stop node, start back up with auto-prune at 550 MiB, make sure still runs
-        self.restart_node(node_number, extra_args=["-disablegovernance", "-txindex=0", "-prune=550"] + DEPLOYMENT_ARGS, expected_stderr=EXPECTED_STDERR_NO_GOV_PRUNE)
+        self.restart_node(node_number, extra_args=["-disablegovernance", "-txindex=0", "-prune=550"] + DEPLOYMENT_ARGS, expected_stderr=EXPECTED_STDERR_NO_GOV)
 
         self.log.info("Success")
 
     def test_wallet_rescan(self):
         # check that the pruning node's wallet is still in good shape
         self.log.info("Stop and start pruning node to trigger wallet rescan")
-        self.restart_node(2, extra_args=["-disablegovernance", "-txindex=0", "-prune=550"] + DEPLOYMENT_ARGS, expected_stderr=EXPECTED_STDERR_NO_GOV_PRUNE)
+        self.restart_node(2, extra_args=["-disablegovernance", "-txindex=0", "-prune=550"] + DEPLOYMENT_ARGS, expected_stderr=EXPECTED_STDERR_NO_GOV)
 
         self.wait_until(lambda: self.nodes[2].getwalletinfo()["scanning"] == False)
         self.wait_until(lambda: self.nodes[2].getwalletinfo()["lastprocessedblock"]["height"] == self.nodes[2].getblockcount())
 
         # check that wallet loads successfully when restarting a pruned node after IBD.
         # this was reported to fail in #7494.
-        self.restart_node(5, extra_args=["-disablegovernance", "-txindex=0", "-prune=550", "-blockfilterindex=1"] + DEPLOYMENT_ARGS, expected_stderr=EXPECTED_STDERR_NO_GOV_PRUNE) # restart to trigger rescan
+        self.restart_node(5, extra_args=["-disablegovernance", "-txindex=0", "-prune=550", "-blockfilterindex=1"] + DEPLOYMENT_ARGS, expected_stderr=EXPECTED_STDERR_NO_GOV) # restart to trigger rescan
 
         self.wait_until(lambda: self.nodes[5].getwalletinfo()["scanning"] == False)
         self.wait_until(lambda: self.nodes[5].getwalletinfo()["lastprocessedblock"]["height"] == self.nodes[0].getblockcount())
@@ -506,7 +502,7 @@ class PruneTest(BitcoinTestFramework):
         self.log.info("Stopping pruned nodes manually")
         for i in range(2, 6):
             self.log.info("Stopping pruned node%d" % i)
-            self.stop_node(i, expected_stderr=EXPECTED_STDERR_NO_GOV_PRUNE)
+            self.stop_node(i, expected_stderr=EXPECTED_STDERR_NO_GOV)
 
         self.log.info("Done")
 
