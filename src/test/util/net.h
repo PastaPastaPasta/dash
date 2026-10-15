@@ -6,6 +6,7 @@
 #define BITCOIN_TEST_UTIL_NET_H
 
 #include <compat/compat.h>
+#include <evo/evodb.h>
 #include <net.h>
 #include <net_permissions.h>
 #include <net_processing.h>
@@ -35,6 +36,9 @@ class Span;
 
 struct ConnmanTestMsg : public CConnman {
     using CConnman::CConnman;
+
+    //! The Evo database a peer's turn binds, as ServicePeer does.
+    const CEvoDB* m_evodb{nullptr};
 
     void SetPeerConnectTimeout(std::chrono::seconds timeout)
     {
@@ -74,6 +78,7 @@ struct ConnmanTestMsg : public CConnman {
 
     bool ProcessMessagesOnce(CNode& node) EXCLUSIVE_LOCKS_REQUIRED(NetEventsInterface::g_msgproc_mutex)
     {
+        const ActiveEvoViewScope turn{m_evodb};
         return m_msgproc->ProcessMessages(&node, flagInterruptMsgProc);
     }
 
