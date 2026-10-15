@@ -97,6 +97,7 @@ BOOST_AUTO_TEST_SUITE(evo_islock_tests)
 
 BOOST_FIXTURE_TEST_CASE(received_genesis_cycle_has_no_quorum, TestChain100Setup)
 {
+    const ActiveEvoViewScope turn{m_node.evodb.get()};
     LOCK(NetEventsInterface::g_msgproc_mutex);
     constexpr const char* REGTEST_SPORK_PRIVKEY{"cP4EKFyJsHT39LDqgdcB43Y3YXjNyjb5Fuas1GQSeAtjnZWmZEQK"};
     BOOST_REQUIRE(m_node.sporkman->SetSporkAddress(Params().SporkAddress()));
@@ -149,6 +150,7 @@ BOOST_FIXTURE_TEST_CASE(received_genesis_cycle_has_no_quorum, TestChain100Setup)
 
 BOOST_FIXTURE_TEST_CASE(missing_quorum_does_not_drop_batch, NetInstantSendTest)
 {
+    const ActiveEvoViewScope turn{m_node.evodb.get()};
     CBLSSecretKey key;
     key.MakeNewKey();
     const auto cycle_hash = AddMinedQuorum(/*height=*/24, key);
@@ -180,6 +182,7 @@ BOOST_FIXTURE_TEST_CASE(missing_quorum_does_not_drop_batch, NetInstantSendTest)
 
 BOOST_FIXTURE_TEST_CASE(cached_recovered_sig_does_not_authenticate_other_lock, NetInstantSendTest)
 {
+    const ActiveEvoViewScope turn{m_node.evodb.get()};
     CBLSSecretKey key;
     key.MakeNewKey();
     CBLSSecretKey other_key;
