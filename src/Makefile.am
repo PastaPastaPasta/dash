@@ -247,6 +247,7 @@ BITCOIN_CORE_H = \
   evo/simplifiedmns.h \
   evo/smldiff.h \
   evo/snapshot.h \
+  evo/snapshot_types.h \
   evo/specialtx.h \
   evo/specialtx_filter.h \
   evo/specialtxman.h \
