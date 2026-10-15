@@ -24,6 +24,16 @@ on:
         required: false
         type: boolean
         default: false
+      artifact-run-id:
+        description: "Run whose build artifacts to test (defaults to this run)"
+        required: false
+        type: string
+        default: ''
+      container-options:
+        description: "Extra docker options for the job container"
+        required: false
+        type: string
+        default: ''
 
 env:
   INTEGRATION_TESTS_ARGS: "--extended --exclude feature_pruning,feature_dbcrash"
@@ -41,7 +51,7 @@ jobs:
       image: ${{ inputs.container-path }}
       # SYS_PTRACE is required by LeakSanitizer's stop-the-world
       # (https://github.com/google/sanitizers/issues/764)
-      options: --user root --cap-add SYS_PTRACE
+      options: --user root --cap-add SYS_PTRACE ${{ inputs.container-options }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -55,6 +65,8 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.bundle-key }}
+          run-id: ${{ inputs.artifact-run-id || github.run_id }}
+          github-token: ${{ github.token }}
 
       - name: Manage releases cache
         uses: actions/cache@v5

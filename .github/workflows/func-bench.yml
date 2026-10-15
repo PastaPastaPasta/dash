@@ -1,0 +1,56 @@
+name: Functional test bench
+
+# Re-run the x86 functional test jobs against an existing CI run's build
+# artifacts, on a chosen runner, to compare runner types without rebuilding.
+# Each push to a bench/** branch runs one round, configured by
+# .github/func-bench.json on that branch.
+on:
+  push:
+    branches: ['bench/**']
+
+run-name: "func-bench ${{ github.ref_name }}"
+
+permissions:
+  actions: read
+  contents: read
+  packages: read
+
+jobs:
+  params:
+    runs-on: ubuntu-24.04
+    outputs:
+      artifact-run-id: ${{ steps.read.outputs.artifact-run-id }}
+      sha8: ${{ steps.read.outputs.sha8 }}
+      container-path: ${{ steps.read.outputs.container-path }}
+      runs-on: ${{ steps.read.outputs.runs-on }}
+      container-options: ${{ steps.read.outputs.container-options }}
+      targets: ${{ steps.read.outputs.targets }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/func-bench.json
+          sparse-checkout-cone-mode: false
+      - id: read
+        run: |
+          f=.github/func-bench.json
+          for k in artifact-run-id sha8 container-path runs-on container-options; do
+            echo "$k=$(jq -r --arg k "$k" '.[$k] // ""' "$f")" >> "$GITHUB_OUTPUT"
+          done
+          echo "targets=$(jq -c '.targets' "$f")" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: ${{ matrix.target }}
+    needs: [params]
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.params.outputs.targets) }}
+    uses: ./.github/workflows/test-src.yml
+    with:
+      bundle-key: build-${{ matrix.target }}-${{ needs.params.outputs.sha8 }}
+      build-target: ${{ matrix.target }}
+      container-path: ${{ needs.params.outputs.container-path }}
+      runs-on: ${{ needs.params.outputs.runs-on }}
+      artifact-run-id: ${{ needs.params.outputs.artifact-run-id }}
+      container-options: ${{ needs.params.outputs.container-options }}
