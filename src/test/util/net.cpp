@@ -56,7 +56,10 @@ void ConnmanTestMsg::Handshake(CNode& node,
     (void)connman.ReceiveMsgFrom(node, std::move(msg_version));
     node.fPauseSend = false;
     connman.ProcessMessagesOnce(node);
-    peerman.SendMessages(&node);
+    {
+        const ActiveEvoViewScope turn{connman.m_evodb};
+        peerman.SendMessages(&node);
+    }
     FlushSendBuffer(node); // Drop the verack message added by SendMessages.
     if (node.fDisconnect) return;
     assert(node.nVersion == version);
@@ -70,7 +73,10 @@ void ConnmanTestMsg::Handshake(CNode& node,
         (void)connman.ReceiveMsgFrom(node, std::move(msg_verack));
         node.fPauseSend = false;
         connman.ProcessMessagesOnce(node);
-        peerman.SendMessages(&node);
+        {
+            const ActiveEvoViewScope turn{connman.m_evodb};
+            peerman.SendMessages(&node);
+        }
         assert(node.fSuccessfullyConnected == true);
     }
 }

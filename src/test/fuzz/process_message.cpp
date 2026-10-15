@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <consensus/consensus.h>
+#include <evo/evodb.h>
 #include <net.h>
 #include <protocol.h>
 #include <script/script.h>
@@ -85,6 +86,7 @@ FUZZ_TARGET(process_message, .init = initialize_process_message)
             more_work = connman.ProcessMessagesOnce(p2p_node);
         } catch (const std::ios_base::failure&) {
         }
+        const ActiveEvoViewScope turn{g_setup->m_node.evodb.get()};
         g_setup->m_node.peerman->SendMessages(&p2p_node);
     }
     SyncWithValidationInterfaceQueue();

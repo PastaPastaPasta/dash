@@ -54,6 +54,7 @@ CDataStream Serialized(const CFinalCommitment& qc)
 // keep it honest.
 BOOST_FIXTURE_TEST_CASE(unrequested_qfcommit_is_dropped_and_scored, TestChain100Setup)
 {
+    const ActiveEvoViewScope turn{m_node.evodb.get()};
     LOCK(NetEventsInterface::g_msgproc_mutex);
 
     // INV announcements for non-spork objects are only tracked outside IBD; the 100 mined blocks
@@ -158,6 +159,8 @@ BOOST_FIXTURE_TEST_CASE(scan_mined_commitments_reports_coverage, TestChain100Set
     const auto& qbp = *m_node.llmq_ctx->quorum_block_processor;
     constexpr auto type = Consensus::LLMQType::LLMQ_TEST;
     LOCK(::cs_main);
+    // The scans read EvoDB as a dispatcher's turn would.
+    const ActiveEvoViewScope turn{m_node.evodb.get()};
     const CChain& active = m_node.chainman->ActiveChain();
     {
         auto db_tx = m_node.evodb->BeginTransaction();
@@ -259,6 +262,8 @@ BOOST_FIXTURE_TEST_CASE(scan_mined_commitments_indexed_reports_coverage, TestCha
     BOOST_REQUIRE(Params().GetLLMQ(type).has_value());
     BOOST_REQUIRE_EQUAL(GetLLMQParams(type).signingActiveQuorumCount, 2);
     LOCK(::cs_main);
+    // The scans read EvoDB as a dispatcher's turn would.
+    const ActiveEvoViewScope turn{m_node.evodb.get()};
     const CChain& active = m_node.chainman->ActiveChain();
     {
         // Cycles at 24, 48 and 72: quorum index i has its base at cycle + i and is mined at cycle + 12 + i.
