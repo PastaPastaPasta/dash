@@ -394,10 +394,10 @@ inline bool IsLocalEvoStateError(const BlockValidationState& state)
 }
 
 /** Tell the user, through the misc warning, that some snapshot state cannot be
- *  used yet. `detail` says what is affected. `pruned` says that the state is
- *  missing on a node without a snapshot, where only pruning removes the block
- *  data it is derived from. */
-void WarnLocalEvoStateUnavailable(const std::string& detail, bool pruned = false);
+ *  used yet. `source` keys the warning and `detail` says what is affected.
+ *  `pruned` says that the state is missing on a node without a snapshot,
+ *  where only pruning removes the block data it is derived from. */
+void WarnLocalEvoStateUnavailable(const std::string& source, const std::string& detail, bool pruned = false);
 
 enum class VerifyDBResult {
     SUCCESS,
@@ -578,6 +578,8 @@ public:
                          const chainlock::Chainlocks& chainlocks,
                          llmq::CInstantSendManager* isman,
                          std::optional<uint256> from_snapshot_blockhash = std::nullopt);
+    //! A chainstate that goes away takes the warning of its stalls along.
+    ~Chainstate();
 
     //! Return the stable EvoDB identity corresponding to this chainstate's coins DB.
     ::EvoDbIdentity EvoDbIdentity() const;
@@ -850,6 +852,7 @@ private:
     //! setBlockIndexCandidates, as a chain rewound below its best candidates
     //! needs them.
     void RestoreBlockIndexCandidates() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    std::string EvoStallWarningSource() const;
 
     void InvalidBlockFound(CBlockIndex* pindex, const BlockValidationState& state) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     //! The best candidate no local Evo stall obstructs. Sets
@@ -1177,6 +1180,13 @@ public:
     //! The total number of bytes available for us to use across all in-memory
     //! coins caches. This will be split somehow across chainstates.
     int64_t m_total_coinstip_cache{0};
+
+    //! Make snapshot activation stop right before it publishes the seeded Evo
+    //! generation, without cleaning up, as if the process died there.
+    bool m_stop_before_evo_publication_for_testing{false};
+    //! Likewise, right after publication, before the snapshot directory
+    //! records its base block.
+    bool m_stop_after_evo_publication_for_testing{false};
     //
     //! The total number of bytes available for us to use across all leveldb
     //! coins databases. This will be split somehow across chainstates.
