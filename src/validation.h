@@ -386,6 +386,28 @@ bool TestBlockValidity(BlockValidationState& state,
                        bool fCheckPOW = true,
                        bool fCheckMerkleRoot = true) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
+/** Whether `state` reports that a chainstate stalled on this node's own Evo
+ *  state. The block is not known to be invalid and storage is not known to be
+ *  broken, so callers must neither abort nor treat the block as bad; the
+ *  chainstate stays where it is until its Evo state changes. */
+inline bool IsLocalEvoStateError(const BlockValidationState& state)
+{
+    return state.IsError() && state.GetLocalEvoStateResult() != LocalEvoStateResult::NONE;
+}
+
+//! Why this node cannot use some of its own Evo state.
+enum class EvoStateUnavailableReason {
+    SNAPSHOT, //!< A snapshot is in use and has not derived the state yet
+    PRUNED,   //!< No snapshot is in use, and the block data the state is derived from was pruned
+    OTHER,    //!< No snapshot is in use, and block data is not what is missing
+};
+
+/** Tell the user, through the misc warning, that some Evo state cannot be
+ *  used. `detail` says what is affected. Sets the warning; the caller
+ *  notifies. */
+void WarnLocalEvoStateUnavailable(const std::string& detail,
+                                  EvoStateUnavailableReason reason = EvoStateUnavailableReason::SNAPSHOT);
+
 enum class VerifyDBResult {
     SUCCESS,
     CORRUPTED_BLOCK_DB,
@@ -520,6 +542,26 @@ protected:
 
     //! Cached result of LookupBlockIndex(*m_from_snapshot_blockhash)
     const CBlockIndex* m_cached_snapshot_base GUARDED_BY(::cs_main) {nullptr};
+
+    //! The blocks this chainstate stalled on because of its own Evo state (see
+    //! IsLocalEvoStateError). Trying one again cannot succeed until that state
+    //! changes, so ConnectTip and DisconnectTip refuse it at once instead of
+    //! revalidating it, and candidate selection passes over the branches that
+    //! need it. Cleared on restart; snapshot completion keeps them and asks
+    //! for a restart.
+    struct EvoStall {
+        LocalEvoStateResult result;
+        std::string reject_reason;
+    };
+    std::map<const CBlockIndex*, EvoStall> m_evo_stalls GUARDED_BY(::cs_main);
+    //! How many stalls were ever recorded. Unlike the size of m_evo_stalls it
+    //! also tells a new stall recorded while an ended one was forgotten.
+    uint64_t m_evo_stalls_recorded GUARDED_BY(::cs_main){0};
+    //! Every stalled block is in the block index, so the stalls are bounded
+    //! like the block candidates; this many only earns a warning.
+    static constexpr size_t MANY_EVO_STALLS{32};
+    bool m_evo_stall_warned GUARDED_BY(::cs_main){false};
+    bool m_many_evo_stalls_warned GUARDED_BY(::cs_main){false};
 
 public:
     //! Reference to a BlockManager instance which itself is shared across all
@@ -781,9 +823,25 @@ private:
 
     bool ActivateBestChainStep(BlockValidationState& state, CBlockIndex* pindexMostWork, const std::shared_ptr<const CBlock>& pblock, bool& fInvalidFound, ConnectTrace& connectTrace) EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_mempool->cs);
     bool ConnectTip(BlockValidationState& state, CBlockIndex* pindexNew, const std::shared_ptr<const CBlock>& pblock, ConnectTrace& connectTrace, DisconnectedBlockTransactions& disconnectpool) EXCLUSIVE_LOCKS_REQUIRED(cs_main, m_mempool->cs);
+    //! The stall recorded for `pindex`, unless it no longer applies.
+    const EvoStall* FindEvoStall(const CBlockIndex* pindex) const EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    //! Fail with the recorded stall if this chainstate stalled on `pindex`.
+    bool RefuseStalledBlock(const CBlockIndex* pindex, BlockValidationState& state) const
+        EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    //! Remember a local Evo state stall at `pindex`, warning about the first one.
+    void RecordEvoStall(const CBlockIndex* pindex, const BlockValidationState& state) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    //! Forget the stalls FindEvoStall no longer finds.
+    void ForgetObsoleteEvoStalls() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    //! Add the tip and every usable block at least as good as it to
+    //! setBlockIndexCandidates, as a chain rewound below its best candidates
+    //! needs them.
+    void RestoreBlockIndexCandidates() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     void InvalidBlockFound(CBlockIndex* pindex, const BlockValidationState& state) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
-    CBlockIndex* FindMostWorkChain() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    //! The best candidate no local Evo stall obstructs. Sets
+    //! `*evo_stall_obstruction` to the stalled block in the way of the first
+    //! better candidate it passed over.
+    CBlockIndex* FindMostWorkChain(const CBlockIndex** evo_stall_obstruction = nullptr) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     bool RollforwardBlock(const CBlockIndex* pindex, CCoinsViewCache& inputs) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
@@ -1123,6 +1181,11 @@ public:
     //! deletion and continue using the snapshot chainstate as active.
     //! Otherwise, revert to using the ibd chainstate and shutdown.
     SnapshotCompletionResult MaybeCompleteSnapshotValidation() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
+    /** Reject the active assumeutxo snapshot chainstate, revert to the
+     * background chainstate and shut down. Returns false when no usable
+     * snapshot is active or an EvoDB transaction must unwind first. */
+    bool HandleSnapshotStateMismatch(const std::string& reason);
 
     //! The most-work chain.
     Chainstate& ActiveChainstate() const;
