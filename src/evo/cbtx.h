@@ -17,6 +17,9 @@
 class BlockValidationState;
 class CBlock;
 class CBlockIndex;
+namespace Consensus {
+struct Params;
+} // namespace Consensus
 class CDeterministicMNList;
 class TxValidationState;
 struct RPCResult;
@@ -87,7 +90,18 @@ bool CalcCbTxMerkleRootQuorums(const CBlock& block, const CBlockIndex* pindexPre
                                BlockValidationState& state);
 uint256 CalcCbTxMerkleRootAssetUnlocks(const CBlock& block);
 
+/** Decode a coinbase's CbTx payload with an explicit BLS scheme for its
+ *  ChainLock signature, independent of the scheme the node is in. */
+std::optional<CCbTx> DecodeCbTxPayload(const CTransaction& tx, bool legacy_bls_scheme);
+/** The non-null ChainLock in the coinbase of `pindex`'s block. A block this
+ *  node has but cannot read raises BlockDataReadError; one it lacks reads as
+ *  none, except at or below the base in a snapshot view, where it raises
+ *  BlockDataUnavailableError. */
 std::optional<std::pair<CBLSSignature, uint32_t>> GetNonNullCoinbaseChainlock(const node::BlockManager& blockman, const CBlockIndex* pindex);
 std::optional<std::pair<CBLSSignature, uint32_t>> GetNonNullCoinbaseChainlock(const CBlock& block, int32_t height);
+/** The non-null ChainLock in `block`'s coinbase, decoded with the BLS scheme in
+ *  force at `index`, the block's own index. */
+std::optional<std::pair<CBLSSignature, uint32_t>> GetNonNullCoinbaseChainlock(const CBlock& block, const CBlockIndex& index,
+                                                                              const Consensus::Params& consensus);
 
 #endif // BITCOIN_EVO_CBTX_H
