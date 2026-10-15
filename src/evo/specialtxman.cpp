@@ -15,6 +15,7 @@
 #include <evo/netinfo.h>
 #include <evo/sharedcollateral.h>
 #include <evo/simplifiedmns.h>
+#include <evo/snapshot_types.h>
 #include <llmq/blockprocessor.h>
 #include <llmq/commitment.h>
 #include <llmq/quorumsman.h>
@@ -292,6 +293,8 @@ bool CSpecialTxProcessor::CheckSpecialTxInner(const CChain* chain, const CTransa
             return chain ? CheckAssetUnlockTx(m_blockman, m_qman, *chain, tx, pindexPrev, indexes, rules.v24, state)
                          : CheckAssetUnlockTx(m_blockman, m_qman, tx, pindexPrev, indexes, rules.v24, state);
         }
+    } catch (const evo::LocalStateError&) {
+        throw;
     } catch (const std::exception& e) {
         LogPrintf("%s -- failed: %s\n", __func__, e.what());
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "failed-check-special-tx");
@@ -1089,6 +1092,8 @@ bool CSpecialTxProcessor::ProcessSpecialTxsInBlock(Chainstate& chainstate, const
         // Local EvoDB inconsistency detected below (missing or mismatched
         // state): fail with M_ERROR so the block is not marked invalid.
         return state.Error(e.what());
+    } catch (const evo::LocalStateError&) {
+        throw;
     } catch (const std::exception& e) {
         LogPrintf("CSpecialTxProcessor::%s -- FAILURE! %s\n", __func__, e.what());
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "failed-procspectxsinblock");
@@ -1113,6 +1118,8 @@ bool CSpecialTxProcessor::UndoSpecialTxsInBlock(const Chainstate& chainstate, co
         if (!m_qblockman.UndoBlock(chainstate, block, pindex)) {
             return false;
         }
+    } catch (const evo::LocalStateError&) {
+        throw;
     } catch (const std::exception& e) {
         LogError("CSpecialTxProcessor::%s -- FAILURE! %s\n", __func__, e.what());
         return false;
@@ -1151,6 +1158,8 @@ bool CSpecialTxProcessor::CheckCreditPoolDiffForBlock(const CBlock& block, const
         // Local EvoDB inconsistency detected below (missing or mismatched
         // state): fail with M_ERROR so the block is not marked invalid.
         return state.Error(e.what());
+    } catch (const evo::LocalStateError&) {
+        throw;
     } catch (const std::exception& e) {
         LogPrintf("CSpecialTxProcessor::%s -- FAILURE! %s\n", __func__, e.what());
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "failed-checkcreditpooldiff");

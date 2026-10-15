@@ -33,6 +33,7 @@
 #include <evo/providertx.h>
 #include <evo/deterministicmns.h>
 #include <evo/simplifiedmns.h>
+#include <evo/snapshot_types.h>
 #include <evo/specialtxman.h>
 #include <instantsend/instantsend.h>
 #include <llmq/blockprocessor.h>
@@ -450,8 +451,13 @@ bool BlockAssembler::TestPackageTransactions(const CTxMemPool::setEntries& packa
         // signature regardless, which is cheap enough here given how rare MNHF signals are.
         if (it->GetTx().IsSpecialTxVersion()) {
             TxValidationState tx_state;
-            if (!m_chainstate.m_special_tx.CheckSpecialTx(it->GetTx(), m_chainstate.m_chain.Tip(), special_tx_rules,
-                                                           m_chainstate.CoinsTip(), /*check_sigs=*/false, tx_state)) {
+            try {
+                if (!m_chainstate.m_special_tx.CheckSpecialTx(it->GetTx(), m_chainstate.m_chain.Tip(),
+                                                               special_tx_rules, m_chainstate.CoinsTip(),
+                                                               /*check_sigs=*/false, tx_state)) {
+                    return false;
+                }
+            } catch (const evo::LocalStateError&) {
                 return false;
             }
         }
@@ -782,8 +788,15 @@ void BlockAssembler::addPackageTxs(const CTxMemPool& mempool, int& nPackagesSele
                 // producing an invalid template.
                 if (IsAssetUnlockWithStableTxid(tx)) {
                     TxValidationState state;
-                    if (!m_chainstate.m_special_tx.CheckSpecialTx(tx, m_chainstate.m_chain.Tip(), special_tx_rules,
-                                                                   m_chainstate.CoinsTip(), /*check_sigs=*/true, state)) {
+                    bool minable{false};
+                    try {
+                        minable = m_chainstate.m_special_tx.CheckSpecialTx(tx, m_chainstate.m_chain.Tip(),
+                                                                           special_tx_rules, m_chainstate.CoinsTip(),
+                                                                           /*check_sigs=*/true, state);
+                    } catch (const evo::LocalStateError& e) {
+                        state.Error(e.what());
+                    }
+                    if (!minable) {
                         LogPrintf("%s: package tx %s skipped, asset unlock instance not currently minable: %s\n", __func__,
                                   tx.GetHash().ToString(), state.ToString());
                         validPackage = false;
@@ -809,6 +822,8 @@ void BlockAssembler::addPackageTxs(const CTxMemPool& mempool, int& nPackagesSele
                 std::string error;
                 try {
                     if (!package_mn_list->ApplyTx(tx, state)) error = state.ToString();
+                } catch (const evo::LocalStateError&) {
+                    throw;
                 } catch (const std::runtime_error& e) {
                     // AddMN()/UpdateMN() report a unique-property conflict by throwing
                     error = e.what();
