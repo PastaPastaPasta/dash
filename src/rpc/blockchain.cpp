@@ -3296,11 +3296,14 @@ UniValue CreateUTXOSnapshot(
         const EvoViewScope evo_view{chainstate.EvoView()};
         auto& special_tx{chainstate.m_special_tx};
         std::string evo_error;
+        evo::EvoSectionFailure evo_failure;
         if (!evo::BuildEvoSnapshot(chainstate.m_chainman.GetParams(), chainstate.m_chainman,
                                    special_tx.DeterministicMNManager(), special_tx.QuorumBlockProcessor(),
                                    special_tx.QuorumSnapshotManager(), *CHECK_NONFATAL(special_tx.m_cpoolman),
-                                   *CHECK_NONFATAL(special_tx.m_mnhfman), tip, evo_snapshot, evo_error)) {
-            throw JSONRPCError(RPC_INTERNAL_ERROR, "Unable to build the evo snapshot section: " + evo_error);
+                                   *CHECK_NONFATAL(special_tx.m_mnhfman), tip, evo_snapshot, evo_error,
+                                   /*captures=*/nullptr, &evo_failure)) {
+            throw JSONRPCError(RPC_INTERNAL_ERROR, strprintf("Unable to build the evo snapshot section (%s): %s",
+                                                             evo::EvoSectionFailureName(evo_failure), evo_error));
         }
         // Load runs the same checks, in the snapshot view it seeds.
         if (!evo::PreflightEvoSnapshot(evo_snapshot, chainstate.m_chainman, tip, evo_error)) {
