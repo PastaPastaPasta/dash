@@ -4,5 +4,10 @@
   "container-path": "ghcr.io/pastapastapasta/dash/dashcore-ci-slim@sha256:50c0b22496af7e4d2cc2d5c7e419150c7e038612d7090cba269704533ed7b50f",
   "runs-on": "ubuntu-24.04",
   "container-options": "",
-  "targets": ["linux64", "linux64_asan", "linux64_nowallet", "linux64_sqlite"]
+  "targets": [
+    "linux64",
+    "linux64_asan",
+    "linux64_nowallet",
+    "linux64_sqlite"
+  ]
 }
