@@ -57,10 +57,13 @@ void FakePlatformClient::pendingContests(const Identifier& identity, Callback<st
     Answer({"pendingContests", HexStr(identity), std::nullopt}, contests, std::move(cb));
 }
 
-void FakePlatformClient::contactRequests(const Identifier& identity, platform::ContactDirection, uint64_t,
-                                         Callback<platform::ContactRequestPage> cb)
+void FakePlatformClient::contactRequests(const Identifier& identity, platform::ContactDirection direction,
+                                         uint64_t since_ms, Callback<platform::ContactRequestPage> cb)
 {
-    Answer({"contactRequests", HexStr(identity), std::nullopt}, contact_requests, std::move(cb));
+    const bool sent{direction == platform::ContactDirection::SENT};
+    if (!shut_down) request_since.push_back(since_ms);
+    Answer({sent ? "sentRequests" : "receivedRequests", HexStr(identity), std::nullopt},
+           sent ? sent_requests : received_requests, std::move(cb));
 }
 
 void FakePlatformClient::assetLockState(const COutPoint& outpoint, Callback<platform::AssetLockState> cb)
@@ -105,6 +108,7 @@ void FakePlatformClient::registerName(const std::string& label, const Identifier
 void FakePlatformClient::sendContactRequest(const platform::ContactRequestInput& input, platform::Signing signing,
                                             Callback<Identifier> cb)
 {
+    if (!shut_down) contact_inputs.push_back(input);
     Answer({"sendContactRequest", HexStr(input.recipient), signing.identity_index}, sent_contact_requests,
            std::move(cb), std::move(signing.unlock));
 }

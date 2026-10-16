@@ -37,7 +37,9 @@ public:
     std::deque<platform::Result<platform::Identifier>> resolved_names;
     std::deque<platform::Result<platform::Names>> names;
     std::deque<platform::Result<std::vector<platform::Contest>>> contests;
-    std::deque<platform::Result<platform::ContactRequestPage>> contact_requests;
+    //! The answers to contactRequests, by direction.
+    std::deque<platform::Result<platform::ContactRequestPage>> sent_requests;
+    std::deque<platform::Result<platform::ContactRequestPage>> received_requests;
     std::deque<platform::Result<platform::AssetLockState>> asset_lock_states;
     std::deque<platform::FundingResult<platform::Identity>> registered_identities;
     std::deque<platform::FundingResult<uint64_t>> top_ups;
@@ -55,6 +57,10 @@ public:
     std::vector<std::pair<platform::Identifier, uint32_t>> name_signers;
     //! The contest policy of each registerName, in call order.
     std::vector<platform::ContestPolicy> contest_policies;
+    //! The since_ms of each contactRequests, in call order.
+    std::vector<uint64_t> request_since;
+    //! The input of each sendContactRequest, in call order.
+    std::vector<platform::ContactRequestInput> contact_inputs;
     bool shut_down{false};
 
     void getIdentity(const platform::Identifier& id, Callback<platform::Identity> cb) override;

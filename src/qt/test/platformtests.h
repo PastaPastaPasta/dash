@@ -50,6 +50,9 @@ private Q_SLOTS:
     void usernameForAnExistingIdentity();
     void droppedUsernameWriteIsReadBack();
     void unreadNamesNeverOfferRegister();
+    void contactRequestUsesTheIdentityKeys();
+    void contactsAreTheNewestRequests();
+    void contactPagesKeepWhatWasRead();
 };
 
 #endif // BITCOIN_QT_TEST_PLATFORMTESTS_H

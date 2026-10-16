@@ -251,6 +251,7 @@ IdentityFlow::IdentityFlow(PlatformService& service, Confirm confirm, Proof proo
             return NodeChainProof(service.walletModel().wallet(), tx);
         };
     }
+    m_service.addWriter(*this);
     connect(&m_service, &PlatformService::changed, this, &IdentityFlow::serviceChanged);
     connect(&m_service.clientModel(), &ClientModel::instantSendChanged, this, [this] { send(); });
     connect(&m_service.clientModel(), &ClientModel::chainLockChanged, this, &IdentityFlow::chainLocked);
