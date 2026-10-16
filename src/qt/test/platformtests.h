@@ -46,6 +46,10 @@ private Q_SLOTS:
     void restoredWalletResumesItsFunding();
     void foundAbandonedLockIsOfferedOnceActive();
     void lockedWalletLooksUpOnUnlock();
+    void usernameCreatesTheIdentityFirst();
+    void usernameForAnExistingIdentity();
+    void droppedUsernameWriteIsReadBack();
+    void unreadNamesNeverOfferRegister();
 };
 
 #endif // BITCOIN_QT_TEST_PLATFORMTESTS_H

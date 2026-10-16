@@ -34,8 +34,6 @@ using platform::IdentityPublicKey;
 using Funding = IdentityFlow::Funding;
 using FundingState = IdentityFlow::FundingState;
 
-//! Every identity is index 0 until the UI offers more than one.
-constexpr uint32_t IDENTITY_INDEX{0};
 //! The one credit output of the asset locks this flow builds.
 constexpr uint32_t CREDIT_OUTPUT{0};
 //! The funding key index of the next top-up.
@@ -58,7 +56,7 @@ constexpr KeySpec REGISTRATION_KEYS[]{
     {5, IdentityPublicKey::Purpose::DECRYPTION, IdentityPublicKey::SecurityLevel::MEDIUM},
 };
 
-std::string RegistrationName() { return strprintf("identity/%u/", IDENTITY_INDEX); }
+std::string RegistrationName() { return strprintf("identity/%u/", IdentityFlow::IDENTITY_INDEX); }
 //! Each credit output has its own record, named after its key and outpoint:
 //! a lock set aside, or kept beside an identity another lock registered,
 //! leaves room for the next one, and two outputs paying one key keep apart.
@@ -96,7 +94,7 @@ std::optional<Funding> Decode(const std::string& record, const std::vector<unsig
         if (!index) return std::nullopt;
         funding.key = wallet::TopupFundingKey{*index};
     } else if (name.rfind(RegistrationName(), 0) == 0) {
-        funding.key = wallet::RegistrationFundingKey{IDENTITY_INDEX};
+        funding.key = wallet::RegistrationFundingKey{IdentityFlow::IDENTITY_INDEX};
     } else {
         return std::nullopt;
     }
@@ -167,7 +165,8 @@ std::pair<CTransactionRef, interfaces::WalletTxStatus> WalletTxOf(interfaces::Wa
 
 std::optional<std::array<uint8_t, 20>> MasterKeyHash(interfaces::Wallet& wallet)
 {
-    const auto key{wallet.getPlatformPubKey(wallet::IdentityAuthKey{IDENTITY_INDEX, REGISTRATION_KEYS[0].id})};
+    const auto key{
+        wallet.getPlatformPubKey(wallet::IdentityAuthKey{IdentityFlow::IDENTITY_INDEX, REGISTRATION_KEYS[0].id})};
     if (!key) return std::nullopt;
     const CKeyID hash{key.value.GetID()};
     std::array<uint8_t, 20> out;
@@ -179,7 +178,7 @@ std::optional<std::vector<IdentityPublicKey>> RegistrationKeys(interfaces::Walle
 {
     std::vector<IdentityPublicKey> keys;
     for (const KeySpec& spec : REGISTRATION_KEYS) {
-        const auto pubkey{wallet.getPlatformPubKey(wallet::IdentityAuthKey{IDENTITY_INDEX, spec.id})};
+        const auto pubkey{wallet.getPlatformPubKey(wallet::IdentityAuthKey{IdentityFlow::IDENTITY_INDEX, spec.id})};
         if (!pubkey) return std::nullopt;
         IdentityPublicKey key;
         key.id = spec.id;
@@ -543,7 +542,8 @@ std::optional<WalletModel::UnlockContext> IdentityFlow::beginFunding()
 
 bool IdentityFlow::stillCurrent(const Funding& pending) const
 {
-    if (m_step != Step::FUNDING || m_service.gate() != PlatformService::Gate::NONE || !m_service.client()) {
+    if (m_step != Step::FUNDING || m_service.gate() != PlatformService::Gate::NONE || !m_service.client() ||
+        m_service.writing()) {
         return false;
     }
     if (pending.top_up) return m_identity && m_identity->id == *pending.top_up;
@@ -552,7 +552,7 @@ bool IdentityFlow::stillCurrent(const Funding& pending) const
 
 void IdentityFlow::fund(CAmount amount, Funding pending)
 {
-    if (m_step != Step::IDLE || !m_service.client() || funding()) return;
+    if (m_step != Step::IDLE || !m_service.client() || m_service.writing() || funding()) return;
     const bool registration{!pending.top_up};
     auto unlock{beginFunding()};
     if (!unlock) return;
@@ -641,7 +641,7 @@ void IdentityFlow::fund(CAmount amount, Funding pending)
 void IdentityFlow::resume()
 {
     auto pending{funding()};
-    if (m_step != Step::IDLE || !m_service.client() || !pending) return;
+    if (m_step != Step::IDLE || !m_service.client() || m_service.writing() || !pending) return;
     m_note.clear();
     if (pending->state == FundingState::CONFIRMING || pending->state == FundingState::CHECK_AGAIN) {
         return check(*pending);
@@ -681,12 +681,15 @@ void IdentityFlow::adopt(Funding funding, WalletModel::UnlockContext unlock)
 
 void IdentityFlow::applyEarlier()
 {
-    if (m_step != Step::IDLE || !m_service.client() || funding() || !m_identity || earlier().empty()) return;
+    if (m_step != Step::IDLE || !m_service.client() || m_service.writing() || funding() || !m_identity ||
+        earlier().empty()) {
+        return;
+    }
     const platform::Identifier identity{m_identity->id};
     auto unlock{beginFunding()};
     if (!unlock) return;
-    if (m_service.gate() != PlatformService::Gate::NONE || !m_service.client() || !m_identity ||
-        m_identity->id != identity) {
+    if (m_service.gate() != PlatformService::Gate::NONE || !m_service.client() || m_service.writing() ||
+        !m_identity || m_identity->id != identity) {
         return finish(tr("DashPay stopped while the wallet was being unlocked, so nothing was sent."));
     }
     // Every one is recorded first, so each is kept whatever happens to the others.

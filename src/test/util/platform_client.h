@@ -14,6 +14,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 //! A scripted platform::PlatformClient for tests of the layers above it.
@@ -50,6 +51,8 @@ public:
     std::vector<uint16_t> fee_increase_floors;
     //! The funding key of each topUpIdentity, in call order.
     std::vector<wallet::AssetLockFundingKey> top_up_keys;
+    //! The identity and signing key of each registerName, in call order.
+    std::vector<std::pair<platform::Identifier, uint32_t>> name_signers;
     //! The contest policy of each registerName, in call order.
     std::vector<platform::ContestPolicy> contest_policies;
     bool shut_down{false};
@@ -78,6 +81,8 @@ public:
 
     //! Run the pending callbacks, including those they add.
     void deliverAll();
+    //! Run the oldest pending callback only.
+    void deliverNext();
     //! Number of recorded calls of a method.
     size_t countCalls(const std::string& method) const;
 
