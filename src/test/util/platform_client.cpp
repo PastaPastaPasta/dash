@@ -68,20 +68,24 @@ void FakePlatformClient::assetLockState(const COutPoint& outpoint, Callback<plat
     Answer({"assetLockState", outpoint.ToStringShort(), std::nullopt}, asset_lock_states, std::move(cb));
 }
 
-void FakePlatformClient::registerIdentity(std::vector<platform::IdentityPublicKey>, platform::AssetLockProof,
+void FakePlatformClient::registerIdentity(std::vector<platform::IdentityPublicKey>, platform::AssetLockProof proof,
                                           uint16_t fee_increase_floor, platform::Signing signing,
                                           FundingCallback<platform::Identity> cb)
 {
-    if (!shut_down) fee_increase_floors.push_back(fee_increase_floor);
+    if (!shut_down) {
+        proofs.push_back(std::move(proof));
+        fee_increase_floors.push_back(fee_increase_floor);
+    }
     Answer({"registerIdentity", "", signing.identity_index}, registered_identities, std::move(cb),
            std::move(signing.unlock));
 }
 
-void FakePlatformClient::topUpIdentity(const Identifier& identity, platform::AssetLockProof,
+void FakePlatformClient::topUpIdentity(const Identifier& identity, platform::AssetLockProof proof,
                                        wallet::AssetLockFundingKey funding, uint16_t fee_increase_floor,
                                        platform::Signing signing, FundingCallback<uint64_t> cb)
 {
     if (!shut_down) {
+        proofs.push_back(std::move(proof));
         fee_increase_floors.push_back(fee_increase_floor);
         top_up_keys.push_back(funding);
     }

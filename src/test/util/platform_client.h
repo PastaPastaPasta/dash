@@ -44,6 +44,8 @@ public:
     std::deque<platform::Result<platform::Identifier>> sent_contact_requests;
 
     std::vector<Call> calls;
+    //! The asset lock proofs of registerIdentity and topUpIdentity, in call order.
+    std::vector<platform::AssetLockProof> proofs;
     //! The fee_increase_floor of registerIdentity and topUpIdentity, in call order.
     std::vector<uint16_t> fee_increase_floors;
     //! The funding key of each topUpIdentity, in call order.

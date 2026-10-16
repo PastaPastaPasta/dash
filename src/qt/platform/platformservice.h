@@ -104,6 +104,8 @@ public:
     //! that are not PoSe-banned: what the default evonodes source returns.
     static std::vector<CService> ListedEvonodes(const MasternodeData& list);
 
+    WalletModel& walletModel() const { return m_wallet_model; }
+    ClientModel& clientModel() const { return m_client_model; }
     Gate gate() const { return m_gate; }
     //! Why DashPay can't run, naming the setting that disables it; empty for
     //! NONE and NO_CONSENT.
@@ -124,12 +126,13 @@ public:
     template <typename T>
     platform::PlatformClient::Callback<T> trackWrite(platform::PlatformClient::Callback<T> cb)
     {
-        ++m_writes;
-        return [this, cb = std::move(cb)](platform::Result<T> result) {
-            // First: the callback may destroy the client, which resets the count.
-            writeFinished();
-            cb(std::move(result));
-        };
+        return track(std::move(cb));
+    }
+    //! trackWrite() for an identity funding write.
+    template <typename T>
+    platform::PlatformClient::FundingCallback<T> trackFunding(platform::PlatformClient::FundingCallback<T> cb)
+    {
+        return track(std::move(cb));
     }
 
 Q_SIGNALS:
@@ -137,6 +140,16 @@ Q_SIGNALS:
     void changed();
 
 private:
+    template <typename R>
+    std::function<void(R)> track(std::function<void(R)> cb)
+    {
+        ++m_writes;
+        return [this, cb = std::move(cb)](R result) {
+            // First: the callback may destroy the client, which resets the count.
+            writeFinished();
+            cb(std::move(result));
+        };
+    }
     void update();
     //! Re-read the gates and the evonode set; create, rebuild, pause or
     //! destroy the client to match. Returns whether gate() or client() changed.

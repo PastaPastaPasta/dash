@@ -36,6 +36,14 @@ private Q_SLOTS:
     void onionProxyLaterStartsClient();
     void refusedClientIsShownNotRetried();
     void detachingClientModelStopsClient();
+    void registrationFundsAndRegisters();
+    void continueResumesFundingAfterRestart();
+    void topUpUsesAFreshFundingKey();
+    void fundingOutcomesKeepTheLock();
+    void topUpIsSettledByItsLockRecord();
+    void registrationIsSettledByItsIdentity();
+    void closedGateNeverCommits();
+    void lockedWalletLooksUpOnUnlock();
 };
 
 #endif // BITCOIN_QT_TEST_PLATFORMTESTS_H
