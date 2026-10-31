@@ -54,9 +54,10 @@ struct MinedCommitmentScan {
     //! scans return them by cycle rank, newest rank first, and by quorum index within each rank.
     std::vector<const CBlockIndex*> bases;
     //! True if `bases` holds the requested number of entries or every older entry was read; false
-    //! if an index entry could not be read or contradicts another, so an absent quorum may still
-    //! have been mined. Entries a contradiction implicates are left out. A wrong entry that fits
-    //! the index's order is not detected.
+    //! if an index entry could not be read or contradicts another, or the walk ended short in
+    //! history a snapshot view lacks, so an absent quorum may still have been mined. Entries a
+    //! contradiction implicates are left out. A wrong entry that fits the index's order is not
+    //! detected.
     bool complete{false};
 };
 
