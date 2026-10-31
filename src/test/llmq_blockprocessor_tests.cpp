@@ -10,6 +10,7 @@
 #include <chainparams.h>
 #include <consensus/params.h>
 #include <evo/evodb.h>
+#include <evo/snapshot_config.h>
 #include <hash.h>
 #include <masternode/meta.h>
 #include <net.h>
@@ -303,6 +304,62 @@ BOOST_FIXTURE_TEST_CASE(scan_mined_commitments_indexed_reports_coverage, TestCha
     scan = qbp.ScanMinedCommitmentsIndexedUntilBlock(type, active.Tip(), 2);
     BOOST_CHECK(BaseHeights(scan) == std::vector<int>({72}));
     BOOST_CHECK(!scan.complete);
+}
+
+// A snapshot view based where quorums could already be mined lacks the history
+// at and below its base: a walk that ends short there may have missed older
+// commitments, so it is incomplete.
+BOOST_FIXTURE_TEST_CASE(scan_mined_commitments_reports_missing_history, TestChain100Setup)
+{
+    const auto& qbp = *m_node.llmq_ctx->quorum_block_processor;
+    CEvoDB& evodb{*m_node.evodb};
+    constexpr auto type = Consensus::LLMQType::LLMQ_TEST;
+    constexpr auto rotating = Consensus::LLMQType::LLMQ_TEST_DIP0024;
+    auto& consensus{const_cast<Consensus::Params&>(Params().GetConsensus())};
+    struct Dip3HeightRestore {
+        Consensus::Params& params;
+        const int height;
+        ~Dip3HeightRestore() { params.DIP0003Height = height; }
+    } dip3_restore{consensus, std::exchange(consensus.DIP0003Height, 1)};
+    LOCK(::cs_main);
+    const CChain& active = m_node.chainman->ActiveChain();
+    BOOST_REQUIRE(evodb.CreateSnapshotGeneration(active[50]->GetBlockHash(), 50));
+    BOOST_REQUIRE(
+        evodb.PublishSnapshotGeneration(EvoSnapshotConsensusConfig::FromParams(Params()).Fingerprint(), std::nullopt));
+    evodb.SetDefaultIdentity(EvoDbIdentity::SNAPSHOT);
+    const ActiveEvoViewScope turn{&evodb};
+    {
+        // Mined above the base: quorums 60 and 70, and the rotating quorums of
+        // cycle 72 at both quorum indexes but of cycle 48 at index 0 only.
+        auto db_tx = evodb.BeginTransaction(EvoDbIdentity::SNAPSHOT);
+        evodb.Write(BuildInversedHeightKey(type, 61), 60);
+        evodb.Write(BuildInversedHeightKey(type, 71), 70);
+        evodb.Write(BuildInversedHeightKeyIndexed(rotating, 84, 0), 72);
+        evodb.Write(BuildInversedHeightKeyIndexed(rotating, 85, 1), 73);
+        evodb.Write(BuildInversedHeightKeyIndexed(rotating, 60, 0), 48);
+        db_tx->Commit();
+    }
+
+    auto scan = qbp.ScanMinedCommitmentsUntilBlock(type, active.Tip(), 2);
+    BOOST_CHECK(BaseHeights(scan) == std::vector<int>({70, 60}));
+    BOOST_CHECK(scan.complete);
+    scan = qbp.ScanMinedCommitmentsUntilBlock(type, active.Tip(), 4);
+    BOOST_CHECK(BaseHeights(scan) == std::vector<int>({70, 60}));
+    BOOST_CHECK(!scan.complete);
+
+    scan = qbp.ScanMinedCommitmentsIndexedUntilBlock(rotating, active.Tip(), 3);
+    BOOST_CHECK(BaseHeights(scan) == std::vector<int>({72, 73, 48}));
+    BOOST_CHECK(scan.complete);
+    // Quorum index 1 ends short in the second cycle.
+    scan = qbp.ScanMinedCommitmentsIndexedUntilBlock(rotating, active.Tip(), 4);
+    BOOST_CHECK(BaseHeights(scan) == std::vector<int>({72, 73, 48}));
+    BOOST_CHECK(!scan.complete);
+
+    // NORMAL lacks no history: its short walk is complete.
+    const EvoViewScope normal_view{evodb.ViewFor(EvoDbIdentity::NORMAL)};
+    scan = qbp.ScanMinedCommitmentsUntilBlock(type, active.Tip(), 4);
+    BOOST_CHECK(scan.bases.empty());
+    BOOST_CHECK(scan.complete);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
