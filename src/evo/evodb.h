@@ -636,6 +636,13 @@ public:
         LOCK(cs);
         m_promotion_failpoint = failpoint;
     }
+    //! Make DiscardSnapshotMarkers fail without writing, as if the rejection
+    //! could not be persisted.
+    void SetRejectionFailpointForTesting(bool fail) EXCLUSIVE_LOCKS_REQUIRED(!cs)
+    {
+        LOCK(cs);
+        m_rejection_failpoint = fail;
+    }
     //! Records merged per batch, so tests can stop a merge part-way.
     void SetMergeBatchSizeForTesting(size_t size) EXCLUSIVE_LOCKS_REQUIRED(!cs)
     {
@@ -687,6 +694,7 @@ private:
     //! The live generation the SNAPSHOT identity reads and writes.
     std::optional<EvoGenerationRecord> m_snapshot_generation GUARDED_BY(cs);
     PromotionFailpoint m_promotion_failpoint GUARDED_BY(cs){PromotionFailpoint::NONE};
+    bool m_rejection_failpoint GUARDED_BY(cs){false};
     MNListEquivalence m_mn_list_equivalence GUARDED_BY(cs);
     size_t m_merge_batch_size GUARDED_BY(cs){10000};
 };

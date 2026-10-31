@@ -2578,6 +2578,33 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_completion_incorrect_base_mn_
     BOOST_CHECK(!m_node.evodb->ReadBestBlock(EvoDbIdentity::SNAPSHOT, obsolete_marker));
 }
 
+//! A rejection that cannot be persisted leaves the generation live for startup
+//! recovery, but the rest of the run reads NORMAL again.
+BOOST_FIXTURE_TEST_CASE(chainstatemanager_unsaved_rejection_stops_reading_the_snapshot, SnapshotTestSetup)
+{
+    this->SetupSnapshot();
+    ChainstateManager& chainman = *Assert(m_node.chainman);
+    CEvoDB& evodb{*m_node.evodb};
+    const auto snapshot_only_key{std::make_pair(std::string{"test_snapshot_only"}, uint256::ONE)};
+    {
+        LOCK(::cs_main);
+        auto tx = evodb.BeginTransaction(EvoDbIdentity::SNAPSHOT);
+        evodb.Write(snapshot_only_key, uint8_t{1});
+        tx->Commit();
+        BOOST_REQUIRE(evodb.CommitRootTransaction(EvoDbIdentity::SNAPSHOT));
+    }
+    BOOST_REQUIRE(evodb.ActiveView().identity == EvoDbIdentity::SNAPSHOT);
+
+    evodb.SetRejectionFailpointForTesting(true);
+    BOOST_REQUIRE(chainman.HandleSnapshotStateMismatch("test rejection", [](bilingual_str) {}));
+    evodb.SetRejectionFailpointForTesting(false);
+    BOOST_CHECK(evodb.GetSnapshotGeneration());
+    BOOST_CHECK(evodb.ActiveView().identity == EvoDbIdentity::NORMAL);
+    const ActiveEvoViewScope turn{&evodb};
+    uint8_t value;
+    BOOST_CHECK(!evodb.Read(snapshot_only_key, value));
+}
+
 BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_cleanup_recovers_first_rename, SnapshotTestSetup)
 {
     this->SetupSnapshot();

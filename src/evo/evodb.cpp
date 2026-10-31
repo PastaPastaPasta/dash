@@ -676,7 +676,7 @@ bool CEvoDB::AbandonSnapshotGeneration()
 bool CEvoDB::DiscardSnapshotMarkers()
 {
     LOCK(cs);
-    if (!Assume(TransactionsClean())) return false;
+    if (!Assume(TransactionsClean()) || m_rejection_failpoint) return false;
     return DiscardBoundGeneration();
 }
 
