@@ -1042,10 +1042,12 @@ class WalletMigrationTest(BitcoinTestFramework):
         wallet = self.create_legacy_wallet("", load_on_startup=False)
         last_wallet_synced_block = wallet.getwalletinfo()['lastprocessedblock']['height']
 
-        # Generate blocks just so the wallet best block is pruned
+        # Generate blocks just so the wallet best block is pruned.
+        # Dash's small early regtest blocks fill the first -fastprune block file up
+        # to height ~320, so mine and prune further than upstream to remove it.
         self.restart_node(0, ["-fastprune", "-prune=1", "-nowallet"])
-        self.generate(self.nodes[0], 450, sync_fun=self.no_op)
-        self.nodes[0].pruneblockchain(250)
+        self.generate(self.nodes[0], 600, sync_fun=self.no_op)
+        self.nodes[0].pruneblockchain(400)
         # Ensure next block to sync is unavailable
         assert_raises_rpc_error(-1, "Block not available (pruned data)", self.nodes[0].getblock, self.nodes[0].getblockhash(last_wallet_synced_block + 1))
 
@@ -1089,7 +1091,7 @@ class WalletMigrationTest(BitcoinTestFramework):
         self.test_addressbook()
         self.test_failed_migration_cleanup()
 
-        # Note: After this test the first 250 blocks of 'nodes[0]' are pruned
+        # Note: After this test the first block file of 'nodes[0]' is pruned
         self.unsynced_wallet_on_pruned_node_fails()
 
 if __name__ == '__main__':
