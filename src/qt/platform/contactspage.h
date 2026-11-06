@@ -35,6 +35,7 @@ private:
     QLineEdit* m_username{nullptr};
     QPushButton* m_add{nullptr};
     QPushButton* m_refresh{nullptr};
+    QPushButton* m_import{nullptr};
     QLabel* m_status{nullptr};
     QTableWidget* m_list{nullptr};
 };

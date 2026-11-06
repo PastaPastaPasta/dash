@@ -6,6 +6,7 @@
 
 #include <qt/test/masternodetestutil.h>
 
+#include <chain.h>
 #include <common/args.h>
 #include <common/settings.h>
 #include <crypto/aes.h>
@@ -34,6 +35,7 @@
 #include <util/overloaded.h>
 #include <util/time.h>
 #include <validation.h>
+#include <validationinterface.h>
 #include <wallet/coincontrol.h>
 #include <wallet/context.h>
 #include <wallet/test/util.h>
@@ -48,6 +50,7 @@
 #include <QTableWidget>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -2393,6 +2396,267 @@ void PlatformTests::contactPagesKeepWhatWasRead()
                 argument == HexStr(Request(0x0c, 5, 0).owner));
     }
     QVERIFY(names <= ContactFlow::INCOMING_SHOWN + 2);
+}
+
+namespace {
+//! Our receiving chain towards someone we sent a request to, as the wallet
+//! derives it, and its first address.
+std::pair<wallet::FriendshipReceivingChain, CTxDestination> OurChain(interfaces::Wallet& wallet,
+                                                                     const platform::Identifier& ours,
+                                                                     const platform::Identifier& theirs)
+{
+    const auto chain{wallet.getFriendshipReceivingXpub({0, uint256{ours}, uint256{theirs}, 0})};
+    CTxDestination first;
+    Assert(chain && wallet::DeriveFriendshipPaymentDestination(chain.value.xpub, 0, first));
+    return {chain.value, first};
+}
+
+//! Pays 5 DASH to `to` in a new block from a key outside the wallet, funded
+//! by coinbase transaction `coinbase`: the wallet finds it only by scanning
+//! that block.
+void PayFromOutside(FundedFixture& f, size_t coinbase, const CTxDestination& to)
+{
+    const auto notifications{f.chain.m_node.chain->handleNotifications(f.wallet)};
+    CKey outside;
+    outside.MakeNewKey(true);
+    const CScript miner{GetScriptForRawPubKey(f.chain.coinbaseKey.GetPubKey())};
+    const auto funded{f.chain.CreateValidMempoolTransaction(f.chain.m_coinbase_txns[coinbase], 0, int(coinbase) + 1,
+                                                            f.chain.coinbaseKey,
+                                                            GetScriptForDestination(PKHash{outside.GetPubKey()}),
+                                                            6 * COIN, /*submit=*/false)};
+    f.chain.CreateAndProcessBlock({funded}, miner);
+    const auto payment{f.chain.CreateValidMempoolTransaction(MakeTransactionRef(funded), 0, 2, outside,
+                                                             GetScriptForDestination(to), 5 * COIN, /*submit=*/false)};
+    f.chain.CreateAndProcessBlock({payment}, miner);
+    SyncWithValidationInterfaceQueue();
+    Assert(!f.wallet_model.wallet().getTx(payment.GetHash()));
+}
+
+//! Counts the rescans the wallet starts.
+struct Rescans {
+    std::atomic<int> started{0};
+    std::unique_ptr<interfaces::Handler> handler;
+    explicit Rescans(interfaces::Wallet& wallet) :
+        handler{wallet.handleShowProgress([this](const std::string&, int progress) {
+            if (progress == 0) ++started;
+        })}
+    {
+    }
+};
+} // namespace
+
+//! A wallet restored from its seed imports our receiving chain towards
+//! everyone we ever sent a request to once our requests are read, though
+//! theirs can't be: born at the earliest request, not the newest, so a
+//! payment made between two requests is found and counted. One scan covers
+//! both chains, and the next session, which the wallet owes nothing, scans
+//! nothing.
+void PlatformTests::sentRequestsRecoverTheirChains()
+{
+    FundedFixture f{m_node};
+    QVERIFY(f.models.ok);
+    interfaces::Wallet& wallet{f.wallet_model.wallet()};
+    auto ours{Found(5, 1'000'000)};
+    ours.value.public_keys = RegisteredKeys();
+    platform::Identifier bob;
+    bob.fill(0x0b);
+    const auto [chain, address]{OurChain(wallet, ours.value.id, bob)};
+    QVERIFY(!chain.birth_time);
+    int64_t paid_at;
+    {
+        const auto notifications{f.chain.m_node.chain->handleNotifications(f.wallet)};
+        const auto payment{f.chain.CreateValidMempoolTransaction(f.chain.m_coinbase_txns[1], 0, 2, f.chain.coinbaseKey,
+                                                                 GetScriptForDestination(address), 5 * COIN,
+                                                                 /*submit=*/false)};
+        paid_at = f.chain.CreateAndProcessBlock({payment}, GetScriptForRawPubKey(f.chain.coinbaseKey.GetPubKey())).GetBlockTime();
+        SyncWithValidationInterfaceQueue();
+    }
+    const CAmount before{wallet.getBalance()};
+    constexpr int64_t DAY{24 * 60 * 60};
+    FakeSources sources;
+    sources.script = [&](FakePlatformClient& client) {
+        client.identities_by_pubkey_hash = {ours};
+        client.names = {Names({"me2026"})};
+        client.sent_requests = {
+            Requests({Request(5, 0x0b, uint64_t(paid_at + 2 * DAY) * 1000),
+                      Request(5, 0x0b, uint64_t(paid_at - DAY) * 1000), Request(5, 0x0c, uint64_t(paid_at) * 1000)})};
+        client.received_requests = {Unavailable<platform::ContactRequestPage>()};
+    };
+    Rescans rescans{wallet};
+    {
+        PlatformPage page{sources.get()};
+        f.attach(page);
+        sources.fake->deliverAll();
+        QVERIFY(page.contactFlow()->sentRead() && !page.contactFlow()->swept());
+        QTRY_VERIFY(!page.contactFlow()->rescanning());
+    }
+    QCOMPARE(rescans.started.load(), 1);
+    QVERIFY(OurChain(wallet, ours.value.id, bob).first.birth_time == paid_at - DAY);
+    QVERIFY(wallet.isSpendable(address));
+    QCOMPARE(wallet.getBalance(), before + 5 * COIN);
+    QVERIFY(!wallet.owedRescanFrom());
+
+    PlatformPage page{sources.get()};
+    f.attach(page);
+    sources.fake->deliverAll();
+    QVERIFY(page.contactFlow()->sentRead());
+    QTRY_VERIFY(!page.contactFlow()->rescanning());
+    QCOMPARE(rescans.started.load(), 1);
+}
+
+//! A locked wallet imports the chains once it is unlocked: the tab offers
+//! the unlock, counting the contacts whose payments wait for it. The next
+//! session, with the chains held, offers none.
+void PlatformTests::lockedWalletImportsChainsOnUnlock()
+{
+    FundedFixture f{m_node};
+    QVERIFY(f.models.ok);
+    interfaces::Wallet& wallet{f.wallet_model.wallet()};
+    auto ours{Found(5, 1'000'000)};
+    ours.value.public_keys = RegisteredKeys();
+    platform::Identifier bob;
+    bob.fill(0x0b);
+    const CTxDestination address{OurChain(wallet, ours.value.id, bob).second};
+    QVERIFY(f.wallet->EncryptWallet("test passphrase"));
+    int unlocks{0};
+    QObject::connect(&f.wallet_model, &WalletModel::requireUnlock, [&] {
+        ++unlocks;
+        f.wallet_model.setWalletLocked(/*locked=*/false, "test passphrase");
+    });
+    FakeSources sources;
+    sources.script = [&](FakePlatformClient& client) {
+        client.identities_by_pubkey_hash = {ours};
+        client.names = {Names({"me2026"})};
+        client.sent_requests = {Requests({Request(5, 0x0b, 1'000)})};
+        client.received_requests = {Requests({})};
+    };
+    {
+        PlatformPage page{sources.get()};
+        f.attach(page);
+        page.identityFlow()->lookUp();
+        sources.fake->deliverAll();
+        QCOMPARE(unlocks, 1);
+        QCOMPARE(f.wallet_model.getEncryptionStatus(), WalletModel::Locked);
+        QVERIFY(!wallet.isSpendable(address));
+        QCOMPARE(page.contactFlow()->chainsToImport(), size_t{1});
+        QPushButton* import{VisibleButton(page, "dashPayImportChains")};
+        QVERIFY(import);
+        import->click();
+        QCOMPARE(unlocks, 2);
+        QVERIFY(wallet.isSpendable(address));
+        QCOMPARE(f.wallet_model.getEncryptionStatus(), WalletModel::Locked);
+        QVERIFY(!VisibleButton(page, "dashPayImportChains"));
+        QTRY_VERIFY(!page.contactFlow()->rescanning());
+    }
+
+    PlatformPage page{sources.get()};
+    f.attach(page);
+    page.identityFlow()->lookUp();
+    sources.fake->deliverAll();
+    QCOMPARE(unlocks, 3);
+    QCOMPARE(f.wallet_model.getEncryptionStatus(), WalletModel::Locked);
+    QVERIFY(page.contactFlow()->sentRead());
+    QCOMPARE(page.contactFlow()->chainsToImport(), size_t{0});
+    QVERIFY(!VisibleButton(page, "dashPayImportChains"));
+    QTRY_VERIFY(!page.contactFlow()->rescanning());
+}
+
+//! On a node missing old blocks the chain is imported all the same, the
+//! blocks it has are read, and the tab names the first block it could not.
+//! A chain imported later gets that partial scan again, which finds a
+//! payment to it in a block the node has. A scan that did not run, because
+//! another rescan held the wallet or it was cancelled, names nothing and runs
+//! at a block once its wait has passed, finding the payment with no refresh.
+void PlatformTests::missingBlocksAreNamed()
+{
+    FundedFixture f{m_node};
+    QVERIFY(f.models.ok);
+    interfaces::Wallet& wallet{f.wallet_model.wallet()};
+    auto ours{Found(5, 1'000'000)};
+    ours.value.public_keys = RegisteredKeys();
+    const auto chain_to{[&](uint8_t theirs) {
+        platform::Identifier id;
+        id.fill(theirs);
+        return OurChain(wallet, ours.value.id, id).second;
+    }};
+    const CTxDestination address{chain_to(0x0b)};
+    PayFromOutside(f, 1, chain_to(0x0c));
+    PayFromOutside(f, 2, chain_to(0x0d));
+    PayFromOutside(f, 3, chain_to(0x0e));
+    struct MissingBlocks {
+        ChainstateManager& chainman;
+        void set(bool have)
+        {
+            LOCK(::cs_main);
+            for (int height{20}; height <= 30; ++height) {
+                CBlockIndex* index{chainman.ActiveChain()[height]};
+                index->nStatus = have ? index->nStatus | BLOCK_HAVE_DATA : index->nStatus & ~BLOCK_HAVE_DATA;
+            }
+        }
+        explicit MissingBlocks(ChainstateManager& chainman_in) :
+            chainman{chainman_in}
+        {
+            set(false);
+        }
+        ~MissingBlocks() { set(true); }
+    } missing{*f.chain.m_node.chainman};
+    // Bob's chain, then Carol's from a later refresh.
+    {
+        FakeSources sources;
+        sources.script = [&](FakePlatformClient& client) {
+            client.identities_by_pubkey_hash = {ours};
+            client.names = {Names({"me2026"})};
+            client.sent_requests = {Requests({Request(5, 0x0b, 0)}), Requests({Request(5, 0x0c, 1'000)})};
+            client.received_requests = {Requests({}), Requests({})};
+        };
+        PlatformPage page{sources.get()};
+        f.attach(page);
+        sources.fake->deliverAll();
+        QTRY_VERIFY(!page.contactFlow()->rescanning());
+        QVERIFY(wallet.isSpendable(address));
+        QVERIFY(page.contactFlow()->rescanNote().contains("block 20"));
+        QVERIFY(VisibleTexts(page).join(' ').contains(page.contactFlow()->rescanNote()));
+        const CAmount before{wallet.getBalance()};
+        page.contactFlow()->refresh();
+        sources.fake->deliverAll();
+        QTRY_VERIFY(!page.contactFlow()->rescanning());
+        QCOMPARE(wallet.getBalance(), before + 5 * COIN);
+    }
+    // Dave's, while another rescan holds the wallet; then Erin's, cancelled.
+    for (const bool cancel : {false, true}) {
+        const uint8_t theirs{cancel ? uint8_t{0x0e} : uint8_t{0x0d}};
+        std::atomic<int> cancels{cancel ? 1 : 0};
+        const auto canceller{wallet.handleShowProgress([&](const std::string&, int progress) {
+            if (progress == 0 && cancels-- > 0) wallet.abortRescan();
+        })};
+        FakeSources sources;
+        sources.script = [&](FakePlatformClient& client) {
+            client.identities_by_pubkey_hash = {ours};
+            client.names = {Names({"me2026"})};
+            client.sent_requests = {Requests({Request(5, 0x0b, 0), Request(5, theirs, 2'000)})};
+            client.received_requests = {Requests({})};
+        };
+        PlatformPage page{sources.get()};
+        const CAmount before{wallet.getBalance()};
+        {
+            wallet::WalletRescanReserver held{*f.wallet};
+            if (!cancel) QVERIFY(held.reserve());
+            f.attach(page);
+            sources.fake->deliverAll();
+            QTRY_VERIFY(!page.contactFlow()->rescanning());
+        }
+        QVERIFY(page.contactFlow()->rescanNote().isEmpty());
+        TipChanged(f.models.client);
+        QVERIFY(!page.contactFlow()->rescanning());
+        QCOMPARE(wallet.getBalance(), before);
+        {
+            const MockTime later{GetTime<std::chrono::seconds>() + std::chrono::minutes{1}};
+            TipChanged(f.models.client);
+            QTRY_VERIFY(!page.contactFlow()->rescanning());
+        }
+        QCOMPARE(wallet.getBalance(), before + 5 * COIN);
+        QVERIFY(page.contactFlow()->rescanNote().contains("block 20"));
+    }
 }
 
 //! Registering is offered only once the identity's names are proved none:

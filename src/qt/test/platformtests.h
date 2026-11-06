@@ -53,6 +53,9 @@ private Q_SLOTS:
     void contactRequestUsesTheIdentityKeys();
     void contactsAreTheNewestRequests();
     void contactPagesKeepWhatWasRead();
+    void sentRequestsRecoverTheirChains();
+    void lockedWalletImportsChainsOnUnlock();
+    void missingBlocksAreNamed();
 };
 
 #endif // BITCOIN_QT_TEST_PLATFORMTESTS_H

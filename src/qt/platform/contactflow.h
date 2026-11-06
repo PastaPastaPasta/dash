@@ -10,10 +10,15 @@
 #include <QObject>
 #include <QString>
 
+#include <atomic>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
+#include <thread>
+#include <utility>
 #include <vector>
 
 class IdentityFlow;
@@ -29,6 +34,17 @@ class PlatformService;
  * session: a page that fails keeps the pages before it, says why, and the
  * next refresh() goes on from where it stopped. Our requests never wait for
  * theirs.
+ *
+ * Once our requests are read, our receiving chain towards every recipient
+ * we ever sent one to is imported, born at the earliest of those requests,
+ * so a wallet restored from its seed sees what they paid it. A record in the
+ * wallet keeps the birth each was imported at, so a later session neither
+ * imports it again nor asks to. Only the rescans the wallet owes run, on a
+ * thread the flow owns, aborted and joined when the flow goes: behind one
+ * that needs blocks this node lacks, the new chains are scanned once from
+ * the earliest whose blocks it has, and what it has of the rest is read once
+ * for each set of chains imported. A pass that fails is tried again at a
+ * later block. A locked wallet imports the chains when it is unlocked.
  *
  * Adding a contact (by exact username) and accepting one send our request
  * with one SDK call. The wallet derives the ECDH secret and the receiving
@@ -61,6 +77,9 @@ public:
 
     //! Incoming requests listed: the newest ones. The rest are counted.
     static constexpr size_t INCOMING_SHOWN{100};
+    //! The wallet records of the receiving chains imported towards each
+    //! recipient: <hex ours>/<hex theirs>, the birth (seconds, LE64).
+    static constexpr const char* CHAIN_PREFIX{"dashpay/chain/"};
 
     ContactFlow(PlatformService& service, IdentityFlow& identity_flow);
 
@@ -77,6 +96,14 @@ public:
     //! Why the last action failed, else why a read stopped short; empty when
     //! neither did.
     QString error() const;
+    //! Recipients of our requests whose receiving chain waits for the wallet
+    //! to be unlocked.
+    size_t chainsToImport() const;
+    //! Whether the owed rescans are running.
+    bool rescanning() const { return m_rescanning; }
+    //! The first block a rescan could not read, naming it; empty when every
+    //! rescan read what it needed.
+    const QString& rescanNote() const { return m_rescan_note; }
 
     //! Send a contact request to the identity a username resolves to.
     void add(const std::string& username);
@@ -84,6 +111,10 @@ public:
     void accept(const platform::Identifier& contact);
     //! Read the contact requests again.
     void refresh();
+    //! Ask for the passphrase and import the chains chainsToImport() counts.
+    void importChains();
+
+    ~ContactFlow() override;
 
 Q_SIGNALS:
     void changed();
@@ -116,6 +147,19 @@ private:
     void readNames();
     //! One changed() for every name read until the event loop runs.
     void namesChanged();
+    //! The recipients of our requests whose chain the wallet records no
+    //! import of at or before the earliest request, with that birth.
+    std::map<platform::Identifier, int64_t> unimported() const;
+    //! Import our receiving chain towards each unimported() recipient, then
+    //! run the rescans owed. `ask`: ask for the passphrase of a locked wallet.
+    void recover(bool ask = false);
+    //! The rescans owed, on the rescan thread; births: those just imported,
+    //! which start a generation.
+    void rescan(std::vector<int64_t> births);
+    //! Back on the flow's thread: the owed rescan whose first missing block
+    //! was named, if any, whether the pass failed, and whether the scan of
+    //! the generation's births ran.
+    void rescanned(std::optional<std::pair<int64_t, int>> unavailable, bool failed, bool pushed_scanned);
     void resolve();
     void onResolved(platform::Result<platform::Identifier> result);
     void fetch();
@@ -138,6 +182,23 @@ private:
     std::map<platform::Identifier, std::weak_ptr<void>> m_name_calls;
     bool m_names_changed{false};
     QString m_error;
+    //! Births whose rescan waits for the one running.
+    std::vector<int64_t> m_births;
+    //! The births of this generation, until a scan settles them.
+    std::vector<int64_t> m_pushed;
+    std::thread m_rescan_thread;
+    std::atomic<bool> m_rescan_abort{false};
+    //! The thread runs; m_rescanning stays set until the flow has its result.
+    std::atomic<bool> m_rescanning_thread{false};
+    bool m_rescanning{false};
+    //! Owed rescans whose missing block was named this generation.
+    std::set<std::pair<int64_t, int>> m_named;
+    //! A failed rescan is retried no earlier than this (UNIX seconds), at a
+    //! block.
+    int64_t m_rescan_retry_at{0};
+    bool m_rescan_retry{false};
+    int m_rescan_failures{0};
+    QString m_rescan_note;
 };
 
 #endif // BITCOIN_QT_PLATFORM_CONTACTFLOW_H

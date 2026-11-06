@@ -28,6 +28,8 @@ ContactsPage::ContactsPage(QWidget* parent) :
     m_add->setObjectName("dashPayAddContact");
     m_refresh = new QPushButton(tr("Refresh"), this);
     m_refresh->setObjectName("dashPayRefreshContacts");
+    m_import = new QPushButton(this);
+    m_import->setObjectName("dashPayImportChains");
     m_status = new QLabel(this);
     m_status->setObjectName("dashPayContactsStatus");
     m_status->setWordWrap(true);
@@ -49,12 +51,14 @@ ContactsPage::ContactsPage(QWidget* parent) :
     layout->addWidget(title);
     layout->addLayout(add_row);
     layout->addWidget(m_status);
+    layout->addWidget(m_import, 0, Qt::AlignLeft);
     layout->addWidget(m_list);
 
     const auto add = [this] { m_flow->add(m_username->text().trimmed().toStdString()); };
     connect(m_add, &QPushButton::clicked, this, add);
     connect(m_username, &QLineEdit::returnPressed, this, add);
     connect(m_refresh, &QPushButton::clicked, this, [this] { m_flow->refresh(); });
+    connect(m_import, &QPushButton::clicked, this, [this] { m_flow->importChains(); });
 }
 
 void ContactsPage::refresh(bool writable)
@@ -75,8 +79,13 @@ void ContactsPage::refresh(bool writable)
         status = tr("Sending the contact request…");
         break;
     }
+    if (!m_flow->rescanNote().isEmpty())
+        status = status.isEmpty() ? m_flow->rescanNote() : status + "\n" + m_flow->rescanNote();
     m_status->setText(status);
     m_status->setVisible(!status.isEmpty());
+    const size_t chains{m_flow->chainsToImport()};
+    m_import->setText(tr("Unlock to receive payments from %n contact(s)", nullptr, int(chains)));
+    m_import->setVisible(chains > 0);
     const bool ready{writable && m_flow->sentRead()};
     m_username->setVisible(ready);
     m_add->setVisible(ready);

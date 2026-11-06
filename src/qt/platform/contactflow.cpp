@@ -4,18 +4,24 @@
 
 #include <qt/platform/contactflow.h>
 
+#include <crypto/common.h>
 #include <interfaces/wallet.h>
 #include <logging.h>
 #include <platform/client.h>
 #include <pubkey.h>
+#include <qt/clientmodel.h>
 #include <qt/platform/identityflow.h>
 #include <qt/platform/platformservice.h>
 #include <qt/platform/platformui.h>
 #include <qt/walletmodel.h>
 #include <support/cleanse.h>
+#include <tinyformat.h>
 #include <uint256.h>
+#include <util/strencodings.h>
+#include <util/threadnames.h>
 #include <util/time.h>
 #include <wallet/platformtypes.h>
+#include <wallet/wallet.h>
 
 #include <QMetaObject>
 
@@ -23,6 +29,7 @@
 #include <array>
 #include <chrono>
 #include <iterator>
+#include <thread>
 #include <tuple>
 #include <utility>
 
@@ -86,6 +93,46 @@ std::map<platform::Identifier, platform::ContactRequest> Newest(std::vector<plat
 
 QString NoSuchUser() { return ContactFlow::tr("No DashPay user has that username."); }
 
+bool Locked(const WalletModel& wallet_model)
+{
+    const auto status{wallet_model.getEncryptionStatus()};
+    return status == WalletModel::Locked || status == WalletModel::UnlockedForMixingOnly;
+}
+
+//! The records of the receiving chains recover() imported towards each
+//! recipient, under our identity: the birth each was imported at.
+std::string ChainPrefix(const platform::Identifier& ours)
+{
+    return strprintf("%s%s/", ContactFlow::CHAIN_PREFIX, HexStr(ours));
+}
+
+std::map<platform::Identifier, int64_t> ImportedChains(interfaces::Wallet& wallet, const platform::Identifier& ours)
+{
+    const std::string prefix{ChainPrefix(ours)};
+    std::map<platform::Identifier, int64_t> chains;
+    for (const auto& [record, value] : wallet.getPlatformData(prefix)) {
+        const auto theirs{TryParseHex<uint8_t>(std::string_view{record}.substr(prefix.size()))};
+        platform::Identifier id;
+        if (!theirs || theirs->size() != id.size() || value.size() != 8) continue;
+        std::copy(theirs->begin(), theirs->end(), id.begin());
+        chains.emplace(id, static_cast<int64_t>(ReadLE64(value.data())));
+    }
+    return chains;
+}
+
+void WriteImportedChain(interfaces::Wallet& wallet, const platform::Identifier& ours,
+                        const platform::Identifier& theirs, int64_t birth)
+{
+    std::vector<unsigned char> value(8);
+    WriteLE64(value.data(), static_cast<uint64_t>(birth));
+    const std::string record{ChainPrefix(ours) + HexStr(theirs)};
+    if (!wallet.writePlatformData(record, value)) LogPrintf("DashPay: could not write the record %s\n", record);
+}
+
+//! The first wait before failed rescans are tried again, and the longest.
+constexpr std::chrono::seconds RESCAN_RETRY{30};
+constexpr std::chrono::seconds RESCAN_RETRY_MAX{std::chrono::minutes{30}};
+
 //! The payment chain an incoming request carries, decrypted with our key it
 //! names. nullopt unless their key and ours are keys DIP-15 accepts for its
 //! ECDH and it decrypts to a valid point. The wallet must be unlocked.
@@ -124,7 +171,180 @@ ContactFlow::ContactFlow(PlatformService& service, IdentityFlow& identity_flow) 
     m_service.addWriter(*this);
     connect(&m_service, &PlatformService::changed, this, &ContactFlow::update);
     connect(&m_identity_flow, &IdentityFlow::changed, this, &ContactFlow::update);
+    // Unlocked by the user: the chains waiting for it are imported.
+    connect(&m_service.walletModel(), &WalletModel::encryptionStatusChanged, this, [this] { recover(); });
+    // A failed pass is tried again at the first block past its wait.
+    connect(&m_service.clientModel(), &ClientModel::numBlocksChanged, this,
+            [this](int, const QDateTime&, const QString&, double, SyncType header, SynchronizationState) {
+                if (header == SyncType::BLOCK_SYNC && m_rescan_retry) rescan({});
+            });
     update();
+}
+
+ContactFlow::~ContactFlow()
+{
+    m_rescan_abort = true;
+    if (!m_rescan_thread.joinable()) return;
+    // A rescan that starts after one abort clears it: abort until the thread is done.
+    while (m_rescanning_thread) {
+        m_service.walletModel().wallet().abortRescan();
+        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    }
+    m_rescan_thread.join();
+}
+
+size_t ContactFlow::chainsToImport() const
+{
+    if (!m_sent.complete || !Locked(m_service.walletModel())) return 0;
+    return unimported().size();
+}
+
+std::map<platform::Identifier, int64_t> ContactFlow::unimported() const
+{
+    const auto& identity{m_identity_flow.identity()};
+    if (!identity) return {};
+    // Our requests only: the chain a request of ours carries is the one they pay.
+    std::map<platform::Identifier, int64_t> earliest;
+    for (const auto& request : m_sent.read) {
+        // Platform's $createdAt is in milliseconds.
+        const int64_t birth{static_cast<int64_t>(request.created_at_ms / 1000)};
+        const auto [it, added]{earliest.try_emplace(request.to_user_id, birth)};
+        if (!added) it->second = std::min(it->second, birth);
+    }
+    const auto imported{ImportedChains(m_service.walletModel().wallet(), identity->id)};
+    std::erase_if(earliest, [&](const auto& chain) {
+        const auto marker{imported.find(chain.first)};
+        return marker != imported.end() && marker->second <= chain.second;
+    });
+    return earliest;
+}
+
+void ContactFlow::importChains() { recover(/*ask=*/true); }
+
+void ContactFlow::recover(bool ask)
+{
+    const auto& identity{m_identity_flow.identity()};
+    if (!identity || !m_sent.complete) return;
+    const auto unimported{this->unimported()};
+    WalletModel& wallet_model{m_service.walletModel()};
+    std::optional<WalletModel::UnlockContext> unlock;
+    if (!unimported.empty() && Locked(wallet_model)) {
+        // The tab offers the unlock.
+        if (!ask) {
+            Q_EMIT changed();
+            return rescan({});
+        }
+        unlock.emplace(wallet_model.requestUnlock());
+        if (!unlock->isValid() || !m_identity_flow.identity()) return;
+    }
+    interfaces::Wallet& wallet{wallet_model.wallet()};
+    std::vector<int64_t> births;
+    for (const auto& [theirs, birth] : unimported) {
+        if (!wallet.ensureFriendshipReceivingKeychain({ACCOUNT, uint256{identity->id}, uint256{theirs}, birth}))
+            continue;
+        // Any marker it had was later: this birth is the earliest.
+        WriteImportedChain(wallet, identity->id, theirs, birth);
+        births.push_back(birth);
+    }
+    Q_EMIT changed();
+    rescan(std::move(births));
+}
+
+void ContactFlow::rescan(std::vector<int64_t> births)
+{
+    if (m_rescanning) {
+        // Run again once this one is done: it may have passed their blocks.
+        m_births.insert(m_births.end(), births.begin(), births.end());
+        return;
+    }
+    if (!births.empty()) {
+        // New or earlier chains start a generation: a partial scan runs again
+        // for them.
+        m_pushed = std::move(births);
+        m_named.clear();
+    } else if (GetTime<std::chrono::seconds>().count() < m_rescan_retry_at) {
+        return;
+    }
+    if (m_rescan_thread.joinable()) m_rescan_thread.join();
+    m_rescanning = true;
+    m_rescanning_thread = true;
+    m_rescan_retry = false;
+    interfaces::Wallet& wallet{m_service.walletModel().wallet()};
+    m_rescan_thread = std::thread([this, &wallet, pushed = m_pushed, named = m_named] {
+        util::ThreadRename("dashpay-rescan");
+        std::optional<std::pair<int64_t, int>> unavailable;
+        bool failed{false};
+        bool pushed_scanned{false};
+        // Only what the wallet owes, the earliest first; one imported
+        // meanwhile is owed after this pass and taken next.
+        while (!m_rescan_abort) {
+            const auto from{wallet.owedRescanFrom()};
+            if (!from) break;
+            const auto missing{wallet.rescanUnavailableFrom(*from)};
+            if (!missing) {
+                if (wallet.rescanFromTime(*from) == wallet::RescanStatus::SUCCESS) continue;
+                failed = true;
+                break;
+            }
+            // Behind one that cannot be settled, the new chains whose blocks
+            // are all here are settled by one scan from the earliest of them.
+            if (!pushed_scanned) {
+                std::optional<int64_t> earliest;
+                for (const int64_t birth : pushed) {
+                    if ((!earliest || birth < *earliest) && !wallet.rescanUnavailableFrom(birth)) earliest = birth;
+                }
+                if (earliest && !m_rescan_abort) {
+                    if (wallet.rescanFromTime(*earliest) != wallet::RescanStatus::SUCCESS) {
+                        failed = true;
+                        break;
+                    }
+                    pushed_scanned = true;
+                }
+            }
+            // Once a generation, the blocks this node has are read, and the
+            // rest stays owed until it has them again.
+            if (!named.count({*from, *missing}) && !m_rescan_abort) {
+                const auto status{wallet.rescanFromTime(*from)};
+                if (status == wallet::RescanStatus::SUCCESS) continue;
+                if (status == wallet::RescanStatus::FAILURE) {
+                    unavailable.emplace(*from, *missing);
+                } else {
+                    // Busy, or cancelled: it read nothing that counts.
+                    failed = true;
+                }
+            }
+            break;
+        }
+        QMetaObject::invokeMethod(
+            this, [this, unavailable, failed, pushed_scanned] { rescanned(unavailable, failed, pushed_scanned); },
+            Qt::QueuedConnection);
+        m_rescanning_thread = false;
+    });
+}
+
+void ContactFlow::rescanned(std::optional<std::pair<int64_t, int>> unavailable, bool failed, bool pushed_scanned)
+{
+    if (m_rescan_thread.joinable()) m_rescan_thread.join();
+    m_rescanning = false;
+    if (pushed_scanned) m_pushed.clear();
+    if (unavailable) {
+        m_named.insert(*unavailable);
+        m_rescan_note = tr("DashPay could not check payments from your contacts from block %1 on, because this "
+                           "node does not have that block. The blocks it has were checked.")
+                            .arg(unavailable->second);
+    }
+    if (failed) {
+        // Busy, cancelled, or the chain changed under it: later, not at once.
+        const auto wait{std::min<std::chrono::seconds>(RESCAN_RETRY * (int64_t{1} << std::min(m_rescan_failures, 16)),
+                                                       RESCAN_RETRY_MAX)};
+        ++m_rescan_failures;
+        m_rescan_retry_at = GetTime<std::chrono::seconds>().count() + wait.count();
+        m_rescan_retry = true;
+    } else {
+        m_rescan_failures = 0;
+    }
+    if (!m_births.empty()) rescan(std::exchange(m_births, {}));
+    Q_EMIT changed();
 }
 
 ContactFlow::Requests ContactFlow::sent() const { return Newest(m_sent.read, &platform::ContactRequest::to_user_id); }
@@ -244,7 +464,11 @@ void ContactFlow::readRequests(platform::ContactDirection direction, bool next)
                                  std::make_move_iterator(result.value.requests.end()));
                 read.next_since_ms = result.value.next_since_ms;
                 read.complete = result.value.complete;
-                if (!read.complete) readRequests(direction, /*next=*/true);
+                if (!read.complete) {
+                    readRequests(direction, /*next=*/true);
+                } else if (direction == platform::ContactDirection::SENT) {
+                    recover();
+                }
             } else {
                 // What was read stays; the binding's message says why the rest is not.
                 read.error = result.status.message.empty() ? PlatformUi::Describe(result.status)
