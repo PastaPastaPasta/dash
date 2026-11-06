@@ -245,10 +245,18 @@ ContactFlow::~ContactFlow()
     m_rescan_thread.join();
 }
 
-size_t ContactFlow::chainsToImport() const
+size_t ContactFlow::chainsToImport() const { return Locked(m_service.walletModel()) ? chainsNotImported() : 0; }
+
+size_t ContactFlow::chainsNotImported() const
 {
-    if (!m_sent.complete || !Locked(m_service.walletModel())) return 0;
+    if (!m_sent.complete) return 0;
     return unimported().size();
+}
+
+size_t ContactFlow::chainsImported() const
+{
+    if (!m_sent.complete) return 0;
+    return sent().size() - unimported().size();
 }
 
 std::map<platform::Identifier, int64_t> ContactFlow::unimported() const
@@ -272,6 +280,12 @@ std::map<platform::Identifier, int64_t> ContactFlow::unimported() const
 }
 
 void ContactFlow::importChains() { recover(/*ask=*/true); }
+
+void ContactFlow::rescanOwed()
+{
+    m_rescan_retry_at = 0;
+    rescan({});
+}
 
 void ContactFlow::recover(bool ask)
 {

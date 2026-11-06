@@ -27,6 +27,7 @@
 #include <qt/platform/identityflow.h>
 #include <qt/platform/platformpage.h>
 #include <qt/platform/platformservice.h>
+#include <qt/platform/recoveryflow.h>
 #include <qt/platform/usernameflow.h>
 #include <qt/qvalidatedlineedit.h>
 #include <qt/sendcoinsdialog.h>
@@ -435,6 +436,15 @@ platform::Result<platform::Names> Names(const std::vector<std::string>& labels)
     return result;
 }
 
+//! The read of an identity's username waiting for its vote: `label`, or none.
+platform::Result<std::vector<platform::Contest>> Contests(std::optional<std::string> label)
+{
+    platform::Result<std::vector<platform::Contest>> result;
+    result.status.kind = platform::StatusKind::OK;
+    if (label) result.value.push_back({*label, 0});
+    return result;
+}
+
 platform::Result<platform::ContactRequestPage> Requests(std::vector<platform::ContactRequest> requests)
 {
     platform::Result<platform::ContactRequestPage> result;
@@ -781,14 +791,14 @@ void PlatformTests::nothingBeforeConsent()
     QVERIFY(page.findChild<QLabel*>("dashPayNotice")->isVisibleTo(&page));
     QVERIFY(VisibleButton(page, "dashPayStop") == nullptr);
 
-    QPushButton* start{VisibleButton(page, "dashPayStart")};
-    QVERIFY(start != nullptr);
-    start->click();
+    QPushButton* find{VisibleButton(page, "dashPayFindIdentity")};
+    QVERIFY(find != nullptr);
+    find->click();
     QCOMPARE(sources.made.size(), size_t{1});
     QVERIFY(sources.made.back().endpoints == std::vector<CService>{Ipv4Evonode()});
     QVERIFY(!sources.made.back().proxy);
     QVERIFY(page.service()->client() != nullptr);
-    QVERIFY(VisibleButton(page, "dashPayStart") == nullptr);
+    QVERIFY(VisibleButton(page, "dashPayFindIdentity") == nullptr);
 
     // The consent is the wallet's: the next session starts without a click.
     {
@@ -803,7 +813,10 @@ void PlatformTests::nothingBeforeConsent()
     stop->click();
     QVERIFY(read.expired());
     QVERIFY(page.service()->client() == nullptr);
-    QVERIFY(VisibleButton(page, "dashPayStart") != nullptr);
+    QVERIFY(VisibleButton(page, "dashPayFindIdentity") != nullptr);
+    // Turned off before the identity was found, which is said.
+    QVERIFY(page.recoveryFlow()->step() == RecoveryFlow::Step::IDLE);
+    QVERIFY(VisibleTexts(page).join(' ').contains("DashPay stopped before your identity"));
     FakeSources after;
     PlatformService service{f.wallet_model, f.models.client, after.get()};
     QVERIFY(after.made.empty());
@@ -1893,18 +1906,18 @@ void PlatformTests::lockedWalletLooksUpOnUnlock()
     QVERIFY(VisibleButton(page, "dashPayCreateIdentity") == nullptr);
     QVERIFY(!page.findChild<QLabel*>("dashPayIdentity")->isVisibleTo(&page));
 
-    QPushButton* look_up{VisibleButton(page, "dashPayLookUp")};
-    QVERIFY(look_up != nullptr);
-    look_up->click();
+    QPushButton* find{VisibleButton(page, "dashPayFindIdentity")};
+    QVERIFY(find != nullptr);
+    find->click();
     QCOMPARE(unlocks, 1);
-    QCOMPARE(f.wallet_model.getEncryptionStatus(), WalletModel::Locked);
     QCOMPARE(sources.made.size(), size_t{2});
     QCOMPARE(sources.fake->countCalls("getIdentityByPublicKeyHash"), size_t{1});
-    QVERIFY(VisibleButton(page, "dashPayLookUp") == nullptr);
+    QVERIFY(VisibleButton(page, "dashPayFindIdentity") == nullptr);
     sources.fake->deliverAll();
+    QCOMPARE(f.wallet_model.getEncryptionStatus(), WalletModel::Locked);
     QVERIFY(page.findChild<QLabel*>("dashPayIdentity")->isVisibleTo(&page));
     QVERIFY(VisibleButton(page, "dashPayTopUp") != nullptr);
-    QVERIFY(VisibleButton(page, "dashPayLookUp") == nullptr);
+    QVERIFY(VisibleButton(page, "dashPayFindIdentity") == nullptr);
     QVERIFY(VisibleButton(page, "dashPayCreateIdentity") == nullptr);
 
     f.setNetworkActive(false);
@@ -1984,7 +1997,8 @@ void PlatformTests::usernameCreatesTheIdentityFirst()
 //! A label that resolves to the identity is its own.
 //! A rebuild that drops the lookup of a label looks it up again. The tab
 //! header shows the name; registering is offered only once the identity's
-//! names were read and it has none.
+//! names were read and it has none, and none of its usernames waits for a
+//! masternode vote.
 void PlatformTests::usernameForAnExistingIdentity()
 {
     Fixture f{m_node};
@@ -2009,6 +2023,7 @@ void PlatformTests::usernameForAnExistingIdentity()
             client.registered_names = {contested, Resolved(1)};
         }
         client.identities_by_pubkey_hash = {found};
+        client.contests = {Contests(std::nullopt)};
         // The client a rebuild makes reads no names: the identity's are known,
         // and a contested label wrote nothing that would change them.
         if (clients < 3) client.names = {Names({})};
@@ -2632,6 +2647,8 @@ void PlatformTests::lockedWalletImportsChainsOnUnlock()
         QCOMPARE(f.wallet_model.getEncryptionStatus(), WalletModel::Locked);
         QVERIFY(!wallet.isSpendable(address));
         QCOMPARE(page.contactFlow()->chainsToImport(), size_t{1});
+        QVERIFY(VisibleTexts(page).join(' ').contains("Unlock the wallet to add them."));
+        QVERIFY(VisibleButton(page, "dashPayRetryRecovery"));
         QPushButton* import{VisibleButton(page, "dashPayImportChains")};
         QVERIFY(import);
         import->click();
@@ -2639,6 +2656,7 @@ void PlatformTests::lockedWalletImportsChainsOnUnlock()
         QVERIFY(wallet.isSpendable(address));
         QCOMPARE(f.wallet_model.getEncryptionStatus(), WalletModel::Locked);
         QVERIFY(!VisibleButton(page, "dashPayImportChains"));
+        QVERIFY(!VisibleButton(page, "dashPayRetryRecovery"));
         QTRY_VERIFY(!page.contactFlow()->rescanning());
     }
 
@@ -2650,7 +2668,10 @@ void PlatformTests::lockedWalletImportsChainsOnUnlock()
     QCOMPARE(f.wallet_model.getEncryptionStatus(), WalletModel::Locked);
     QVERIFY(page.contactFlow()->sentRead());
     QCOMPARE(page.contactFlow()->chainsToImport(), size_t{0});
+    QCOMPARE(page.contactFlow()->chainsImported(), size_t{1});
     QVERIFY(!VisibleButton(page, "dashPayImportChains"));
+    QVERIFY(!VisibleTexts(page).join(' ').contains("Unlock the wallet to add them."));
+    QVERIFY(!VisibleButton(page, "dashPayRetryRecovery"));
     QTRY_VERIFY(!page.contactFlow()->rescanning());
 }
 
@@ -2709,6 +2730,10 @@ void PlatformTests::missingBlocksAreNamed()
         QVERIFY(wallet.isSpendable(address));
         QVERIFY(page.contactFlow()->rescanNote().contains("block 20"));
         QVERIFY(VisibleTexts(page).join(' ').contains(page.contactFlow()->rescanNote()));
+        // The wallet still owes it, from the block the node lacks on.
+        QVERIFY(wallet.owedRescanFrom().has_value());
+        const QString report{page.findChild<QLabel*>("dashPayRecoveryStatus")->text()};
+        QVERIFY(report.contains("blocks from 20 on") && report.contains("-reindex"));
         const CAmount before{wallet.getBalance()};
         page.contactFlow()->refresh();
         sources.fake->deliverAll();
@@ -3051,4 +3076,326 @@ void PlatformTests::paymentsFollowTheWalletHistory()
     const QString address{PayContact(page, sources, 0x0b)};
     mine({tx(SendTo(wallet, DecodeDestination(address.toStdString())))});
     QCOMPARE(bob_wallet->getBalance(), before + COIN);
+}
+
+namespace {
+//! The identity 0x05… with the keys Dash Core registers.
+platform::Result<platform::Identity> OurIdentity()
+{
+    auto ours{Found(5, 1'000'000)};
+    ours.value.public_keys = RegisteredKeys();
+    return ours;
+}
+
+//! A valid payment chain key for contacts' requests.
+CPubKey ChainKey()
+{
+    CExtKey key;
+    const std::array<std::byte, 32> seed{};
+    key.SetSeed(seed);
+    return key.Neuter().pubkey;
+}
+
+QString RecoveryReport(const PlatformPage& page)
+{
+    const auto* label{page.findChild<QLabel*>("dashPayRecoveryStatus")};
+    return label->isVisibleTo(&page) ? label->text() : QString{};
+}
+} // namespace
+
+//! On a restored wallet Find my identity is the first DashPay click: under
+//! one passphrase it starts DashPay, looks the identity up by its MASTER key
+//! at index 0, reads its usernames and the contact requests we sent, and
+//! imports our receiving chain towards each recipient, answered or not, born
+//! at our earliest request to them; a chain the wallet holds is born earlier
+//! when a request is older. The wallet is locked again once that is done,
+//! and the tab says what was found. A client rebuilt during the lookup keeps
+//! the unlock, no other write starts meanwhile, and Find starts none while
+//! another flow is busy.
+void PlatformTests::findMyIdentityRestoresTheWallet()
+{
+    Fixture f{m_node, /*consented=*/false};
+    QVERIFY(f.models.ok);
+    interfaces::Wallet& wallet{f.wallet_model.wallet()};
+    const auto ours{OurIdentity()};
+    platform::Identifier bob, carol, dave;
+    bob.fill(0x0b);
+    carol.fill(0x0c);
+    dave.fill(0x0d);
+    CKey bob_key, carol_key;
+    bob_key.MakeNewKey(/*fCompressed=*/true);
+    carol_key.MakeNewKey(/*fCompressed=*/true);
+    // Carol's chain was imported here when we answered her; bob's contact
+    // was made on another app on this seed, and dave, asked there, has not
+    // answered but can pay us.
+    QVERIFY(wallet.ensureFriendshipReceivingKeychain({0, uint256{ours.value.id}, uint256{carol}, 1'700'000'000}));
+    const CTxDestination bob_first{OurChain(wallet, ours.value.id, bob).second};
+    const CTxDestination carol_first{OurChain(wallet, ours.value.id, carol).second};
+    const CTxDestination dave_first{OurChain(wallet, ours.value.id, dave).second};
+    const auto received{Requests({IncomingRequest(wallet, 0x0b, 5, bob_key, 2, ChainKey()),
+                                  IncomingRequest(wallet, 0x0c, 5, carol_key, 2, ChainKey())})};
+    QVERIFY(f.wallet->EncryptWallet("test passphrase"));
+    int unlocks{0};
+    UsernameFlow* during_dialog{nullptr};
+    QObject::connect(&f.wallet_model, &WalletModel::requireUnlock, [&] {
+        ++unlocks;
+        if (during_dialog) during_dialog->registerName("erin2026");
+        f.wallet_model.setWalletLocked(/*locked=*/false, "test passphrase");
+    });
+    FakeSources sources;
+    sources.script = [&](FakePlatformClient& client) {
+        client.identities_by_pubkey_hash = {ours};
+        client.names = {Names({"me2026"})};
+        client.sent_requests = {Requests({Request(5, 0x0b, 1'650'000'000'000), Request(5, 0x0b, 1'600'000'000'500),
+                                          Request(5, 0x0c, 1'650'000'000'000), Request(5, 0x0d, 1'650'000'000'000)})};
+        client.received_requests = {received};
+        client.resolved_names = {Resolved(std::nullopt)};
+    };
+    // When the chain paying `address` was born, as listdescriptors shows it.
+    const auto birth = [&](const CTxDestination& address) {
+        const auto owners{f.wallet->GetScriptPubKeyMans(GetScriptForDestination(address))};
+        return owners.size() == 1 ? (*owners.begin())->GetTimeFirstKey() : int64_t{-1};
+    };
+    const size_t spkms{f.wallet->GetAllScriptPubKeyMans().size()};
+
+    PlatformPage page{sources.get()};
+    f.attach(page);
+    QVERIFY(sources.made.empty());
+    QPushButton* find{VisibleButton(page, "dashPayFindIdentity")};
+    QVERIFY(find != nullptr);
+    find->click();
+    QCOMPARE(sources.made.size(), size_t{1});
+    // The evonodes change during the lookup: the new client looks the identity up again.
+    sources.evonodes = {Ipv4Evonode2()};
+    f.listRead();
+    QCOMPARE(sources.made.size(), size_t{2});
+    // A free username found while the contacts are read is not registered.
+    page.usernameFlow()->registerName("dave2026");
+    sources.fake->deliverAll();
+    QTRY_VERIFY(!page.contactFlow()->rescanning());
+    QCOMPARE(sources.fake->countCalls("registerName"), size_t{0});
+    QVERIFY(!page.usernameFlow()->error().isEmpty());
+
+    QCOMPARE(unlocks, 1);
+    QCOMPARE(f.wallet_model.getEncryptionStatus(), WalletModel::Locked);
+    QVERIFY(page.service()->consented());
+    QVERIFY(page.recoveryFlow()->step() == RecoveryFlow::Step::IDLE);
+    QVERIFY(page.findChild<QLabel*>("dashPayIdentity")->isVisibleTo(&page));
+    QCOMPARE(page.findChild<QLabel*>("dashPayUsername")->text(), QString{"me2026"});
+    QVERIFY(VisibleButton(page, "dashPayFindIdentity") == nullptr);
+    QVERIFY(VisibleButton(page, "dashPayRetryRecovery") == nullptr);
+    std::vector<std::pair<uint8_t, ContactFlow::State>> listed;
+    for (const auto& contact : page.contactFlow()->contacts()) {
+        listed.emplace_back(contact.id[0], contact.state);
+    }
+    QVERIFY(listed == (std::vector<std::pair<uint8_t, ContactFlow::State>>{{0x0b, ContactFlow::State::ESTABLISHED},
+                                                                           {0x0c, ContactFlow::State::ESTABLISHED},
+                                                                           {0x0d, ContactFlow::State::OUTGOING}}));
+    QVERIFY(RecoveryReport(page).contains("The addresses 3 contact"));
+    QVERIFY(RecoveryReport(page).contains("pay you at are in the wallet."));
+
+    // Bob's and dave's payments to us are now the wallet's, from our
+    // earliest request to each; carol's chain is born at hers.
+    QVERIFY(wallet.isSpendable(bob_first));
+    QVERIFY(wallet.isSpendable(dave_first));
+    QCOMPARE(f.wallet->GetAllScriptPubKeyMans().size(), spkms + 2);
+    QCOMPARE(birth(bob_first), int64_t{1'600'000'000});
+    QCOMPARE(birth(dave_first), int64_t{1'650'000'000});
+    QCOMPARE(birth(carol_first), int64_t{1'650'000'000});
+
+    // Another flow started while the passphrase dialog was open: Find looks nothing up.
+    during_dialog = page.usernameFlow();
+    page.recoveryFlow()->find();
+    QCOMPARE(unlocks, 2);
+    QVERIFY(page.recoveryFlow()->step() == RecoveryFlow::Step::IDLE);
+    QVERIFY(RecoveryReport(page).contains("Another DashPay request is on its way"));
+    QCOMPARE(sources.fake->countCalls("getIdentityByPublicKeyHash"), size_t{1});
+    QCOMPARE(f.wallet_model.getEncryptionStatus(), WalletModel::Locked);
+    sources.fake->deliverAll();
+}
+
+//! Find says what it could not do, and Try again retries it under the
+//! passphrase, at once whatever wait a failure set. The identity's names and
+//! our requests that could not be read are read again, and their chains
+//! imported. A read of the identity's pending username that fails leaves it
+//! unknown, not "none", so registering one is not offered; read again it is
+//! shown waiting for its vote. A rescan the wallet was too busy for is shown
+//! as not finished, with no claim that blocks were checked, and runs on Try
+//! again and finds the payment. A top-up whose fee steps are all used says
+//! when it is sent again, not that it has not reached Platform yet.
+void PlatformTests::findReportsWhatItCouldNotDo()
+{
+    FundedFixture f{m_node};
+    QVERIFY(f.models.ok);
+    interfaces::Wallet& wallet{f.wallet_model.wallet()};
+    const auto ours{OurIdentity()};
+    platform::Identifier bob;
+    bob.fill(0x0b);
+    const CTxDestination address{OurChain(wallet, ours.value.id, bob).second};
+    int64_t paid_at;
+    {
+        const auto notifications{f.chain.m_node.chain->handleNotifications(f.wallet)};
+        const auto payment{f.chain.CreateValidMempoolTransaction(f.chain.m_coinbase_txns[1], 0, 2, f.chain.coinbaseKey,
+                                                                 GetScriptForDestination(address), 5 * COIN,
+                                                                 /*submit=*/false)};
+        paid_at = f.chain.CreateAndProcessBlock({payment}, GetScriptForRawPubKey(f.chain.coinbaseKey.GetPubKey())).GetBlockTime();
+        SyncWithValidationInterfaceQueue();
+    }
+    const CAmount before{wallet.getBalance()};
+    QVERIFY(f.wallet->EncryptWallet("test passphrase"));
+    int unlocks{0};
+    QObject::connect(&f.wallet_model, &WalletModel::requireUnlock, [&] {
+        ++unlocks;
+        f.wallet_model.setWalletLocked(/*locked=*/false, "test passphrase");
+    });
+    FakeSources sources;
+    sources.script = [&](FakePlatformClient& client) {
+        client.identities_by_pubkey_hash = {ours, ours, ours};
+        client.names = {Unavailable<platform::Names>(), Names({})};
+        client.contests = {Unavailable<std::vector<platform::Contest>>(), Contests("alice")};
+        client.sent_requests = {Unavailable<platform::ContactRequestPage>(),
+                                Requests({Request(5, 0x0b, uint64_t(paid_at - 24 * 60 * 60) * 1000)}), Requests({})};
+        client.received_requests = {Requests({})};
+    };
+    PlatformPage page{sources.get()};
+    f.attach(page);
+    const auto* header{page.findChild<QLabel*>("dashPayUsername")};
+    QVERIFY(VisibleButton(page, "dashPayRetryRecovery") == nullptr);
+    VisibleButton(page, "dashPayFindIdentity")->click();
+    sources.fake->deliverAll();
+    QCOMPARE(unlocks, 1);
+    QCOMPARE(f.wallet_model.getEncryptionStatus(), WalletModel::Locked);
+    QVERIFY(page.usernameFlow()->names() == UsernameFlow::Names::FAILED);
+    QVERIFY(VisibleButton(page, "dashPayRegisterUsername") == nullptr);
+    QVERIFY(RecoveryReport(page).contains("could not read the contact requests you sent"));
+    QVERIFY(!wallet.isSpendable(address));
+
+    // Again, while another rescan holds the wallet's reservation: the names
+    // are none, but whether one waits for its vote could not be read.
+    std::optional<wallet::WalletRescanReserver> other{*f.wallet};
+    QVERIFY(other->reserve());
+    VisibleButton(page, "dashPayRetryRecovery")->click();
+    sources.fake->deliverAll();
+    QTRY_VERIFY(!page.contactFlow()->rescanning());
+    QCOMPARE(unlocks, 2);
+    QCOMPARE(f.wallet_model.getEncryptionStatus(), WalletModel::Locked);
+    QVERIFY(page.usernameFlow()->names() == UsernameFlow::Names::NONE);
+    QVERIFY(page.recoveryFlow()->pending() == RecoveryFlow::Pending::FAILED);
+    QVERIFY(VisibleButton(page, "dashPayRegisterUsername") == nullptr);
+    QVERIFY(!header->isVisibleTo(&page));
+    QVERIFY(RecoveryReport(page).contains("waiting for its masternode vote"));
+    QVERIFY(wallet.isSpendable(address));
+    QCOMPARE(wallet.getBalance(), before);
+    QVERIFY(page.contactFlow()->rescanFailed());
+    QVERIFY(RecoveryReport(page).contains("did not finish"));
+    QVERIFY(page.contactFlow()->rescanNote().isEmpty());
+    QVERIFY(!VisibleTexts(page).join(' ').contains("were checked"));
+    QVERIFY(!RecoveryReport(page).contains("could not read the contact requests"));
+
+    other.reset();
+    VisibleButton(page, "dashPayRetryRecovery")->click();
+    sources.fake->deliverAll();
+    QTRY_VERIFY(!page.contactFlow()->rescanning() && !page.contactFlow()->rescanFailed());
+    QCOMPARE(unlocks, 3);
+    QCOMPARE(header->text(), QString{"alice (waiting for the masternode vote)"});
+    QVERIFY(VisibleButton(page, "dashPayRegisterUsername") == nullptr);
+    QCOMPARE(wallet.getBalance(), before + 5 * COIN);
+    QVERIFY(!wallet.owedRescanFrom());
+    QVERIFY(!RecoveryReport(page).contains("did not finish"));
+    QVERIFY(RecoveryReport(page).contains("The addresses 1 contact"));
+    QVERIFY(VisibleButton(page, "dashPayRetryRecovery") == nullptr);
+
+    {
+        FakeSources behind;
+        behind.script = [&](FakePlatformClient& client) {
+            client.identities_by_pubkey_hash = {ours};
+            for (const uint16_t last : {14, 29, 44, 59, 74, 89, 100}) {
+                client.top_ups.push_back(Funded<uint64_t>(platform::FundingOutcome::PLATFORM_BEHIND_CORE, last));
+            }
+        };
+        PlatformService service{f.wallet_model, f.models.client, behind.get()};
+        Confirmations confirmations;
+        IdentityFlow funding{service, confirmations.get(), InstantProof};
+        funding.lookUp();
+        behind.fake->deliverAll();
+        funding.topUp(IdentityFlow::MIN_TOP_UP);
+        behind.fake->deliverAll();
+        for (int chain_lock{0}; chain_lock < 6; ++chain_lock) {
+            Q_EMIT f.models.client.chainLockChanged();
+            behind.fake->deliverAll();
+        }
+        QVERIFY(funding.error().contains("every fee step for it is used"));
+    }
+    PlatformPage later{sources.get()};
+    f.attach(later);
+    sources.fake->deliverAll();
+    const QString texts{VisibleTexts(later).join(' ')};
+    QVERIFY(texts.contains("every fee step for it is used"));
+    QVERIFY(!texts.contains("has not reached Dash Platform yet"));
+}
+
+//! Find lists a restored wallet's funding payments under its passphrase and
+//! checks each with Platform before offering it: the unused registration lock
+//! is what Create sends, with no new payment, one Platform has used is counted
+//! and never offered, and one whose check failed is being checked until Try
+//! again checks it. Finding no identity says which one was looked for.
+void PlatformTests::findRediscoversFundingPayments()
+{
+    using LockRecord = platform::AssetLockState::State;
+    FundedFixture f{m_node, /*consented=*/false};
+    QVERIFY(f.models.ok);
+    interfaces::Wallet& wallet{f.wallet_model.wallet()};
+    const uint256 registration{CommitLock(wallet, wallet::RegistrationFundingKey{0})};
+    const uint256 used{CommitLock(wallet, wallet::TopupFundingKey{0})};
+    const uint256 unread{CommitLock(wallet, wallet::TopupFundingKey{1})};
+    QVERIFY(f.wallet->EncryptWallet("test passphrase"));
+    int unlocks{0};
+    QObject::connect(&f.wallet_model, &WalletModel::requireUnlock, [&] {
+        ++unlocks;
+        f.wallet_model.setWalletLocked(/*locked=*/false, "test passphrase");
+    });
+    const size_t txs{wallet.getWalletTxs().size()};
+    FakeSources sources;
+    sources.script = [](FakePlatformClient& client) {
+        client.identities_by_pubkey_hash = {NotFound(), NotFound()};
+        client.asset_lock_states = {LockState(LockRecord::NOT_PRESENT), LockState(LockRecord::FULLY_CONSUMED),
+                                    Unavailable<platform::AssetLockState>(), LockState(LockRecord::NOT_PRESENT)};
+    };
+    PlatformPage page{sources.get()};
+    f.attach(page);
+    VisibleButton(page, "dashPayFindIdentity")->click();
+    sources.fake->deliverAll();
+    QCOMPARE(unlocks, 1);
+    QCOMPARE(f.wallet_model.getEncryptionStatus(), WalletModel::Locked);
+    QVERIFY(page.service()->consented());
+    IdentityFlow& flow{*page.identityFlow()};
+    QVERIFY(flow.lookedUp() && !flow.identity());
+    QCOMPARE(sources.fake->countCalls("assetLockState"), size_t{3});
+    QVERIFY(flow.used({used, 0}));
+    for (const auto& found : flow.found()) {
+        QVERIFY(found.funding.txid != used);
+    }
+    QString report{RecoveryReport(page)};
+    QVERIFY(report.contains("identity index 0"));
+    QVERIFY(report.contains("Funding payments found in this wallet: 1 not used on Dash Platform yet, 1 already used on "
+                            "Dash Platform, 1 being checked with Dash Platform."));
+    QVERIFY(report.contains("Create identity sends the identity funding payment found in this wallet"));
+    QVERIFY(VisibleButton(page, "dashPayCreateIdentity") != nullptr);
+
+    VisibleButton(page, "dashPayRetryRecovery")->click();
+    sources.fake->deliverAll();
+    QCOMPARE(unlocks, 2);
+    QCOMPARE(sources.fake->countCalls("assetLockState"), size_t{4});
+    QCOMPARE(sources.fake->calls.back().argument, COutPoint(unread, 0).ToStringShort());
+    report = RecoveryReport(page);
+    QVERIFY(report.contains("Funding payments found in this wallet: 2 not used on Dash Platform yet, 1 already used on "
+                            "Dash Platform."));
+    QVERIFY(VisibleButton(page, "dashPayRetryRecovery") == nullptr);
+
+    // Create sends the registration lock found, without a new payment or its confirmation.
+    Answer(QMessageBox::Cancel);
+    VisibleButton(page, "dashPayCreateIdentity")->click();
+    QCOMPARE(unlocks, 3);
+    QCOMPARE(wallet.getWalletTxs().size(), txs);
+    QVERIFY(flow.funding() && flow.funding()->txid == registration);
 }

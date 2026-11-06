@@ -267,6 +267,14 @@ std::vector<Funding> IdentityFlow::fundings() const
     return out;
 }
 
+bool IdentityFlow::capped(const Funding& funding) const { return Capped(funding, Now()); }
+
+bool IdentityFlow::used(const COutPoint& outpoint) const
+{
+    const std::string record{UsedRecord(outpoint)};
+    return m_service.walletModel().wallet().getPlatformData(record).count(record) > 0;
+}
+
 bool IdentityFlow::inactive(const Funding& funding) const
 {
     const auto [tx, status]{WalletTxOf(m_service.walletModel().wallet(), funding.txid)};
@@ -342,7 +350,7 @@ bool IdentityFlow::discover()
         for (; scanned < end; ++scanned)
             keys.emplace_back(wallet::TopupFundingKey{scanned});
         auto batch{wallet.listAssetLockFundings(keys)};
-        if (!batch) return false;
+        if (!batch) return m_listed = false;
         for (auto& lock : batch.value) {
             if (const auto* key{std::get_if<wallet::TopupFundingKey>(&lock.key)}) {
                 highest = std::max<int64_t>(highest, key->funding_index);
@@ -380,7 +388,7 @@ bool IdentityFlow::discover()
     }
     std::sort(found.begin(), found.end(), FoundBefore);
     m_found = std::move(found);
-    return true;
+    return m_listed = true;
 }
 
 void IdentityFlow::markUsed(const COutPoint& outpoint)

@@ -75,6 +75,8 @@ public:
     //! Register `label` for the wallet's identity, creating the identity
     //! first if the wallet has none.
     void registerName(const std::string& label);
+    //! Read the names again now if the last read failed, whatever the wait.
+    void retryNames();
 
 Q_SIGNALS:
     void changed();

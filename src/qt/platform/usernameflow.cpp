@@ -105,6 +105,13 @@ void UsernameFlow::readNames()
                             }));
 }
 
+void UsernameFlow::retryNames()
+{
+    if (m_names != Names::FAILED) return;
+    m_names_retry_at = 0;
+    readNames();
+}
+
 void UsernameFlow::registerName(const std::string& label)
 {
     if (m_step != Step::IDLE || !m_service.client()) return;

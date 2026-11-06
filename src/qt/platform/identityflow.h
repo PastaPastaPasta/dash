@@ -174,6 +174,17 @@ public:
     std::vector<Funding> fundings() const;
     //! The funding payments found in the wallet after the last unlock.
     const std::vector<Found>& found() const { return m_found; }
+    //! Whether the last listing of the wallet's funding payments succeeded;
+    //! listing needs an unlocked wallet.
+    bool listed() const { return m_listed; }
+    //! Whether Platform was proved to have used the asset lock's credit
+    //! output: it is marked, and never offered again.
+    bool used(const COutPoint& outpoint) const;
+    //! Whether every fee step a submission of the funding could take is used
+    //! until Platform forgets its last attempt.
+    bool capped(const Funding& funding) const;
+    //! Why a funding whose fee steps are all used waits, and until when.
+    QString cappedNote(const Funding& funding) const;
     //! What applyEarlier() adds to the identity: payments found in the
     //! wallet that Platform has not used, and registration locks kept beside
     //! a different identity or refused as a registration.
@@ -250,8 +261,6 @@ private:
     void sendAgain(Funding funding);
     //! A check settled nothing.
     void unsettled(const Funding& funding);
-    //! Why a funding whose fee steps are all used waits, and until when.
-    QString cappedNote(const Funding& funding) const;
     bool save(const Funding& funding);
     //! Platform's use of the lock is proved: end its record.
     void retire(const Funding& funding);
@@ -282,6 +291,7 @@ private:
     //! applyEarlier() is sending what it recorded.
     bool m_applying{false};
     std::vector<Found> m_found;
+    bool m_listed{false};
 };
 
 #endif // BITCOIN_QT_PLATFORM_IDENTITYFLOW_H

@@ -58,6 +58,9 @@ private Q_SLOTS:
     void missingBlocksAreNamed();
     void payingAContactUsesEachAddressOnce();
     void paymentsFollowTheWalletHistory();
+    void findMyIdentityRestoresTheWallet();
+    void findReportsWhatItCouldNotDo();
+    void findRediscoversFundingPayments();
 };
 
 #endif // BITCOIN_QT_TEST_PLATFORMTESTS_H

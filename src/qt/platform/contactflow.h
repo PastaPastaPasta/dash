@@ -102,11 +102,22 @@ public:
     //! Why the last action failed, else why a read stopped short; empty when
     //! neither did.
     QString error() const;
+    //! Why the last page of our requests failed; empty when it did not.
+    const QString& sentError() const { return m_sent.error; }
     //! Recipients of our requests whose receiving chain waits for the wallet
     //! to be unlocked.
     size_t chainsToImport() const;
+    //! Recipients of our requests with no import of our receiving chain
+    //! recorded from their earliest request on, locked or not; 0 until our
+    //! requests are read.
+    size_t chainsNotImported() const;
+    //! Recipients of our requests whose chain is recorded as imported.
+    size_t chainsImported() const;
     //! Whether the owed rescans are running.
     bool rescanning() const { return m_rescanning; }
+    //! Whether the last rescan pass did not finish (busy, cancelled, or the
+    //! chain changed under it); it runs again later.
+    bool rescanFailed() const { return m_rescan_failures > 0; }
     //! The first block a rescan could not read, naming it; empty when every
     //! rescan read what it needed.
     const QString& rescanNote() const { return m_rescan_note; }
@@ -119,6 +130,8 @@ public:
     void refresh();
     //! Ask for the passphrase and import the chains chainsToImport() counts.
     void importChains();
+    //! Run the rescans the wallet owes now, whatever wait a failed one set.
+    void rescanOwed();
 
     ~ContactFlow() override;
     //! Choose the address to pay an established contact at, and hand it to
