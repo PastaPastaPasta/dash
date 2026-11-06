@@ -6,6 +6,7 @@
 
 #include <crypto/common.h>
 #include <interfaces/wallet.h>
+#include <key_io.h>
 #include <logging.h>
 #include <platform/client.h>
 #include <pubkey.h>
@@ -14,6 +15,7 @@
 #include <qt/platform/platformservice.h>
 #include <qt/platform/platformui.h>
 #include <qt/walletmodel.h>
+#include <script/standard.h>
 #include <support/cleanse.h>
 #include <tinyformat.h>
 #include <uint256.h>
@@ -29,6 +31,7 @@
 #include <array>
 #include <chrono>
 #include <iterator>
+#include <set>
 #include <thread>
 #include <tuple>
 #include <utility>
@@ -161,6 +164,55 @@ std::optional<wallet::FriendshipXpub> PeerXpub(interfaces::Wallet& wallet, const
     memory_cleanse(shared.data(), shared.size());
     if (!xpub || !xpub->pubkey.IsFullyValid() || !xpub->pubkey.IsCompressed()) return std::nullopt;
     return xpub;
+}
+
+//! How far past the last address paid a payment may go: a DIP-15 receiver
+//! watches only so many addresses ahead. DIP-15 and rs-platform-wallet say
+//! 10 and key-wallet 20, but DashSync watches 6 after the first use, so no
+//! payment goes further than the fewest.
+constexpr uint32_t RECEIVER_GAP{6};
+
+//! The address to pay `chain` at, worked out on every call from the wallet's
+//! own transactions, those sent from another wallet on this seed included
+//! once a rescan found them. A payment counts once it is in a block or
+//! InstantSend locked; one abandoned or replaced by a conflicting payment
+//! takes no address at all. From one past the last address a counted
+//! payment pays, the lowest address no live payment takes, up to
+//! RECEIVER_GAP past it; if every one is taken, the first again. nullopt if
+//! an address could not be derived.
+std::optional<CTxDestination> NextPaymentAddress(interfaces::Wallet& wallet, const wallet::FriendshipXpub& chain)
+{
+    std::vector<CTxDestination> addresses;
+    std::set<CScript> counted;
+    std::set<CScript> taken;
+    // The wallet is asked about this chain's addresses only, a window at a
+    // time, doubled while the payments reach past it.
+    const auto widen{[&](uint32_t size) {
+        std::set<CScript> scripts;
+        while (addresses.size() < size) {
+            CTxDestination& address{addresses.emplace_back()};
+            const auto index{static_cast<uint32_t>(addresses.size() - 1)};
+            if (!wallet::DeriveFriendshipPaymentDestination(chain, index, address)) return false;
+            scripts.insert(GetScriptForDestination(address));
+        }
+        for (const auto& output : wallet.getWalletTxOutputsPaying(scripts)) {
+            if (output.is_abandoned || output.depth_in_main_chain < 0) continue;
+            taken.insert(output.script);
+            if (output.depth_in_main_chain > 0 || output.is_islocked) counted.insert(output.script);
+        }
+        return true;
+    }};
+    uint32_t floor{0};
+    for (uint32_t index{0}; index < floor + RECEIVER_GAP; ++index) {
+        if (index == addresses.size() && !widen(std::max<uint32_t>(2 * index, floor + 2 * RECEIVER_GAP))) {
+            return std::nullopt;
+        }
+        if (counted.count(GetScriptForDestination(addresses[index]))) floor = index + 1;
+    }
+    for (uint32_t index{floor}; index < floor + RECEIVER_GAP; ++index) {
+        if (!taken.count(GetScriptForDestination(addresses[index]))) return addresses[index];
+    }
+    return addresses[floor];
 }
 } // namespace
 
@@ -409,7 +461,7 @@ void ContactFlow::update()
     if (m_call.expired()) {
         if (m_step == Step::RESOLVING) {
             resolve();
-        } else if (m_step == Step::FETCHING) {
+        } else if (m_step == Step::FETCHING || m_step == Step::PAYING) {
             fetch();
         } else if (m_step == Step::SENDING) {
             // Only a closed gate drops a write, and the contacts went with
@@ -572,6 +624,7 @@ void ContactFlow::onFetched(platform::Result<platform::Identity> result)
     }
     if (!result.ok()) return finish(PlatformUi::Describe(result.status));
     if (!m_identity_flow.identity()) return finish();
+    if (m_step == Step::PAYING) return prefill(result.value);
     const platform::Identity ours{*m_identity_flow.identity()};
     const platform::Identity& theirs{result.value};
     // Theirs: an enabled DECRYPTION key, else ENCRYPTION. Ours: ENCRYPTION.
@@ -625,4 +678,42 @@ void ContactFlow::onSent(const platform::Status& status)
     m_sent.complete = false;
     m_sent.error.clear();
     finish(PlatformUi::Describe(status));
+}
+
+void ContactFlow::pay(const platform::Identifier& contact)
+{
+    // Both requests read: theirs carries the chain paid.
+    if (m_step != Step::IDLE || !received().count(contact) || !sent().count(contact)) return;
+    m_contact = contact;
+    m_step = Step::PAYING;
+    m_error.clear();
+    fetch();
+    Q_EMIT changed();
+}
+
+void ContactFlow::prefill(const platform::Identity& theirs)
+{
+    WalletModel::UnlockContext unlock{m_service.walletModel().requestUnlock()};
+    if (!unlock.isValid()) return finish(tr("The wallet stayed locked, so no payment address was chosen."));
+    if (!m_service.othersIdle(*this)) {
+        return finish(tr("Another DashPay request is on its way. Try again once it is done."));
+    }
+    const auto& ours{m_identity_flow.identity()};
+    const Requests received{this->received()};
+    if (!ours || !received.count(theirs.id)) return finish();
+    interfaces::Wallet& wallet{m_service.walletModel().wallet()};
+    const auto chain{PeerXpub(wallet, *ours, theirs, received.at(theirs.id))};
+    if (!chain) {
+        return finish(tr("This contact's request to you carries no valid payment key, so DashPay can't pay them."));
+    }
+    const auto address{NextPaymentAddress(wallet, *chain)};
+    if (!address) return finish(tr("Dash Core could not choose this contact's payment address."));
+    // Their username as Platform proved it, bound to the address of their chain.
+    SendCoinsRecipient recipient;
+    recipient.address = QString::fromStdString(EncodeDestination(*address));
+    if (const auto name{m_names.find(theirs.id)}; name != m_names.end() && name->second) {
+        recipient.label = QString::fromStdString(*name->second);
+    }
+    finish();
+    Q_EMIT payTo(recipient);
 }

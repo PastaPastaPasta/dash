@@ -19,6 +19,7 @@
 #endif
 #include <qt/receivecoinsdialog.h>
 #include <qt/sendcoinsdialog.h>
+#include <qt/sendcoinsentry.h>
 #include <qt/signverifymessagedialog.h>
 #include <qt/transactionrecord.h>
 #include <qt/transactiontablemodel.h>
@@ -36,6 +37,8 @@
 #include <QPushButton>
 #include <QSettings>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 WalletView::WalletView(WalletModel* wallet_model, QWidget* parent)
     : QStackedWidget(parent),
@@ -113,6 +116,7 @@ WalletView::WalletView(WalletModel* wallet_model, QWidget* parent)
     platformPage = new PlatformPage();
     platformPage->setWalletModel(walletModel);
     addWidget(platformPage);
+    connect(platformPage, &PlatformPage::payTo, this, &WalletView::payContact);
 #endif
 
     connect(proposalListPage, &ProposalList::showProposalInfo, this, &WalletView::showProposalInfo);
@@ -246,6 +250,28 @@ void WalletView::gotoMasternodePage()
 void WalletView::gotoPlatformPage()
 {
     setCurrentWidget(platformPage);
+}
+
+void WalletView::payContact(const SendCoinsRecipient& recipient)
+{
+    // A payment being written is replaced only if the user agrees. An entry
+    // being removed is hidden until it is deleted.
+    const auto entries{sendCoinsPage->findChildren<SendCoinsEntry*>()};
+    const auto written{[this](SendCoinsEntry* entry) {
+        if (!entry->isVisibleTo(sendCoinsPage)) return false;
+        const SendCoinsRecipient value{entry->getValue()};
+        return !value.address.isEmpty() || value.amount != 0 || !value.label.isEmpty() || !value.message.isEmpty();
+    }};
+    if (std::any_of(entries.begin(), entries.end(), written) &&
+        QMessageBox::question(this, tr("Pay a DashPay contact"),
+                              tr("The Send tab holds a payment you have not sent. Replace it with a payment to %1?")
+                                  .arg(recipient.label.isEmpty() ? recipient.address : recipient.label),
+                              QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes) {
+        return;
+    }
+    sendCoinsPage->clear();
+    sendCoinsPage->pasteEntry(recipient);
+    Q_EMIT contactPaymentPrepared();
 }
 #endif
 

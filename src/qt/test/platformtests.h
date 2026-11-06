@@ -56,6 +56,8 @@ private Q_SLOTS:
     void sentRequestsRecoverTheirChains();
     void lockedWalletImportsChainsOnUnlock();
     void missingBlocksAreNamed();
+    void payingAContactUsesEachAddressOnce();
+    void paymentsFollowTheWalletHistory();
 };
 
 #endif // BITCOIN_QT_TEST_PLATFORMTESTS_H

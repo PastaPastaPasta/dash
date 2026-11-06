@@ -73,6 +73,7 @@ void ContactsPage::refresh(bool writable)
         break;
     case Step::RESOLVING:
     case Step::FETCHING:
+    case Step::PAYING:
         status = tr("Looking up the contact…");
         break;
     case Step::SENDING:
@@ -123,6 +124,11 @@ void ContactsPage::refresh(bool writable)
             accept->setObjectName("dashPayAcceptContact");
             connect(accept, &QPushButton::clicked, this, [this, id = contact.id] { m_flow->accept(id); });
             m_list->setCellWidget(row, 2, accept);
+        } else if (ready && contact.state == ContactFlow::State::ESTABLISHED) {
+            auto* pay{new QPushButton(tr("Pay"), m_list)};
+            pay->setObjectName("dashPayPayContact");
+            connect(pay, &QPushButton::clicked, this, [this, id = contact.id] { m_flow->pay(id); });
+            m_list->setCellWidget(row, 2, pay);
         }
     }
     m_list->setVisible(m_list->rowCount() > 0);

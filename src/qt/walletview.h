@@ -56,6 +56,11 @@ public:
     WalletModel* getWalletModel() const noexcept { return walletModel; }
 
     bool handlePaymentRequest(const SendCoinsRecipient& recipient);
+#ifdef ENABLE_PLATFORM_GUI
+    /** Fill the send coins page to pay a DashPay contact, asking before it
+     *  replaces a payment being written */
+    void payContact(const SendCoinsRecipient& recipient);
+#endif
 
     void showOutOfSyncWarning(bool fShow);
 
@@ -153,6 +158,10 @@ Q_SIGNALS:
     void outOfSyncWarningClicked();
     /** Request navigation to proposal info view */
     void showProposalInfo();
+#ifdef ENABLE_PLATFORM_GUI
+    /** The send coins page was filled in to pay a DashPay contact */
+    void contactPaymentPrepared();
+#endif
 };
 
 #endif // BITCOIN_QT_WALLETVIEW_H

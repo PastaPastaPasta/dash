@@ -60,6 +60,7 @@ using interfaces::WalletMigrationResult;
 using interfaces::WalletOrderForm;
 using interfaces::WalletTx;
 using interfaces::WalletTxOut;
+using interfaces::WalletTxOutPaying;
 using interfaces::WalletTxSignResult;
 using interfaces::WalletTxStatus;
 using interfaces::WalletValueMap;
@@ -726,6 +727,19 @@ public:
             return MakeWalletTx(*m_wallet, mi->second);
         }
         return {};
+    }
+    std::vector<WalletTxOutPaying> getWalletTxOutputsPaying(const std::set<CScript>& scripts) override
+    {
+        LOCK(m_wallet->cs_wallet);
+        std::vector<WalletTxOutPaying> result;
+        for (const auto& [txid, wtx] : m_wallet->mapWallet) {
+            for (const CTxOut& out : wtx.tx->vout) {
+                if (!scripts.count(out.scriptPubKey)) continue;
+                result.push_back({out.scriptPubKey, wtx.isAbandoned(), m_wallet->GetTxDepthInMainChain(wtx),
+                                  m_wallet->IsTxLockedByInstantSend(wtx)});
+            }
+        }
+        return result;
     }
     int getRealOutpointCoinJoinRounds(const COutPoint& outpoint) override { return m_wallet->GetRealOutpointCoinJoinRounds(outpoint); }
     bool isFullyMixed(const COutPoint& outpoint) override { return m_wallet->IsFullyMixed(outpoint); }

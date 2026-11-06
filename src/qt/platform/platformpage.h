@@ -7,6 +7,7 @@
 
 #include <consensus/amount.h>
 #include <qt/platform/platformservice.h>
+#include <qt/sendcoinsrecipient.h>
 
 #include <QWidget>
 
@@ -30,7 +31,8 @@ QT_END_NAMESPACE
  *  the first DashPay click with a one-line privacy notice, and says why
  *  DashPay can't run when a gate is closed. Once DashPay runs it shows the
  *  wallet's identity, its username and its balance; creates, continues or
- *  tops up the identity; registers its username; and keeps its contacts. */
+ *  tops up the identity; registers its username; and keeps its contacts,
+ *  handing a payment to one to the Send tab. */
 class PlatformPage : public QWidget
 {
     Q_OBJECT
@@ -50,6 +52,8 @@ Q_SIGNALS:
     //! A service was created, or is about to be destroyed (nullptr) while
     //! the models it holds and the page's widgets still exist.
     void serviceChanged(PlatformService* service);
+    //! Pay a contact in the Send tab.
+    void payTo(const SendCoinsRecipient& recipient);
 
 private:
     void resetService();

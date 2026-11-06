@@ -65,6 +65,7 @@ struct WalletBalances;
 struct WalletTx;
 struct WalletTxOut;
 struct WalletTxStatus;
+struct WalletTxOutPaying;
 struct WalletMigrationResult;
 
 using WalletOrderForm = std::vector<std::pair<std::string, std::string>>;
@@ -347,6 +348,10 @@ public:
         bool& in_mempool,
         int& num_blocks) = 0;
 
+    //! The outputs of wallet transactions that pay any of `scripts`, read in
+    //! one pass.
+    virtual std::vector<WalletTxOutPaying> getWalletTxOutputsPaying(const std::set<CScript>& scripts) = 0;
+
     // Get the number of coinjoin rounds an output went through
     virtual int getRealOutpointCoinJoinRounds(const COutPoint& outpoint) = 0;
 
@@ -619,6 +624,16 @@ struct WalletTxStatus
     bool is_in_main_chain;
     bool is_chainlocked;
     bool is_islocked;
+};
+
+//! An output of a wallet transaction that pays a script asked for, with the
+//! state of its transaction.
+struct WalletTxOutPaying
+{
+    CScript script;
+    bool is_abandoned{false};
+    int depth_in_main_chain{0};
+    bool is_islocked{false};
 };
 
 //! Wallet transaction output.

@@ -17,7 +17,9 @@
 #include <interfaces/node.h>
 #include <interfaces/wallet.h>
 #include <key.h>
+#include <key_io.h>
 #include <netbase.h>
+#include <qt/bitcoinamountfield.h>
 #include <qt/clientfeeds.h>
 #include <qt/guiutil.h>
 #include <qt/masternodemodel.h>
@@ -26,7 +28,13 @@
 #include <qt/platform/platformpage.h>
 #include <qt/platform/platformservice.h>
 #include <qt/platform/usernameflow.h>
+#include <qt/qvalidatedlineedit.h>
+#include <qt/sendcoinsdialog.h>
+#include <qt/sendcoinsentry.h>
 #include <qt/walletmodel.h>
+#include <qt/walletview.h>
+#include <script/descriptor.h>
+#include <script/signingprovider.h>
 #include <script/standard.h>
 #include <test/util/platform_client.h>
 #include <test/util/setup_common.h>
@@ -41,13 +49,16 @@
 #include <wallet/test/util.h>
 #include <wallet/wallet.h>
 
+#include <QApplication>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QTableWidget>
+#include <QTimer>
 
 #include <algorithm>
 #include <atomic>
@@ -462,6 +473,102 @@ platform::ContactRequest IncomingRequest(interfaces::Wallet& wallet, uint8_t fro
     return request;
 }
 
+//! A counterparty whose key 1 (`key`, of `purpose`) sent their requests;
+//! key 2 receives ours.
+platform::Result<platform::Identity> Peer(uint8_t id, const CKey& key, Purpose purpose, uint64_t disabled_at = 0)
+{
+    auto found{Found(id, 0)};
+    auto sender{Key(1, purpose, Level::HIGH, disabled_at)};
+    const CPubKey pubkey{key.GetPubKey()};
+    sender.data.assign(pubkey.begin(), pubkey.end());
+    found.value.public_keys = {Key(0, Purpose::AUTHENTICATION, Level::MASTER), sender,
+                               Key(2, Purpose::DECRYPTION, Level::MEDIUM)};
+    return found;
+}
+
+//! The payment chain IncomingRequest sends for `pubkey`.
+wallet::FriendshipXpub PaymentChain(const CPubKey& pubkey)
+{
+    wallet::FriendshipXpub chain;
+    chain.pubkey = pubkey;
+    std::fill(chain.chaincode.begin(), chain.chaincode.end(), 0x11);
+    chain.parent_fingerprint.fill(0x11);
+    return chain;
+}
+
+CTxDestination PaymentAddress(const wallet::FriendshipXpub& chain, uint32_t index)
+{
+    CTxDestination address;
+    Assert(wallet::DeriveFriendshipPaymentDestination(chain, index, address));
+    return address;
+}
+
+//! The wallet sends a payment to `address`, as the Send tab does.
+uint256 SendTo(interfaces::Wallet& wallet, const CTxDestination& address)
+{
+    int change_pos{-1};
+    CAmount fee;
+    const auto tx{wallet.createTransaction({{GetScriptForDestination(address), COIN, false}}, {}, /*sign=*/true,
+                                           change_pos, fee)};
+    Assert(tx && wallet.commitTransaction(*tx, {}, {}));
+    return (*tx)->GetHash();
+}
+
+//! The button in the contacts list row of `id`, or nullptr.
+QPushButton* ContactButton(const PlatformPage& page, uint8_t id)
+{
+    const auto contacts{page.contactFlow()->contacts()};
+    const auto* list{page.findChild<QTableWidget*>("dashPayContacts")};
+    for (size_t row = 0; row < contacts.size(); ++row) {
+        if (contacts[row].id[0] == id) return qobject_cast<QPushButton*>(list->cellWidget(row, 2));
+    }
+    return nullptr;
+}
+
+//! Click Pay on the row of `id`: what it handed to the Send tab, if anything.
+std::optional<SendCoinsRecipient> PayRecipient(PlatformPage& page, FakeSources& sources, uint8_t id)
+{
+    std::optional<SendCoinsRecipient> paid;
+    const auto connection{QObject::connect(&page, &PlatformPage::payTo,
+                                           [&paid](const SendCoinsRecipient& recipient) { paid = recipient; })};
+    if (QPushButton* pay{ContactButton(page, id)}; pay && pay->objectName() == "dashPayPayContact") {
+        pay->click();
+        sources.fake->deliverAll();
+    }
+    QObject::disconnect(connection);
+    return paid;
+}
+
+//! The address PayRecipient() handed over, empty if none was.
+QString PayContact(PlatformPage& page, FakeSources& sources, uint8_t id)
+{
+    const auto paid{PayRecipient(page, sources, id)};
+    return paid ? paid->address : QString{};
+}
+
+//! Answer the question the wallet asks next with `button`.
+void Answer(QMessageBox::StandardButton button)
+{
+    QTimer::singleShot(0, [button] {
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            auto* box{qobject_cast<QMessageBox*>(widget)};
+            if (box && box->isVisible() && !widget->inherits("SendConfirmationDialog")) box->button(button)->click();
+        }
+    });
+}
+
+//! The text of the send confirmation once it shows; it is cancelled.
+void ReadConfirmation(QString& text)
+{
+    QTimer::singleShot(0, [&text] {
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            if (auto* dialog{qobject_cast<SendConfirmationDialog*>(widget)}; dialog && dialog->isVisible()) {
+                text = dialog->text();
+                dialog->button(QMessageBox::Cancel)->click();
+            }
+        }
+    });
+}
 //! The node has the asset lock's InstantSend lock at once.
 std::optional<platform::AssetLockProof> InstantProof(const CTransactionRef& tx)
 {
@@ -2211,16 +2318,6 @@ void PlatformTests::contactsAreTheNewestRequests()
     const CPubKey valid{chain.Neuter().pubkey};
     std::vector<uint8_t> invalid(CPubKey::COMPRESSED_SIZE, 0xff);
     invalid[0] = 0x02;
-    //! Their key 1 sent their requests; key 2 receives ours.
-    const auto peer = [](uint8_t id, const CKey& key, Purpose purpose, uint64_t disabled_at = 0) {
-        auto found{Found(id, 0)};
-        auto sender{Key(1, purpose, Level::HIGH, disabled_at)};
-        const CPubKey pubkey{key.GetPubKey()};
-        sender.data.assign(pubkey.begin(), pubkey.end());
-        found.value.public_keys = {Key(0, Purpose::AUTHENTICATION, Level::MASTER), sender,
-                                   Key(2, Purpose::DECRYPTION, Level::MEDIUM)};
-        return found;
-    };
     auto ours{Found(5, 1'000'000)};
     ours.value.public_keys = RegisteredKeys();
     // Bob (0x0b) answered ours; carol (0x0c) was asked twice and didn't.
@@ -2253,9 +2350,9 @@ void PlatformTests::contactsAreTheNewestRequests()
         second_page.value.requests.erase(second_page.value.requests.begin(), second_page.value.requests.begin() + 3);
         client.sent_requests = {sent, with_dave, with_grace, with_grace};
         client.received_requests = {first_page, second_page, received};
-        client.identities = {peer(0x0d, dave_key, Purpose::ENCRYPTION), peer(0x0e, erin_key, Purpose::ENCRYPTION),
-                             peer(0x0f, frank_key, Purpose::ENCRYPTION, /*disabled_at=*/1),
-                             peer(0x10, grace_key, Purpose::AUTHENTICATION), peer(0x11, heidi_key, Purpose::ENCRYPTION)};
+        client.identities = {Peer(0x0d, dave_key, Purpose::ENCRYPTION), Peer(0x0e, erin_key, Purpose::ENCRYPTION),
+                             Peer(0x0f, frank_key, Purpose::ENCRYPTION, /*disabled_at=*/1),
+                             Peer(0x10, grace_key, Purpose::AUTHENTICATION), Peer(0x11, heidi_key, Purpose::ENCRYPTION)};
         client.sent_contact_requests = {Resolved(1), Resolved(2)};
     };
     PlatformPage page{sources.get()};
@@ -2279,14 +2376,10 @@ void PlatformTests::contactsAreTheNewestRequests()
                                   {0x0b, State::ESTABLISHED},
                                   {0x0c, State::OUTGOING}}));
     QVERIFY(flow.contacts().front().username == "dave2026");
-    const auto* list{page.findChild<QTableWidget*>("dashPayContacts")};
-    QVERIFY(list->isVisibleTo(&page));
+    QVERIFY(page.findChild<QTableWidget*>("dashPayContacts")->isVisibleTo(&page));
     const auto accept_button = [&](uint8_t id) -> QPushButton* {
-        const auto listed{contacts()};
-        for (size_t row = 0; row < listed.size(); ++row) {
-            if (listed[row].first == id) return qobject_cast<QPushButton*>(list->cellWidget(row, 2));
-        }
-        return nullptr;
+        QPushButton* button{ContactButton(page, id)};
+        return button && button->objectName() == "dashPayAcceptContact" ? button : nullptr;
     };
     for (uint8_t id : {0x0d, 0x0e, 0x0f, 0x10, 0x11}) {
         QVERIFY(accept_button(id));
@@ -2701,4 +2794,261 @@ void PlatformTests::unreadNamesNeverOfferRegister()
     QVERIFY(page.usernameFlow()->names() == UsernameFlow::Names::FOUND);
     QCOMPARE(header->text(), QString{"frank2026"});
     QVERIFY(!submit->isVisibleTo(&page));
+}
+
+//! Pay on a contact hands the Send tab an address of the payment chain their
+//! newest request carries, labelled with their username, worked out again
+//! each time from the wallet's payments: Pay never sent, however often,
+//! and a restart leave the same address for the next one. A newer request
+//! with another chain starts that chain at its first address. The wallet's
+//! view fills its Send tab, asking before it replaces a payment being
+//! written (an amount alone included, an entry being removed not), and the
+//! confirmation names the contact.
+void PlatformTests::payingAContactUsesEachAddressOnce()
+{
+    FundedFixture f{m_node};
+    QVERIFY(f.models.ok);
+    interfaces::Wallet& wallet{f.wallet_model.wallet()};
+    CKey bob_key, dave_key;
+    bob_key.MakeNewKey(/*fCompressed=*/true);
+    dave_key.MakeNewKey(/*fCompressed=*/true);
+    CExtKey root, rotated;
+    const std::array<std::byte, 32> seed{};
+    root.SetSeed(seed);
+    QVERIFY(root.Derive(rotated, 1));
+    const auto chain{PaymentChain(root.Neuter().pubkey)};
+    const auto new_chain{PaymentChain(rotated.Neuter().pubkey)};
+    auto ours{Found(5, 1'000'000)};
+    ours.value.public_keys = RegisteredKeys();
+    FakeSources sources;
+    sources.script = [&](FakePlatformClient& client) {
+        // Bob (0x0b) and we asked each other, carol (0x0c) hasn't answered
+        // and dave (0x0d) waits for us. Read again, bob's newest request
+        // carries another chain.
+        const auto bob{IncomingRequest(wallet, 0x0b, 5, bob_key, 2, chain.pubkey)};
+        const auto dave{IncomingRequest(wallet, 0x0d, 5, dave_key, 2, chain.pubkey)};
+        const auto sent{Requests({Request(5, 0x0b, 1), Request(5, 0x0c, 1)})};
+        client.identities_by_pubkey_hash = {ours};
+        client.names = {Names({"me2026"}), Names({"bob2026"}), Names({}), Names({})};
+        client.sent_requests = {sent, sent};
+        client.received_requests = {Requests({bob, dave}),
+                                    Requests({bob, IncomingRequest(wallet, 0x0b, 5, bob_key, 3, new_chain.pubkey), dave})};
+        client.identities.assign(40, Peer(0x0b, bob_key, Purpose::ENCRYPTION));
+    };
+    const auto at = [](const wallet::FriendshipXpub& payee, uint32_t index) {
+        return QString::fromStdString(EncodeDestination(PaymentAddress(payee, index)));
+    };
+
+    auto page{std::make_unique<PlatformPage>(sources.get())};
+    f.attach(*page);
+    sources.fake->deliverAll();
+    QVERIFY(ContactButton(*page, 0x0b) && ContactButton(*page, 0x0d));
+    QVERIFY(ContactButton(*page, 0x0d)->objectName() != "dashPayPayContact");
+    QVERIFY(!ContactButton(*page, 0x0c));
+    for (uint8_t id : {0x0c, 0x0d}) {
+        platform::Identifier contact;
+        contact.fill(id);
+        page->contactFlow()->pay(contact);
+        QVERIFY(page->contactFlow()->step() == ContactFlow::Step::IDLE);
+    }
+    QCOMPARE(sources.fake->countCalls("getIdentity"), size_t{0});
+    const auto first{PayRecipient(*page, sources, 0x0b)};
+    QVERIFY(first && first->address == at(chain, 0) && first->label == "bob2026");
+    for (int unsent = 0; unsent < 11; ++unsent) {
+        QCOMPARE(PayContact(*page, sources, 0x0b), at(chain, 0));
+    }
+
+    page = std::make_unique<PlatformPage>(sources.get());
+    f.attach(*page);
+    sources.fake->deliverAll();
+    QCOMPARE(PayContact(*page, sources, 0x0b), at(chain, 0));
+
+    VisibleButton(*page, "dashPayRefreshContacts")->click();
+    sources.fake->deliverAll();
+    QCOMPARE(PayContact(*page, sources, 0x0b), at(new_chain, 0));
+    QCOMPARE(PayContact(*page, sources, 0x0b), at(new_chain, 0));
+
+    // A locked wallet needs its passphrase to decrypt the chain: without it
+    // no address is chosen.
+    QVERIFY(f.wallet->EncryptWallet("test passphrase"));
+    bool give_passphrase{false};
+    QObject::connect(&f.wallet_model, &WalletModel::requireUnlock, [&] {
+        if (give_passphrase) f.wallet_model.setWalletLocked(/*locked=*/false, "test passphrase");
+    });
+    QCOMPARE(PayContact(*page, sources, 0x0b), QString{});
+    QVERIFY(!page->contactFlow()->error().isEmpty());
+    give_passphrase = true;
+    QCOMPARE(PayContact(*page, sources, 0x0b), at(new_chain, 0));
+    QCOMPARE(f.wallet_model.getEncryptionStatus(), WalletModel::Locked);
+
+    // The wallet's view fills its Send tab, after asking about a payment
+    // being written there.
+    WalletView view{&f.wallet_model, nullptr};
+    QSignalSpy prepared{&view, &WalletView::contactPaymentPrepared};
+    view.gotoSendCoinsPage();
+    auto* send{qobject_cast<SendCoinsDialog*>(view.currentWidget())};
+    QVERIFY(send);
+    SendCoinsRecipient bob;
+    bob.address = at(chain, 1);
+    bob.label = "bob2026";
+    const auto entries = [&] {
+        // A cleared entry is deleted later.
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        return send->findChildren<SendCoinsEntry*>();
+    };
+    // An amount alone is a payment being written: Cancel keeps it.
+    send->clear();
+    entries().front()->findChild<BitcoinAmountField*>("payAmount")->setValue(2 * COIN);
+    Answer(QMessageBox::Cancel);
+    Q_EMIT view.findChild<PlatformPage*>()->payTo(bob);
+    QCoreApplication::processEvents();
+    QCOMPARE(prepared.size(), 0);
+    QCOMPARE(entries().front()->findChild<BitcoinAmountField*>("payAmount")->value(), 2 * COIN);
+    // An entry being removed is not one. The cleared ones are deleted
+    // first, as the event loop does before the next click.
+    send->clear();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    SendCoinsEntry* removed{send->addEntry()};
+    removed->findChild<QValidatedLineEdit*>("payTo")->setText("removed-address");
+    removed->findChild<QAbstractButton*>("deleteButton")->click();
+    Answer(QMessageBox::Cancel);
+    Q_EMIT view.findChild<PlatformPage*>()->payTo(bob);
+    QCoreApplication::processEvents();
+    QCOMPARE(prepared.size(), 1);
+    prepared.clear();
+    send->clear();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    send->setAddress("draft-address");
+    Answer(QMessageBox::Cancel);
+    Q_EMIT view.findChild<PlatformPage*>()->payTo(bob);
+    QCOMPARE(prepared.size(), 0);
+    QCOMPARE(entries().size(), 1);
+    QCOMPARE(entries().front()->findChild<QValidatedLineEdit*>("payTo")->text(), QString{"draft-address"});
+    Answer(QMessageBox::Yes);
+    Q_EMIT view.findChild<PlatformPage*>()->payTo(bob);
+    QCOMPARE(prepared.size(), 1);
+    QCOMPARE(entries().size(), 1);
+    SendCoinsEntry* entry{entries().front()};
+    QCOMPARE(entry->findChild<QValidatedLineEdit*>("payTo")->text(), at(chain, 1));
+    QCOMPARE(entry->findChild<QLineEdit*>("addAsLabel")->text(), QString{"bob2026"});
+    entry->findChild<BitcoinAmountField*>("payAmount")->setValue(COIN);
+    // The Send tab checks the balance the model last read.
+    f.wallet_model.updateTransaction();
+    f.wallet_model.pollBalanceChanged();
+    QString confirmation;
+    ReadConfirmation(confirmation);
+    QVERIFY(QMetaObject::invokeMethod(send, "sendButtonClicked", Q_ARG(bool, false)));
+    QVERIFY(confirmation.contains("bob2026"));
+    QVERIFY(confirmation.contains(at(chain, 1)));
+}
+
+//! The address follows the wallet's payments to the chain: from one past
+//! the last payment in a block (or InstantSend locked), the lowest one no
+//! live payment takes, never further than a receiver watching six addresses
+//! ahead looks. An abandoned payment and one a conflicting payment replaced
+//! take nothing, and one a reorg took out of its block no longer counts.
+//! After all that, and a dozen Pays never sent, the next real payment
+//! reaches the receiver's wallet.
+void PlatformTests::paymentsFollowTheWalletHistory()
+{
+    FundedFixture f{m_node};
+    QVERIFY(f.models.ok);
+    interfaces::Wallet& wallet{f.wallet_model.wallet()};
+    CKey bob_key;
+    bob_key.MakeNewKey(/*fCompressed=*/true);
+    CExtKey root;
+    const std::array<std::byte, 32> seed{};
+    root.SetSeed(seed);
+    const auto chain{PaymentChain(root.Neuter().pubkey)};
+    // Bob's wallet watches his chain six addresses past the last one paid.
+    CExtKey bob_chain{root};
+    std::fill(bob_chain.chaincode.begin(), bob_chain.chaincode.end(), 0x11);
+    auto receiver{MakeTestWallet(f.node, f.context, "bob")};
+    QVERIFY(receiver);
+    f.guard.keep(receiver);
+    {
+        LOCK(receiver->cs_wallet);
+        receiver->m_keypool_size = 6;
+        FlatSigningProvider provider;
+        std::string error;
+        auto descriptor{Parse("pkh(" + EncodeExtKey(bob_chain) + "/*)", provider, error, /*require_checksum=*/false)};
+        QVERIFY(descriptor);
+        wallet::WalletDescriptor watched{std::move(descriptor), 0, 0, 6, 0};
+        QVERIFY(receiver->AddWalletDescriptor(watched, provider, "", false));
+        const CBlockIndex* tip{WITH_LOCK(::cs_main, return f.chain.m_node.chainman->ActiveChain().Tip())};
+        receiver->SetLastBlockProcessed(tip->nHeight, tip->GetBlockHash());
+    }
+    auto bob_wallet{interfaces::MakeWallet(f.context, receiver)};
+    const auto ours_notified{f.chain.m_node.chain->handleNotifications(f.wallet)};
+    const auto bob_notified{f.chain.m_node.chain->handleNotifications(receiver)};
+    const CScript miner{GetScriptForRawPubKey(f.chain.coinbaseKey.GetPubKey())};
+    const auto mine = [&](std::vector<CMutableTransaction> txs) {
+        const uint256 hash{f.chain.CreateAndProcessBlock(txs, miner).GetHash()};
+        SyncWithValidationInterfaceQueue();
+        return hash;
+    };
+    const auto tx = [&](const uint256& txid) { return CMutableTransaction{*wallet.getTx(txid)}; };
+    auto ours{Found(5, 1'000'000)};
+    ours.value.public_keys = RegisteredKeys();
+    FakeSources sources;
+    sources.script = [&](FakePlatformClient& client) {
+        client.identities_by_pubkey_hash = {ours};
+        client.names = {Names({"me2026"})};
+        client.sent_requests = {Requests({Request(5, 0x0b, 1)})};
+        client.received_requests = {Requests({IncomingRequest(wallet, 0x0b, 5, bob_key, 2, chain.pubkey)})};
+        client.identities.assign(40, Peer(0x0b, bob_key, Purpose::ENCRYPTION));
+    };
+    const auto at = [&](uint32_t index) {
+        return QString::fromStdString(EncodeDestination(PaymentAddress(chain, index)));
+    };
+    PlatformPage page{sources.get()};
+    f.attach(page);
+    sources.fake->deliverAll();
+    for (int unsent = 0; unsent < 12; ++unsent) {
+        QCOMPARE(PayContact(page, sources, 0x0b), at(0));
+    }
+
+    mine({tx(SendTo(wallet, PaymentAddress(chain, 0)))});
+    QCOMPARE(PayContact(page, sources, 0x0b), at(1));
+    const uint256 live{SendTo(wallet, PaymentAddress(chain, 1))};
+    QCOMPARE(PayContact(page, sources, 0x0b), at(2));
+    QVERIFY(wallet.abandonTransaction(live));
+    QCOMPARE(PayContact(page, sources, 0x0b), at(1));
+
+    // Replaced: a payment spending the same coin is mined.
+    const auto create = [&](const CScript& to, const wallet::CCoinControl& coin_control) {
+        int change_pos{-1};
+        CAmount fee;
+        return wallet.createTransaction({{to, COIN, false}}, coin_control, /*sign=*/true, change_pos, fee);
+    };
+    const auto replaced{create(GetScriptForDestination(PaymentAddress(chain, 1)), {})};
+    QVERIFY(replaced);
+    wallet::CCoinControl same_coin;
+    same_coin.Select((*replaced)->vin.at(0).prevout);
+    same_coin.m_allow_other_inputs = false;
+    const auto replacing{create(miner, same_coin)};
+    QVERIFY(replacing);
+    QVERIFY(wallet.commitTransaction(*replaced, {}, {}));
+    mine({CMutableTransaction{**replacing}});
+    QCOMPARE(PayContact(page, sources, 0x0b), at(1));
+
+    // A reorg takes counted payments out of their block: six of them, so
+    // every address the receiver watches is taken and the first is used.
+    std::vector<CMutableTransaction> six;
+    for (uint32_t index = 1; index <= 6; ++index)
+        six.push_back(tx(SendTo(wallet, PaymentAddress(chain, index))));
+    const uint256 block{mine(six)};
+    QCOMPARE(PayContact(page, sources, 0x0b), at(7));
+    {
+        BlockValidationState state;
+        CBlockIndex* index{WITH_LOCK(::cs_main, return f.chain.m_node.chainman->m_blockman.LookupBlockIndex(block))};
+        QVERIFY(f.chain.m_node.chainman->ActiveChainstate().InvalidateBlock(state, index));
+        SyncWithValidationInterfaceQueue();
+    }
+    QCOMPARE(PayContact(page, sources, 0x0b), at(1));
+
+    const CAmount before{bob_wallet->getBalance()};
+    const QString address{PayContact(page, sources, 0x0b)};
+    mine({tx(SendTo(wallet, DecodeDestination(address.toStdString())))});
+    QCOMPARE(bob_wallet->getBalance(), before + COIN);
 }

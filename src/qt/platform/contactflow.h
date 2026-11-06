@@ -6,6 +6,7 @@
 #define BITCOIN_QT_PLATFORM_CONTACTFLOW_H
 
 #include <platform/types.h>
+#include <qt/sendcoinsrecipient.h>
 
 #include <QObject>
 #include <QString>
@@ -50,6 +51,10 @@ class PlatformService;
  * with one SDK call. The wallet derives the ECDH secret and the receiving
  * chain the request carries, and imports that chain first, so the contact's
  * payments are seen; no private key leaves it.
+ *
+ * Paying a contact hands the Send tab an address of the payment chain their
+ * request carries, labelled with their username, chosen from the wallet's
+ * payments to that chain so it stays where their wallet looks.
  */
 class ContactFlow : public QObject
 {
@@ -61,6 +66,7 @@ public:
         RESOLVING, //!< resolving the username
         FETCHING,  //!< reading the contact's identity
         SENDING,   //!< from the passphrase to Platform's answer
+        PAYING,    //!< reading the identity of the contact to pay
     };
     //! In the order contacts() lists them.
     enum class State {
@@ -115,9 +121,15 @@ public:
     void importChains();
 
     ~ContactFlow() override;
+    //! Choose the address to pay an established contact at, and hand it to
+    //! payTo().
+    void pay(const platform::Identifier& contact);
 
 Q_SIGNALS:
     void changed();
+    //! Pay the contact: an address of their payment chain, labelled with
+    //! their username.
+    void payTo(const SendCoinsRecipient& recipient);
 
 private:
     using Requests = std::map<platform::Identifier, platform::ContactRequest>;
@@ -165,12 +177,14 @@ private:
     void fetch();
     void onFetched(platform::Result<platform::Identity> result);
     void onSent(const platform::Status& status);
+    void prefill(const platform::Identity& theirs);
     void finish(const QString& error = {});
 
     PlatformService& m_service;
     IdentityFlow& m_identity_flow;
     Step m_step{Step::IDLE};
-    //! The username being added, and the contact the request goes to.
+    //! The username being added, and the contact the request goes to or
+    //! the payment is for.
     std::string m_label;
     platform::Identifier m_contact{};
     //! The step's call, until it calls back or is dropped.
