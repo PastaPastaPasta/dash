@@ -61,6 +61,8 @@ private Q_SLOTS:
     void findMyIdentityRestoresTheWallet();
     void findReportsWhatItCouldNotDo();
     void findRediscoversFundingPayments();
+    void searchFindsUsernamesToAdd();
+    void searchSurvivesAClientRebuild();
 };
 
 #endif // BITCOIN_QT_TEST_PLATFORMTESTS_H

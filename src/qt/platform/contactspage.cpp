@@ -26,6 +26,8 @@ ContactsPage::ContactsPage(QWidget* parent) :
     m_username->setPlaceholderText(tr("Username"));
     m_add = new QPushButton(tr("Add contact"), this);
     m_add->setObjectName("dashPayAddContact");
+    m_search = new QPushButton(tr("Search…"), this);
+    m_search->setObjectName("dashPaySearchContacts");
     m_refresh = new QPushButton(tr("Refresh"), this);
     m_refresh->setObjectName("dashPayRefreshContacts");
     m_import = new QPushButton(this);
@@ -44,6 +46,7 @@ ContactsPage::ContactsPage(QWidget* parent) :
     auto* add_row{new QHBoxLayout};
     add_row->addWidget(m_username);
     add_row->addWidget(m_add);
+    add_row->addWidget(m_search);
     add_row->addStretch();
     add_row->addWidget(m_refresh);
     auto* layout{new QVBoxLayout(this)};
@@ -57,6 +60,7 @@ ContactsPage::ContactsPage(QWidget* parent) :
     const auto add = [this] { m_flow->add(m_username->text().trimmed().toStdString()); };
     connect(m_add, &QPushButton::clicked, this, add);
     connect(m_username, &QLineEdit::returnPressed, this, add);
+    connect(m_search, &QPushButton::clicked, this, &ContactsPage::searchRequested);
     connect(m_refresh, &QPushButton::clicked, this, [this] { m_flow->refresh(); });
     connect(m_import, &QPushButton::clicked, this, [this] { m_flow->importChains(); });
 }
@@ -90,6 +94,7 @@ void ContactsPage::refresh(bool writable)
     const bool ready{writable && m_flow->sentRead()};
     m_username->setVisible(ready);
     m_add->setVisible(ready);
+    m_search->setVisible(ready);
     m_refresh->setVisible(m_flow->step() == Step::IDLE);
 
     const auto contacts{m_flow->contacts()};

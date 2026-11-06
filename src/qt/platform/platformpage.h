@@ -19,6 +19,7 @@ class ContactsPage;
 class IdentityFlow;
 class RecoveryFlow;
 class UsernameFlow;
+class UsernameSearchDialog;
 
 QT_BEGIN_NAMESPACE
 class QLabel;
@@ -61,6 +62,7 @@ Q_SIGNALS:
 private:
     void resetService();
     void refresh();
+    void searchUsernames();
     bool confirmFunding(CAmount amount, CAmount fee);
 
     const PlatformService::Sources m_sources;
@@ -75,6 +77,8 @@ private:
     std::unique_ptr<ContactFlow> m_contact_flow;
     //! Destroyed before the flows it reads.
     std::unique_ptr<RecoveryFlow> m_recovery_flow;
+    //! Destroyed before the flows it reads.
+    std::unique_ptr<UsernameSearchDialog> m_search;
 
     QLabel* m_username{nullptr};
     QLabel* m_identity{nullptr};

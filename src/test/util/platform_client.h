@@ -36,6 +36,7 @@ public:
     std::deque<platform::Result<platform::Identity>> identities_by_pubkey_hash;
     std::deque<platform::Result<platform::Identifier>> resolved_names;
     std::deque<platform::Result<platform::Names>> names;
+    std::deque<platform::Result<platform::Names>> search_results;
     std::deque<platform::Result<std::vector<platform::Contest>>> contests;
     //! The answers to contactRequests, by direction.
     std::deque<platform::Result<platform::ContactRequestPage>> sent_requests;
@@ -57,6 +58,8 @@ public:
     std::vector<std::pair<platform::Identifier, uint32_t>> name_signers;
     //! The contest policy of each registerName, in call order.
     std::vector<platform::ContestPolicy> contest_policies;
+    //! The limit of each searchNames, in call order.
+    std::vector<uint32_t> search_limits;
     //! The since_ms of each contactRequests, in call order.
     std::vector<uint64_t> request_since;
     //! The input of each sendContactRequest, in call order.
@@ -68,6 +71,7 @@ public:
     void resolveName(const std::string& label, Callback<platform::Identifier> cb) override;
     void namesOfIdentity(const platform::Identifier& identity, uint32_t page_limit, uint32_t max_pages,
                          Callback<platform::Names> cb) override;
+    void searchNames(const std::string& prefix, uint32_t limit, Callback<platform::Names> cb) override;
     void pendingContests(const platform::Identifier& identity, Callback<std::vector<platform::Contest>> cb) override;
     void contactRequests(const platform::Identifier& identity, platform::ContactDirection direction, uint64_t since_ms,
                          Callback<platform::ContactRequestPage> cb) override;
