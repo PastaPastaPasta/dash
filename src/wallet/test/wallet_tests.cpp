@@ -186,9 +186,9 @@ BOOST_FIXTURE_TEST_CASE(scan_for_wallet_transactions, TestChain100Setup)
         }
     }
 
-    // Where a rescan from the birth of a wallet holding a genesis-era key
-    // would need blocks this node no longer has.
-    const auto rescan_pruned_from{[&] {
+    // A wallet holding a genesis-era key that has scanned to the tip.
+    WalletContext context;
+    const auto make_wallet{[&] {
         const auto wallet{std::make_shared<CWallet>(m_node.chain.get(), "", CreateMockableWalletDatabase())};
         {
             LOCK(wallet->cs_wallet);
@@ -196,14 +196,33 @@ BOOST_FIXTURE_TEST_CASE(scan_for_wallet_transactions, TestChain100Setup)
             wallet->SetLastBlockProcessed(newTip->nHeight, newTip->GetBlockHash());
         }
         AddKey(*wallet, coinbaseKey);
-        WalletContext context;
-        return interfaces::MakeWallet(context, wallet)->rescanPrunedFrom();
+        return interfaces::MakeWallet(context, wallet);
     }};
-    BOOST_CHECK(!rescan_pruned_from());
+    // The first block a rescan from from_time needs that this node has no data for.
+    const auto rescan_unavailable_from{[&](int64_t from_time) { return make_wallet()->rescanUnavailableFrom(from_time); }};
+    // A key born at born_at(height) is first paid in that block.
+    const auto born_at{[&](int height) { return oldTip->GetAncestor(height)->GetBlockTimeMax() + TIMESTAMP_WINDOW; }};
+    BOOST_CHECK(!rescan_unavailable_from(0));
+
+    // A node that never pruned but has no data for some blocks, as below an
+    // assumeutxo snapshot whose chain is still being validated.
+    const auto set_have_data{[&](bool have_data) {
+        LOCK(::cs_main);
+        for (int height{50}; height <= 80; ++height) {
+            CBlockIndex* index{oldTip->GetAncestor(height)};
+            index->nStatus = have_data ? index->nStatus | BLOCK_HAVE_DATA : index->nStatus & ~BLOCK_HAVE_DATA;
+        }
+    }};
+    set_have_data(false);
+    BOOST_CHECK(rescan_unavailable_from(0) == std::optional<int>{50});
+    BOOST_CHECK(rescan_unavailable_from(born_at(60)) == std::optional<int>{60});
+    BOOST_CHECK(!rescan_unavailable_from(born_at(81)));
+    set_have_data(true);
+
     // A pruning node that still has every block the rescan reads. The flag is
     // set as Chainstate::FlushStateToDisk does once it prunes.
     WITH_LOCK(::cs_main, m_node.chainman->m_blockman.m_have_pruned = true);
-    BOOST_CHECK(!rescan_pruned_from());
+    BOOST_CHECK(!rescan_unavailable_from(0));
 
     // Prune the older block file.
     int file_number;
@@ -213,7 +232,27 @@ BOOST_FIXTURE_TEST_CASE(scan_for_wallet_transactions, TestChain100Setup)
         Assert(m_node.chainman)->m_blockman.PruneOneBlockFile(file_number);
     }
     m_node.chainman->m_blockman.UnlinkPrunedFiles({file_number});
-    BOOST_CHECK(rescan_pruned_from() == std::optional<int>{0});
+    BOOST_CHECK(rescan_unavailable_from(0) == std::optional<int>{0});
+    BOOST_CHECK(rescan_unavailable_from(born_at(oldTip->nHeight)) == std::optional<int>{oldTip->nHeight});
+    // Born after the pruned blocks: the rescan reads only the new block file.
+    BOOST_CHECK(!rescan_unavailable_from(newTip->GetBlockTimeMax() + TIMESTAMP_WINDOW));
+
+    // A rescan that could not read every block it needs scans the rest, and
+    // the rescan owed from before the pruned blocks stays owed; one owed
+    // from after them is settled.
+    {
+        const auto wallet{make_wallet()};
+        CWallet& cwallet{*Assert(wallet->wallet())};
+        WITH_LOCK(cwallet.cs_wallet, BOOST_REQUIRE(cwallet.AddOwedRescan(0)));
+        BOOST_CHECK(wallet->rescanFromTime(0) == RescanStatus::FAILURE);
+        BOOST_CHECK(wallet->owedRescanFrom() == std::optional<int64_t>{0});
+        BOOST_CHECK_EQUAL(GetBalance(cwallet).m_mine_immature, 500 * COIN);
+
+        const int64_t after_pruned{newTip->GetBlockTimeMax() + TIMESTAMP_WINDOW};
+        WITH_LOCK(cwallet.cs_wallet, BOOST_REQUIRE(cwallet.AddOwedRescan(after_pruned)));
+        BOOST_CHECK(wallet->rescanFromTime(after_pruned) == RescanStatus::SUCCESS);
+        BOOST_CHECK(wallet->owedRescanFrom() == std::optional<int64_t>{0});
+    }
 
     // Verify ScanForWalletTransactions only picks transactions in the new block
     // file.
