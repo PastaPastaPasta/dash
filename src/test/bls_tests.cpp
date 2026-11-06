@@ -21,6 +21,8 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <thread>
+
 BOOST_AUTO_TEST_SUITE(bls_tests)
 
 void FuncSign(const bool legacy_scheme)
@@ -317,7 +319,8 @@ static void AddCancellingMessages(std::vector<Message>& vec, uint32_t sourceId1,
     m2.valid = false;
 }
 
-static void Verify(std::vector<Message>& vec, bool secureVerification, bool perMessageFallback)
+static void Verify(std::vector<Message>& vec, bool secureVerification, bool perMessageFallback,
+                   bool verifyUnderOppositeScheme)
 {
     CBLSBatchVerifier<uint32_t, uint32_t> batchVerifier(secureVerification, perMessageFallback);
 
@@ -332,7 +335,14 @@ static void Verify(std::vector<Message>& vec, bool secureVerification, bool perM
         batchVerifier.PushMessage(m.sourceId, m.msgId, m.msgHash, m.sig, m.pk);
     }
 
-    batchVerifier.Verify();
+    if (verifyUnderOppositeScheme) {
+        std::thread{[&] {
+            const bls::ScopedLegacySchemeOverride opposite{!bls::EffectiveLegacyScheme()};
+            batchVerifier.Verify();
+        }}.join();
+    } else {
+        batchVerifier.Verify();
+    }
 
     BOOST_CHECK(batchVerifier.badSources == expectedBadSources);
 
@@ -345,10 +355,13 @@ static void Verify(std::vector<Message>& vec, bool secureVerification, bool perM
 
 static void Verify(std::vector<Message>& vec)
 {
-    Verify(vec, false, false);
-    Verify(vec, true, false);
-    Verify(vec, false, true);
-    Verify(vec, true, true);
+    // A batch verifies under the scheme it was built under, wherever Verify() runs
+    for (const bool verifyUnderOppositeScheme : {false, true}) {
+        Verify(vec, false, false, verifyUnderOppositeScheme);
+        Verify(vec, true, false, verifyUnderOppositeScheme);
+        Verify(vec, false, true, verifyUnderOppositeScheme);
+        Verify(vec, true, true, verifyUnderOppositeScheme);
+    }
 }
 
 void FuncBatchVerifier(const bool legacy_scheme)
@@ -954,6 +967,39 @@ BOOST_AUTO_TEST_CASE(test_get_hash_consistency)
     uint256 hash1 = lazy1.GetHash();
     uint256 hash2 = lazy2.GetHash();
     BOOST_CHECK(hash1 == hash2);
+}
+
+BOOST_AUTO_TEST_CASE(scheme_override_is_per_thread_and_nests)
+{
+    const bool saved_scheme{bls::bls_legacy_scheme.load()};
+    bls::bls_legacy_scheme.store(false);
+    {
+        bls::ScopedLegacySchemeOverride outer{true};
+        BOOST_CHECK(bls::EffectiveLegacyScheme());
+        bool other_thread{true};
+        std::thread{[&] { other_thread = bls::EffectiveLegacyScheme(); }}.join();
+        BOOST_CHECK(!other_thread);
+        {
+            // A committed scope hands its scheme to the enclosing override...
+            bls::ScopedLegacySchemeOverride inner{true};
+            bls::SetEffectiveLegacyScheme(false);
+            inner.Commit();
+        }
+        BOOST_CHECK(!bls::EffectiveLegacyScheme());
+        {
+            // ...an uncommitted one does not.
+            bls::ScopedLegacySchemeOverride inner{true};
+        }
+        BOOST_CHECK(!bls::EffectiveLegacyScheme());
+        outer.Commit();
+    }
+    // The outermost override ends with its scope, committed or not, and never
+    // touched the process-wide scheme.
+    BOOST_CHECK(!bls::ScopedLegacySchemeOverride::Active());
+    BOOST_CHECK(!bls::bls_legacy_scheme.load());
+    bls::SetEffectiveLegacyScheme(true);
+    BOOST_CHECK(bls::bls_legacy_scheme.load());
+    bls::bls_legacy_scheme.store(saved_scheme);
 }
 
 BOOST_AUTO_TEST_CASE(v19_boundary_validation_failure_restores_bls_scheme)
