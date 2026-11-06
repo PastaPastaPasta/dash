@@ -25,9 +25,11 @@
 #include <script/standard.h>
 #include <test/util/platform_client.h>
 #include <test/util/setup_common.h>
+#include <tinyformat.h>
 #include <univalue.h>
 #include <util/overloaded.h>
 #include <util/time.h>
+#include <wallet/coincontrol.h>
 #include <wallet/context.h>
 #include <wallet/test/util.h>
 #include <wallet/wallet.h>
@@ -42,6 +44,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <type_traits>
 #include <variant>
@@ -309,6 +312,54 @@ platform::Result<platform::AssetLockState> LockState(platform::AssetLockState::S
 
 //! The identity a registration lock's credit output registers.
 platform::Identifier Registered(const uint256& txid) { return *Assert(platform::IdentityIdFromAssetLock({txid, 0})); }
+
+//! A committed asset lock paying `key`, as an earlier install of the same
+//! seed left it.
+uint256 CommitLock(interfaces::Wallet& wallet, const wallet::AssetLockFundingKey& key)
+{
+    CAmount fee{0};
+    const auto tx{wallet.createAssetLockTransaction(IdentityFlow::MIN_TOP_UP, key, wallet::CCoinControl{}, fee)};
+    Assert(tx && wallet.commitTransaction(*tx, {}, {}));
+    return (*tx)->GetHash();
+}
+
+//! A committed asset lock whose two credit outputs pay `key`, as another
+//! wallet on the same seed may build it.
+uint256 CommitSplitLock(interfaces::Wallet& wallet, const wallet::AssetLockFundingKey& key)
+{
+    CAmount fee{0};
+    const auto base{wallet.createAssetLockTransaction(2 * IdentityFlow::MIN_TOP_UP, key, wallet::CCoinControl{}, fee)};
+    Assert(base);
+    CMutableTransaction split{**base};
+    const auto payload{GetTxPayload<CAssetLockPayload>(split)};
+    Assert(payload);
+    CTxOut credit{payload->getCreditOutputs().front()};
+    credit.nValue /= 2;
+    SetTxPayload(split, CAssetLockPayload{{credit, credit}, payload->getVersion()});
+    for (auto& input : split.vin)
+        input.scriptSig.clear();
+    // The longer payload pays a higher fee, from the change.
+    for (auto& output : split.vout) {
+        if (!output.scriptPubKey.IsUnspendable()) {
+            output.nValue -= 10'000;
+            break;
+        }
+    }
+    const auto signed_tx{wallet.signTransaction(split)};
+    Assert(signed_tx && signed_tx->complete && wallet.commitTransaction(signed_tx->tx, {}, {}));
+    return signed_tx->tx->GetHash();
+}
+
+//! What a wallet restored from its seed has of DashPay's funding records:
+//! nothing.
+void ForgetFundingRecords(interfaces::Wallet& wallet)
+{
+    for (const char* prefix : {IdentityFlow::FUNDING_PREFIX, IdentityFlow::USED_PREFIX, "dashpay/topup-index"}) {
+        for (const auto& record : wallet.getPlatformData(prefix)) {
+            Assert(wallet.writePlatformData(record.first, {}));
+        }
+    }
+}
 
 //! Sets the mock time while it lives.
 struct MockTime {
@@ -1156,8 +1207,10 @@ void PlatformTests::topUpIsSettledByItsLockRecord()
 //! A registration lock is used by the identity it registers. Reported
 //! consumed without it, the lock is sent again while Platform has not used
 //! it; used up without it, the record ends as a payment used on Platform with
-//! no derived identity, and Create is offered again. A lock beside a
-//! different identity found under the wallet's MASTER key is kept.
+//! no derived identity, and Create is offered again. A lock refused as a
+//! registration, beside a different identity found under the wallet's
+//! MASTER key, is offered as a top-up of it, signed with the registration
+//! key; refused as a top-up too, it is never offered again.
 void PlatformTests::registrationIsSettledByItsIdentity()
 {
     using Outcome = platform::FundingOutcome;
@@ -1168,9 +1221,11 @@ void PlatformTests::registrationIsSettledByItsIdentity()
     sources.script = [](FakePlatformClient& client) {
         client.identities_by_pubkey_hash = {NotFound(), Found(5, 100)};
         client.registered_identities = {Funded<platform::Identity>(Outcome::REPORTED_CONSUMED, 0),
-                                        Funded<platform::Identity>(Outcome::REPORTED_CONSUMED, 1)};
+                                        Funded<platform::Identity>(Outcome::REPORTED_CONSUMED, 1),
+                                        Funded<platform::Identity>(Outcome::REJECTED, 0)};
         client.identities = {NotFound(), NotFound()};
         client.asset_lock_states = {LockState(LockRecord::NOT_PRESENT), LockState(LockRecord::FULLY_CONSUMED)};
+        client.top_ups = {Funded<uint64_t>(Outcome::OK, 0, 1'000'100)};
     };
     PlatformService service{f.wallet_model, f.models.client, sources.get()};
     Confirmations confirmations;
@@ -1199,11 +1254,55 @@ void PlatformTests::registrationIsSettledByItsIdentity()
     const uint256 kept{Assert(flow.funding())->txid};
     QVERIFY(kept != txid);
     fake.deliverAll();
+    QVERIFY(flow.fundings().size() == 1 && flow.fundings().front().state == IdentityFlow::FundingState::SET_ASIDE);
     flow.lookUp();
     fake.deliverAll();
     QVERIFY(flow.identity());
     QVERIFY(!flow.funding());
     QVERIFY(flow.fundings().size() == 1 && flow.fundings().front().txid == kept);
+    QVERIFY(flow.earlier().size() == 1 && flow.earlier().front().txid == kept);
+    {
+        FakeSources tab;
+        tab.script = [](FakePlatformClient& client) { client.identities_by_pubkey_hash = {Found(5, 100)}; };
+        PlatformPage page{tab.get()};
+        f.attach(page);
+        tab.fake->deliverAll();
+        QPushButton* apply{VisibleButton(page, "dashPayApplyEarlier")};
+        QVERIFY(apply && apply->text().contains("Apply 1 earlier funding payment"));
+    }
+    flow.applyEarlier();
+    fake.deliverAll();
+    QCOMPARE(fake.countCalls("topUpIdentity"), size_t{1});
+    QVERIFY(std::holds_alternative<wallet::RegistrationFundingKey>(fake.top_up_keys.back()));
+    QVERIFY(ProofTxid(fake.proofs.back()) == kept);
+    QVERIFY(flow.fundings().empty());
+    QVERIFY(flow.earlier().empty());
+
+    // Another install registered the identity after this one's lookup.
+    FakeSources later;
+    later.script = [](FakePlatformClient& client) {
+        client.identities_by_pubkey_hash = {NotFound(), Found(5, 1'000'100), Found(5, 1'000'100)};
+        client.registered_identities = {Funded<platform::Identity>(Outcome::REJECTED, 0)};
+        client.top_ups = {Funded<uint64_t>(Outcome::REJECTED, 0)};
+    };
+    PlatformService again{f.wallet_model, f.models.client, later.get()};
+    IdentityFlow second{again, confirmations.get(), InstantProof};
+    later.fake->deliverAll();
+    second.create();
+    const uint256 refused{Assert(second.fundings().size() == 1) ? second.fundings().front().txid : uint256{}};
+    later.fake->deliverAll();
+    second.lookUp();
+    later.fake->deliverAll();
+    QVERIFY(second.earlier().size() == 1 && second.earlier().front().txid == refused);
+    second.applyEarlier();
+    later.fake->deliverAll();
+    QCOMPARE(later.fake->countCalls("topUpIdentity"), size_t{1});
+    QVERIFY(second.fundings().size() == 1 && second.fundings().front().top_up &&
+            second.fundings().front().state == IdentityFlow::FundingState::SET_ASIDE);
+    QVERIFY(second.earlier().empty());
+    second.lookUp();
+    later.fake->deliverAll();
+    QVERIFY(second.earlier().empty());
 }
 
 //! The passphrase given to fund keeps an encrypted wallet unlocked through
@@ -1359,6 +1458,210 @@ void PlatformTests::closedGateNeverCommits()
     QCOMPARE(sources.fake->fee_increase_floors.back(), uint16_t{0});
     unlocking = nullptr;
     flow.reset();
+}
+
+//! A wallet restored from its seed finds what an earlier install funded in
+//! its own transactions, and checks each payment against Platform's record
+//! before offering it. Create sends the registration lock it finds instead
+//! of a new one. Beside a different identity, that lock and the unused top-up
+//! locks are offered as one action that adds them to the identity with one
+//! unlock; a used-up lock is marked and never offered, a node reporting one
+//! consumed leaves it listed to check again, and the next top-up skips every
+//! index already paid, however far apart within the gap. Two credit outputs
+//! paying one key are two payments. While a payment is still to be applied,
+//! Top up is hidden and funds no new lock, one another install sends after
+//! the lookup included. The identity a registration lock registers ends it
+//! without a submission.
+void PlatformTests::restoredWalletResumesItsFunding()
+{
+    using Outcome = platform::FundingOutcome;
+    using LockRecord = platform::AssetLockState::State;
+    FundedFixture f{m_node};
+    QVERIFY(f.models.ok);
+    interfaces::Wallet& wallet{f.wallet_model.wallet()};
+    Confirmations confirmations;
+    uint256 registration;
+    {
+        FakeSources sources;
+        sources.script = [](FakePlatformClient& client) { client.identities_by_pubkey_hash = {NotFound()}; };
+        PlatformService service{f.wallet_model, f.models.client, sources.get()};
+        IdentityFlow flow{service, confirmations.get(), [](const CTransactionRef&) { return std::nullopt; }};
+        sources.fake->deliverAll();
+        flow.create();
+        registration = Assert(flow.funding())->txid;
+    }
+    const uint256 top_up_0{CommitLock(wallet, wallet::TopupFundingKey{0})};
+    const uint256 split{CommitSplitLock(wallet, wallet::TopupFundingKey{1})};
+    const uint256 top_up_3{CommitLock(wallet, wallet::TopupFundingKey{3})};
+    CommitLock(wallet, wallet::TopupFundingKey{21});
+    ForgetFundingRecords(wallet);
+    const size_t txs{wallet.getWalletTxs().size()};
+    const size_t asked{confirmations.asked.size()};
+
+    {
+        FakeSources sources;
+        sources.script = [](FakePlatformClient& client) {
+            client.identities_by_pubkey_hash = {NotFound()};
+            client.asset_lock_states.assign(6, LockState(LockRecord::NOT_PRESENT));
+        };
+        PlatformService service{f.wallet_model, f.models.client, sources.get()};
+        IdentityFlow flow{service, confirmations.get(), InstantProof};
+        sources.fake->deliverAll();
+        QCOMPARE(flow.found().size(), size_t{6});
+        QVERIFY(flow.earlier().empty());
+        flow.create();
+        QCOMPARE(sources.fake->countCalls("registerIdentity"), size_t{1});
+        QVERIFY(ProofTxid(sources.fake->proofs.back()) == registration);
+        QCOMPARE(wallet.getWalletTxs().size(), txs);
+        QCOMPARE(confirmations.asked.size(), asked);
+        sources.fake->deliverAll();
+        QVERIFY(flow.funding() && flow.funding()->txid == registration);
+    }
+    ForgetFundingRecords(wallet);
+
+    {
+        FakeSources sources;
+        sources.script = [](FakePlatformClient& client) {
+            client.identities_by_pubkey_hash = {Found(5, 100), Found(5, 1'000'100), Found(5, 1'000'100)};
+            client.asset_lock_states = {LockState(LockRecord::NOT_PRESENT),    LockState(LockRecord::FULLY_CONSUMED),
+                                        LockState(LockRecord::NOT_PRESENT),    LockState(LockRecord::NOT_PRESENT),
+                                        LockState(LockRecord::NOT_PRESENT),    LockState(LockRecord::FULLY_CONSUMED),
+                                        LockState(LockRecord::FULLY_CONSUMED), LockState(LockRecord::NOT_PRESENT)};
+            const auto ok{Funded<uint64_t>(Outcome::OK, 0, 1'000'100)};
+            client.top_ups = {ok, ok, ok, Funded<uint64_t>(Outcome::REPORTED_CONSUMED, 0), ok};
+        };
+        PlatformService service{f.wallet_model, f.models.client, sources.get()};
+        IdentityFlow flow{service, confirmations.get(), InstantProof};
+        {
+            FakeSources tab;
+            tab.script = [](FakePlatformClient& client) {
+                client.identities_by_pubkey_hash = {Found(5, 100)};
+                client.asset_lock_states = {LockState(LockRecord::NOT_PRESENT), Unavailable<platform::AssetLockState>(),
+                                            LockState(LockRecord::NOT_PRESENT), LockState(LockRecord::NOT_PRESENT),
+                                            LockState(LockRecord::NOT_PRESENT), LockState(LockRecord::FULLY_CONSUMED)};
+            };
+            PlatformPage page{tab.get()};
+            f.attach(page);
+            tab.fake->deliverAll();
+            QPushButton* apply{VisibleButton(page, "dashPayApplyEarlier")};
+            QVERIFY(apply);
+            QVERIFY(apply->text().contains("Apply 4 earlier funding payment"));
+            QVERIFY(VisibleTexts(page).join(' ').contains("checking an earlier funding payment"));
+            QVERIFY(!VisibleButton(page, "dashPayTopUp"));
+            QVERIFY(!page.findChild<QWidget*>("dashPayTopUpAmount")->isVisibleTo(&page));
+        }
+        FakePlatformClient& fake{*sources.fake};
+        fake.deliverAll();
+        const auto earlier{flow.earlier()};
+        QCOMPARE(earlier.size(), size_t{4});
+        QVERIFY(earlier.front().txid == registration && earlier.back().txid == top_up_3);
+        QVERIFY(wallet.getPlatformData(IdentityFlow::USED_PREFIX).size() == 2);
+        const size_t paid{wallet.getWalletTxs().size()};
+        flow.topUp(IdentityFlow::MIN_TOP_UP);
+        QCOMPARE(wallet.getWalletTxs().size(), paid);
+        QVERIFY(flow.error().contains("Apply it before topping up"));
+
+        flow.applyEarlier();
+        fake.deliverAll();
+        QCOMPARE(fake.countCalls("topUpIdentity"), size_t{4});
+        QVERIFY(std::holds_alternative<wallet::RegistrationFundingKey>(fake.top_up_keys.at(0)));
+        QCOMPARE(std::get<wallet::TopupFundingKey>(fake.top_up_keys.at(3)).funding_index, uint32_t{3});
+        QVERIFY(ProofTxid(fake.proofs.at(0)) == registration && ProofTxid(fake.proofs.at(3)) == top_up_3);
+        std::set<uint32_t> outputs;
+        for (const auto& proof : fake.proofs) {
+            const auto& instant{std::get<platform::InstantAssetLockProof>(proof)};
+            if (instant.transaction->GetHash() == split) outputs.insert(instant.output_index);
+        }
+        QVERIFY(outputs == (std::set<uint32_t>{0, 1}));
+        for (const uint32_t n : {0U, 1U}) {
+            QCOMPARE(wallet.getPlatformData(strprintf("%s%s:%u", IdentityFlow::USED_PREFIX, split.ToString(), n)).size(),
+                     size_t{1});
+        }
+        QCOMPARE(confirmations.asked.size(), asked);
+        QVERIFY(flow.earlier().empty());
+        QVERIFY(flow.funding() && flow.funding()->txid == top_up_3 &&
+                flow.funding()->state == IdentityFlow::FundingState::CHECK_AGAIN);
+        flow.resume();
+        fake.deliverAll();
+        QVERIFY(flow.fundings().empty());
+        {
+            FakeSources tab;
+            tab.script = [](FakePlatformClient& client) { client.identities_by_pubkey_hash = {Found(5, 100)}; };
+            PlatformPage page{tab.get()};
+            f.attach(page);
+            tab.fake->deliverAll();
+            QVERIFY(VisibleButton(page, "dashPayTopUp"));
+            QVERIFY(!VisibleButton(page, "dashPayApplyEarlier"));
+        }
+
+        const size_t applied{wallet.getWalletTxs().size()};
+        flow.topUp(IdentityFlow::MIN_TOP_UP);
+        QCOMPARE(wallet.getWalletTxs().size(), applied + 1);
+        const auto funding{flow.funding()};
+        QVERIFY(funding && std::get<wallet::TopupFundingKey>(funding->key).funding_index == 22);
+        QVERIFY(CreditScript(wallet, funding->txid) == FundingScript(wallet, wallet::TopupFundingKey{22}));
+        QVERIFY(funding->txid != top_up_0);
+        fake.deliverAll();
+        QVERIFY(flow.fundings().empty());
+
+        // Another install of the seed pays a top-up after this one looked:
+        // Top up finds it, funds nothing, and reads it to be applied.
+        const uint256 top_up_30{CommitLock(wallet, wallet::TopupFundingKey{30})};
+        const size_t elsewhere{wallet.getWalletTxs().size()};
+        flow.topUp(IdentityFlow::MIN_TOP_UP);
+        QCOMPARE(wallet.getWalletTxs().size(), elsewhere);
+        QVERIFY(flow.error().contains("Apply it before topping up"));
+        fake.deliverAll();
+        QVERIFY(flow.earlier().size() == 1 && flow.earlier().front().txid == top_up_30);
+    }
+    ForgetFundingRecords(wallet);
+
+    FakeSources sources;
+    sources.script = [&registration](FakePlatformClient& client) {
+        client.identities_by_pubkey_hash = {Found(Registered(registration), 100)};
+    };
+    PlatformService service{f.wallet_model, f.models.client, sources.get()};
+    IdentityFlow flow{service, confirmations.get(), InstantProof};
+    sources.fake->deliverAll();
+    QVERIFY(flow.identity());
+    for (const auto& found : flow.found()) {
+        QVERIFY(found.funding.txid != registration);
+    }
+    QCOMPARE(sources.fake->countCalls("registerIdentity") + sources.fake->countCalls("topUpIdentity"), size_t{0});
+    for (const auto& call : sources.fake->calls) {
+        QVERIFY(call.argument != COutPoint(registration, 0).ToStringShort());
+    }
+}
+
+//! A payment found abandoned is kept but not offered or read; once the
+//! wallet holds it active again, as when it is mined, it is checked and
+//! offered like any other.
+void PlatformTests::foundAbandonedLockIsOfferedOnceActive()
+{
+    FundedFixture f{m_node};
+    QVERIFY(f.models.ok);
+    interfaces::Wallet& wallet{f.wallet_model.wallet()};
+    const uint256 txid{CommitLock(wallet, wallet::TopupFundingKey{0})};
+    QVERIFY(wallet.abandonTransaction(txid));
+    FakeSources sources;
+    sources.script = [](FakePlatformClient& client) {
+        client.identities_by_pubkey_hash = {Found(5, 100), Found(5, 100)};
+        client.asset_lock_states = {LockState(platform::AssetLockState::State::NOT_PRESENT)};
+    };
+    PlatformService service{f.wallet_model, f.models.client, sources.get()};
+    Confirmations confirmations;
+    IdentityFlow flow{service, confirmations.get(), InstantProof};
+    sources.fake->deliverAll();
+    QVERIFY(flow.found().size() == 1 && flow.found().front().inactive);
+    QVERIFY(flow.earlier().empty());
+    QCOMPARE(sources.fake->countCalls("assetLockState"), size_t{0});
+
+    QVERIFY(wallet.commitTransaction(wallet.getTx(txid), {}, {}));
+    flow.lookUp();
+    sources.fake->deliverAll();
+    QVERIFY(flow.found().size() == 1 && !flow.found().front().inactive);
+    QCOMPARE(sources.fake->countCalls("assetLockState"), size_t{1});
+    QVERIFY(flow.earlier().size() == 1 && flow.earlier().front().txid == txid);
 }
 
 //! An encrypted wallet derives its MASTER key only unlocked: the tab does

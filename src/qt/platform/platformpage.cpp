@@ -84,12 +84,15 @@ PlatformPage::PlatformPage(PlatformService::Sources sources, QWidget* parent) :
     m_top_up_amount->setValue(IdentityFlow::MIN_TOP_UP);
     m_top_up = new QPushButton(tr("Top up"), this);
     m_top_up->setObjectName("dashPayTopUp");
+    m_apply = new QPushButton(this);
+    m_apply->setObjectName("dashPayApplyEarlier");
     auto* actions{new QHBoxLayout};
     actions->addWidget(m_look_up);
     actions->addWidget(m_create);
     actions->addWidget(m_continue);
     actions->addWidget(m_top_up_amount);
     actions->addWidget(m_top_up);
+    actions->addWidget(m_apply);
     actions->addStretch();
 
     m_start = new QPushButton(tr("Start DashPay"), this);
@@ -120,6 +123,7 @@ PlatformPage::PlatformPage(PlatformService::Sources sources, QWidget* parent) :
     connect(m_look_up, &QPushButton::clicked, this, [this] { m_identity_flow->lookUp(); });
     connect(m_create, &QPushButton::clicked, this, [this] { m_identity_flow->create(); });
     connect(m_continue, &QPushButton::clicked, this, [this] { m_identity_flow->resume(); });
+    connect(m_apply, &QPushButton::clicked, this, [this] { m_identity_flow->applyEarlier(); });
     connect(m_top_up, &QPushButton::clicked, this, [this] {
         bool valid{false};
         const CAmount amount{m_top_up_amount->value(&valid)};
@@ -261,6 +265,16 @@ void PlatformPage::refresh()
                              .arg(amount);
             }
         }
+        for (const auto& found : flow->found()) {
+            const QString amount{BitcoinUnits::formatWithUnit(unit, found.funding.amount)};
+            if (found.inactive) {
+                lines << tr("A funding payment of %1 was abandoned and is not in a block. DashPay keeps it in case "
+                            "it is mined.")
+                             .arg(amount);
+            } else if (found.read_failed) {
+                lines << tr("DashPay is checking an earlier funding payment of %1 with Dash Platform.").arg(amount);
+            }
+        }
         lines.removeAll(QString{});
         identity_status = lines.join('\n');
     }
@@ -272,6 +286,13 @@ void PlatformPage::refresh()
                                   funding->state == IdentityFlow::FundingState::CHECK_AGAIN)};
     m_continue->setText(checks ? tr("Check again") : tr("Continue"));
     m_continue->setVisible(idle && funding.has_value());
-    m_top_up_amount->setVisible(ready && identity);
-    m_top_up->setVisible(ready && identity);
+    const auto earlier{ready && identity ? flow->earlier() : std::vector<IdentityFlow::Funding>{}};
+    // A payment already made is applied before a new one.
+    m_top_up_amount->setVisible(ready && identity && earlier.empty());
+    m_top_up->setVisible(ready && identity && earlier.empty());
+    if (!earlier.empty()) {
+        m_apply->setText(tr("Apply %n earlier funding payment(s) to identity %1", nullptr, int(earlier.size()))
+                             .arg(QString::fromStdString(EncodeBase58(identity->id))));
+    }
+    m_apply->setVisible(!earlier.empty());
 }

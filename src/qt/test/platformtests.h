@@ -43,6 +43,8 @@ private Q_SLOTS:
     void topUpIsSettledByItsLockRecord();
     void registrationIsSettledByItsIdentity();
     void closedGateNeverCommits();
+    void restoredWalletResumesItsFunding();
+    void foundAbandonedLockIsOfferedOnceActive();
     void lockedWalletLooksUpOnUnlock();
 };
 

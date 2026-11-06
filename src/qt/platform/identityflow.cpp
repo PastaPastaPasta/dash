@@ -70,6 +70,11 @@ std::string RecordName(const wallet::AssetLockFundingKey& key, const COutPoint& 
                   : strprintf("%s%s%s", IdentityFlow::FUNDING_PREFIX, RegistrationName(), name);
 }
 
+std::string UsedRecord(const COutPoint& outpoint)
+{
+    return strprintf("%s%s:%u", IdentityFlow::USED_PREFIX, outpoint.hash.ToString(), outpoint.n);
+}
+
 std::vector<unsigned char> Encode(const Funding& funding)
 {
     DataStream stream;
@@ -121,12 +126,17 @@ uint32_t NextTopUpIndex(interfaces::Wallet& wallet)
     return it == records.end() || it->second.size() != 4 ? 0 : ReadLE32(it->second.data());
 }
 
+bool SaveNextTopUpIndex(interfaces::Wallet& wallet, uint32_t index)
+{
+    std::vector<unsigned char> next(4);
+    WriteLE32(next.data(), index);
+    return wallet.writePlatformData(NEXT_TOP_UP_RECORD, next);
+}
+
 bool SaveFunding(interfaces::Wallet& wallet, const Funding& funding)
 {
     if (const auto* key{std::get_if<wallet::TopupFundingKey>(&funding.key)}) {
-        std::vector<unsigned char> next(4);
-        WriteLE32(next.data(), key->funding_index + 1);
-        if (!wallet.writePlatformData(NEXT_TOP_UP_RECORD, next)) return false;
+        if (!SaveNextTopUpIndex(wallet, key->funding_index + 1)) return false;
     }
     return wallet.writePlatformData(funding.record, Encode(funding));
 }
@@ -208,6 +218,22 @@ void SetCreditOutput(platform::AssetLockProof& proof, uint32_t credit_index)
 }
 
 int64_t Now() { return GetTime<std::chrono::seconds>().count(); }
+
+bool CanSignUnasked(const WalletModel& wallet_model)
+{
+    const auto status{wallet_model.getEncryptionStatus()};
+    return status != WalletModel::Locked && status != WalletModel::UnlockedForMixingOnly;
+}
+
+//! Registration first, then top-ups by index: the order they are checked in.
+bool FoundBefore(const IdentityFlow::Found& a, const IdentityFlow::Found& b)
+{
+    const auto index{[](const IdentityFlow::Found& found) -> int64_t {
+        const auto* top_up{std::get_if<wallet::TopupFundingKey>(&found.funding.key)};
+        return top_up ? int64_t{top_up->funding_index} : int64_t{-1};
+    }};
+    return std::make_pair(index(a), a.funding.outpoint()) < std::make_pair(index(b), b.funding.outpoint());
+}
 } // namespace
 
 IdentityFlow::IdentityFlow(PlatformService& service, Confirm confirm, Proof proof, ChainProof chain_proof) :
@@ -245,6 +271,21 @@ bool IdentityFlow::inactive(const Funding& funding) const
 {
     const auto [tx, status]{WalletTxOf(m_service.walletModel().wallet(), funding.txid)};
     return tx && status.is_abandoned && status.depth_in_main_chain == 0;
+}
+
+std::vector<Funding> IdentityFlow::earlier() const
+{
+    if (!m_identity) return {};
+    std::vector<Funding> out;
+    for (Funding& funding : fundings()) {
+        // A registration lock beside a different identity, one refused as a
+        // registration included: it was never tried as a top-up.
+        if (!funding.top_up && !inactive(funding)) out.push_back(std::move(funding));
+    }
+    for (const Found& found : m_found) {
+        if (!found.inactive && found.state) out.push_back(found.funding);
+    }
+    return out;
 }
 
 std::optional<Funding> IdentityFlow::funding() const
@@ -288,20 +329,111 @@ void IdentityFlow::serviceChanged()
     Q_EMIT changed();
 }
 
+bool IdentityFlow::discover()
+{
+    interfaces::Wallet& wallet{m_service.walletModel().wallet()};
+    const uint32_t recorded{NextTopUpIndex(wallet)};
+    std::vector<wallet::AssetLockFundingKey> keys{wallet::RegistrationFundingKey{IDENTITY_INDEX}};
+    std::vector<wallet::AssetLockFunding> listed;
+    int64_t highest{-1};
+    for (uint32_t scanned{0};;) {
+        const uint32_t end{static_cast<uint32_t>(std::max<int64_t>(recorded, highest + 1)) + TOP_UP_GAP};
+        if (end <= scanned) break;
+        for (; scanned < end; ++scanned)
+            keys.emplace_back(wallet::TopupFundingKey{scanned});
+        auto batch{wallet.listAssetLockFundings(keys)};
+        if (!batch) return false;
+        for (auto& lock : batch.value) {
+            if (const auto* key{std::get_if<wallet::TopupFundingKey>(&lock.key)}) {
+                highest = std::max<int64_t>(highest, key->funding_index);
+            }
+            listed.push_back(std::move(lock));
+        }
+        keys.clear();
+    }
+    if (highest >= recorded) SaveNextTopUpIndex(wallet, static_cast<uint32_t>(highest + 1));
+
+    const auto records{fundings()};
+    const auto used{wallet.getPlatformData(USED_PREFIX)};
+    std::vector<Found> found;
+    for (const auto& lock : listed) {
+        // One a conflicting payment replaced can never reach Platform.
+        if (lock.status == wallet::AssetLockFundingStatus::CONFLICTED) continue;
+        const COutPoint outpoint{lock.txid, lock.credit_index};
+        if (used.count(UsedRecord(outpoint))) continue;
+        if (std::any_of(records.begin(), records.end(), [&](const Funding& r) { return r.outpoint() == outpoint; })) {
+            continue;
+        }
+        Found entry;
+        entry.funding.key = lock.key;
+        entry.funding.txid = lock.txid;
+        entry.funding.credit_index = lock.credit_index;
+        entry.funding.amount = lock.amount;
+        entry.inactive = lock.status == wallet::AssetLockFundingStatus::INACTIVE;
+        // A read already made stands.
+        for (const Found& known : m_found) {
+            if (known.funding.outpoint() != outpoint) continue;
+            entry.state = known.state;
+            entry.read_failed = known.read_failed;
+        }
+        found.push_back(std::move(entry));
+    }
+    std::sort(found.begin(), found.end(), FoundBefore);
+    m_found = std::move(found);
+    return true;
+}
+
+void IdentityFlow::markUsed(const COutPoint& outpoint)
+{
+    if (!m_service.walletModel().wallet().writePlatformData(UsedRecord(outpoint), {1})) {
+        LogPrintf("DashPay: could not mark the funding payment %s used\n", outpoint.ToStringShort());
+    }
+    m_found.erase(std::remove_if(m_found.begin(), m_found.end(),
+                                 [&](const Found& found) { return found.funding.outpoint() == outpoint; }),
+                  m_found.end());
+}
+
+void IdentityFlow::readFound(const COutPoint& outpoint)
+{
+    platform::PlatformClient* client{m_service.client()};
+    if (m_step != Step::IDLE || !client) return;
+    m_step = Step::CHECKING;
+    Q_EMIT changed();
+    client->assetLockState(outpoint, tracked<platform::Result<platform::AssetLockState>>(
+                                         [this, outpoint](platform::Result<platform::AssetLockState> result) {
+                                             m_step = Step::IDLE;
+                                             for (Found& found : m_found) {
+                                                 if (found.funding.outpoint() != outpoint) continue;
+                                                 found.read_failed = !result.ok();
+                                                 if (result.ok()) found.state = result.value.state;
+                                             }
+                                             if (result.ok() && result.value.state ==
+                                                                    platform::AssetLockState::State::FULLY_CONSUMED) {
+                                                 markUsed(outpoint);
+                                             }
+                                             Q_EMIT changed();
+                                             checkPending(/*retry=*/false);
+                                         }));
+}
+
 void IdentityFlow::chainLocked()
 {
     if (m_step == Step::WAITING_FOR_LOCK) return send(/*chain_locked=*/true);
     checkPending();
 }
 
-void IdentityFlow::checkPending()
+void IdentityFlow::checkPending(bool retry)
 {
     if (m_step != Step::IDLE || !m_service.client()) return;
     const auto pending{funding()};
     // One with every fee step used is read again on Continue only.
     if (pending && (pending->state == FundingState::CONFIRMING || pending->state == FundingState::CHECK_AGAIN) &&
         !Capped(*pending, Now())) {
-        check(*pending);
+        return check(*pending);
+    }
+    for (const Found& found : m_found) {
+        if (found.inactive || found.state || (found.read_failed && !retry)) continue;
+        return readFound(found.funding.outpoint());
     }
 }
 
@@ -311,6 +443,7 @@ void IdentityFlow::finish(const QString& error)
     m_funding.reset();
     m_tx.reset();
     m_unlock.reset();
+    m_applying = false;
     m_error = error;
     Q_EMIT changed();
 }
@@ -324,10 +457,11 @@ void IdentityFlow::lookUp()
 void IdentityFlow::startLookUp(bool unlock)
 {
     if (m_step != Step::IDLE || !m_service.client()) return;
-    if (!m_key_hash) {
+    {
         std::optional<WalletModel::UnlockContext> context;
-        if (unlock) context.emplace(m_service.walletModel().requestUnlock());
-        m_key_hash = MasterKeyHash(m_service.walletModel().wallet());
+        if (!m_key_hash && unlock) context.emplace(m_service.walletModel().requestUnlock());
+        if (!m_key_hash) m_key_hash = MasterKeyHash(m_service.walletModel().wallet());
+        if (CanSignUnasked(m_service.walletModel())) discover();
     }
     if (!m_key_hash) {
         if (unlock) finish(tr("The wallet stayed locked, so DashPay could not look up your identity."));
@@ -359,6 +493,15 @@ void IdentityFlow::onLookedUp(platform::Result<platform::Identity> result)
                 retire(funding);
             }
         }
+        std::vector<COutPoint> registered;
+        for (const Found& found : m_found) {
+            if (std::holds_alternative<wallet::RegistrationFundingKey>(found.funding.key) &&
+                platform::IdentityIdFromAssetLock(found.funding.outpoint()) == m_identity->id) {
+                registered.push_back(found.funding.outpoint());
+            }
+        }
+        for (const COutPoint& outpoint : registered)
+            markUsed(outpoint);
     }
     finish();
     checkPending();
@@ -418,6 +561,58 @@ void IdentityFlow::fund(CAmount amount, Funding pending)
         return finish(tr("DashPay stopped while the wallet was being unlocked, so nothing was sent."));
     }
     interfaces::Wallet& wallet{m_service.walletModel().wallet()};
+    discover();
+    if (registration) {
+        // A registration lock already paid is sent again, never a second one.
+        const auto found{std::find_if(m_found.begin(), m_found.end(), [](const Found& found) {
+            return std::holds_alternative<wallet::RegistrationFundingKey>(found.funding.key) && !found.inactive;
+        })};
+        if (found != m_found.end() && found->state) return adopt(found->funding, std::move(*unlock));
+        if (found != m_found.end()) {
+            // Checked first: one Platform has used is never sent.
+            const COutPoint outpoint{found->funding.outpoint()};
+            platform::PlatformClient* client{m_service.client()};
+            m_unlock.emplace(std::move(*unlock));
+            m_step = Step::CHECKING;
+            Q_EMIT changed();
+            return client->assetLockState(
+                outpoint, tracked<platform::Result<platform::AssetLockState>>(
+                              [this, outpoint](platform::Result<platform::AssetLockState> result) {
+                                  const auto it{std::find_if(m_found.begin(), m_found.end(), [&](const Found& found) {
+                                      return found.funding.outpoint() == outpoint;
+                                  })};
+                                  if (it == m_found.end()) return finish();
+                                  if (!result.ok()) {
+                                      it->read_failed = true;
+                                      return finish(tr("DashPay could not check the identity funding payment "
+                                                       "already in this wallet with Dash Platform, so nothing was "
+                                                       "sent. Try again."));
+                                  }
+                                  if (result.value.state == platform::AssetLockState::State::FULLY_CONSUMED) {
+                                      markUsed(outpoint);
+                                      return finish(tr("The identity funding payment already in this wallet was "
+                                                       "used on Dash Platform. Create again to fund a new one."));
+                                  }
+                                  it->state = result.value.state;
+                                  WalletModel::UnlockContext held{std::move(*m_unlock)};
+                                  m_unlock.reset();
+                                  adopt(it->funding, std::move(held));
+                              }));
+        }
+    } else {
+        // No new lock while one this wallet paid can still be used: it is
+        // applied first. One whose read failed, or that was abandoned, does
+        // not hold a top-up back.
+        const bool unread{std::any_of(m_found.begin(), m_found.end(), [](const Found& found) {
+            return !found.inactive && !found.state && !found.read_failed;
+        })};
+        if (unread || !earlier().empty()) {
+            finish(tr("This wallet holds an earlier funding payment for Dash Platform. Apply it before topping up."));
+            // One found just now is read, so it can be applied.
+            return checkPending(/*retry=*/false);
+        }
+        pending.key = wallet::TopupFundingKey{NextTopUpIndex(wallet)};
+    }
     CAmount fee{0};
     const auto tx{wallet.createAssetLockTransaction(amount, pending.key, wallet::CCoinControl{}, fee)};
     if (!tx) return finish(QString::fromStdString(util::ErrorString(tx).translated));
@@ -470,6 +665,64 @@ void IdentityFlow::resume()
     awaitLock(std::move(*pending), tx, std::move(*unlock));
 }
 
+void IdentityFlow::adopt(Funding funding, WalletModel::UnlockContext unlock)
+{
+    funding.record = RecordName(funding.key, funding.outpoint());
+    funding.state = FundingState::PENDING;
+    const COutPoint outpoint{funding.outpoint()};
+    m_found.erase(std::remove_if(m_found.begin(), m_found.end(),
+                                 [&](const Found& found) { return found.funding.outpoint() == outpoint; }),
+                  m_found.end());
+    if (!save(funding)) return finish(tr("The wallet could not save the funding payment, so nothing was sent."));
+    const auto [tx, status]{WalletTxOf(m_service.walletModel().wallet(), funding.txid)};
+    if (!tx) return finish();
+    awaitLock(std::move(funding), tx, std::move(unlock));
+}
+
+void IdentityFlow::applyEarlier()
+{
+    if (m_step != Step::IDLE || !m_service.client() || funding() || !m_identity || earlier().empty()) return;
+    const platform::Identifier identity{m_identity->id};
+    auto unlock{beginFunding()};
+    if (!unlock) return;
+    if (m_service.gate() != PlatformService::Gate::NONE || !m_service.client() || !m_identity ||
+        m_identity->id != identity) {
+        return finish(tr("DashPay stopped while the wallet was being unlocked, so nothing was sent."));
+    }
+    // Every one is recorded first, so each is kept whatever happens to the others.
+    for (Funding funding : earlier()) {
+        funding.top_up = identity;
+        funding.state = FundingState::PENDING;
+        if (funding.record.empty()) funding.record = RecordName(funding.key, funding.outpoint());
+        if (!save(funding)) return finish(tr("The wallet could not save the funding payment, so nothing was sent."));
+        const COutPoint outpoint{funding.outpoint()};
+        m_found.erase(std::remove_if(m_found.begin(), m_found.end(),
+                                     [&](const Found& found) { return found.funding.outpoint() == outpoint; }),
+                      m_found.end());
+    }
+    m_unlock.emplace(std::move(*unlock));
+    m_applying = true;
+    if (!applyNext()) finish();
+}
+
+bool IdentityFlow::applyNext()
+{
+    auto next{funding()};
+    if (!next || !next->top_up || next->state != FundingState::PENDING) return false;
+    const auto [tx, status]{WalletTxOf(m_service.walletModel().wallet(), next->txid)};
+    if (!tx || status.depth_in_main_chain < 0) return false;
+    if (Capped(*next, Now())) {
+        finish(cappedNote(*next));
+        return true;
+    }
+    m_funding = std::move(*next);
+    m_tx = tx;
+    m_step = Step::WAITING_FOR_LOCK;
+    Q_EMIT changed();
+    send();
+    return true;
+}
+
 void IdentityFlow::awaitLock(Funding pending, CTransactionRef tx, WalletModel::UnlockContext unlock)
 {
     m_funding = std::move(pending);
@@ -489,6 +742,7 @@ bool IdentityFlow::save(const Funding& funding)
 
 void IdentityFlow::retire(const Funding& funding)
 {
+    markUsed(funding.outpoint());
     if (!m_service.walletModel().wallet().writePlatformData(funding.record, {})) {
         LogPrintf("DashPay: could not erase the funding record %s\n", funding.record);
     }
@@ -567,6 +821,7 @@ void IdentityFlow::sent(Funding funding, uint16_t floor, int64_t previous_attemp
     switch (report.outcome) {
     case Outcome::OK:
         retire(funding);
+        if (m_applying && applyNext()) return;
         return finish();
     case Outcome::NEEDS_CHAINLOCK_PROOF:
     case Outcome::PLATFORM_BEHIND_CORE:

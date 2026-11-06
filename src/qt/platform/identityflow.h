@@ -46,6 +46,17 @@ class PlatformService;
  * up. A payment that was abandoned is kept in case it is mined; only one
  * replaced by a conflicting payment, or missing, ends its record.
  *
+ * The wallet's own transactions are the rest of the inventory: after each
+ * unlock the flow lists the asset locks its funding keys were paid
+ * (interfaces::Wallet::listAssetLockFundings), so a wallet restored from its
+ * seed finds what an earlier install funded. Each one no record or marker
+ * names is checked against Platform's record of it before it is offered. A
+ * found registration lock is what Create sends; found top-ups, and
+ * registration locks beside a different identity (one refused as a
+ * registration included), are offered together as one action that adds them
+ * to the identity, and Top up funds no new lock until they are applied. Locks
+ * Platform is proved to have used get a marker and are never offered again.
+ *
  * The passphrase given to fund keeps the wallet unlocked until Platform has
  * answered, through the waits for a lock and for Platform to reach the
  * payment's block, and is released at once when a gate closes. Each call
@@ -66,6 +77,11 @@ public:
     static constexpr CAmount MIN_TOP_UP{1'000'000};
     //! The wallet records of asset locks whose use Platform has not proved.
     static constexpr const char* FUNDING_PREFIX{"dashpay/funding/"};
+    //! The wallet records of asset locks Platform is proved to have used.
+    static constexpr const char* USED_PREFIX{"dashpay/funding-used/"};
+    //! Top-up funding keys are looked for until this many indices in a row
+    //! were never paid.
+    static constexpr uint32_t TOP_UP_GAP{20};
     //! How long a fee increase stays used: Tenderdash remembers a refused
     //! transition this long, so within it a resend must differ.
     static constexpr std::chrono::hours FEE_INCREASE_MEMORY{24};
@@ -119,6 +135,18 @@ public:
         COutPoint outpoint() const { return {txid, credit_index}; }
     };
 
+    //! A funding payment found in the wallet that no record names.
+    struct Found {
+        Funding funding;
+        //! Abandoned and not in a block: kept, but not offered until mined.
+        bool inactive{false};
+        //! Platform's record of it, once read: never FULLY_CONSUMED, which
+        //! marks it used instead.
+        std::optional<platform::AssetLockState::State> state;
+        //! The last read failed: it is checked again.
+        bool read_failed{false};
+    };
+
     enum class Step {
         IDLE,
         LOOKING_UP,
@@ -142,6 +170,12 @@ public:
     std::optional<Funding> funding() const;
     //! Every asset lock record, the kept ones included.
     std::vector<Funding> fundings() const;
+    //! The funding payments found in the wallet after the last unlock.
+    const std::vector<Found>& found() const { return m_found; }
+    //! What applyEarlier() adds to the identity: payments found in the
+    //! wallet that Platform has not used, and registration locks kept beside
+    //! a different identity or refused as a registration.
+    std::vector<Funding> earlier() const;
     //! Why the last step failed; empty when it did not.
     const QString& error() const { return m_error; }
     //! What a check of Platform's record of a lock found, until the next
@@ -153,10 +187,14 @@ public:
     void lookUp();
     //! Fund and register the identity.
     void create();
-    //! Fund `amount` duffs of credits for the identity.
+    //! Fund `amount` duffs of credits for the identity; refused while a
+    //! payment the wallet found is unread or earlier() is not empty.
     void topUp(CAmount amount);
     //! Send funding() to Platform again, or check it again.
     void resume();
+    //! Add every earlier() payment to the identity, one after another, with
+    //! one unlock.
+    void applyEarlier();
 
     //! Whether the wallet abandoned the payment while it is not in a block.
     bool inactive(const Funding& funding) const;
@@ -167,8 +205,23 @@ Q_SIGNALS:
 private:
     void serviceChanged();
     void chainLocked();
-    //! Check a CONFIRMING or CHECK_AGAIN funding() when nothing else runs.
-    void checkPending();
+    //! Check a CONFIRMING or CHECK_AGAIN funding() when nothing else runs,
+    //! else read Platform's record of a found payment; `retry`: also one
+    //! whose last read failed.
+    void checkPending(bool retry = true);
+    //! List the asset locks the wallet's funding keys were paid, which needs
+    //! an unlocked wallet: the registration key, and top-up keys until
+    //! TOP_UP_GAP indices in a row were never paid. Later top-ups skip every
+    //! index paid. False when the wallet could not list them.
+    bool discover();
+    void readFound(const COutPoint& outpoint);
+    //! Record a found registration lock, and send it with this unlock.
+    void adopt(Funding funding, WalletModel::UnlockContext unlock);
+    //! Send the next payment applyEarlier() recorded with the unlock held;
+    //! false when there is none. One with every fee step used ends the flow
+    //! with its note.
+    bool applyNext();
+    void markUsed(const COutPoint& outpoint);
     void startLookUp(bool unlock);
     void onLookedUp(platform::Result<platform::Identity> result);
     void fund(CAmount amount, Funding pending);
@@ -223,6 +276,9 @@ private:
     std::optional<Funding> m_funding;
     CTransactionRef m_tx;
     std::optional<WalletModel::UnlockContext> m_unlock;
+    //! applyEarlier() is sending what it recorded.
+    bool m_applying{false};
+    std::vector<Found> m_found;
 };
 
 #endif // BITCOIN_QT_PLATFORM_IDENTITYFLOW_H

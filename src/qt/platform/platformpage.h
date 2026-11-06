@@ -64,6 +64,7 @@ private:
     QPushButton* m_continue{nullptr};
     BitcoinAmountField* m_top_up_amount{nullptr};
     QPushButton* m_top_up{nullptr};
+    QPushButton* m_apply{nullptr};
     QPushButton* m_start{nullptr};
     QPushButton* m_stop{nullptr};
 };
