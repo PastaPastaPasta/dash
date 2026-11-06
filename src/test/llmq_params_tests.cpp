@@ -184,6 +184,33 @@ BOOST_AUTO_TEST_CASE(llmq_params_calculations_overflow_test)
     BOOST_CHECK_EQUAL(cycles, 0); // 1000 / max_int = 0
 }
 
+// Platform state older than (signingActiveQuorumCount + 2) DKG intervals below the ChainLock is
+// stale; 26 * 24 = 624 blocks for the mainnet and testnet Platform quorums.
+BOOST_AUTO_TEST_CASE(platform_quorum_min_signed_height_test)
+{
+    const LLMQParams& platform = GetLLMQParams(LLMQType::LLMQ_100_67);
+    BOOST_CHECK_EQUAL(PlatformEligibleQuorumCount(platform), 26);
+    BOOST_CHECK_EQUAL(PlatformQuorumMinSignedHeight(platform, 10000), 10000 - 624);
+    BOOST_CHECK_EQUAL(PlatformQuorumMinSignedHeight(GetLLMQParams(LLMQType::LLMQ_25_67), 10000), 10000 - 624);
+    BOOST_CHECK_EQUAL(PlatformQuorumMinSignedHeight(GetLLMQParams(LLMQType::LLMQ_TEST_PLATFORM), 100), 4);
+
+    // ChainLocks stalled at 1000 while the tip moved on to 2000: state signed at 990 is still
+    // accepted. A bound taken from the tip would reject it.
+    constexpr int cl_height{1000};
+    constexpr int tip_height{2000};
+    constexpr int signed_height{990};
+    BOOST_CHECK_GE(signed_height, PlatformQuorumMinSignedHeight(platform, cl_height));
+    BOOST_CHECK_LT(signed_height, PlatformQuorumMinSignedHeight(platform, tip_height));
+
+    // A ChainLock below the window accepts every height.
+    BOOST_CHECK_EQUAL(PlatformQuorumMinSignedHeight(platform, 0), 0);
+    BOOST_CHECK_EQUAL(PlatformQuorumMinSignedHeight(platform, 624), 0);
+    BOOST_CHECK_EQUAL(PlatformQuorumMinSignedHeight(platform, 625), 1);
+
+    BOOST_CHECK_EQUAL(PlatformQuorumMinSignedHeight(platform, std::numeric_limits<int>::max()),
+                      std::numeric_limits<int>::max() - 624);
+}
+
 //! Build chain params for `chain` with a single LLMQ size/threshold override applied.
 static std::unique_ptr<const CChainParams> ChainParamsWithLLMQOverride(const ChainType chain,
                                                                        const std::string& arg,

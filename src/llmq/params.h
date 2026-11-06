@@ -5,6 +5,7 @@
 #ifndef BITCOIN_LLMQ_PARAMS_H
 #define BITCOIN_LLMQ_PARAMS_H
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <string_view>
@@ -511,6 +512,27 @@ static constexpr std::array<LLMQParams, 14> available_llmqs = {
 }; // available_llmqs
 
 } // namespace Consensus
+
+namespace llmq {
+//! DKG intervals beyond the signing-active set during which a Platform quorum is still accepted
+//! as the signer of Platform state.
+static constexpr int PLATFORM_QUORUM_SLACK{2};
+
+//! How many of the newest mined Platform quorums may sign Platform state.
+[[nodiscard]] constexpr int PlatformEligibleQuorumCount(const Consensus::LLMQParams& params)
+{
+    return params.signingActiveQuorumCount + PLATFORM_QUORUM_SLACK;
+}
+
+//! Lowest Core chain-locked height that Platform state may carry for this node to verify its
+//! quorum signature, given the node's ChainLock height. Bounding by the ChainLock rather than the
+//! tip keeps state signed before a ChainLock stall verifiable while the tip keeps moving.
+[[nodiscard]] constexpr int PlatformQuorumMinSignedHeight(const Consensus::LLMQParams& params, int cl_height)
+{
+    const int64_t window{int64_t{PlatformEligibleQuorumCount(params)} * params.dkgInterval};
+    return static_cast<int>(std::max<int64_t>(0, int64_t{cl_height} - window));
+}
+} // namespace llmq
 
 // This must be outside of all namespaces. We must also duplicate the forward declaration of is_serializable_enum to
 // avoid inclusion of serialize.h here.
