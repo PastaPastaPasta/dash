@@ -52,6 +52,7 @@
 #include <wallet/wallet.h>
 
 #include <QApplication>
+#include <QCheckBox>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QLabel>
@@ -528,13 +529,18 @@ uint256 SendTo(interfaces::Wallet& wallet, const CTxDestination& address)
     return (*tx)->GetHash();
 }
 
-//! The button in the contacts list row of `id`, or nullptr.
-QPushButton* ContactButton(const PlatformPage& page, uint8_t id)
+//! The button in `column` of the contacts list row of `id`, the ignored
+//! requests included while they are shown; nullptr if there is none.
+QPushButton* ContactButton(const PlatformPage& page, uint8_t id, int column = 2)
 {
-    const auto contacts{page.contactFlow()->contacts()};
+    auto contacts{page.contactFlow()->contacts()};
+    if (page.findChild<QCheckBox*>("dashPayShowIgnored")->isChecked()) {
+        const auto ignored{page.contactFlow()->ignored()};
+        contacts.insert(contacts.end(), ignored.begin(), ignored.end());
+    }
     const auto* list{page.findChild<QTableWidget*>("dashPayContacts")};
     for (size_t row = 0; row < contacts.size(); ++row) {
-        if (contacts[row].id[0] == id) return qobject_cast<QPushButton*>(list->cellWidget(row, 2));
+        if (contacts[row].id[0] == id) return qobject_cast<QPushButton*>(list->cellWidget(row, column));
     }
     return nullptr;
 }
@@ -2442,7 +2448,8 @@ void PlatformTests::contactsAreTheNewestRequests()
 //! message, and Refresh goes on from where it stopped. Our requests are read
 //! whatever happens to theirs, and a contact whose request was read can be
 //! accepted. Only the newest incoming requests are listed, with a count of
-//! the rest, and only listed contacts have their names read.
+//! the rest, and only listed contacts have their names read. An ignored
+//! sender is neither listed nor counted.
 void PlatformTests::contactPagesKeepWhatWasRead()
 {
     Fixture f{m_node};
@@ -2508,6 +2515,19 @@ void PlatformTests::contactPagesKeepWhatWasRead()
                 argument == HexStr(Request(0x0c, 5, 0).owner));
     }
     QVERIFY(names <= ContactFlow::INCOMING_SHOWN + 2);
+
+    // An ignored sender leaves the incoming rows and the count of the rest:
+    // the next newest is listed instead, and only its name is read.
+    const platform::Identifier newest{flow.contacts().front().id};
+    const size_t asked{sources.fake->calls.size()};
+    page.contactFlow()->ignore(newest);
+    QCOMPARE(flow.contacts().size(), ContactFlow::INCOMING_SHOWN);
+    QVERIFY(flow.contacts().front().id != newest);
+    QCOMPARE(flow.moreIncoming(), size_t{401});
+    QCOMPARE(flow.ignored().size(), size_t{1});
+    QCOMPARE(list->rowCount(), int(ContactFlow::INCOMING_SHOWN) + 1);
+    QCOMPARE(sources.fake->calls.size(), asked + 1);
+    QCOMPARE(sources.fake->calls.back().method, std::string{"namesOfIdentity"});
 }
 
 namespace {
@@ -3598,4 +3618,221 @@ void PlatformTests::searchSurvivesAClientRebuild()
     QVERIFY(SearchDialog(page) == dialog);
     sources.fake->deliverAll();
     QCOMPARE(SearchResults(*dialog), (QStringList{"carol2026"}));
+}
+
+namespace {
+using Ids = std::vector<uint8_t>;
+
+//! The first byte of each contact's id, as listed.
+Ids ContactIds(const std::vector<ContactFlow::Contact>& contacts)
+{
+    Ids ids;
+    for (const auto& contact : contacts) {
+        ids.push_back(contact.id[0]);
+    }
+    return ids;
+}
+} // namespace
+
+//! Ignoring an incoming request hides its sender, here and nowhere else: it
+//! asks Platform for nothing, and no request of theirs shows after a
+//! refresh, newer ones included, or a restart. A contact is not an incoming
+//! request, and what one identity ignored another does not.
+void PlatformTests::ignoringHidesAnIncomingRequest()
+{
+    Fixture f{m_node};
+    QVERIFY(f.models.ok);
+    // Bob (0x0b) and we asked each other and carol (0x0c) hasn't answered;
+    // dave, erin and frank wait for us. Read again, dave has sent another.
+    const auto sent{Requests({Request(5, 0x0b, 1), Request(5, 0x0c, 1)})};
+    const std::vector<platform::ContactRequest> received{Request(0x0b, 5, 2), Request(0x0d, 5, 2), Request(0x0e, 5, 2),
+                                                         Request(0x0f, 5, 2)};
+    auto newer{received};
+    newer.push_back(Request(0x0d, 5, 9));
+    auto ours{OurIdentity()};
+    FakeSources sources;
+    sources.script = [&](FakePlatformClient& client) {
+        client.identities_by_pubkey_hash = {ours};
+        client.names = {Names({"me2026"})};
+        client.sent_requests = {sent, sent};
+        client.received_requests = {Requests(received), Requests(newer)};
+    };
+    auto page{std::make_unique<PlatformPage>(sources.get())};
+    f.attach(*page);
+    sources.fake->deliverAll();
+    ContactFlow& flow{*page->contactFlow()};
+    QVERIFY(ContactIds(flow.contacts()) == (Ids{0x0d, 0x0e, 0x0f, 0x0b, 0x0c}));
+    QVERIFY(flow.ignored().empty());
+    QVERIFY(!page->findChild<QCheckBox*>("dashPayShowIgnored")->isVisibleTo(page.get()));
+    for (uint8_t id : {0x0d, 0x0e, 0x0f}) {
+        QVERIFY(ContactButton(*page, id, 3));
+    }
+    for (uint8_t id : {0x0b, 0x0c}) {
+        QVERIFY(!ContactButton(*page, id, 3));
+    }
+
+    const size_t asked{sources.fake->calls.size()};
+    ContactButton(*page, 0x0d, 3)->click();
+    QCOMPARE(sources.fake->calls.size(), asked);
+    QVERIFY(ContactIds(flow.contacts()) == (Ids{0x0e, 0x0f, 0x0b, 0x0c}));
+    QVERIFY(ContactIds(flow.ignored()) == (Ids{0x0d}));
+    QVERIFY(flow.ignored().front().state == ContactFlow::State::INCOMING);
+    QVERIFY(page->findChild<QCheckBox*>("dashPayShowIgnored")->isVisibleTo(page.get()));
+    // Ignoring a contact hides nothing.
+    platform::Identifier bob;
+    bob.fill(0x0b);
+    flow.ignore(bob);
+    QVERIFY(ContactIds(flow.contacts()) == (Ids{0x0e, 0x0f, 0x0b, 0x0c}));
+    QVERIFY(ContactIds(flow.ignored()) == (Ids{0x0d}));
+
+    // Read again, with dave's newer request, and after a restart.
+    VisibleButton(*page, "dashPayRefreshContacts")->click();
+    sources.fake->deliverAll();
+    QVERIFY(ContactIds(flow.contacts()) == (Ids{0x0e, 0x0f, 0x0b, 0x0c}));
+    page = std::make_unique<PlatformPage>(sources.get());
+    f.attach(*page);
+    sources.fake->deliverAll();
+    QVERIFY(ContactIds(page->contactFlow()->contacts()) == (Ids{0x0e, 0x0f, 0x0b, 0x0c}));
+    QVERIFY(ContactIds(page->contactFlow()->ignored()) == (Ids{0x0d}));
+
+    // Another identity of the wallet has not ignored dave.
+    ours.value.id.fill(6);
+    page = std::make_unique<PlatformPage>(sources.get());
+    f.attach(*page);
+    sources.fake->deliverAll();
+    QVERIFY(ContactIds(page->contactFlow()->contacts()) == (Ids{0x0d, 0x0e, 0x0f, 0x0b, 0x0c}));
+    QVERIFY(page->contactFlow()->ignored().empty());
+}
+
+//! The ignored requests are listed when asked for, with Unignore instead of
+//! Accept; Unignore returns the sender to the incoming requests for good,
+//! also after a restart.
+void PlatformTests::unignoringShowsTheRequestAgain()
+{
+    Fixture f{m_node};
+    QVERIFY(f.models.ok);
+    FakeSources sources;
+    sources.script = [&](FakePlatformClient& client) {
+        client.identities_by_pubkey_hash = {OurIdentity()};
+        client.names = {Names({"me2026"})};
+        client.sent_requests = {Requests({}), Requests({})};
+        client.received_requests = {Requests({Request(0x0d, 5, 2), Request(0x0e, 5, 2)}),
+                                    Requests({Request(0x0d, 5, 2), Request(0x0e, 5, 2)})};
+    };
+    auto page{std::make_unique<PlatformPage>(sources.get())};
+    f.attach(*page);
+    sources.fake->deliverAll();
+    const auto* list{page->findChild<QTableWidget*>("dashPayContacts")};
+    auto* show{page->findChild<QCheckBox*>("dashPayShowIgnored")};
+    ContactButton(*page, 0x0d, 3)->click();
+    QCOMPARE(list->rowCount(), 1);
+    QVERIFY(show->isVisibleTo(page.get()));
+    show->setChecked(true);
+    QCOMPARE(list->rowCount(), 2);
+    QVERIFY(ContactButton(*page, 0x0d, 3)->objectName() == "dashPayUnignoreContact");
+    QVERIFY(!ContactButton(*page, 0x0d));
+    show->setChecked(false);
+    QCOMPARE(list->rowCount(), 1);
+    show->setChecked(true);
+    // Reading the requests again keeps the option as it was.
+    VisibleButton(*page, "dashPayRefreshContacts")->click();
+    QVERIFY(show->isChecked());
+    sources.fake->deliverAll();
+    QCOMPARE(list->rowCount(), 2);
+
+    ContactButton(*page, 0x0d, 3)->click();
+    QVERIFY(page->contactFlow()->ignored().empty());
+    QVERIFY(ContactIds(page->contactFlow()->contacts()) == (Ids{0x0d, 0x0e}));
+    QVERIFY(ContactButton(*page, 0x0d)->objectName() == "dashPayAcceptContact");
+    QVERIFY(!show->isVisibleTo(page.get()));
+    QCOMPARE(list->rowCount(), 2);
+
+    page = std::make_unique<PlatformPage>(sources.get());
+    f.attach(*page);
+    sources.fake->deliverAll();
+    QVERIFY(ContactIds(page->contactFlow()->contacts()) == (Ids{0x0d, 0x0e}));
+}
+
+//! Ignoring hides a sender's requests, never the chain they pay us at. Dave,
+//! ignored here, was accepted from another device on this seed: once our
+//! request to him is read he is a contact, our receiving chain towards him
+//! is imported, born at that request, and his payment is in the balance,
+//! also after a restart with the ignore kept. The wallet keeps its record of
+//! that chain too: a later session of the locked wallet asks no unlock for it.
+void PlatformTests::ignoredSenderStillPaysUs()
+{
+    FundedFixture f{m_node};
+    QVERIFY(f.models.ok);
+    interfaces::Wallet& wallet{f.wallet_model.wallet()};
+    const auto ours{OurIdentity()};
+    platform::Identifier dave;
+    dave.fill(0x0d);
+    const CTxDestination address{OurChain(wallet, ours.value.id, dave).second};
+    int64_t paid_at;
+    {
+        const auto notifications{f.chain.m_node.chain->handleNotifications(f.wallet)};
+        const auto payment{f.chain.CreateValidMempoolTransaction(f.chain.m_coinbase_txns[1], 0, 2, f.chain.coinbaseKey,
+                                                                 GetScriptForDestination(address), 5 * COIN,
+                                                                 /*submit=*/false)};
+        paid_at = f.chain.CreateAndProcessBlock({payment}, GetScriptForRawPubKey(f.chain.coinbaseKey.GetPubKey())).GetBlockTime();
+        SyncWithValidationInterfaceQueue();
+    }
+    const CAmount before{wallet.getBalance()};
+    constexpr int64_t DAY{24 * 60 * 60};
+    const auto theirs{Request(0x0d, 5, uint64_t(paid_at - 2 * DAY) * 1000)};
+    const auto accepted{Request(5, 0x0d, uint64_t(paid_at - DAY) * 1000)};
+    int clients{0};
+    FakeSources sources;
+    sources.script = [&](FakePlatformClient& client) {
+        client.identities_by_pubkey_hash = {ours};
+        client.names = {Names({"me2026"})};
+        if (clients++ == 0) {
+            client.sent_requests = {Requests({}), Requests({accepted})};
+            client.received_requests = {Requests({theirs}), Requests({})};
+        } else {
+            client.sent_requests = {Requests({accepted})};
+            client.received_requests = {Requests({theirs})};
+        }
+    };
+    auto page{std::make_unique<PlatformPage>(sources.get())};
+    f.attach(*page);
+    sources.fake->deliverAll();
+    ContactFlow* flow{page->contactFlow()};
+    QVERIFY(flow->contacts().size() == 1 && flow->contacts().front().state == ContactFlow::State::INCOMING);
+    ContactButton(*page, 0x0d, 3)->click();
+    QVERIFY(flow->contacts().empty());
+    QVERIFY(ContactIds(flow->ignored()) == (Ids{0x0d}));
+    QVERIFY(!wallet.isSpendable(address));
+
+    VisibleButton(*page, "dashPayRefreshContacts")->click();
+    sources.fake->deliverAll();
+    QTRY_VERIFY(!flow->rescanning());
+    QVERIFY(ContactIds(flow->contacts()) == (Ids{0x0d}));
+    QVERIFY(flow->contacts().front().state == ContactFlow::State::ESTABLISHED);
+    QVERIFY(flow->ignored().empty());
+    QVERIFY(OurChain(wallet, ours.value.id, dave).first.birth_time == paid_at - DAY);
+    QVERIFY(wallet.isSpendable(address));
+    QCOMPARE(wallet.getBalance(), before + 5 * COIN);
+
+    page = std::make_unique<PlatformPage>(sources.get());
+    f.attach(*page);
+    sources.fake->deliverAll();
+    QTRY_VERIFY(!page->contactFlow()->rescanning());
+    QVERIFY(ContactIds(page->contactFlow()->contacts()) == (Ids{0x0d}));
+    QVERIFY(ContactButton(*page, 0x0d)->objectName() == "dashPayPayContact");
+    QCOMPARE(wallet.getBalance(), before + 5 * COIN);
+
+    page.reset();
+    QVERIFY(f.wallet->EncryptWallet("test passphrase"));
+    QObject::connect(&f.wallet_model, &WalletModel::requireUnlock,
+                     [&] { f.wallet_model.setWalletLocked(/*locked=*/false, "test passphrase"); });
+    page = std::make_unique<PlatformPage>(sources.get());
+    f.attach(*page);
+    page->identityFlow()->lookUp();
+    sources.fake->deliverAll();
+    QCOMPARE(f.wallet_model.getEncryptionStatus(), WalletModel::Locked);
+    QVERIFY(page->contactFlow()->sentRead());
+    QCOMPARE(page->contactFlow()->chainsToImport(), size_t{0});
+    QVERIFY(!VisibleButton(*page, "dashPayImportChains"));
+    QTRY_VERIFY(!page->contactFlow()->rescanning());
 }

@@ -63,6 +63,9 @@ private Q_SLOTS:
     void findRediscoversFundingPayments();
     void searchFindsUsernamesToAdd();
     void searchSurvivesAClientRebuild();
+    void ignoringHidesAnIncomingRequest();
+    void unignoringShowsTheRequestAgain();
+    void ignoredSenderStillPaysUs();
 };
 
 #endif // BITCOIN_QT_TEST_PLATFORMTESTS_H

@@ -94,6 +94,23 @@ std::map<platform::Identifier, platform::ContactRequest> Newest(std::vector<plat
     return newest;
 }
 
+//! Where the wallet keeps that `ours` ignores a sender, on this computer only.
+std::string IgnoredPrefix(const platform::Identifier& ours) { return strprintf("dashpay/ignored/%s/", HexStr(ours)); }
+
+std::set<platform::Identifier> ReadIgnored(interfaces::Wallet& wallet, const platform::Identifier& ours)
+{
+    const std::string prefix{IgnoredPrefix(ours)};
+    std::set<platform::Identifier> ignored;
+    for (const auto& [record, value] : wallet.getPlatformData(prefix)) {
+        const auto bytes{TryParseHex<uint8_t>(record.substr(prefix.size()))};
+        platform::Identifier sender;
+        if (!bytes || bytes->size() != sender.size()) continue;
+        std::copy(bytes->begin(), bytes->end(), sender.begin());
+        ignored.insert(sender);
+    }
+    return ignored;
+}
+
 QString NoSuchUser() { return ContactFlow::tr("No DashPay user has that username."); }
 
 bool Locked(const WalletModel& wallet_model)
@@ -426,16 +443,25 @@ QString ContactFlow::error() const
     return m_sent.error.isEmpty() ? m_received.error : m_sent.error;
 }
 
-std::vector<ContactFlow::Contact> ContactFlow::contacts() const
+std::vector<ContactFlow::Contact> ContactFlow::contacts() const { return list(/*hidden=*/false); }
+
+std::vector<ContactFlow::Contact> ContactFlow::ignored() const { return list(/*hidden=*/true); }
+
+bool ContactFlow::isIgnored(const platform::Identifier& sender) const { return m_ignored && m_ignored->count(sender); }
+
+std::vector<ContactFlow::Contact> ContactFlow::list(bool hidden) const
 {
     const Requests sent{this->sent()};
     const Requests received{this->received()};
     std::vector<std::pair<const platform::ContactRequest*, State>> rows;
     for (const auto& [id, request] : received) {
-        rows.emplace_back(&request, sent.count(id) ? State::ESTABLISHED : State::INCOMING);
+        const State state{sent.count(id) ? State::ESTABLISHED : State::INCOMING};
+        // Only an incoming request can be ignored.
+        if ((state == State::INCOMING && isIgnored(id)) != hidden) continue;
+        rows.emplace_back(&request, state);
     }
     for (const auto& [id, request] : sent) {
-        if (!received.count(id)) rows.emplace_back(&request, State::OUTGOING);
+        if (!hidden && !received.count(id)) rows.emplace_back(&request, State::OUTGOING);
     }
     // By state; the newest incoming first, as only they are listed.
     std::stable_sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) {
@@ -458,7 +484,7 @@ size_t ContactFlow::moreIncoming() const
     const Requests sent{this->sent()};
     size_t incoming{0};
     for (const auto& [id, request] : received())
-        incoming += !sent.count(id);
+        incoming += !sent.count(id) && !isIgnored(id);
     return incoming > INCOMING_SHOWN ? incoming - INCOMING_SHOWN : 0;
 }
 
@@ -470,6 +496,9 @@ void ContactFlow::update()
         m_received = {};
         m_names.clear();
         m_name_calls.clear();
+        m_ignored.reset();
+    } else if (!m_ignored) {
+        m_ignored = ReadIgnored(m_service.walletModel().wallet(), m_identity_flow.identity()->id);
     }
     // A call the client dropped never calls back.
     if (m_call.expired()) {
@@ -507,6 +536,31 @@ void ContactFlow::refresh()
     std::erase_if(m_names, [](const auto& name) { return !name.second; });
     m_error.clear();
     sweep();
+    Q_EMIT changed();
+}
+
+void ContactFlow::ignore(const platform::Identifier& contact) { setIgnored(contact, /*hide=*/true); }
+
+void ContactFlow::unignore(const platform::Identifier& contact) { setIgnored(contact, /*hide=*/false); }
+
+void ContactFlow::setIgnored(const platform::Identifier& contact, bool hide)
+{
+    const auto& identity{m_identity_flow.identity()};
+    if (!identity || !m_ignored) return;
+    // An empty value erases the record.
+    const std::vector<unsigned char> value{hide ? std::vector<unsigned char>{1} : std::vector<unsigned char>{}};
+    if (m_service.walletModel().wallet().writePlatformData(IgnoredPrefix(identity->id) + HexStr(contact), value)) {
+        if (hide) {
+            m_ignored->insert(contact);
+        } else {
+            m_ignored->erase(contact);
+        }
+        m_error.clear();
+    } else {
+        // Not kept, the request would come back with the next restart.
+        m_error = tr("Dash Core could not save this change in the wallet.");
+    }
+    readNames();
     Q_EMIT changed();
 }
 
@@ -549,7 +603,11 @@ void ContactFlow::readNames()
 {
     platform::PlatformClient* client{m_service.client()};
     if (!client) return;
-    for (const Contact& contact : contacts()) {
+    auto listed{contacts()};
+    for (Contact& contact : ignored()) {
+        listed.push_back(std::move(contact));
+    }
+    for (const Contact& contact : listed) {
         auto& call{m_name_calls[contact.id]};
         if (m_names.count(contact.id) || !call.expired()) continue;
         client->namesOfIdentity(contact.id, /*page_limit=*/1, /*max_pages=*/1,

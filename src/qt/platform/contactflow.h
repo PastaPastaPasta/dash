@@ -55,6 +55,12 @@ class PlatformService;
  * Paying a contact hands the Send tab an address of the payment chain their
  * request carries, labelled with their username, chosen from the wallet's
  * payments to that chain so it stays where their wallet looks.
+ *
+ * An incoming request can be ignored, as on the mobile wallets: its sender
+ * is hidden from contacts() until unignored, whatever they send. That is
+ * kept in the wallet only, never on Platform. Only an incoming request is
+ * hidden: a sender we also sent a request to is a contact, and the
+ * receiving chain imported for our request is kept, so they still pay us.
  */
 class ContactFlow : public QObject
 {
@@ -95,10 +101,13 @@ public:
     //! Whether every request we sent was read since the identity was found.
     bool sentRead() const { return m_sent.complete; }
     //! Incoming first, the newest INCOMING_SHOWN of them, then established,
-    //! then outgoing, from what has been read.
+    //! then outgoing, from what has been read; not the ignored.
     std::vector<Contact> contacts() const;
-    //! The incoming requests contacts() leaves out.
+    //! The incoming requests contacts() leaves out for INCOMING_SHOWN.
     size_t moreIncoming() const;
+    //! The senders of incoming requests that were ignored, the newest
+    //! INCOMING_SHOWN of them, waiting for unignore().
+    std::vector<Contact> ignored() const;
     //! Why the last action failed, else why a read stopped short; empty when
     //! neither did.
     QString error() const;
@@ -128,6 +137,10 @@ public:
     void accept(const platform::Identifier& contact);
     //! Read the contact requests again.
     void refresh();
+    //! Hide the incoming requests of `contact`, now and later.
+    void ignore(const platform::Identifier& contact);
+    //! Show them again.
+    void unignore(const platform::Identifier& contact);
     //! Ask for the passphrase and import the chains chainsToImport() counts.
     void importChains();
     //! Run the rescans the wallet owes now, whatever wait a failed one set.
@@ -161,6 +174,10 @@ private:
     };
 
     void update();
+    //! contacts() or ignored().
+    std::vector<Contact> list(bool hidden) const;
+    bool isIgnored(const platform::Identifier& sender) const;
+    void setIgnored(const platform::Identifier& contact, bool hide);
     //! Read whichever direction is unread and not being read.
     void sweep();
     //! The next page of a direction; `next`: from the callback of the page
@@ -208,6 +225,8 @@ private:
     std::map<platform::Identifier, std::optional<std::string>> m_names;
     std::map<platform::Identifier, std::weak_ptr<void>> m_name_calls;
     bool m_names_changed{false};
+    //! The senders ignored, read from the wallet once the identity is found.
+    std::optional<std::set<platform::Identifier>> m_ignored;
     QString m_error;
     //! Births whose rescan waits for the one running.
     std::vector<int64_t> m_births;
