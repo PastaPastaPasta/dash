@@ -8115,6 +8115,12 @@ bool ChainstateManager::ValidatedSnapshotCleanup()
     };
 
     try {
+        // A background chainstate directory an earlier promotion could not
+        // delete is of no use, and would stop the rename.
+        if (fs::exists(tmp_old)) {
+            LogPrintf("[snapshot] removing %s, left behind by an earlier cleanup\n", fs::PathToString(tmp_old));
+            RemoveAllDurably(tmp_old);
+        }
         RenameDurably(ibd_chainstate_path, tmp_old);
     } catch (const fs::filesystem_error& e) {
         rename_failed_abort(ibd_chainstate_path, tmp_old, e);
