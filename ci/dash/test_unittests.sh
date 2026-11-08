@@ -33,6 +33,9 @@ if [ "$DIRECT_WINE_EXEC_TESTS" = "true" ]; then
 else
   if [ "$RUN_UNIT_TESTS_SEQUENTIAL" = "true" ]; then
     ./src/test/test_dash --catch_system_errors=no -l test_suite
+    if [ "$RUN_QT_UNIT_TESTS_SEQUENTIAL" = "true" ]; then
+      QT_QPA_PLATFORM=minimal ./src/qt/test/test_dash-qt
+    fi
   else
       make "$MAKEJOBS" check VERBOSE=1
   fi

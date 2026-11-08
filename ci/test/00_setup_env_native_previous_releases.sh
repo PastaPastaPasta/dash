@@ -12,6 +12,8 @@ export PACKAGES="python3-zmq"
 export DEP_OPTS=""
 export TEST_RUNNER_EXTRA="--previous-releases --coverage --extended --exclude feature_pruning,feature_dbcrash"  # Run extended tests so that coverage does not fail, but exclude the very slow dbcrash
 export RUN_UNIT_TESTS_SEQUENTIAL="true"
+# linux64 builds with --enable-platform-gui: run the Platform Qt tests as well.
+export RUN_QT_UNIT_TESTS_SEQUENTIAL="true"
 export RUN_UNIT_TESTS="false"
 export GOAL="install"
 export DOWNLOAD_PREVIOUS_RELEASES="true"
