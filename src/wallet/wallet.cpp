@@ -18,6 +18,7 @@
 #include <interfaces/chain.h>
 #include <interfaces/coinjoin.h>
 #include <interfaces/wallet.h>
+#include <kernel/chain.h>
 #include <key.h>
 #include <key_io.h>
 #include <policy/fees.h>
@@ -1614,8 +1615,11 @@ void CWallet::transactionRemovedFromMempool(const CTransactionRef& tx, MemPoolRe
     }
 }
 
-void CWallet::blockConnected(const interfaces::BlockInfo& block)
+void CWallet::blockConnected(ChainstateRole role, const interfaces::BlockInfo& block)
 {
+    if (role == ChainstateRole::BACKGROUND) {
+        return;
+    }
     assert(block.data);
     LOCK(cs_wallet);
 
