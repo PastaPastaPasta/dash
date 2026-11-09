@@ -26,6 +26,9 @@
 #include <evo/specialtxman.h>
 #include <governance/superblock.h>
 #include <init.h>
+#include <instantsend/instantsend.h>
+#include <instantsend/lock.h>
+#include <instantsend/net_instantsend.h>
 #include <interfaces/mining.h>
 #include <kernel/coinstats.h>
 #include <kernel/context.h>
@@ -309,6 +312,8 @@ bool WarningsContain(std::string_view text)
     return false;
 }
 
+//! Regtest spork key matching Params().SporkAddress(), as used by the functional tests.
+constexpr const char* REGTEST_SPORK_PRIVKEY{"cP4EKFyJsHT39LDqgdcB43Y3YXjNyjb5Fuas1GQSeAtjnZWmZEQK"};
 } // namespace
 
 BOOST_FIXTURE_TEST_SUITE(validation_chainstatemanager_tests, ChainTestingSetup)
@@ -1736,6 +1741,61 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_activate_snapshot, SnapshotTestSetup)
         LOCK(::cs_main);
         BOOST_CHECK_EQUAL(snapshot_chainstate->m_chain.Tip(), above_usable);
         BOOST_CHECK_EQUAL(above_usable->nStatus & BLOCK_FAILED_MASK, 0U);
+    }
+
+    // An InstantSend lock without its transaction cannot move the chain away
+    // from its conflicting block while the stall stands. Its conflict is kept
+    // for later, and the chain and the block index stay as they are.
+    {
+        BOOST_REQUIRE(m_node.sporkman->SetSporkAddress(Params().SporkAddress()));
+        BOOST_REQUIRE(m_node.sporkman->SetPrivKey(REGTEST_SPORK_PRIVKEY));
+        BOOST_REQUIRE(m_node.sporkman->UpdateSpork(SPORK_2_INSTANTSEND_ENABLED, 0).has_value());
+        BOOST_REQUIRE(m_node.sporkman->UpdateSpork(SPORK_19_CHAINLOCKS_ENABLED, 0).has_value());
+        const auto islock{std::make_shared<instantsend::InstantSendLock>()};
+        islock->txid = GetRandHash();
+        islock->inputs.emplace_back(GetRandHash(), 0);
+        const uint256 islock_hash{::SerializeHash(*islock)};
+        m_node.isman->WriteNewISLock(islock_hash, islock, std::nullopt);
+        const auto check_chain_untouched{[&] {
+            LOCK(::cs_main);
+            BOOST_CHECK_EQUAL(snapshot_chainstate->m_chain.Tip(), above_usable);
+            BOOST_CHECK_EQUAL(above_usable->nStatus & BLOCK_FAILED_MASK, 0U);
+            BOOST_CHECK_EQUAL(usable_index->nStatus & BLOCK_FAILED_MASK, 0U);
+        }};
+
+        instantsend::ConflictResolver resolver{chainman, *m_node.chainlocks, *m_node.isman};
+        {
+            ASSERT_DEBUG_LOG("islock=" + islock_hash.ToString() + ": chainstate stalled, retrying later");
+            resolver.Invalidate(islock_hash, {.islock = islock, .blocks = {usable->GetHash()}, .has_tx_for_lock = false});
+        }
+        check_chain_untouched();
+
+        // The stall on `usable` lasts until a restart, so retrying on the next
+        // tip defers the conflict again.
+        resolver.RequestRetry();
+        {
+            ASSERT_DEBUG_LOG("islock=" + islock_hash.ToString() + ": chainstate stalled, retrying later");
+            resolver.Retry();
+        }
+        check_chain_untouched();
+        BOOST_CHECK(m_node.isman->IsLocked(islock->txid));
+
+        // A ChainLock on the conflicting block wins: the retry drops the lock
+        // instead of disconnecting the block.
+        const chainlock::ChainLockSig clsig{usable_index->nHeight, usable->GetHash(), {}};
+        m_node.chainlocks->UpdateBestChainlock(usable->GetHash(), clsig, usable_index);
+        resolver.RequestRetry();
+        {
+            ASSERT_DEBUG_LOG("Removing ISLOCK and its chained children");
+            resolver.Retry();
+        }
+        BOOST_CHECK(!m_node.isman->IsLocked(islock->txid));
+        BOOST_CHECK(m_node.isman->GetInstantSendLockByTxid(islock->txid) == nullptr);
+        BOOST_CHECK_EQUAL(WITH_LOCK(::cs_main, return snapshot_chainstate->m_chain.Tip()), above_usable);
+
+        m_node.chainlocks->ResetChainlock();
+        BOOST_REQUIRE(m_node.sporkman->UpdateSpork(SPORK_2_INSTANTSEND_ENABLED, 4070908800).has_value());
+        BOOST_REQUIRE(m_node.sporkman->UpdateSpork(SPORK_19_CHAINLOCKS_ENABLED, 4070908800).has_value());
     }
 
     // Enforcing a ChainLock on a stalled sibling moves the chain away from
