@@ -678,6 +678,11 @@ void MasternodeWidgetTests::registeredCollateralExclusion()
         SetMiscWarning(Untranslated(""));
     }
 
+    // Once the list can be read again, a refresh replaces the unavailable state.
+    wizard.refreshCollateralCandidates();
+    QCOMPARE(wizard.m_col_utxo_combo->count(), 1);
+    QCOMPARE(wizard.m_error_label->text(), QString());
+
     wizard.refreshCollateralCandidates({collateral});
     QCOMPARE(wizard.m_col_utxo_combo->count(), 0);
     QVERIFY(!wizard.m_col_utxo_none->isHidden());
