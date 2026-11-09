@@ -419,16 +419,18 @@ BOOST_FIXTURE_TEST_CASE(chainstate_connectblock_bls_scheme, V19AboveSnapshotSetu
     BOOST_REQUIRE(WITH_LOCK(::cs_main, return background_cs.m_chain.Height()) < V19_HEIGHT - 1);
 
     // Give the background chainstate the next (pre-V19) block towards the
-    // snapshot base, as if downloaded again: the snapshot setup only dropped its
-    // HAVE_DATA flag, not the data.
+    // snapshot base, as if downloaded again: the snapshot setup reset its
+    // index entry but left the data on disk.
     const int background_height{WITH_LOCK(::cs_main, return background_cs.m_chain.Height())};
+    BlockValidationState state;
     {
         LOCK(::cs_main);
-        CBlockIndex* next{chainman.ActiveChain()[background_height + 1]};
-        next->nStatus |= BLOCK_HAVE_DATA;
-        background_cs.TryAddBlockIndexCandidate(next);
+        const CBlockIndex* next{chainman.ActiveChain()[background_height + 1]};
+        auto block{std::make_shared<CBlock>()};
+        BOOST_REQUIRE(chainman.m_blockman.ReadBlockFromDisk(*block, FlatFilePos{next->nFile, next->nDataPos}));
+        BOOST_REQUIRE(chainman.AcceptBlock(block, state, nullptr, /*fRequested=*/true, nullptr, nullptr));
+        BOOST_REQUIRE(next->HaveNumChainTxs());
     }
-    BlockValidationState state;
 
     // Other threads verify ChainLocks and recovered signatures for the active
     // chain without cs_main while the background chainstate connects a block.
