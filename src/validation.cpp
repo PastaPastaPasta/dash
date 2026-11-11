@@ -67,6 +67,7 @@
 #include <evo/creditpool.h>
 #include <evo/deterministicmns.h>
 #include <evo/evodb.h>
+#include <evo/mnhftx.h>
 #include <evo/specialtx.h>
 #include <evo/specialtxman.h>
 #include <instantsend/lock.h>
@@ -943,7 +944,7 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
                 return state.Invalid(TxValidationResult::TX_CONFLICT, "txn-already-known");
             }
         } catch (const EvoDbInconsistencyError& e) {
-            // Local EvoDB corruption (the node is already aborting): not a statement about the tx
+            // Local EvoDB inconsistency (missing or mismatched state): not a statement about the tx
             return state.Error(e.what());
         } catch (const std::exception& e) {
             // Reconstruction failed locally (block read, inconsistent pool); the tx is not at
@@ -5281,6 +5282,12 @@ bool Chainstate::ReplayBlocks()
     }
 
     auto dbTx = m_evoDb.BeginTransaction(EvoDbIdentity());
+
+    if (pindexOld) {
+        // A datadir last run before v22 has no current-format MNHF signal state yet, and
+        // ForceSignalDBUpdate() only migrates it once the replay is done.
+        m_chain_helper->ehf_manager->RebuildSignals(pindexOld);
+    }
 
     // Rollback along the old branch.
     while (pindexOld != pindexFork) {
