@@ -120,19 +120,67 @@ bool CDKGSessionManager::GetPrematureCommitment(const uint256& hash, CDKGPrematu
     return false;
 }
 
-void CDKGSessionManager::WriteVerifiedVvecContribution(Consensus::LLMQType llmqType, const CBlockIndex* pQuorumBaseBlockIndex, const uint256& proTxHash, const BLSVerificationVectorPtr& vvec)
+void CDKGSessionManager::WriteVerifiedVvecContribution(Consensus::LLMQType llmqType,
+                                                       const CBlockIndex* pQuorumBaseBlockIndex, const uint256& proTxHash,
+                                                       const BLSVerificationVectorPtr& vvec, bool vvecLegacyScheme)
 {
     CDataStream s(SER_DISK, CLIENT_VERSION);
     WriteCompactSize(s, vvec->size());
     for (auto& pubkey : *vvec) {
         s << CBLSPublicKeyVersionWrapper(pubkey, false);
     }
+    const bool legacyScheme{bls::bls_legacy_scheme.load()};
+    bool cacheVvec{true};
+    if (vvecLegacyScheme) {
+        // Legacy decoding skips subgroup checks. Share only vectors identical to a basic-format DB read.
+        CDataStream basicStream{Span{s}, SER_DISK, CLIENT_VERSION};
+        ReadCompactSize(basicStream);
+        try {
+            for (const auto& pubkey : *vvec) {
+                CBLSPublicKey decoded;
+                basicStream >> CBLSPublicKeyVersionWrapper(decoded, false);
+                if (decoded != pubkey) {
+                    cacheVvec = false;
+                    break;
+                }
+            }
+        } catch (const std::ios_base::failure&) {
+            cacheVvec = false;
+        }
+    }
+    // Shared keys must carry the same cached hashes that a cold read would compute.
+    for (auto& pubkey : *vvec) {
+        if (pubkey.GetHash() != ::SerializeHash(CBLSPublicKeyVersionWrapper(pubkey, legacyScheme))) {
+            cacheVvec = false;
+            break;
+        }
+    }
+    LOCK(contributionsCacheCs);
     db->Write(std::make_tuple(DB_VVEC, llmqType, pQuorumBaseBlockIndex->GetBlockHash(), proTxHash), Span{s});
+    ContributionsCacheKey cacheKey{llmqType, pQuorumBaseBlockIndex->GetBlockHash(), proTxHash};
+    if (!cacheVvec) {
+        contributionsCache.erase(cacheKey);
+        return;
+    }
+    auto [it, inserted] = contributionsCache.try_emplace(cacheKey);
+    if (inserted) {
+        db->Read(std::make_tuple(DB_SKCONTRIB, llmqType, pQuorumBaseBlockIndex->GetBlockHash(), proTxHash),
+                 it->second.skContribution);
+    }
+    it->second.entryTime = SteadyClock::now();
+    it->second.vvec = vvec;
+    it->second.legacyScheme = legacyScheme;
+    it->second.fromSession = true;
 }
 
 void CDKGSessionManager::WriteVerifiedSkContribution(Consensus::LLMQType llmqType, const CBlockIndex* pQuorumBaseBlockIndex, const uint256& proTxHash, const CBLSSecretKey& skContribution)
 {
+    LOCK(contributionsCacheCs);
     db->Write(std::make_tuple(DB_SKCONTRIB, llmqType, pQuorumBaseBlockIndex->GetBlockHash(), proTxHash), skContribution);
+    const ContributionsCacheKey cacheKey{llmqType, pQuorumBaseBlockIndex->GetBlockHash(), proTxHash};
+    if (auto it = contributionsCache.find(cacheKey); it != contributionsCache.end()) {
+        it->second.skContribution = skContribution;
+    }
 }
 
 void CDKGSessionManager::WriteEncryptedContributions(Consensus::LLMQType llmqType, const CBlockIndex* pQuorumBaseBlockIndex, const uint256& proTxHash, const CBLSIESMultiRecipientObjects<CBLSSecretKey>& contributions)
@@ -158,6 +206,10 @@ bool CDKGSessionManager::GetVerifiedContributions(Consensus::LLMQType llmqType, 
             const uint256& proTxHash = members[i]->proTxHash;
             ContributionsCacheKey cacheKey = {llmqType, pQuorumBaseBlockIndex->GetBlockHash(), proTxHash};
             auto it = contributionsCache.find(cacheKey);
+            if (it != contributionsCache.end() && it->second.legacyScheme != bls::bls_legacy_scheme.load()) {
+                contributionsCache.erase(it);
+                it = contributionsCache.end();
+            }
             if (it == contributionsCache.end()) {
                 CDataStream s(SER_DISK, CLIENT_VERSION);
                 if (!db->ReadDataStream(std::make_tuple(DB_VVEC, llmqType, pQuorumBaseBlockIndex->GetBlockHash(), proTxHash), s)) {
@@ -178,7 +230,10 @@ bool CDKGSessionManager::GetVerifiedContributions(Consensus::LLMQType llmqType, 
                 CBLSSecretKey skContribution;
                 db->Read(std::make_tuple(DB_SKCONTRIB, llmqType, pQuorumBaseBlockIndex->GetBlockHash(), proTxHash), skContribution);
 
-                it = contributionsCache.emplace(cacheKey, ContributionsCacheEntry{SteadyClock::now(), vvecPtr, skContribution}).first;
+                it = contributionsCache
+                         .emplace(cacheKey, ContributionsCacheEntry{SteadyClock::now(), vvecPtr, skContribution,
+                                                                    bls::bls_legacy_scheme.load()})
+                         .first;
             }
 
             memberIndexesRet.emplace_back(i);
@@ -226,8 +281,11 @@ void CDKGSessionManager::CleanupCache() const
 {
     LOCK(contributionsCacheCs);
     const auto curTime = SteadyClock::now();
-    std::erase_if(contributionsCache,
-                  [&](const auto& entry) { return curTime - entry.second.entryTime > MAX_CONTRIBUTION_CACHE_TIME; });
+    // Sessions retain the shared vectors through commitment and finalization.
+    std::erase_if(contributionsCache, [&](const auto& entry) {
+        return entry.second.fromSession ? entry.second.vvec.use_count() == 1
+                                        : curTime - entry.second.entryTime > MAX_CONTRIBUTION_CACHE_TIME;
+    });
 }
 
 void CDKGSessionManager::CleanupOldContributions() const

@@ -232,7 +232,8 @@ std::optional<CInv> CDKGSession::ReceiveMessage(const CDKGContribution& qc)
     }
 
     cxxtimer::Timer t2(true);
-    dkgManager.WriteVerifiedVvecContribution(params.type, m_quorum_base_block_index, qc.proTxHash, qc.vvec);
+    dkgManager.WriteVerifiedVvecContribution(params.type, m_quorum_base_block_index, qc.proTxHash, qc.vvec,
+                                             qc.vvecLegacyScheme);
 
     bool complain = false;
     CBLSSecretKey skContribution;
