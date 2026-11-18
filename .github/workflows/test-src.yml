@@ -76,7 +76,7 @@ jobs:
           ./ci/dash/bundle-artifacts.sh extract
           ./ci/dash/slim-workspace.sh
           source ./ci/dash/matrix.sh
-          ./ci/dash/test_integrationtests.sh ${INTEGRATION_TESTS_ARGS} ${FUNCTIONAL_TEST_JOBS:+--jobs="$FUNCTIONAL_TEST_JOBS"}
+          ./ci/dash/test_integrationtests.sh ${INTEGRATION_TESTS_ARGS}
         shell: bash
 
       - name: Bundle test logs
