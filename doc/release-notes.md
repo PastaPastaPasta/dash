@@ -117,6 +117,10 @@ activation has caveats. See "Downgrade warning" in the
   kept the old one. A new spork message is now signed with a later time than
   the active one, or refused if that time would be too far in the future for
   other nodes to accept. (#8127)
+- When a masternode signs an InstantSend or ChainLock request again, the
+  signing session's timeout now restarts. Previously the session could time
+  out right after the re-sign and drop the masternode's own share, so a lock
+  signed retroactively when its transaction was mined could be lost. (#8203)
 
 ## GUI
 
