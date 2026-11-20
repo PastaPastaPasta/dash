@@ -1759,9 +1759,80 @@ void FuncTestMempoolProRegReplacementUpdateConflict(TestChainSetup& setup)
         testPool.addUnchecked(entry.FromTx(tx_up_reg));
         testPool.addUnchecked(entry.FromTx(tx_up_rev));
         BOOST_CHECK_EQUAL(testPool.size(), 3U);
+        // Spent on top of the block before the registration, the collateral backs no MN yet.
+        testPool.removeForBlock({MakeTransactionRef(tx_spend_collateral)}, tip_height(),
+                                chainman.ActiveChain().Tip()->pprev);
+        BOOST_CHECK_EQUAL(testPool.size(), 3U);
         testPool.removeForBlock({MakeTransactionRef(tx_spend_collateral)}, tip_height() + 1, chainman.ActiveChain().Tip());
         BOOST_CHECK_EQUAL(testPool.size(), 0U);
     }
+
+    // A reorg that re-mines the registration keeps its pending update. A reorg to a branch that spends
+    // the collateral and lacks the registration leaves the registration out of the mempool, and the
+    // update with it.
+    auto& mempool = *Assert(setup.m_node.mempool.get());
+    const auto reg_index = tip_index();
+    CMutableTransaction tx_spend_collateral_signed;
+    tx_spend_collateral_signed.vin.emplace_back(collateralOutpoint);
+    tx_spend_collateral_signed.vout.emplace_back(dmn_types::Regular.collat_amount - 1000, scriptCollateral);
+    const SimpleUTXOMap collateral_coins{
+        {collateralOutpoint, Coin(tx_collateral.vout[collateralOutpoint.n], /*nHeightIn=*/0, /*fCoinBaseIn=*/false)}};
+    SignTransaction(tx_spend_collateral_signed, collateral_coins, collateralKey);
+
+    // Build two branches on the block before the registration, one that re-mines the registration a block
+    // later and a longer one that spends its collateral, then switch back to the registration.
+    // Transactions the invalidations return to the mempool are dropped, as they would not be there in a real reorg.
+    auto mine = [&](const std::vector<CMutableTransaction>& txs) {
+        block = std::make_shared<CBlock>(setup.CreateBlock(txs, coinbase_pk, chainman.ActiveChainstate()));
+        BOOST_REQUIRE(chainman.ProcessNewBlock(block, true, nullptr));
+        sync_dmn_tip();
+        return tip_index();
+    };
+    BlockValidationState state;
+    BOOST_REQUIRE(chainman.ActiveChainstate().InvalidateBlock(state, reg_index));
+    WITH_LOCK(mempool.cs, mempool.removeRecursive(CTransaction(tx_reg), MemPoolRemovalReason::MANUAL));
+    sync_dmn_tip();
+    const auto remine_index = mine({});
+    mine({tx_reg});
+    BOOST_REQUIRE(chainman.ActiveChainstate().InvalidateBlock(state, remine_index));
+    WITH_LOCK(mempool.cs, mempool.removeRecursive(CTransaction(tx_reg), MemPoolRemovalReason::MANUAL));
+    sync_dmn_tip();
+    const auto spend_index = mine({tx_spend_collateral_signed});
+    mine({});
+    mine({});
+    BOOST_REQUIRE(chainman.ActiveChainstate().InvalidateBlock(state, spend_index));
+    WITH_LOCK(mempool.cs, mempool.removeRecursive(CTransaction(tx_spend_collateral_signed), MemPoolRemovalReason::MANUAL));
+    WITH_LOCK(::cs_main, chainman.ActiveChainstate().ResetBlockFailureFlags(reg_index));
+    BOOST_REQUIRE(chainman.ActiveChainstate().ActivateBestChain(state));
+    BOOST_REQUIRE_EQUAL(tip_index(), reg_index);
+    sync_dmn_tip();
+
+    const auto tx_up_serv_relayed = CreateProUpServTx(chainman, utxos, proTxHash, operatorKey, /*port=*/2, CScript(),
+                                                      setup.coinbaseKey, /*version=*/std::nullopt, /*fee=*/10000);
+    BOOST_REQUIRE(
+        WITH_LOCK(::cs_main, return chainman.ProcessTransaction(MakeTransactionRef(tx_up_serv_relayed))).m_result_type ==
+        MempoolAcceptResult::ResultType::VALID);
+
+    // The reorg step that disconnects the registration connects it again, so the update stays.
+    WITH_LOCK(::cs_main, chainman.ActiveChainstate().ResetBlockFailureFlags(remine_index));
+    BOOST_REQUIRE(chainman.ActiveChainstate().ActivateBestChain(state));
+    BOOST_REQUIRE_EQUAL(tip_index()->pprev, remine_index);
+    sync_dmn_tip();
+    BOOST_REQUIRE(dmnman.GetListAtChainTip().HasMN(proTxHash));
+    BOOST_CHECK(WITH_LOCK(mempool.cs, return mempool.exists(tx_up_serv_relayed.GetHash())));
+
+    WITH_LOCK(::cs_main, chainman.ActiveChainstate().ResetBlockFailureFlags(spend_index));
+    BOOST_REQUIRE(chainman.ActiveChainstate().ActivateBestChain(state));
+    BOOST_REQUIRE_EQUAL(tip_index()->pprev->pprev, spend_index);
+    const auto tx_reg_same_endpoint = CreateProRegTxExternalCollateral(chainman, utxos, /*port=*/2,
+                                                                       COutPoint{GetRandHash(), 0}, scriptPayout2,
+                                                                       ownerKey2, operatorKey2, collateralKey,
+                                                                       setup.coinbaseKey);
+    LOCK2(cs_main, mempool.cs);
+    BOOST_CHECK(!mempool.exists(tx_reg.GetHash()));
+    BOOST_CHECK(!mempool.exists(tx_up_serv_relayed.GetHash()));
+    // The update no longer holds its endpoint against a new registration.
+    BOOST_CHECK(!mempool.existsProviderTxConflict(CTransaction(tx_reg_same_endpoint)));
 }
 
 // Builds a block template from the given mempool transactions and returns the position of each
