@@ -49,7 +49,6 @@
 #include <tinyformat.h>
 
 #include <algorithm>
-#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -679,6 +678,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_activate_snapshot, SnapshotTestSetup)
     mineBlocks(1);
     CBlockIndex* above_usable{WITH_LOCK(::cs_main, return snapshot_chainstate->m_chain.Tip())};
     dip3_active.emplace();
+    state = BlockValidationState();
     BOOST_CHECK(!snapshot_chainstate->InvalidateBlock(state, usable_index));
     BOOST_CHECK(IsLocalEvoStateError(state));
     check_announced(usable_index);
@@ -939,6 +939,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_missing_body_stalls, SnapshotTestSetup
         BOOST_CHECK_EQUAL(index->nStatus & BLOCK_FAILED_MASK, 0U);
         BOOST_CHECK_EQUAL(snapshot_chainstate->m_chain.Tip(), tip);
     }
+    BOOST_CHECK(!m_node.kernel->interrupt);
 
     // A tip body this node has but cannot read is not the block's fault
     // either: checking the block stops the node, as a block ConnectTip cannot
@@ -1565,13 +1566,12 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_completion_keeps_stall, Snaps
         return !snapshot_cs.ActivateBestChain(stall_state, stalled) && IsLocalEvoStateError(stall_state);
     }};
     BOOST_REQUIRE(stalls_on_it());
-    const std::vector<bilingual_str> warnings_at_stall{GetWarnings()};
+    BOOST_REQUIRE(WarningsContain("Snapshot state unavailable"));
 
     BOOST_REQUIRE_EQUAL(WITH_LOCK(::cs_main, return chainman.MaybeCompleteSnapshotValidation()),
                         SnapshotCompletionResult::SUCCESS);
     BOOST_CHECK(stalls_on_it());
-    BOOST_CHECK(!std::ranges::equal(GetWarnings(), warnings_at_stall, std::ranges::equal_to{}, &bilingual_str::original,
-                                    &bilingual_str::original));
+    BOOST_CHECK(WarningsContain("restart to resume from the validated chain"));
     BOOST_CHECK_EQUAL(WITH_LOCK(::cs_main, return snapshot_cs.m_chain.Tip()), stall_parent);
     SetMiscWarning(Untranslated(""));
 }
