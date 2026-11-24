@@ -6841,7 +6841,19 @@ bool ChainstateManager::ActivateSnapshot(
         // The snapshot view has not been told its tip yet: until its first
         // block connects, readers of the tip MN list would find none.
         const EvoViewScope snapshot_view{m_snapshot_chainstate->EvoView()};
-        m_snapshot_chainstate->m_special_tx.UpdatedMNListTip(Assert(m_snapshot_chainstate->m_chain.Tip()));
+        const CBlockIndex* snapshot_tip{Assert(m_snapshot_chainstate->m_chain.Tip())};
+        m_snapshot_chainstate->m_special_tx.UpdatedMNListTip(snapshot_tip);
+        if (m_snapshot_chainstate->m_isman) m_snapshot_chainstate->m_isman->CacheTipHeight(snapshot_tip);
+        // The active tip moved without a block connection, and the snapshot
+        // base may have no block data, so this is no UpdatedBlockTip: ZMQ and
+        // block relay would read it. Hand the tip to the Dash consumers the
+        // way startup does, unless a later block's own events reach them. A
+        // block can still connect after the check, so the queued part must
+        // not set again what was set above.
+        CallFunctionInValidationInterfaceQueue(WithCapturedEvoView([this, snapshot_tip] {
+            if (WITH_LOCK(::cs_main, return ActiveTip()) != snapshot_tip) return;
+            GetMainSignals().InitializeSnapshotTip(snapshot_tip, IsInitialBlockDownload());
+        }));
     }
     m_snapshot_chainstate->m_evoDb.SetDefaultIdentity(EvoDbIdentity::SNAPSHOT);
 
