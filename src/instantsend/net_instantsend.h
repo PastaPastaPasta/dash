@@ -42,6 +42,43 @@ class CInstantSendManager;
 class CQuorumManager;
 } // namespace llmq
 
+namespace instantsend {
+//! Invalidates the blocks that conflict with a lock, and keeps for a later
+//! retry the ones a chainstate stalled on its Evo state could not move away from.
+class ConflictResolver
+{
+public:
+    struct Conflicts {
+        InstantSendLockPtr islock{};
+        std::vector<uint256> blocks{};
+        bool has_tx_for_lock{false};
+        bool activate_best_chain{false};
+    };
+
+    ConflictResolver(const ChainstateManager& chainman, const chainlock::Chainlocks& chainlocks,
+                     llmq::CInstantSendManager& is_manager) :
+        m_chainman{chainman},
+        m_chainlocks{chainlocks},
+        m_is_manager{is_manager}
+    {
+    }
+
+    void Invalidate(const uint256& islock_hash, Conflicts conflicts);
+    void RequestRetry() { m_retry = true; }
+    //! Retry what a stall left unresolved, if a retry was requested since the last one.
+    void Retry();
+
+private:
+    const ChainstateManager& m_chainman;
+    const chainlock::Chainlocks& m_chainlocks;
+    llmq::CInstantSendManager& m_is_manager;
+
+    //! Not thread-safe: the owner calls Invalidate and Retry from one thread.
+    std::map<uint256, Conflicts> m_unresolved;
+    std::atomic<bool> m_retry{false};
+};
+} // namespace instantsend
+
 class NetInstantSend final : public NetHandler, public CValidationInterface
 {
 public:
@@ -57,7 +94,8 @@ public:
         m_chainlocks{chainlocks},
         m_chainman{chainman},
         m_mempool{mempool},
-        m_mn_sync{mn_sync}
+        m_mn_sync{mn_sync},
+        m_conflicts{chainman, chainlocks, is_manager}
     {
         workInterrupt.reset();
     }
@@ -104,19 +142,7 @@ private:
         const Consensus::LLMQParams& llmq_params, int signOffset, bool ban,
         const std::vector<instantsend::PendingISLockEntry>& pend);
 
-    //! Blocks with transactions that conflict with a lock, still to be
-    //! invalidated because the chainstate stalled on its Evo state.
-    struct UnresolvedConflicts {
-        instantsend::InstantSendLockPtr islock{};
-        std::vector<uint256> blocks{};
-        bool has_tx_for_lock{false};
-        bool activate_best_chain{false};
-    };
-
     void ResolveBlockConflicts(const uint256& islockHash, const instantsend::InstantSendLockPtr& islock);
-    void InvalidateConflictingBlocks(const uint256& islockHash, UnresolvedConflicts conflicts);
-    //! Retry the conflicts a stall left unresolved, once per tip or ChainLock change.
-    void RetryUnresolvedConflicts();
 
     void TruncateRecoveredSigsForInputs(const instantsend::InstantSendLock& islock);
 
@@ -132,9 +158,7 @@ private:
     CTxMemPool& m_mempool;
     const CMasternodeSync& m_mn_sync;
 
-    //! Only the work thread resolves conflicts, so only it touches this map.
-    std::map<uint256, UnresolvedConflicts> m_unresolved_conflicts;
-    std::atomic<bool> m_retry_conflicts{false};
+    instantsend::ConflictResolver m_conflicts;
 
     std::thread workThread;
     CThreadInterrupt workInterrupt;

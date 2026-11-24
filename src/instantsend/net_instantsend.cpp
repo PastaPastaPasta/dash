@@ -451,7 +451,7 @@ void NetInstantSend::WorkThreadMain()
             if (!locks.empty()) {
                 ProcessPendingISLocks(std::move(locks));
             }
-            RetryUnresolvedConflicts();
+            m_conflicts.Retry();
             if (m_signer) {
                 m_signer->ProcessPendingRetryLockTxs(m_is_manager.PrepareTxToRetry());
             }
@@ -532,7 +532,7 @@ void NetInstantSend::SynchronousUpdatedBlockTip(const CBlockIndex* pindexNew, co
 
 void NetInstantSend::UpdatedBlockTip(const CBlockIndex* pindexNew, const CBlockIndex* pindexFork, bool fInitialDownload)
 {
-    m_retry_conflicts = true;
+    m_conflicts.RequestRetry();
     bool fDIP0008Active = pindexNew->pprev && pindexNew->pprev->nHeight >= Params().GetConsensus().DIP0008Height;
 
     if (m_chainlocks.IsEnabled() && fDIP0008Active) {
@@ -603,7 +603,7 @@ void NetInstantSend::BlockDisconnected(const std::shared_ptr<const CBlock>& pblo
 
 void NetInstantSend::NotifyChainLock(const CBlockIndex* pindex, const std::shared_ptr<const chainlock::ChainLockSig>& clsig)
 {
-    m_retry_conflicts = true;
+    m_conflicts.RequestRetry();
     HandleFullyConfirmedBlock(pindex);
 }
 
@@ -632,12 +632,13 @@ void NetInstantSend::ResolveBlockConflicts(const uint256& islockHash, const inst
         return;
     }
 
-    UnresolvedConflicts unresolved{.islock = islock, .has_tx_for_lock = m_is_manager.HasTxForLock(islockHash)};
+    instantsend::ConflictResolver::Conflicts unresolved{.islock = islock,
+                                                        .has_tx_for_lock = m_is_manager.HasTxForLock(islockHash)};
     for (const auto& p : conflicts) {
         ClearConflicting(p.second);
         unresolved.blocks.push_back(p.first->GetBlockHash());
     }
-    InvalidateConflictingBlocks(islockHash, std::move(unresolved));
+    m_conflicts.Invalidate(islockHash, std::move(unresolved));
 }
 
 namespace {
@@ -670,7 +671,8 @@ private:
 };
 } // namespace
 
-void NetInstantSend::InvalidateConflictingBlocks(const uint256& islockHash, UnresolvedConflicts conflicts)
+namespace instantsend {
+void ConflictResolver::Invalidate(const uint256& islockHash, Conflicts conflicts)
 {
     // A chainstate that stalled on its own Evo state cannot move away from a
     // conflicting block yet. Keep what is left for a later attempt.
@@ -683,12 +685,12 @@ void NetInstantSend::InvalidateConflictingBlocks(const uint256& islockHash, Unre
         }
         LogPrintf("NetInstantSend::InvalidateConflictingBlocks -- islock=%s: chainstate stalled, retrying later\n",
                   islockHash.ToString());
-        m_unresolved_conflicts.insert_or_assign(islockHash, std::move(conflicts));
+        m_unresolved.insert_or_assign(islockHash, std::move(conflicts));
     }};
 
     while (!conflicts.blocks.empty()) {
         const uint256 block_hash{conflicts.blocks.back()};
-        LogPrintf("NetInstantSend::%s -- invalidating block %s\n", __func__, block_hash.ToString());
+        LogPrintf("NetInstantSend::InvalidateConflictingBlocks -- invalidating block %s\n", block_hash.ToString());
 
         BlockValidationState state;
         // need non-const pointer
@@ -698,7 +700,7 @@ void NetInstantSend::InvalidateConflictingBlocks(const uint256& islockHash, Unre
         // blocks it marked invalid are valid again afterwards.
         const ResetTemporaryInvalidation reset{m_chainman, pindex2, !conflicts.has_tx_for_lock};
         if (!m_chainman.ActiveChainstate().InvalidateBlock(state, pindex2)) {
-            LogPrintf("NetInstantSend::%s -- InvalidateBlock failed: %s\n", __func__, state.ToString());
+            LogPrintf("NetInstantSend::InvalidateConflictingBlocks -- InvalidateBlock failed: %s\n", state.ToString());
             return defer(state);
         }
         if (conflicts.has_tx_for_lock) conflicts.activate_best_chain = true;
@@ -708,16 +710,16 @@ void NetInstantSend::InvalidateConflictingBlocks(const uint256& islockHash, Unre
     if (conflicts.activate_best_chain) {
         BlockValidationState state;
         if (!m_chainman.ActiveChainstate().ActivateBestChain(state)) {
-            LogPrintf("NetInstantSend::%s -- ActivateBestChain failed: %s\n", __func__, state.ToString());
+            LogPrintf("NetInstantSend::InvalidateConflictingBlocks -- ActivateBestChain failed: %s\n", state.ToString());
             return defer(state);
         }
     }
 }
 
-void NetInstantSend::RetryUnresolvedConflicts()
+void ConflictResolver::Retry()
 {
-    if (!m_retry_conflicts.exchange(false) || m_unresolved_conflicts.empty()) return;
-    auto unresolved{std::exchange(m_unresolved_conflicts, {})};
+    if (!m_retry.exchange(false) || m_unresolved.empty()) return;
+    auto unresolved{std::exchange(m_unresolved, {})};
     for (auto& [islock_hash, conflicts] : unresolved) {
         const bool chainlocked{std::ranges::any_of(conflicts.blocks, [&](const uint256& block_hash) {
             const CBlockIndex* pindex{WITH_LOCK(::cs_main, return m_chainman.m_blockman.LookupBlockIndex(block_hash))};
@@ -727,9 +729,10 @@ void NetInstantSend::RetryUnresolvedConflicts()
             m_is_manager.RemoveConflictingLock(islock_hash, *conflicts.islock);
             continue;
         }
-        InvalidateConflictingBlocks(islock_hash, std::move(conflicts));
+        Invalidate(islock_hash, std::move(conflicts));
     }
 }
+} // namespace instantsend
 
 void NetInstantSend::TruncateRecoveredSigsForInputs(const instantsend::InstantSendLock& islock)
 {
