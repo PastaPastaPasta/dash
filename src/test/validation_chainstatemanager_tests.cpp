@@ -13,6 +13,7 @@
 #include <consensus/validation.h>
 #include <crypto/sha256.h>
 #include <dbwrapper.h>
+#include <dsnotificationinterface.h>
 #include <evo/assetlocktx.h>
 #include <evo/cbtx.h>
 #include <evo/creditpool.h>
@@ -24,6 +25,7 @@
 #include <evo/snapshot_config.h>
 #include <evo/specialtx.h>
 #include <evo/specialtxman.h>
+#include <governance/governance.h>
 #include <governance/superblock.h>
 #include <init.h>
 #include <instantsend/instantsend.h>
@@ -4867,12 +4869,39 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_evo_snapshot_crash_after_publication, 
 }
 
 //! The snapshot view learns its tip at the switch: right after activation, the
-//! tip MN list it serves is the base's, before any block connects on it.
+//! tip MN list it serves is the base's, before any block connects on it. The
+//! queued hand-over of that tip to the Dash consumers keeps the tip MN list of
+//! a block that connected after the hand-over checked the active tip.
 BOOST_FIXTURE_TEST_CASE(chainstatemanager_evo_snapshot_delivers_its_tip_at_activation, EvoSnapshotTestSetup)
 {
     const fs::path snapshot{DumpEvoSnapshot()};
+    mineBlocks(1);
     ForgetBlocks();
+    m_node.govman = std::make_unique<CGovernanceManager>(m_args.GetDataDirNet(), *m_node.mn_metaman, *m_node.chainman,
+                                                         *m_node.sbman, *m_node.dmnman, *m_node.mn_sync,
+                                                         /*collateral=*/nullptr);
+    const auto ds_notifications{std::make_unique<CDSNotificationInterface>(*m_node.connman, *m_node.dstxman,
+                                                                           *m_node.mn_sync, *m_node.govman,
+                                                                           *m_node.chainman, *m_node.dmnman)};
+    //! Registered ahead of ds_notifications, holds the hand-over until the
+    //! test releases it.
+    class HandOverGate final : public CValidationInterface
+    {
+    public:
+        std::promise<void> reached;
+        std::promise<void> released;
+
+    protected:
+        void InitializeCurrentBlockTip(const CBlockIndex*, bool) override
+        {
+            reached.set_value();
+            released.get_future().wait();
+        }
+    } gate;
+    RegisterValidationInterface(&gate);
+    RegisterValidationInterface(ds_notifications.get());
     BOOST_REQUIRE(LoadEvoSnapshot(snapshot));
+    Chainstate& active{m_node.chainman->ActiveChainstate()};
     const uint256 base{m_blocks.at(BASE_HEIGHT)->GetHash()};
     const auto check_tip_list = [&](const CDeterministicMNList& list) {
         BOOST_CHECK_EQUAL(list.GetBlockHash(), base);
@@ -4880,13 +4909,28 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_evo_snapshot_delivers_its_tip_at_activ
     };
     {
         LOCK(::cs_main);
-        const EvoViewScope snapshot_view{m_node.chainman->ActiveChainstate().EvoView()};
+        const EvoViewScope snapshot_view{active.EvoView()};
         check_tip_list(m_node.dmnman->GetListAtChainTip());
     }
-    // A dispatch turn started now binds the snapshot view and reads the same.
-    const ActiveEvoViewScope turn{m_node.evodb.get()};
-    BOOST_CHECK(m_node.evodb->CurrentView() == m_node.evodb->ViewFor(EvoDbIdentity::SNAPSHOT));
-    check_tip_list(m_node.dmnman->GetListAtChainTip());
+    {
+        // A dispatch turn started now binds the snapshot view and reads the same.
+        const ActiveEvoViewScope turn{m_node.evodb.get()};
+        BOOST_CHECK(m_node.evodb->CurrentView() == m_node.evodb->ViewFor(EvoDbIdentity::SNAPSHOT));
+        check_tip_list(m_node.dmnman->GetListAtChainTip());
+    }
+
+    const bool reached{gate.reached.get_future().wait_for(std::chrono::seconds{30}) == std::future_status::ready};
+    BlockValidationState state;
+    if (reached) state = Feed(active, BASE_HEIGHT + 1, BASE_HEIGHT + 1);
+    gate.released.set_value();
+    SyncWithValidationInterfaceQueue();
+    UnregisterValidationInterface(ds_notifications.get());
+    UnregisterValidationInterface(&gate);
+    BOOST_REQUIRE(reached);
+    BOOST_REQUIRE(state.IsValid());
+    LOCK(::cs_main);
+    const EvoViewScope snapshot_view{active.EvoView()};
+    BOOST_CHECK_EQUAL(m_node.dmnman->GetListAtChainTip().GetBlockHash(), m_blocks.at(BASE_HEIGHT + 1)->GetHash());
 }
 
 //! The active chainstate keeps running while a snapshot is prepared. The
