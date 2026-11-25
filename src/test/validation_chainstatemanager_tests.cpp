@@ -108,6 +108,7 @@
 #include <string_view>
 #include <thread>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <boost/signals2/connection.hpp>
@@ -4906,11 +4907,22 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_evo_snapshot_delivers_its_tip_at_activ
     const bool loaded{LoadEvoSnapshot(snapshot)};
     m_node.chainman->m_before_snapshot_switch_for_testing = nullptr;
     stale_event_released.set_value();
-    if (!loaded) {
-        SyncWithValidationInterfaceQueue();
-        UnregisterValidationInterface(&ds_notifications);
-        UnregisterValidationInterface(&gate);
-    }
+    //! Opens the gate, drains the queue and unregisters the stack subscribers,
+    //! also when a fatal check ends the test early.
+    struct HandOver {
+        HandOverGate& gate;
+        CValidationInterface& ds_notifications;
+        bool finished{false};
+        void Finish()
+        {
+            if (std::exchange(finished, true)) return;
+            gate.released.set_value();
+            SyncWithValidationInterfaceQueue();
+            UnregisterValidationInterface(&ds_notifications);
+            UnregisterValidationInterface(&gate);
+        }
+        ~HandOver() { Finish(); }
+    } hand_over{gate, ds_notifications};
     BOOST_REQUIRE(loaded);
     Chainstate& active{m_node.chainman->ActiveChainstate()};
     const uint256 base{m_blocks.at(BASE_HEIGHT)->GetHash()};
@@ -4930,17 +4942,10 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_evo_snapshot_delivers_its_tip_at_activ
         check_tip_list(m_node.dmnman->GetListAtChainTip());
     }
 
-    const bool reached{gate.reached.get_future().wait_for(std::chrono::seconds{30}) == std::future_status::ready};
-    const int is_tip_height_at_hand_over{m_node.isman->GetTipHeight()};
-    BlockValidationState state;
-    if (reached) state = Feed(active, BASE_HEIGHT + 1, BASE_HEIGHT + 1);
-    gate.released.set_value();
-    SyncWithValidationInterfaceQueue();
-    UnregisterValidationInterface(&ds_notifications);
-    UnregisterValidationInterface(&gate);
-    BOOST_REQUIRE(reached);
-    BOOST_CHECK_EQUAL(is_tip_height_at_hand_over, BASE_HEIGHT);
-    BOOST_REQUIRE(state.IsValid());
+    BOOST_REQUIRE(gate.reached.get_future().wait_for(std::chrono::seconds{30}) == std::future_status::ready);
+    BOOST_CHECK_EQUAL(m_node.isman->GetTipHeight(), BASE_HEIGHT);
+    BOOST_REQUIRE(Feed(active, BASE_HEIGHT + 1, BASE_HEIGHT + 1).IsValid());
+    hand_over.Finish();
     LOCK(::cs_main);
     const EvoViewScope snapshot_view{active.EvoView()};
     BOOST_CHECK_EQUAL(m_node.dmnman->GetListAtChainTip().GetBlockHash(), m_blocks.at(BASE_HEIGHT + 1)->GetHash());
