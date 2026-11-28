@@ -3589,20 +3589,18 @@ bool Chainstate::ConnectTip(BlockValidationState& state, CBlockIndex* pindexNew,
     LogPrint(BCLog::BENCHMARK, "  - Load block from disk: %.2fms\n",
              Ticks<MillisecondsDouble>(time_2 - time_1));
     {
-        std::unique_ptr<CEvoDBScopedCommitter> dbTx;
+        auto dbTx = m_evoDb.BeginTransaction(EvoDbIdentity());
+
         CCoinsViewCache view(&CoinsTip());
         bool rv{false};
         try {
-            dbTx = m_evoDb.BeginTransaction(EvoDbIdentity());
             rv = ConnectBlock(blockConnecting, state, pindexNew, view);
         } catch (const evo::LocalStateError& e) {
             // Roll back and evict the candidate first: a snapshot mismatch can
             // only reject the snapshot with no Evo transaction open, and
             // rejecting it retires the snapshot state the candidate was cached in.
-            if (dbTx) {
-                dbTx.reset();
-                m_special_tx.DiscardDeterministicMNBlock(pindexNew->GetBlockHash());
-            }
+            dbTx.reset();
+            m_special_tx.DiscardDeterministicMNBlock(pindexNew->GetBlockHash());
             rv = LocalEvoStateError(m_chainman, e, state, &disconnectpool);
         }
         GetMainSignals().BlockChecked(blockConnecting, state);
