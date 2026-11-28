@@ -378,14 +378,7 @@ void Chainstate::MaybeUpdateMempoolForReorg(
     DisconnectedBlockTransactions& disconnectpool,
     bool fAddToMempool)
 {
-    if (!m_mempool) {
-        // Upstream returns here: only a background chainstate, which never
-        // queues transactions, lacks a mempool there. A snapshot rejected inside
-        // its own step takes the mempool away after the step queued the
-        // transactions of the blocks it disconnected; no chainstate keeps them.
-        disconnectpool.clear();
-        return;
-    }
+    if (!m_mempool) return;
 
     AssertLockHeld(cs_main);
     AssertLockHeld(m_mempool->cs);
@@ -3404,7 +3397,8 @@ void Chainstate::UpdateTip(const CBlockIndex* pindexNew)
  *  as the node is shutting down. Anything else, a mismatch that could not
  *  reject the snapshot included, is an error result (IsLocalEvoStateError).
  *  None of them marks the block invalid or blames a peer. */
-static bool LocalEvoStateError(ChainstateManager& chainman, const evo::LocalStateError& e, BlockValidationState& state)
+static bool LocalEvoStateError(ChainstateManager& chainman, const evo::LocalStateError& e, BlockValidationState& state,
+                               DisconnectedBlockTransactions* disconnectpool)
 {
     LogPrintf("ERROR: local Evo state error: %s\n", e.what());
     if (dynamic_cast<const BlockDataReadError*>(&e)) {
@@ -3412,6 +3406,10 @@ static bool LocalEvoStateError(ChainstateManager& chainman, const evo::LocalStat
     }
     if (dynamic_cast<const evo::SnapshotStateMismatchError*>(&e)) {
         if (chainman.HandleSnapshotStateMismatch(e.what())) {
+            // The rejected chainstate handed its mempool back, so no
+            // chainstate takes the transactions of the blocks its step
+            // already disconnected.
+            if (disconnectpool) disconnectpool->clear();
             return state.Error("invalid assumeutxo evo snapshot state");
         }
         return state.LocalEvoStateError(LocalEvoStateResult::MISMATCH, "evo-local-mismatch");
@@ -3464,7 +3462,7 @@ bool Chainstate::DisconnectTip(BlockValidationState& state, DisconnectedBlockTra
         assert(flushed);
         dbTx->Commit();
     } catch (const evo::LocalStateError& e) {
-        return LocalEvoStateError(m_chainman, e, state);
+        return LocalEvoStateError(m_chainman, e, state, disconnectpool);
     }
     LogPrint(BCLog::BENCHMARK, "- Disconnect block: %.2fms\n",
              Ticks<MillisecondsDouble>(SteadyClock::now() - time_start));
@@ -3605,7 +3603,7 @@ bool Chainstate::ConnectTip(BlockValidationState& state, CBlockIndex* pindexNew,
                 dbTx.reset();
                 m_special_tx.DiscardDeterministicMNBlock(pindexNew->GetBlockHash());
             }
-            rv = LocalEvoStateError(m_chainman, e, state);
+            rv = LocalEvoStateError(m_chainman, e, state, &disconnectpool);
         }
         GetMainSignals().BlockChecked(blockConnecting, state);
         if (!rv) {
@@ -5169,7 +5167,7 @@ try {
 
     return true;
 } catch (const evo::LocalStateError& e) {
-    return LocalEvoStateError(chainstate.m_chainman, e, state);
+    return LocalEvoStateError(chainstate.m_chainman, e, state, /*disconnectpool=*/nullptr);
 }
 
 /* This function is called from the RPC code for pruneblockchain */
