@@ -442,8 +442,9 @@ public:
     {
         LOCK(cs);
         const EvoDbIdentity identity{GetCurrentIdentity()};
-        if (identity == EvoDbIdentity::SNAPSHOT && m_snapshot_generation->state != EvoGenerationState::UNPUBLISHED) {
-            throw EvoViewBindingError("EvoDB: a published snapshot generation cannot be seeded");
+        if (identity == EvoDbIdentity::SNAPSHOT &&
+            (!m_snapshot_generation || m_snapshot_generation->state != EvoGenerationState::UNPUBLISHED)) {
+            throw EvoViewBindingError("EvoDB: only an unpublished snapshot generation can be seeded");
         }
         auto& transaction{GetContext(identity).cur_transaction};
         V existing;
