@@ -571,7 +571,7 @@ bool CEvoDB::DiscardSnapshotMarkers()
 bool CEvoDB::PrepareSnapshotPromotion(const uint256& snapshot_tip)
 {
     LOCK(cs);
-    if (!m_snapshot_generation) return false;
+    if (!m_snapshot_generation || !Assume(TransactionsClean())) return false;
     // The coins tip being promoted must be the tip the generation's Evo state
     // was flushed at.
     uint256 evo_tip;
