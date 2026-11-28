@@ -1123,7 +1123,7 @@ static RPCHelpMan quorum_dkginfo()
                 {*CHECK_NONFATAL(node.dmnman), *CHECK_NONFATAL(llmq_ctx.qsnapman), chainman, pindexTip},
                 pWorkBlockIndex, quorumHeight);
         } catch (const BlockDataUnavailableError&) {
-            return Participation{pWorkBlockIndex, std::nullopt, "rotated quorum snapshots are not available locally"};
+            return Participation{pWorkBlockIndex, std::nullopt, "quorum inputs are not available locally"};
         }
         if (!members.has_value()) {
             return Participation{pWorkBlockIndex, std::nullopt, "rotated quorum snapshots are not available yet"};
