@@ -49,8 +49,6 @@ static const std::string DB_MINED_COMMITMENT = "q_mc";
 static const std::string DB_MINED_COMMITMENT_BY_INVERSED_HEIGHT = "q_mcih";
 static const std::string DB_MINED_COMMITMENT_BY_INVERSED_HEIGHT_Q_INDEXED = "q_mcihi";
 
-static const std::string DB_BEST_BLOCK_UPGRADE = "q_bbu2";
-
 bool EraseMinedCommitmentIfUnreferenced(CEvoDB& evo_db, const Chainstate& chainstate,
                                         gsl::not_null<const CBlockIndex*> pindex,
                                         Consensus::LLMQType llmq_type, const uint256& quorum_hash)
@@ -220,7 +218,6 @@ bool CQuorumBlockProcessor::ProcessBlock(Chainstate& chainstate, const CBlock& b
     const auto blockHash = pindex->GetBlockHash();
 
     if (!DeploymentActiveAt(*pindex, m_chainman.GetConsensus(), Consensus::DEPLOYMENT_DIP0003)) {
-        m_evoDb.Write(DB_BEST_BLOCK_UPGRADE, blockHash);
         return true;
     }
 
@@ -293,8 +290,6 @@ bool CQuorumBlockProcessor::ProcessBlock(Chainstate& chainstate, const CBlock& b
             return false;
         }
     }
-
-    m_evoDb.Write(DB_BEST_BLOCK_UPGRADE, blockHash);
 
     return true;
 }
@@ -555,8 +550,6 @@ bool CQuorumBlockProcessor::UndoBlock(const Chainstate& chainstate, const CBlock
         // if a reorg happened, we should allow to mine this commitment later
         AddMineableCommitment(qc);
     }
-
-    m_evoDb.Write(DB_BEST_BLOCK_UPGRADE, pindex->pprev->GetBlockHash());
 
     return true;
 }
