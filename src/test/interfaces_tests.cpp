@@ -236,10 +236,17 @@ BOOST_AUTO_TEST_CASE(evo_state_unavailable_is_contained)
     BOOST_CHECK(!votes.has_value());
 
     Assert(m_node.dmnman)->SetListSnapshotMissHookForTesting(nullptr);
-    consensus.DIP0003Height = dip3_height;
 
     // Once the list can be read again, the endpoint is checked, and it is free.
+    {
+        LOCK(::cs_main);
+        auto db_tx{evodb.BeginTransaction(EvoDbIdentity::NORMAL)};
+        evodb.Write(std::make_pair(std::string{"dmn_S3"}, tip->GetBlockHash()),
+                    CDeterministicMNList{tip->GetBlockHash(), tip->nHeight, 0});
+        db_tx->Commit();
+    }
     in_use = find_in_use();
+    consensus.DIP0003Height = dip3_height;
     BOOST_REQUIRE(std::holds_alternative<std::optional<std::string>>(in_use));
     BOOST_CHECK(!std::get<std::optional<std::string>>(in_use).has_value());
     SetMiscWarning(Untranslated(""));
