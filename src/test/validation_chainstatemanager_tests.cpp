@@ -2661,6 +2661,11 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_unsaved_rejection_stops_reading_the_sn
                 round_read = evodb.Read(snapshot_only_key, value);
             });
         });
+        // A failed check below must not hang in the future's destructor.
+        const struct StopRound {
+            TestDKGHandler& dkg;
+            ~StopRound() { dkg.handler.RequestStop(); }
+        } stop_round{dkg};
         bound.get_future().wait();
 
         evodb.SetRejectionFailpointForTesting(true);
@@ -2672,9 +2677,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_unsaved_rejection_stops_reading_the_sn
 
         // The round resumes once the snapshot is out of use, and its binding
         // no longer resolves.
-        const bool resumed{round.wait_for(10s) == std::future_status::ready};
-        if (!resumed) dkg.handler.RequestStop(); // so a failure doesn't hang in the future's destructor
-        BOOST_REQUIRE(resumed);
+        BOOST_REQUIRE(round.wait_for(10s) == std::future_status::ready);
         BOOST_CHECK(!round.get());
         BOOST_CHECK(round_view == EvoDbIdentity::SNAPSHOT);
         BOOST_CHECK(!round_read);
