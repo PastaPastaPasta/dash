@@ -85,6 +85,8 @@ std::vector<CDeterministicMNCPtr> GetAllQuorumMembers(Consensus::LLMQType llmqTy
 // quorum's own (cycle) base block exists on chain. Returns std::nullopt when V20 is not yet
 // active at the work block (the pre-v20 modifier needs the future base block hash) or, for
 // rotated types, when the historical snapshots needed for quarter rotation are not available.
+// Raises BlockDataUnavailableError when an input it needs is missing locally, such as a quarter
+// at or below a snapshot base that the snapshot did not carry.
 std::optional<std::vector<CDeterministicMNCPtr>> ComputeQuorumMembersFromWorkBlock(
     Consensus::LLMQType llmqType, const UtilParameters& util_params, gsl::not_null<const CBlockIndex*> pWorkBlockIndex,
     int quorumHeight);
