@@ -195,9 +195,8 @@ std::unique_ptr<CEvoDBScopedCommitter> CEvoDB::BeginTransaction(EvoDbIdentity id
     AssertLockHeld(::cs_main);
     LOCK(cs);
     assert(!active_transaction.has_value());
-    if (const EvoViewToken * scoped{EvoViewScope::Innermost(*this)}; scoped && *scoped != MakeView(identity)) {
-        throw EvoViewBindingError("EvoDB transaction conflicts with this thread's EvoViewScope");
-    }
+    const EvoViewToken* scoped{EvoViewScope::Innermost(*this)};
+    assert(!scoped || *scoped == MakeView(identity));
     GetContext(identity);
     active_transaction = identity;
     active_transaction_thread = std::this_thread::get_id();

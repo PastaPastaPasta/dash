@@ -405,10 +405,6 @@ BOOST_AUTO_TEST_CASE(view_scopes_nest_and_bind_transactions)
         // Leaving the inner scope restores the outer binding.
         BOOST_CHECK(db.CurrentView() == snapshot);
         BOOST_CHECK(db.Read(PayloadKey(50), value));
-
-        // A transaction for the other identity conflicts with the scope.
-        BOOST_CHECK_THROW(db.BeginTransaction(EvoDbIdentity::NORMAL), EvoViewBindingError);
-        BOOST_CHECK(!db.HasActiveTransaction());
     }
     BOOST_CHECK(db.CurrentView() == normal);
 
