@@ -6334,7 +6334,9 @@ bool ChainstateManager::ActivateSnapshot(
         snapshot_ok = this->PopulateAndValidateSnapshot(*snapshot_chainstate, coins_file, metadata);
     } catch (...) {
         // Never leave a generation bound to a snapshot that did not activate.
-        WITH_LOCK(::cs_main, this->ActiveChainstate().m_evoDb.AbandonSnapshotGeneration());
+        if (!WITH_LOCK(::cs_main, return this->ActiveChainstate().m_evoDb.AbandonSnapshotGeneration())) {
+            GetNotifications().fatalError("Failed to roll back the snapshot EvoDB generation");
+        }
         throw;
     }
 
