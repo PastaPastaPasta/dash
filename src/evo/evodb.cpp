@@ -617,8 +617,6 @@ bool CEvoDB::MergeGeneration(EvoPromotionJournal& journal)
     const DataStream prefix{CEvoDBStore::GenerationPrefix(journal.generation)};
     DataStream best_block_key{};
     best_block_key << std::make_pair(EVODB_BEST_BLOCK, uint8_t{1});
-    DataStream llmq_best_block_key{};
-    llmq_best_block_key << EVODB_LLMQ_BEST_BLOCK;
 
     DataStream manifest_tag{};
     manifest_tag << EVODB_SEED_MANIFEST;
@@ -650,7 +648,7 @@ bool CEvoDB::MergeGeneration(EvoPromotionJournal& journal)
             if (!db->ReadDataStream(raw_key, value)) return false;
             DataStream normal_value{};
             const bool in_normal{db->ReadDataStream(key, normal_value)};
-            if (!in_normal || SameBytes(key, llmq_best_block_key)) {
+            if (!in_normal) {
                 batch.Write(key, Span{value});
             } else if (!SameBytes(normal_value, value)) {
                 // Unseeded records are derived from blocks above the base. NORMAL

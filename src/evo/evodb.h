@@ -48,9 +48,6 @@ static const std::string EVODB_GENERATION_NAMESPACE = "assumeutxo_state";
 // A generation's seed manifest: (EVODB_SEED_MANIFEST, key) for every key it was
 // seeded with, stored in the generation's own namespace.
 static const std::string EVODB_SEED_MANIFEST = "assumeutxo_seed_manifest";
-// The LLMQ best block (llmq/blockprocessor.cpp), a singleton whose snapshot
-// value supersedes NORMAL's when a generation is promoted.
-static const std::string EVODB_LLMQ_BEST_BLOCK = "q_bbu2";
 
 enum class EvoDbIdentity {
     NORMAL,

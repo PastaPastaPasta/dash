@@ -500,20 +500,14 @@ BOOST_AUTO_TEST_CASE(snapshot_marker_promotion_and_discard)
 
     WriteMarker(db, EvoDbIdentity::NORMAL, normal_tip);
     WritePayload(db, EvoDbIdentity::NORMAL, 30);
-    {
-        auto tx = db.BeginTransaction(EvoDbIdentity::NORMAL);
-        db.Write(EVODB_LLMQ_BEST_BLOCK, normal_tip);
-        tx->Commit();
-    }
     BOOST_REQUIRE(db.CreateSnapshotGeneration(normal_tip, 30));
     {
         auto tx = db.BeginTransaction(EvoDbIdentity::SNAPSHOT);
         db.WriteBestBlock(EvoDbIdentity::SNAPSHOT, snapshot_tip);
-        // A seeded record NORMAL derived identically, one only the snapshot
-        // chainstate wrote, and the mutable singleton both views advance.
+        // A seeded record NORMAL derived identically, and one only the
+        // snapshot chainstate wrote.
         db.WriteSeed(PayloadKey(30), PayloadFor(30));
         db.Write(PayloadKey(300), PayloadFor(300));
-        db.Write(EVODB_LLMQ_BEST_BLOCK, snapshot_tip);
         tx->Commit();
     }
     BOOST_REQUIRE(db.CommitRootTransaction(EvoDbIdentity::NORMAL));
@@ -534,12 +528,8 @@ BOOST_AUTO_TEST_CASE(snapshot_marker_promotion_and_discard)
     BOOST_CHECK(!db.ReadSnapshotBaseMNListHash(value));
     BOOST_CHECK(!db.HasDualChainstateMarker());
     BOOST_CHECK(!db.ReadPromotionJournal());
-    // Snapshot-written records are now NORMAL state; the singleton takes the
-    // promoted value.
+    // Snapshot-written records are now NORMAL state.
     BOOST_CHECK(IteratePayloads(db, EvoDbIdentity::NORMAL) == (std::vector<uint32_t>{30, 300}));
-    uint256 llmq_best_block;
-    BOOST_REQUIRE(db.Read(EVODB_LLMQ_BEST_BLOCK, llmq_best_block));
-    BOOST_CHECK_EQUAL(llmq_best_block, snapshot_tip);
 
     BOOST_REQUIRE(db.CreateSnapshotGeneration(snapshot_tip, 300));
     WriteMarker(db, EvoDbIdentity::SNAPSHOT, BlockHash(301));
