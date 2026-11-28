@@ -112,6 +112,13 @@ static bool RecoverSnapshotCleanup(CEvoDB& evodb, const fs::path& data_dir, bool
         // journaled cleanup may promote; anything else is an interrupted
         // invalid-snapshot cleanup.
         if (journal) {
+            // Only a rejection of the journaled snapshot that could not be
+            // saved sets its directory aside, and it must never be promoted.
+            if (fs::exists(invalid)) {
+                error = _("Interrupted snapshot cleanup found a snapshot journaled for promotion that was rejected. "
+                          "Restart with -reindex-chainstate.");
+                return false;
+            }
             uint256 coins_tip;
             try {
                 CCoinsViewDB coins_db{DBParams{.path = normal, .cache_bytes = 1 << 20, .obfuscate = true},
