@@ -6686,7 +6686,7 @@ bool ChainstateManager::HandleSnapshotStateMismatch(const std::string& reason)
     }
 
     const int snapshot_tip_height{m_snapshot_chainstate->m_chain.Height()};
-    const int snapshot_base_height{GetSnapshotBaseHeight().value_or(snapshot_tip_height)};
+    const int background_tip_height{m_ibd_chainstate->m_chain.Height()};
     bilingual_str user_error =
         strprintf(_("%s failed to validate the -assumeutxo snapshot state. "
                     "This indicates a hardware problem, or a bug in the software, or a "
@@ -6699,7 +6699,7 @@ bool ChainstateManager::HandleSnapshotStateMismatch(const std::string& reason)
                     "Please report this incident to %s, including how you obtained the snapshot. "
                     "The invalid snapshot chainstate will be left on disk in case it is "
                     "helpful in diagnosing the issue that caused this error."),
-                  PACKAGE_NAME, snapshot_tip_height, snapshot_base_height, snapshot_base_height, PACKAGE_BUGREPORT);
+                  PACKAGE_NAME, snapshot_tip_height, background_tip_height, background_tip_height, PACKAGE_BUGREPORT);
 
     LogPrintf("[snapshot] evo state mismatch: %s\n", reason);
     LogPrintf("[snapshot] !!! %s\n", user_error.original);
