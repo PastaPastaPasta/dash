@@ -17,6 +17,7 @@
 #include <llmq/observer.h>
 #include <llmq/quorumproofs.h>
 #include <evo/simplifiedmns.h>
+#include <evo/snapshot_types.h>
 #include <llmq/quorumsman.h>
 #include <llmq/signhash.h>
 #include <llmq/signing.h>
@@ -1115,10 +1116,15 @@ static RPCHelpMan quorum_dkginfo()
         }
 
         const LLMQContext& llmq_ctx = EnsureLLMQContext(node);
-        const auto members = llmq::utils::ComputeQuorumMembersFromWorkBlock(
-            llmq_params.type,
-            {*CHECK_NONFATAL(node.dmnman), *CHECK_NONFATAL(llmq_ctx.qsnapman), chainman, pindexTip},
-            pWorkBlockIndex, quorumHeight);
+        std::optional<std::vector<CDeterministicMNCPtr>> members;
+        try {
+            members = llmq::utils::ComputeQuorumMembersFromWorkBlock(
+                llmq_params.type,
+                {*CHECK_NONFATAL(node.dmnman), *CHECK_NONFATAL(llmq_ctx.qsnapman), chainman, pindexTip},
+                pWorkBlockIndex, quorumHeight);
+        } catch (const BlockDataUnavailableError&) {
+            return Participation{pWorkBlockIndex, std::nullopt, "rotated quorum snapshots are not available locally"};
+        }
         if (!members.has_value()) {
             return Participation{pWorkBlockIndex, std::nullopt, "rotated quorum snapshots are not available yet"};
         }
