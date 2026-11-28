@@ -349,7 +349,10 @@ bool CEvoDB::CreateSnapshotGeneration(const uint256& base, int base_height)
     LOCK(cs);
     if (m_snapshot_generation) return false;
     uint32_t generation{1};
-    db->Read(EVODB_GENERATION_NEXT, generation);
+    if (db->Exists(EVODB_GENERATION_NEXT) && !db->Read(EVODB_GENERATION_NEXT, generation)) {
+        LogPrintf("ERROR: %s: cannot read the next snapshot EvoDB generation id\n", __func__);
+        return false;
+    }
     // Generation 0 names the NORMAL keyspace; never wrap into it.
     if (generation == 0 || generation == std::numeric_limits<uint32_t>::max()) {
         LogPrintf("ERROR: %s: snapshot EvoDB generation ids are exhausted\n", __func__);
