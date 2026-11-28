@@ -6787,9 +6787,11 @@ bool ChainstateManager::HandleSnapshotStateMismatch(const std::string& reason)
     // behind without its generation can no longer be activated. If the
     // rejection does not persist, startup recovery finishes it once the
     // snapshot directory is set aside.
-    if (!evodb_synced ||
-        !written("recording the snapshot rejection",
-                 [&]() EXCLUSIVE_LOCKS_REQUIRED(::cs_main) { return m_ibd_chainstate->m_evoDb.DiscardSnapshotMarkers(); })) {
+    const bool rejection_saved{evodb_synced &&
+                               written("recording the snapshot rejection", [&]() EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
+                                   return m_ibd_chainstate->m_evoDb.DiscardSnapshotMarkers();
+                               })};
+    if (!rejection_saved) {
         LogPrintf("[snapshot] failed to record the snapshot rejection in EvoDB\n");
         // The generation stays live on disk for startup recovery to reject,
         // but the rest of this run must not read it.
@@ -6798,6 +6800,11 @@ bool ChainstateManager::HandleSnapshotStateMismatch(const std::string& reason)
     auto rename_result = m_snapshot_chainstate->InvalidateCoinsDBOnDisk();
     if (!rename_result) {
         user_error += Untranslated("\n") + util::ErrorString(rename_result);
+        if (!rejection_saved) {
+            user_error += Untranslated("\nNeither the rejection nor the snapshot chainstate directory could be set "
+                                       "aside, so a restart would load the rejected snapshot again. Restart with "
+                                       "-reindex-chainstate to discard it.");
+        }
     } else if (!written("removing the rejected snapshot EvoDB generation",
                         [&]() EXCLUSIVE_LOCKS_REQUIRED(::cs_main) { return m_ibd_chainstate->m_evoDb.CollectRejectedGenerations(); })) {
         LogPrintf("[snapshot] failed to remove the rejected snapshot EvoDB generation; retrying at startup\n");
