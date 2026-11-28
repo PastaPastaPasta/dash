@@ -505,8 +505,8 @@ public:
     //! Is loading blocks.
     virtual bool isLoadingBlocks() = 0;
 
-    //! Whether the v24 hard fork rules are active at the chain tip; nullopt
-    //! when this node cannot evaluate the deployment yet.
+    //! Whether the v24 hard fork rules apply to the next block; nullopt when
+    //! this node cannot evaluate the deployment yet.
     virtual std::optional<bool> isV24Active() = 0;
 
     //! Set network active.

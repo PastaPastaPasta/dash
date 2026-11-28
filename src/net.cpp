@@ -3203,10 +3203,8 @@ void CConnman::ThreadOpenConnections(const std::vector<std::string> connect, CDe
         addrman.ResolveCollisions();
 
         // Without the masternode list, connected masternodes cannot be
-        // skipped below; try again next round.
-        const auto tip_list{ListForConnectedMasternodes(dmnman, setConnectedMasternodes)};
-        if (!tip_list) continue;
-        const auto& mnList{*tip_list};
+        // skipped below; a duplicate connection costs less than none.
+        const auto mnList{ListForConnectedMasternodes(dmnman, setConnectedMasternodes).value_or(CDeterministicMNList{})};
 
         const auto current_time{NodeClock::now()};
         int nTries = 0;
