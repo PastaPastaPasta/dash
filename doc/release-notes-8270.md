@@ -14,4 +14,6 @@ Other changes
   there). A code path that reads Evo state without a binding fails with an
   internal error, a dropped task or a stalled chainstate instead of reading
   the default view. Local regtest networks run with it unless started with
-  `-checkevobinding=0`. (#8270)
+  `-checkevobinding=0`, which turns off only this extra check: while a
+  snapshot chainstate runs next to the background one, unbound Evo access
+  fails on every network regardless. (#8270)
