@@ -2661,6 +2661,7 @@ BOOST_AUTO_TEST_CASE(list_cache_follows_processed_blocks_past_a_stale_tip)
         dmnman.UpdatedBlockTip(stale_tip);
     }
     const int processed_height{WITH_LOCK(::cs_main, return chainman.ActiveHeight())};
+    BOOST_REQUIRE_EQUAL(processed_height, stale_tip->nHeight + 4 * quorum_window);
     // Cleanup runs once the cache holds more than MAX_CACHED_LISTS (64) lists,
     // so lists added since the last cleanup are at most that many blocks old.
     for (const int height : dmnman.CachedListHeightsForTesting()) {
