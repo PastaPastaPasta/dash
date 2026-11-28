@@ -197,6 +197,7 @@ std::unique_ptr<CEvoDBScopedCommitter> CEvoDB::BeginTransaction(EvoDbIdentity id
     assert(!active_transaction.has_value());
     const EvoViewToken* scoped{EvoViewScope::Innermost(*this)};
     assert(!scoped || *scoped == MakeView(identity));
+    assert(identity == EvoDbIdentity::NORMAL || m_snapshot_generation);
     GetContext(identity);
     active_transaction = identity;
     active_transaction_thread = std::this_thread::get_id();
